@@ -1,5 +1,5 @@
 /**
- * Tests for src/utils/follow-button.ts (U4).
+ * Tests for src/utils/follow-button.ts.
  *
  * The Node test runner has no jsdom; we provide a minimal `host`
  * mock that supports `innerHTML`, `addEventListener` /
@@ -11,9 +11,13 @@
  *     (d) hidden;
  *   - on attach, install click + watchlist + entitlement listeners;
  *   - on click, call addCountry / removeCountry and branch on
- *     FollowMutationResult.reason (FREE_CAP triggers upgrade, others
- *     are defensive no-ops);
+ *     FollowMutationResult.reason;
  *   - on teardown, drop all listeners (idempotent).
+ *
+ * Stage 2 of the Convex/Clerk -> Supabase migration removed the follow cap
+ * entirely — there's no more at-cap visual state, upgrade-trigger click
+ * branch, or FREE_CAP result reason. `ButtonViewState` is now just
+ * `{visible, followed, loading}`.
  */
 
 import { describe, it, before, beforeEach, after } from 'node:test';
@@ -101,6 +105,7 @@ const svc = await import('../src/services/followed-countries.ts');
 const {
   FOLLOWED_COUNTRIES_STORAGE_KEY,
   WM_FOLLOWED_COUNTRIES_CHANGED,
+  FollowedCountriesFetchError,
   _setDepsForTests,
   _resetStateForTests,
   _emitAuthStateForTests,
@@ -108,7 +113,7 @@ const {
 } = svc;
 
 const fb = await import('../src/utils/follow-button.ts');
-const { renderFollowButton, _setUpgradeTriggerForTests } = fb;
+const { renderFollowButton } = fb;
 
 // ---------------------------------------------------------------------------
 // Mock host element
@@ -176,119 +181,68 @@ function makeHost() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const FAKE_API = {
-  followedCountries: {
-    followCountry: 'fake:followCountry',
-    unfollowCountry: 'fake:unfollowCountry',
-    mergeAnonymousLocal: 'fake:mergeAnonymousLocal',
-    listFollowed: 'fake:listFollowed',
-  },
-};
-
-const ConvexErrorCtor = class extends Error {
-  constructor(data) {
-    super(`ConvexError: ${data.kind}`);
-    this.data = data;
-  }
-};
-
-function makeFakeConvex({ tier = 1, capLimit = 3, initialRows = [] } = {}) {
-  const rows = initialRows.map((c, i) => ({ country: c, addedAt: 1000 + i }));
-  let listFollowedCb = null;
+/** In-memory fake `FollowedCountriesBackend` for signed-in tests. */
+function makeFakeBackend({ initialRows = [] } = {}) {
+  const rows = [...initialRows];
   const calls = { follow: [], unfollow: [], merge: [] };
-  const fireSnapshot = () => {
-    if (!listFollowedCb) return;
-    const sorted = [...rows].sort((a, b) => a.addedAt - b.addedAt).map((r) => r.country);
-    listFollowedCb(sorted);
-  };
-  const client = {
-    async mutation(ref, args) {
-      if (ref === FAKE_API.followedCountries.followCountry) {
-        calls.follow.push(args);
-        const { country } = args;
-        if (rows.find((r) => r.country === country)) return { ok: true, idempotent: true };
-        if (tier < 1 && rows.length >= capLimit) {
-          // Post-refactor: server returns discriminated union instead of
-          // throwing. Mock mirrors convex/followedCountries.ts behavior.
-          return {
-            ok: false,
-            reason: 'FREE_CAP',
-            currentCount: rows.length,
-            limit: capLimit,
-          };
-        }
-        rows.push({ country, addedAt: Date.now() + rows.length });
-        fireSnapshot();
-        return { ok: true };
-      }
-      if (ref === FAKE_API.followedCountries.unfollowCountry) {
-        calls.unfollow.push(args);
-        const { country } = args;
-        const idx = rows.findIndex((r) => r.country === country);
-        if (idx === -1) return { ok: true };
-        rows.splice(idx, 1);
-        fireSnapshot();
-        return { ok: true };
-      }
-      if (ref === FAKE_API.followedCountries.mergeAnonymousLocal) {
-        calls.merge.push(args);
-        return { totalCount: rows.length, accepted: [], droppedInvalid: [], droppedDueToCap: [] };
-      }
-      throw new Error(`unmocked mutation ref: ${ref}`);
+  const backend = {
+    async list() {
+      return [...rows];
     },
-    onUpdate(ref, _args, onResult) {
-      if (ref === FAKE_API.followedCountries.listFollowed) {
-        listFollowedCb = onResult;
-        Promise.resolve().then(() => {
-          const sorted = [...rows].sort((a, b) => a.addedAt - b.addedAt).map((r) => r.country);
-          if (listFollowedCb === onResult) onResult(sorted);
-        });
-        return () => {
-          if (listFollowedCb === onResult) listFollowedCb = null;
-        };
-      }
-      throw new Error(`unmocked subscription ref: ${ref}`);
+    async follow(country) {
+      calls.follow.push({ country });
+      if (rows.includes(country)) return { ok: true, idempotent: true };
+      rows.push(country);
+      return { ok: true, idempotent: false };
+    },
+    async unfollow(country) {
+      calls.unfollow.push({ country });
+      const idx = rows.indexOf(country);
+      if (idx === -1) return { ok: true, idempotent: true };
+      rows.splice(idx, 1);
+      return { ok: true, idempotent: false };
+    },
+    async merge(countries) {
+      calls.merge.push(countries);
+      return { totalCount: rows.length, accepted: [], droppedInvalid: [] };
     },
     _calls: calls,
-    _push: fireSnapshot,
+    _getRows: () => [...rows],
   };
-  return client;
+  return backend;
 }
 
 function setupAnonymousFree() {
   _setDepsForTests({
-    getCurrentClerkUser: () => null,
+    getCurrentAuthUser: () => null,
     getEntitlementState: () => null,
     hasTier: () => false,
     featureFlagEnabled: true,
-    convexClient: null,
-    convexApi: null,
+    backend: 'force-null',
   });
 }
 
-function setupSignedIn(userId, { tier = 1, fakeClient }) {
+function setupSignedIn(userId, { tier = 1, backend }) {
   _setDepsForTests({
-    getCurrentClerkUser: () => ({ id: userId }),
+    getCurrentAuthUser: () => ({ id: userId }),
     getEntitlementState: () => ({ features: { tier } }),
     hasTier: (n) => n <= tier,
     featureFlagEnabled: true,
-    convexClient: fakeClient,
-    convexApi: FAKE_API,
+    backend,
   });
 }
 
 /**
  * Signed-in BUT entitlement state is null — the "loading" window
- * between Clerk session ready and Convex first snapshot.
+ * between auth session ready and the first entitlement snapshot.
  */
 function setupSignedInLoading(userId) {
   _setDepsForTests({
-    getCurrentClerkUser: () => ({ id: userId }),
+    getCurrentAuthUser: () => ({ id: userId }),
     getEntitlementState: () => null,
     hasTier: () => false,
     featureFlagEnabled: true,
-    convexClient: null,
-    convexApi: null,
+    backend: 'force-null',
   });
 }
 
@@ -304,7 +258,6 @@ async function flushMicrotasks() {
 beforeEach(() => {
   _localStorage.clear();
   _resetStateForTests();
-  _setUpgradeTriggerForTests(null); // production-shape (window.open) — overridden per-test as needed
 });
 
 describe('renderFollowButton — basic visual states', () => {
@@ -366,6 +319,18 @@ describe('renderFollowButton — basic visual states', () => {
       countryName: 'United States',
     });
     assert.match(handle.html, /Follow United States/);
+  });
+
+  it('unfollowed tooltip is always "Follow {name}" — no upgrade/at-cap variant (Stage 2: cap removed)', () => {
+    setupAnonymousFree();
+    _localStorage.setItem(
+      FOLLOWED_COUNTRIES_STORAGE_KEY,
+      JSON.stringify({ countries: ['US', 'FR', 'DE', 'JP', 'CN'] }),
+    );
+    const handle = renderFollowButton({ countryCode: 'GB', countryName: 'United Kingdom' });
+    assert.match(handle.html, /Follow United Kingdom/);
+    assert.doesNotMatch(handle.html, /Upgrade to follow more/);
+    assert.doesNotMatch(handle.html, /wm-follow-btn--at-cap/);
   });
 });
 
@@ -430,31 +395,25 @@ describe('renderFollowButton — click behavior (anonymous mode)', () => {
     teardown();
   });
 
-  it('free user at cap → click triggers upgrade-modal, addCountry not committed', async () => {
+  it('no follow cap — clicking many different buttons in sequence all succeed (Stage 2: cap removed)', async () => {
     setupAnonymousFree();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US', 'FR', 'DE'] }),
     );
-    const upgradeCalls = [];
-    _setUpgradeTriggerForTests((source) => upgradeCalls.push(source));
 
     const handle = renderFollowButton({ countryCode: 'GB' });
     const host = makeHost();
     const teardown = handle.attach(host);
-    // Tooltip should already reflect at-cap state.
-    assert.match(host.innerHTML, /Upgrade to follow more/);
+    assert.match(host.innerHTML, /data-state="unfollowed"/);
 
     host.clickButton();
     await flushMicrotasks();
 
-    assert.equal(upgradeCalls.length, 1);
-    assert.equal(upgradeCalls[0], 'follow-cap');
-    // GB was NOT added.
+    // GB WAS added — no cap to block it.
+    assert.match(host.innerHTML, /data-state="followed"/);
     const stored = JSON.parse(_localStorage.getItem(FOLLOWED_COUNTRIES_STORAGE_KEY)).countries;
-    assert.deepEqual(stored, ['US', 'FR', 'DE']);
-    // Visual state still unfollowed.
-    assert.match(host.innerHTML, /data-state="unfollowed"/);
+    assert.deepEqual(stored.sort(), ['DE', 'FR', 'GB', 'US']);
 
     teardown();
   });
@@ -482,9 +441,9 @@ describe('renderFollowButton — entitlement-loading window', () => {
   });
 
   it('anonymous user with null entitlement state → renders interactive (NOT loading)', () => {
-    // Anonymous: clerk user is null AND entitlement state is null.
+    // Anonymous: auth user is null AND entitlement state is null.
     // The service's `serviceEntitlementState()` returns 'free' (not 'loading')
-    // for this case (Codex round-2 finding #1). The button must follow suit.
+    // for this case. The button must follow suit.
     setupAnonymousFree();
     const handle = renderFollowButton({ countryCode: 'US' });
     assert.match(handle.html, /data-state="unfollowed"/);
@@ -492,19 +451,18 @@ describe('renderFollowButton — entitlement-loading window', () => {
   });
 
   it('entitlement resolves to PRO during loading → re-renders to interactive; click commits', async () => {
-    // Start in loading state. We wire a real fakeConvex client so that
-    // once entitlement resolves, the click can flow through the signed-in
-    // mutation path without hitting the production import.meta.env crash.
-    const fakeClient = makeFakeConvex({ tier: 1, initialRows: [] });
+    // Start in loading state. We wire a real fake backend so that once
+    // entitlement resolves, the click can flow through the signed-in
+    // mutation path.
+    const backend = makeFakeBackend({ initialRows: [] });
     let _entState = null;
     let _tier = 0;
     _setDepsForTests({
-      getCurrentClerkUser: () => ({ id: 'user-1' }),
+      getCurrentAuthUser: () => ({ id: 'user-1' }),
       getEntitlementState: () => _entState,
       hasTier: (n) => n <= _tier,
       featureFlagEnabled: true,
-      convexClient: fakeClient,
-      convexApi: FAKE_API,
+      backend,
     });
     // Drive the auth-state listener so the service flips to handoff-complete.
     await _emitAuthStateForTests({ id: 'user-1' });
@@ -532,37 +490,26 @@ describe('renderFollowButton — entitlement-loading window', () => {
 
     assert.match(host.innerHTML, /data-state="followed"/);
     // Verify the signed-in mutation path was actually exercised.
-    assert.equal(fakeClient._calls.follow.length, 1);
-    assert.equal(fakeClient._calls.follow[0].country, 'US');
+    assert.equal(backend._calls.follow.length, 1);
+    assert.equal(backend._calls.follow[0].country, 'US');
 
     teardown();
   });
 
-  it('entitlement resolves to FREE during loading with cap-full state → click on NEW country triggers FREE_CAP', async () => {
-    // Cloud-merged grandfather: snapshot already at cap (3 rows). After
-    // entitlement resolves to FREE, clicking a NEW country should hit
-    // FREE_CAP via the server-mutation rejection path.
-    const fakeClient = makeFakeConvex({
-      tier: 0,
-      capLimit: 3,
-      initialRows: ['US', 'FR', 'DE'],
-    });
+  it('entitlement resolves while loading → click on a NEW country still commits (no cap to block it)', async () => {
+    const backend = makeFakeBackend({ initialRows: ['US', 'FR', 'DE'] });
 
     let _entState = null;
     let _tier = 0;
     _setDepsForTests({
-      getCurrentClerkUser: () => ({ id: 'user-1' }),
+      getCurrentAuthUser: () => ({ id: 'user-1' }),
       getEntitlementState: () => _entState,
       hasTier: (n) => n <= _tier,
       featureFlagEnabled: true,
-      convexClient: fakeClient,
-      convexApi: FAKE_API,
+      backend,
     });
     await _emitAuthStateForTests({ id: 'user-1' });
     await flushMicrotasks();
-
-    const upgradeCalls = [];
-    _setUpgradeTriggerForTests((source) => upgradeCalls.push(source));
 
     const handle = renderFollowButton({ countryCode: 'GB' });
     const host = makeHost();
@@ -573,25 +520,27 @@ describe('renderFollowButton — entitlement-loading window', () => {
     // Click in loading → no-op.
     host.clickButton();
     await flushMicrotasks();
-    assert.equal(upgradeCalls.length, 0);
+    assert.equal(backend._calls.follow.length, 0);
 
-    // Resolve to FREE.
+    // Resolve entitlement.
     _entState = { features: { tier: 0 } };
     _tier = 0;
     _window.dispatchEvent(new CustomEvent(WM_FOLLOWED_COUNTRIES_CHANGED));
     await flushMicrotasks();
 
-    // Now interactive. GB is NOT followed; click should hit FREE_CAP because
-    // the Convex snapshot already has 3 entries.
+    // Now interactive. GB is NOT followed; click should commit — no cap
+    // exists post-Stage-2 to block it even though the snapshot already
+    // has 3 entries.
     assert.match(host.innerHTML, /data-state="unfollowed"/);
-    assert.match(host.innerHTML, /Upgrade to follow more/);
+    assert.doesNotMatch(host.innerHTML, /Upgrade to follow more/);
 
     host.clickButton();
     await flushMicrotasks();
     await flushMicrotasks();
 
-    assert.equal(upgradeCalls.length, 1, 'upgrade trigger fired exactly once');
-    assert.equal(upgradeCalls[0], 'follow-cap');
+    assert.match(host.innerHTML, /data-state="followed"/);
+    assert.equal(backend._calls.follow.length, 1);
+    assert.equal(backend._calls.follow[0].country, 'GB');
 
     teardown();
   });
@@ -601,20 +550,13 @@ describe('renderFollowButton — P2 #16 assertNever exhaustiveness on unknown re
   it('hypothetical new reason → click handler logs/throws via assertNever runtime guard', async () => {
     // The compile-time exhaustiveness guard fires at typecheck if a
     // new variant is added to FollowMutationResult. The runtime branch
-    // catches a malformed test fake. Here we monkey-patch addCountry
-    // to return a not-yet-known reason and assert that the unhandled-
-    // discriminant path runs (we observe the console.error path via a
-    // captured originalError stub).
+    // catches a malformed test fake. Here we drive an INVALID_INPUT
+    // reason (which the existing branch handles, not assertNever) and
+    // confirm nothing throws.
     setupAnonymousFree();
     const originalError = console.error;
     let captured = null;
     console.error = (...args) => { captured = args; };
-    // Stub addCountry on the module — node's ESM bindings are
-    // read-only, so we can't simply reassign. Instead, drive the
-    // service via a fake that returns INVALID_INPUT for an unknown
-    // code (the existing INVALID_INPUT branch fires, NOT assertNever).
-    // We assert the typecheck guard exists by inspecting the source
-    // file for the `assertNever(result.reason)` call.
     try {
       const { renderFollowButton: rfb } = await import('../src/utils/follow-button.ts');
       const handle = rfb({ countryCode: 'NotAValidCode' });
@@ -637,34 +579,24 @@ describe('renderFollowButton — P2 #16 assertNever exhaustiveness on unknown re
 
 describe('renderFollowButton — P2 #17 inFlight prevents rapid double-click duplicate mutations', () => {
   it('rapid double-click while mutation pending → only ONE addCountry fires', async () => {
-    // Use a delayed-fake convex mutation to keep the first click in
+    // Use a delayed-fake backend.follow() to keep the first click in
     // flight while the second click happens. Without P2 #17 the second
     // click would queue a second addCountry; with it, the second click
     // is dropped silently.
     let resolveFirst;
     const pending = new Promise((r) => { resolveFirst = r; });
     const calls = [];
-    const fakeClient = {
-      async mutation(ref, args) {
-        if (ref === FAKE_API.followedCountries.followCountry) {
-          calls.push(args);
-          await pending;
-          return { ok: true, idempotent: false };
-        }
-        if (ref === FAKE_API.followedCountries.unfollowCountry) {
-          return { ok: true, idempotent: false };
-        }
-        throw new Error(`unmocked: ${ref}`);
+    const backend = {
+      async list() { return []; },
+      async follow(country) {
+        calls.push({ country });
+        await pending;
+        return { ok: true, idempotent: false };
       },
-      onUpdate(ref, _a, cb) {
-        if (ref === FAKE_API.followedCountries.listFollowed) {
-          Promise.resolve().then(() => cb([]));
-          return () => {};
-        }
-        throw new Error(`unmocked: ${ref}`);
-      },
+      async unfollow() { return { ok: true, idempotent: false }; },
+      async merge() { return { totalCount: 0, accepted: [], droppedInvalid: [] }; },
     };
-    setupSignedIn('user-rdc', { tier: 1, fakeClient });
+    setupSignedIn('user-rdc', { tier: 1, backend });
     await _emitAuthStateForTests({ id: 'user-rdc' });
     await flushMicrotasks();
 
@@ -737,11 +669,10 @@ describe('renderFollowButton — subscription / external mutation', () => {
     // No assertion — the absence of a throw IS the assertion.
   });
 
-  it('subscription fires on Convex snapshot in signed-in mode', async () => {
-    const fakeClient = makeFakeConvex({ tier: 1, initialRows: [] });
-    setupSignedIn('user-1', { tier: 1, fakeClient });
-    // Drive the auth-state listener so the service flips to handoff-complete
-    // and starts the reactive subscription.
+  it('subscription fires on pushed snapshot in signed-in mode', async () => {
+    const backend = makeFakeBackend({ initialRows: [] });
+    setupSignedIn('user-1', { tier: 1, backend });
+    // Drive the auth-state listener so the service flips to handoff-complete.
     await _emitAuthStateForTests({ id: 'user-1' });
     await flushMicrotasks();
 
@@ -750,11 +681,41 @@ describe('renderFollowButton — subscription / external mutation', () => {
     const teardown = handle.attach(host);
     assert.match(host.innerHTML, /data-state="unfollowed"/);
 
-    // Push a snapshot containing JP.
+    // Push a snapshot containing JP (simulates a refetch-on-focus result).
     _pushSubscriptionSnapshotForTests('user-1', ['JP']);
     await flushMicrotasks();
 
     assert.match(host.innerHTML, /data-state="followed"/);
+    teardown();
+  });
+});
+
+describe('renderFollowButton — signed-in error mapping is defensive, not user-facing', () => {
+  it('backend.follow throws INVALID_COUNTRY → button re-renders unfollowed, no throw', async () => {
+    const backend = {
+      async list() { return []; },
+      async follow() {
+        throw new FollowedCountriesFetchError('INVALID_COUNTRY', 'bad code');
+      },
+      async unfollow() { return { ok: true, idempotent: true }; },
+      async merge() { return { totalCount: 0, accepted: [], droppedInvalid: [] }; },
+    };
+    setupSignedIn('user-err', { tier: 1, backend });
+    await _emitAuthStateForTests({ id: 'user-err' });
+    await flushMicrotasks();
+
+    const handle = renderFollowButton({ countryCode: 'US' });
+    const host = makeHost();
+    const teardown = handle.attach(host);
+    assert.match(host.innerHTML, /data-state="unfollowed"/);
+
+    host.clickButton();
+    await flushMicrotasks();
+
+    // INVALID_INPUT reason logs a warning and does not re-render forcibly,
+    // but the button must remain in a consistent (unfollowed) state.
+    assert.match(host.innerHTML, /data-state="unfollowed"/);
+
     teardown();
   });
 });

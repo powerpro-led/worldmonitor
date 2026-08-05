@@ -33,6 +33,7 @@ import {
   buildPublicBriefUrl,
   encodePublicPointer,
 } from '../../../server/_shared/brief-share-url';
+import { listFollowed as listFollowedCountries } from '../../../server/_shared/followed-countries';
 
 const HTML_HEADERS = {
   'Content-Type': 'text/html; charset=utf-8',
@@ -97,55 +98,37 @@ const UNAVAILABLE_PAGE = renderErrorPage(
 const FOLLOWED_COUNTRIES_TIMEOUT_MS = 500;
 
 /**
- * Best-effort edge-runtime fetch of the recipient's followed-country
- * watchlist for U11 telemetry stamping. This intentionally differs
- * from the cron helper: it uses a much smaller latency budget and emits
- * a Sentry breadcrumb on relay-auth 401 because this route sits on the
- * reader-facing TTFB path. Never throws — every soft failure path
- * returns `[]` so the magazine still renders even when the relay is
- * unavailable. The watchlist is telemetry-only: missing relay data
- * degrades `data-followed` to "unknown encoded as false" and never
- * affects visible magazine content.
+ * Best-effort fetch of the recipient's followed-country watchlist for U11
+ * telemetry stamping. Stage 2 of the Convex/Clerk -> Supabase migration
+ * replaced the `/relay/followed-countries` Convex HTTP-action hop with a
+ * direct in-process call to `worldmonitor.followed_countries` (Postgres,
+ * service-role client) — one fewer network hop than the old relay, so the
+ * same 500ms budget now covers a single Postgres round-trip instead of an
+ * HTTP call to a second platform. Never throws — every soft failure path
+ * returns `[]` so the magazine still renders even when Postgres is
+ * unavailable. The watchlist is telemetry-only: a missing/timed-out lookup
+ * degrades `data-followed` to "unknown encoded as false" and never affects
+ * visible magazine content.
  */
 async function fetchFollowedCountriesEdge(
   userId: string,
   ctx?: { waitUntil: (p: Promise<unknown>) => void },
 ): Promise<string[]> {
-  const convexSiteUrl =
-    process.env.CONVEX_SITE_URL
-    ?? (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
-  const relaySecret = process.env.RELAY_SHARED_SECRET ?? '';
-  if (!convexSiteUrl || !relaySecret) return [];
   if (typeof userId !== 'string' || userId.length === 0) return [];
   try {
-    const res = await fetch(`${convexSiteUrl}/relay/followed-countries`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${relaySecret}`,
-        'User-Agent': 'worldmonitor-brief-render/1.0',
-      },
-      body: JSON.stringify({ userId }),
-      signal: AbortSignal.timeout(FOLLOWED_COUNTRIES_TIMEOUT_MS),
+    return await Promise.race([
+      listFollowedCountries(userId),
+      new Promise<string[]>((_, reject) =>
+        setTimeout(() => reject(new Error('followed-countries lookup timed out')), FOLLOWED_COUNTRIES_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (err) {
+    console.warn('[api/brief] followed-countries lookup failed:', (err as Error).message);
+    captureSilentError(err, {
+      tags: { route: 'api/brief', step: 'followed-countries-lookup' },
+      ctx,
+      level: 'warning',
     });
-    if (res.status === 401) {
-      const err = new Error('followed-countries relay returned 401');
-      console.warn('[api/brief] followed-countries relay auth failed');
-      captureSilentError(err, {
-        tags: { route: 'api/brief', step: 'followed-countries-relay', status: '401' },
-        ctx,
-      });
-      return [];
-    }
-    if (!res.ok) return [];
-    const data = (await res.json()) as { countries?: unknown };
-    if (!data || typeof data !== 'object' || !Array.isArray(data.countries)) {
-      return [];
-    }
-    return (data.countries as unknown[]).filter(
-      (c): c is string => typeof c === 'string' && c.length > 0,
-    );
-  } catch {
     return [];
   }
 }

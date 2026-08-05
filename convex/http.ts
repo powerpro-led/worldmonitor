@@ -3,45 +3,13 @@ import { httpAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { webhookHandler } from "./payments/webhookHandlers";
 import { resendWebhookHandler } from "./resendWebhookHandler";
-import { USER_PREFS_WRITE_RATE_LIMIT } from "./constants";
 
-const TRUSTED = [
-  "https://worldmonitor.app",
-  "*.worldmonitor.app",
-  "http://localhost:3000",
-];
-
-const EXPOSED_HEADERS = [
-  "Retry-After",
-  "X-RateLimit-Limit",
-  "X-RateLimit-Remaining",
-  "X-RateLimit-Reset",
-].join(", ");
-
-function matchOrigin(origin: string, pattern: string): boolean {
-  if (pattern.startsWith("*.")) {
-    return origin.endsWith(pattern.slice(1));
-  }
-  return origin === pattern;
-}
-
-function allowedOrigin(origin: string | null, trusted: string[]): string | null {
-  if (!origin) return null;
-  return trusted.some((p) => matchOrigin(origin, p)) ? origin : null;
-}
-
-function corsHeaders(origin: string | null): Headers {
-  const headers = new Headers();
-  const allowed = allowedOrigin(origin, TRUSTED);
-  if (allowed) {
-    headers.set("Access-Control-Allow-Origin", allowed);
-    headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    headers.set("Access-Control-Expose-Headers", EXPOSED_HEADERS);
-    headers.set("Access-Control-Max-Age", "86400");
-  }
-  return headers;
-}
+// Browser-facing CORS helpers (TRUSTED/EXPOSED_HEADERS/matchOrigin/allowedOrigin/
+// corsHeaders) retired in Stage 2 of the Convex/Clerk -> Supabase migration
+// alongside the Convex-native `/api/user-prefs` route — every other route in
+// this file is server-to-server (shared-secret authenticated), not
+// browser-facing, so no CORS handling is needed. See memory
+// `supabase-migration-stage1`.
 
 async function timingSafeEqualStrings(a: string, b: string): Promise<boolean> {
   const enc = new TextEncoder();
@@ -102,27 +70,6 @@ function extractConvexErrorCode(err: unknown): string | null {
     if (typeof code === "string") return code;
   }
   return null;
-}
-
-function readConvexErrorNumber(err: unknown, field: string): number | null {
-  const parsed = parseConvexErrorData(err);
-  if (!parsed || typeof parsed !== "object") return null;
-  const value = (parsed as Record<string, unknown>)[field];
-  return typeof value === "number" ? value : null;
-}
-
-type SetPreferencesResult =
-  | { ok: true; syncVersion: number }
-  | { ok: false; reason: "CONFLICT"; actualSyncVersion: number }
-  | { ok: false; reason: "BLOB_TOO_LARGE"; size: number; max: number }
-  | { ok: false; reason: "RATE_LIMITED"; limit: number; reset: number };
-
-function setRateLimitResponseHeaders(headers: Headers, limit: number, reset: number): void {
-  const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
-  headers.set("X-RateLimit-Limit", String(limit));
-  headers.set("X-RateLimit-Remaining", "0");
-  headers.set("X-RateLimit-Reset", String(reset));
-  headers.set("Retry-After", String(retryAfter));
 }
 
 export async function internalEntitlementsHttpHandler(
@@ -247,125 +194,11 @@ http.route({
   handler: httpAction(internalEntitlementsHttpHandler),
 });
 
-http.route({
-  path: "/api/user-prefs",
-  method: "OPTIONS",
-  handler: httpAction(async (_ctx, request) => {
-    const headers = corsHeaders(request.headers.get("Origin"));
-    return new Response(null, { status: 204, headers });
-  }),
-});
-
-http.route({
-  path: "/api/user-prefs",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const headers = corsHeaders(request.headers.get("Origin"));
-    headers.set("Content-Type", "application/json");
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return new Response(JSON.stringify({ error: "UNAUTHENTICATED" }), {
-        status: 401,
-        headers,
-      });
-    }
-
-    const body = await parseJsonObjectBody<{
-      variant?: string;
-      data?: unknown;
-      expectedSyncVersion?: number;
-      schemaVersion?: number;
-    }>(request);
-    if (!body) {
-      return new Response(JSON.stringify({ error: "INVALID_JSON" }), {
-        status: 400,
-        headers,
-      });
-    }
-
-    if (
-      typeof body.variant !== "string" ||
-      body.data === undefined ||
-      typeof body.expectedSyncVersion !== "number"
-    ) {
-      return new Response(JSON.stringify({ error: "MISSING_FIELDS" }), {
-        status: 400,
-        headers,
-      });
-    }
-
-    try {
-      const result = (await ctx.runMutation(
-        anyApi.userPreferences!.setPreferences as any,
-        {
-          variant: body.variant,
-          data: body.data,
-          expectedSyncVersion: body.expectedSyncVersion,
-          schemaVersion: body.schemaVersion,
-        },
-      )) as SetPreferencesResult;
-      // Expected write denials return as a discriminated result so Convex can
-      // commit limiter bookkeeping and duplicate-counter cleanup. Mirror the
-      // wire shape from api/user-prefs.ts (Vercel) regardless of host.
-      if (result.ok === false) {
-        if (result.reason === "BLOB_TOO_LARGE") {
-          return new Response(JSON.stringify({ error: "BLOB_TOO_LARGE" }), {
-            status: 400,
-            headers,
-          });
-        }
-        if (result.reason === "RATE_LIMITED") {
-          setRateLimitResponseHeaders(headers, result.limit, result.reset);
-          return new Response(JSON.stringify({ error: "RATE_LIMITED" }), {
-            status: 429,
-            headers,
-          });
-        }
-        return new Response(
-          JSON.stringify({
-            error: "CONFLICT",
-            actualSyncVersion: result.actualSyncVersion,
-          }),
-          { status: 409, headers },
-        );
-      }
-      return new Response(
-        JSON.stringify({ syncVersion: result.syncVersion }),
-        { status: 200, headers },
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const code = extractConvexErrorCode(err);
-      // Defensive: keep CONFLICT-throw fallback for the deploy-ordering
-      // window where this http action may run against an older Convex
-      // deployment that still throws. Once both layers have soaked, this
-      // branch is unreachable and can be removed.
-      if (code === "CONFLICT" || msg.includes("CONFLICT")) {
-        return new Response(JSON.stringify({ error: "CONFLICT" }), {
-          status: 409,
-          headers,
-        });
-      }
-      if (code === "BLOB_TOO_LARGE" || msg.includes("BLOB_TOO_LARGE")) {
-        return new Response(JSON.stringify({ error: "BLOB_TOO_LARGE" }), {
-          status: 400,
-          headers,
-        });
-      }
-      if (code === "RATE_LIMITED" || msg.includes("RATE_LIMITED")) {
-        const limit = readConvexErrorNumber(err, "limit") ?? USER_PREFS_WRITE_RATE_LIMIT;
-        const reset = readConvexErrorNumber(err, "reset") ?? Date.now() + 60_000;
-        setRateLimitResponseHeaders(headers, limit, reset);
-        return new Response(JSON.stringify({ error: "RATE_LIMITED" }), {
-          status: 429,
-          headers,
-        });
-      }
-      throw err;
-    }
-  }),
-});
+// Convex-native `/api/user-prefs` (OPTIONS + POST) retired in Stage 2 of the
+// Convex/Clerk -> Supabase migration alongside `convex/userPreferences.ts` —
+// `api/user-prefs.ts` (Vercel edge) is the sole surface now, backed by
+// `worldmonitor.user_preferences` (Postgres). See memory
+// `supabase-migration-stage1`.
 
 http.route({
   path: "/api/telegram-pair-callback",
@@ -917,89 +750,11 @@ http.route({
   }),
 });
 
-http.route({
-  path: "/relay/user-preferences",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const secret = process.env.RELAY_SHARED_SECRET ?? "";
-    const provided = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/, "");
-    if (!secret || !(await timingSafeEqualStrings(provided, secret))) {
-      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    const body = await parseJsonObjectBody<{ userId?: string; variant?: string }>(request);
-    if (!body) {
-      return new Response(JSON.stringify({ error: "INVALID_JSON" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (!body.userId || !body.variant) {
-      return new Response(JSON.stringify({ error: "userId and variant required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    const prefs = await ctx.runQuery(
-      (internal as any).userPreferences.getPreferencesByUserId,
-      { userId: body.userId, variant: body.variant },
-    );
-    return new Response(JSON.stringify(prefs?.data ?? null), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }),
-});
-
-// Followed-countries relay (plan U14). Mirrors `/relay/user-preferences`:
-// shared-secret auth in the Authorization header, POST {userId} body, returns
-// `{ countries: string[] }`. Used by server-side cron consumers (PR C brief
-// composer) that need a typed `string[]` watchlist for a given user without
-// going through the Clerk-authenticated `listFollowed` query.
-http.route({
-  path: "/relay/followed-countries",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const secret = process.env.RELAY_SHARED_SECRET ?? "";
-    const provided = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/, "");
-    if (!secret || !(await timingSafeEqualStrings(provided, secret))) {
-      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    const body = await parseJsonObjectBody<{ userId?: unknown }>(request);
-    if (!body) {
-      return new Response(JSON.stringify({ error: "INVALID_JSON" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    // P2 #19 — Mirror /relay/user-preferences validation rigor: userId
-    // must be a non-empty string with bounded length (Clerk subjects are
-    // short, ~30 chars; cap at 256 defensively).
-    if (
-      typeof body.userId !== "string" ||
-      body.userId.length === 0 ||
-      body.userId.length > 256
-    ) {
-      return new Response(JSON.stringify({ error: "userId required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    const countries = await ctx.runQuery(
-      internal.followedCountries.internalListFollowedForUser,
-      { userId: body.userId },
-    );
-    return new Response(JSON.stringify({ countries }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }),
-});
+// `/relay/user-preferences` and `/relay/followed-countries` retired in
+// Stage 2 of the Convex/Clerk -> Supabase migration — both tables now live
+// in `worldmonitor.*` Postgres, read directly by
+// `server/_shared/user-preferences.ts` / `server/_shared/followed-countries.ts`
+// (no Convex relay hop). See memory `supabase-migration-stage1`.
 
 http.route({
   path: "/relay/entitlement",

@@ -25611,11 +25611,6 @@ body.map-width-resizing {
   border-color: var(--border);
 }
 
-.wm-follow-btn--at-cap {
-  /* Subtle: slightly stronger border to hint at the upgrade nudge. */
-  border-color: var(--border-strong, var(--border));
-}
-
 .wm-follow-btn--loading {
   opacity: 0.5;
   cursor: progress;

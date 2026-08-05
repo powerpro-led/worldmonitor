@@ -9,8 +9,6 @@ const routes = [
   "/relay/deactivate",
   "/relay/channels",
   "/relay/notification-channels",
-  "/relay/user-preferences",
-  "/relay/followed-countries",
   "/relay/entitlement",
   "/relay/register-referral-code",
   "/relay/create-checkout",

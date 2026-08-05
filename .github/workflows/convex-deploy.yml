@@ -107,45 +107,18 @@ jobs:
       - id: seed_dodo_webhook_failure_summary
         name: Seed Dodo webhook failure summary (idempotent)
         # Failure recording uses this pre-seeded aggregate row as its
-        # document-backed OCC lock. Keep this immediately after deploy so an
-        # unrelated followedCountries seed failure cannot leave payment
-        # failure recording uninitialized.
+        # document-backed OCC lock.
         run: npx convex run --prod payments/webhookMutations:_seedFailureSummary
         continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-      - id: seed_followed_countries_shards
-        name: Seed followedCountries shards (idempotent)
-        # The `followCountry` / `unfollowCountry` / `mergeAnonymousLocal`
-        # mutations throw `SHARDS_NOT_SEEDED` if the `followedCountriesShards`
-        # table is empty (Codex round-4 P0 v2 — pre-seeded sharded lock). The
-        # daily cron at 03:00 UTC also seeds, but a deploy that lands at
-        # 04:00 UTC would leave the feature broken for ~23h until the next
-        # cron tick. Running the seed inline AFTER `convex deploy --yes` (and
-        # therefore against the just-deployed code) closes that window.
-        # Idempotent — `_seedShards` collects existing shard ids and inserts
-        # only the missing ones. `npx convex run` targets internal functions
-        # by their file:export path; `--prod` pins the production deployment
-        # via CONVEX_DEPLOY_KEY.
-        run: npx convex run --prod followedCountries:_seedShards
-        continue-on-error: true
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-      - id: seed_followed_countries_country_locks
-        name: Seed followedCountries country locks (idempotent)
-        # Counter writes are serialized by a pre-seeded per-country lock row.
-        # The daily cron also self-heals this table, but deploying and then
-        # seeding inline avoids a temporary COUNTRY_LOCKS_NOT_SEEDED window.
-        run: npx convex run --prod followedCountries:_seedCountryLocks
-        continue-on-error: true
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      # followedCountries shard/country-lock seed steps retired in Stage 2 of
+      # the Convex/Clerk -> Supabase migration alongside `convex/followedCountries.ts`
+      # — no Postgres-side seeding needed (see memory `supabase-migration-stage1`).
       - name: Verify post-deploy seeds
         if: always() && steps.deploy.outcome == 'success'
         run: |
-          if [ "${{ steps.seed_dodo_webhook_failure_summary.outcome }}" != "success" ] \
-            || [ "${{ steps.seed_followed_countries_shards.outcome }}" != "success" ] \
-            || [ "${{ steps.seed_followed_countries_country_locks.outcome }}" != "success" ]; then
+          if [ "${{ steps.seed_dodo_webhook_failure_summary.outcome }}" != "success" ]; then
             echo "::error::One or more post-deploy seeds failed; inspect the seed steps above"
             exit 1
           fi

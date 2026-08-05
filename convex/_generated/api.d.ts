@@ -30,7 +30,6 @@ import type * as contactMessages from "../contactMessages.js";
 import type * as crons from "../crons.js";
 import type * as emailSuppressions from "../emailSuppressions.js";
 import type * as entitlements from "../entitlements.js";
-import type * as followedCountries from "../followedCountries.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dodo from "../lib/dodo.js";
@@ -38,8 +37,6 @@ import type * as lib_emailDomain from "../lib/emailDomain.js";
 import type * as lib_entitlements from "../lib/entitlements.js";
 import type * as lib_env from "../lib/env.js";
 import type * as lib_identitySigning from "../lib/identitySigning.js";
-import type * as lib_iso2 from "../lib/iso2.js";
-import type * as lib_shards from "../lib/shards.js";
 import type * as mcpProTokens from "../mcpProTokens.js";
 import type * as notificationChannels from "../notificationChannels.js";
 import type * as payments_backfillCustomerNormalizedEmail from "../payments/backfillCustomerNormalizedEmail.js";
@@ -55,7 +52,6 @@ import type * as payments_webhookMutations from "../payments/webhookMutations.js
 import type * as registerInterest from "../registerInterest.js";
 import type * as resendWebhookHandler from "../resendWebhookHandler.js";
 import type * as telegramPairingTokens from "../telegramPairingTokens.js";
-import type * as userPreferences from "../userPreferences.js";
 import type * as users from "../users.js";
 
 import type {
@@ -87,7 +83,6 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   emailSuppressions: typeof emailSuppressions;
   entitlements: typeof entitlements;
-  followedCountries: typeof followedCountries;
   http: typeof http;
   "lib/auth": typeof lib_auth;
   "lib/dodo": typeof lib_dodo;
@@ -95,8 +90,6 @@ declare const fullApi: ApiFromModules<{
   "lib/entitlements": typeof lib_entitlements;
   "lib/env": typeof lib_env;
   "lib/identitySigning": typeof lib_identitySigning;
-  "lib/iso2": typeof lib_iso2;
-  "lib/shards": typeof lib_shards;
   mcpProTokens: typeof mcpProTokens;
   notificationChannels: typeof notificationChannels;
   "payments/backfillCustomerNormalizedEmail": typeof payments_backfillCustomerNormalizedEmail;
@@ -112,7 +105,6 @@ declare const fullApi: ApiFromModules<{
   registerInterest: typeof registerInterest;
   resendWebhookHandler: typeof resendWebhookHandler;
   telegramPairingTokens: typeof telegramPairingTokens;
-  userPreferences: typeof userPreferences;
   users: typeof users;
 }>;
 

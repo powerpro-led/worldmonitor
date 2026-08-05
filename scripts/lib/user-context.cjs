@@ -1,43 +1,39 @@
 'use strict';
 
-const CONVEX_SITE_URL =
-  process.env.CONVEX_SITE_URL ??
-  (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
-const RELAY_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
+// Stage 2 of the Convex/Clerk -> Supabase migration: reads
+// `worldmonitor.user_preferences` (Postgres, service-role client) directly
+// instead of POSTing to the retired `/relay/user-preferences` Convex HTTP
+// action.
+
+const { getSupabaseAdmin } = require('./supabase-admin.cjs');
 
 /**
- * Fetch the raw user preferences blob from Convex via the relay endpoint.
- * Returns the parsed data object, or null on failure.
+ * Fetch the raw user preferences blob directly from Postgres.
  *
  * @param {string} userId
  * @param {string} variant
- * @returns {Promise<Record<string, unknown> | null>}
- */
-/**
- * @returns {{ data: object|null, error: boolean }} data=null + error=false means no prefs saved; error=true means transient failure
+ * @returns {Promise<{ data: object|null, error: boolean }>} data=null +
+ *   error=false means no prefs saved for this (userId, variant); error=true
+ *   means transient failure (unconfigured backend or Postgres error).
  */
 async function fetchUserPreferences(userId, variant) {
-  if (!CONVEX_SITE_URL || !RELAY_SECRET) {
-    console.warn('[user-context] CONVEX_SITE_URL or RELAY_SHARED_SECRET not set');
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    console.warn('[user-context] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set');
     return { data: null, error: true };
   }
   try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/user-preferences`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${RELAY_SECRET}`,
-        'User-Agent': 'worldmonitor-relay/1.0',
-      },
-      body: JSON.stringify({ userId, variant }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      console.warn(`[user-context] fetchUserPreferences: ${res.status}`);
+    const { data: row, error } = await supabase
+      .from('user_preferences')
+      .select('data')
+      .eq('user_id', userId)
+      .eq('variant', variant)
+      .maybeSingle();
+    if (error) {
+      console.warn(`[user-context] fetchUserPreferences query failed: ${error.message}`);
       return { data: null, error: true };
     }
-    const data = await res.json();
-    return { data, error: false };
+    return { data: row ? row.data : null, error: false };
   } catch (err) {
     console.warn(`[user-context] fetchUserPreferences failed: ${err.message}`);
     return { data: null, error: true };

@@ -7,12 +7,7 @@ import handler, {
   USER_PREFS_WRITE_RATE_SCOPE,
   USER_PREFS_WRITE_RATE_WINDOW,
 } from '../api/user-prefs.ts';
-import {
-  USER_PREFS_WRITE_RATE_LIMIT as CONVEX_USER_PREFS_WRITE_RATE_LIMIT,
-  USER_PREFS_WRITE_RATE_WINDOW_MS,
-} from '../convex/constants.ts';
 
-const originalConvexUrl = process.env.CONVEX_URL;
 const originalFetch = globalThis.fetch;
 const TEST_NOW = 1_700_000_000_000;
 const TEST_USER_ID = 'user_rate_limit_test';
@@ -25,12 +20,10 @@ type RateLimitResult = {
   degraded: boolean;
 };
 
-type ClientCall =
+type BackendCall =
   | { kind: 'auth'; token: string }
-  | { kind: 'client'; url: string }
-  | { kind: 'setAuth'; token: string }
-  | { kind: 'query'; name: unknown; args: Record<string, unknown> }
-  | { kind: 'mutation'; name: unknown; args: Record<string, unknown> };
+  | { kind: 'get'; userId: string; variant: string }
+  | { kind: 'set'; userId: string; variant: string; data: unknown; expectedSyncVersion: number; schemaVersion: number };
 
 function expectExposedRateLimitHeaders(headers: Headers): void {
   const exposed = headers.get('Access-Control-Expose-Headers') ?? '';
@@ -41,8 +34,6 @@ function expectExposedRateLimitHeaders(headers: Headers): void {
 }
 
 function restoreEnv(): void {
-  if (originalConvexUrl === undefined) delete process.env.CONVEX_URL;
-  else process.env.CONVEX_URL = originalConvexUrl;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   globalThis.fetch = originalFetch;
@@ -91,10 +82,10 @@ function installRedisPipeline(handler: (commands: string[][]) => Array<{ result:
 }
 
 function installDeps(rateLimitResult: RateLimitResult): {
-  calls: ClientCall[];
+  calls: BackendCall[];
   rateLimitCalls: Array<{ scope: string; limit: number; window: string; identifier: string }>;
 } {
-  const calls: ClientCall[] = [];
+  const calls: BackendCall[] = [];
   const rateLimitCalls: Array<{ scope: string; limit: number; window: string; identifier: string }> = [];
 
   __setUserPrefsDepsForTests({
@@ -106,21 +97,13 @@ function installDeps(rateLimitResult: RateLimitResult): {
       rateLimitCalls.push({ scope, limit, window, identifier });
       return rateLimitResult;
     },
-    createConvexClient: (url: string) => {
-      calls.push({ kind: 'client', url });
-      return {
-        setAuth(token: string): void {
-          calls.push({ kind: 'setAuth', token });
-        },
-        async query(name: unknown, args: Record<string, unknown>): Promise<unknown> {
-          calls.push({ kind: 'query', name, args });
-          return null;
-        },
-        async mutation(name: unknown, args: Record<string, unknown>): Promise<unknown> {
-          calls.push({ kind: 'mutation', name, args });
-          return { ok: true, syncVersion: 7 };
-        },
-      };
+    getUserPreferences: async (userId: string, variant: string) => {
+      calls.push({ kind: 'get', userId, variant });
+      return null;
+    },
+    setUserPreferences: async (userId: string, variant: string, data: unknown, expectedSyncVersion: number, schemaVersion: number) => {
+      calls.push({ kind: 'set', userId, variant, data, expectedSyncVersion, schemaVersion });
+      return { ok: true, syncVersion: 7 };
     },
   });
 
@@ -128,14 +111,9 @@ function installDeps(rateLimitResult: RateLimitResult): {
 }
 
 describe('user-prefs POST write rate limit', () => {
-  it('keeps the Edge and Convex write limit contracts in lockstep', () => {
-    assert.equal(USER_PREFS_WRITE_RATE_LIMIT, CONVEX_USER_PREFS_WRITE_RATE_LIMIT);
-    assert.equal(USER_PREFS_WRITE_RATE_WINDOW, String(USER_PREFS_WRITE_RATE_WINDOW_MS / 1000) + ' s');
-  });
-
   it('rejects invalid sessions before checking the scoped limiter', async () => {
     const rateLimitCalls: Array<{ scope: string; limit: number; window: string; identifier: string }> = [];
-    let createdClient = false;
+    let calledBackend = false;
 
     __setUserPrefsDepsForTests({
       validateBearerToken: async () => ({ valid: false }),
@@ -143,9 +121,9 @@ describe('user-prefs POST write rate limit', () => {
         rateLimitCalls.push({ scope, limit, window, identifier });
         return { allowed: true, limit, reset: 0, degraded: false };
       },
-      createConvexClient: () => {
-        createdClient = true;
-        throw new Error('Convex client should not be constructed for invalid sessions');
+      setUserPreferences: async () => {
+        calledBackend = true;
+        throw new Error('setUserPreferences should not be called for invalid sessions');
       },
     });
 
@@ -154,11 +132,10 @@ describe('user-prefs POST write rate limit', () => {
     assert.equal(res.status, 401);
     assert.deepEqual(await res.json(), { error: 'UNAUTHENTICATED' });
     assert.deepEqual(rateLimitCalls, []);
-    assert.equal(createdClient, false);
+    assert.equal(calledBackend, false);
   });
 
-  it('returns 429 + Retry-After without calling Convex when the identity is over budget', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
+  it('returns 429 + Retry-After without calling the backend when the identity is over budget', async () => {
     mock.method(Date, 'now', () => TEST_NOW);
     const warnMock = mock.method(console, 'warn', () => {});
     const { calls, rateLimitCalls } = installDeps({
@@ -183,13 +160,11 @@ describe('user-prefs POST write rate limit', () => {
       window: USER_PREFS_WRITE_RATE_WINDOW,
       identifier: TEST_USER_ID,
     }]);
-    assert.equal(calls.some((call) => call.kind === 'client'), false, 'over-budget requests must not construct a Convex client');
-    assert.equal(calls.some((call) => call.kind === 'mutation'), false, 'over-budget requests must not reach Convex');
+    assert.equal(calls.some((call) => call.kind === 'set'), false, 'over-budget requests must not reach the backend');
     assert.equal(warnMock.mock.calls.length, 1);
   });
 
-  it('passes an under-budget identity through to setPreferences', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
+  it('passes an under-budget identity through to setUserPreferences', async () => {
     const { calls, rateLimitCalls } = installDeps({
       allowed: true,
       limit: USER_PREFS_WRITE_RATE_LIMIT,
@@ -212,10 +187,11 @@ describe('user-prefs POST write rate limit', () => {
       window: USER_PREFS_WRITE_RATE_WINDOW,
       identifier: TEST_USER_ID,
     }]);
-    const mutation = calls.find((call): call is Extract<ClientCall, { kind: 'mutation' }> => call.kind === 'mutation');
-    assert.ok(mutation, 'under-budget request should call setPreferences');
-    assert.equal(mutation.name, 'userPreferences:setPreferences');
-    assert.deepEqual(mutation.args, {
+    const set = calls.find((call): call is Extract<BackendCall, { kind: 'set' }> => call.kind === 'set');
+    assert.ok(set, 'under-budget request should call setUserPreferences');
+    assert.deepEqual(set, {
+      kind: 'set',
+      userId: TEST_USER_ID,
       variant: 'tech',
       data: { theme: 'light' },
       expectedSyncVersion: 2,
@@ -224,7 +200,6 @@ describe('user-prefs POST write rate limit', () => {
   });
 
   it('fails open when the scoped limiter is degraded', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
     const warnMock = mock.method(console, 'warn', () => {});
     const { calls } = installDeps({
       allowed: true,
@@ -237,13 +212,12 @@ describe('user-prefs POST write rate limit', () => {
 
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { syncVersion: 7 });
-    assert.ok(calls.some((call) => call.kind === 'mutation'), 'degraded limiter should fail open to Convex');
+    assert.ok(calls.some((call) => call.kind === 'set'), 'degraded limiter should fail open to the backend');
     assert.equal(warnMock.mock.calls.length, 1);
     assert.match(String(warnMock.mock.calls[0].arguments[0]), /rate limit unavailable; failing open/);
   });
 
   it('replays a completed Idempotency-Key response before charging the scoped limiter', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
     const body = {
       variant: 'full',
       data: { theme: 'dark' },
@@ -275,12 +249,10 @@ describe('user-prefs POST write rate limit', () => {
     assert.equal(res.headers.get('Idempotent-Replayed'), 'true');
     assert.deepEqual(await res.json(), { syncVersion: 42 });
     assert.deepEqual(rateLimitCalls, []);
-    assert.equal(calls.some((call) => call.kind === 'client'), false, 'replay should not construct a Convex client');
-    assert.equal(calls.some((call) => call.kind === 'mutation'), false, 'replay should not reach Convex');
+    assert.equal(calls.some((call) => call.kind === 'set'), false, 'replay should not reach the backend');
   });
 
   it('claims a fresh Idempotency-Key only after the scoped limiter allows the write', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
     const redisCalls = installRedisPipeline((commands) => {
       if (commands[0][0] === 'GET') return [{ result: null }];
       if (commands[0][0] === 'SET' && commands[0].includes('NX')) {
@@ -307,14 +279,13 @@ describe('user-prefs POST write rate limit', () => {
       window: USER_PREFS_WRITE_RATE_WINDOW,
       identifier: TEST_USER_ID,
     }]);
-    assert.ok(calls.some((call) => call.kind === 'mutation'), 'allowed keyed write should reach Convex');
+    assert.ok(calls.some((call) => call.kind === 'set'), 'allowed keyed write should reach the backend');
     assert.equal(redisCalls[0][0][0], 'GET', 'completed replay lookup should happen before rate limiting');
     assert.deepEqual(redisCalls[1][0].slice(0, 4), ['SET', redisCalls[1][0][1], redisCalls[1][0][2], 'NX']);
     assert.equal(redisCalls[2][0][0], 'SET', 'successful response should be persisted for replay');
   });
 
   it('does not claim or cache a fresh Idempotency-Key when the scoped limiter rejects the write', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
     mock.method(Date, 'now', () => TEST_NOW);
     const warnMock = mock.method(console, 'warn', () => {});
     const redisCalls = installRedisPipeline(() => [{ result: null }]);
@@ -337,12 +308,11 @@ describe('user-prefs POST write rate limit', () => {
       window: USER_PREFS_WRITE_RATE_WINDOW,
       identifier: TEST_USER_ID,
     }]);
-    assert.equal(calls.some((call) => call.kind === 'mutation'), false, 'rate-limited requests must not reach Convex');
+    assert.equal(calls.some((call) => call.kind === 'set'), false, 'rate-limited requests must not reach the backend');
     assert.equal(warnMock.mock.calls.length, 1);
   });
 
-  it('maps Convex-side RATE_LIMITED to 429 with retry guidance', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
+  it('maps a returned RATE_LIMITED result to 429 with retry guidance', async () => {
     mock.method(Date, 'now', () => TEST_NOW);
     const warnMock = mock.method(console, 'warn', () => {});
     const reset = TEST_NOW + 12_000;
@@ -355,80 +325,17 @@ describe('user-prefs POST write rate limit', () => {
         reset,
         degraded: false,
       }),
-      createConvexClient: () => ({
-        setAuth(): void {},
-        async query(): Promise<unknown> {
-          return null;
-        },
-        async mutation(): Promise<unknown> {
-          const err = new Error('ConvexError: RATE_LIMITED') as Error & {
-            data?: Record<string, unknown>;
-          };
-          err.data = { kind: 'RATE_LIMITED', limit: USER_PREFS_WRITE_RATE_LIMIT, reset };
-          throw err;
-        },
-      }),
+      setUserPreferences: async () => ({ ok: false, reason: 'SERVICE_UNAVAILABLE' }),
     });
 
     const res = await handler(makePost());
 
-    assert.equal(res.status, 429);
-    assert.equal(res.headers.get('Retry-After'), '12');
-    assert.equal(res.headers.get('X-RateLimit-Limit'), String(USER_PREFS_WRITE_RATE_LIMIT));
-    assert.equal(res.headers.get('X-RateLimit-Remaining'), '0');
-    assert.equal(res.headers.get('X-RateLimit-Reset'), String(reset));
-    expectExposedRateLimitHeaders(res.headers);
-    assert.deepEqual(await res.json(), { error: 'RATE_LIMITED' });
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), { error: 'SERVICE_UNAVAILABLE' });
     assert.equal(warnMock.mock.calls.length, 1);
-    assert.match(String(warnMock.mock.calls[0].arguments[0]), /convex write rate limit exceeded/);
   });
 
-  it('maps returned Convex-side RATE_LIMITED to 429 with retry guidance and a warning', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
-    mock.method(Date, 'now', () => TEST_NOW);
-    const warnMock = mock.method(console, 'warn', () => {});
-    const reset = TEST_NOW + 12_000;
-
-    __setUserPrefsDepsForTests({
-      validateBearerToken: async () => ({ valid: true, userId: TEST_USER_ID }),
-      checkScopedRateLimit: async () => ({
-        allowed: true,
-        limit: USER_PREFS_WRITE_RATE_LIMIT,
-        reset,
-        degraded: false,
-      }),
-      createConvexClient: () => ({
-        setAuth(): void {},
-        async query(): Promise<unknown> {
-          return null;
-        },
-        async mutation(): Promise<unknown> {
-          return {
-            ok: false,
-            reason: 'RATE_LIMITED',
-            limit: USER_PREFS_WRITE_RATE_LIMIT,
-            reset,
-          };
-        },
-      }),
-    });
-
-    const res = await handler(makePost());
-
-    assert.equal(res.status, 429);
-    assert.equal(res.headers.get('Retry-After'), '12');
-    assert.equal(res.headers.get('X-RateLimit-Limit'), String(USER_PREFS_WRITE_RATE_LIMIT));
-    assert.equal(res.headers.get('X-RateLimit-Remaining'), '0');
-    assert.equal(res.headers.get('X-RateLimit-Reset'), String(reset));
-    expectExposedRateLimitHeaders(res.headers);
-    assert.deepEqual(await res.json(), { error: 'RATE_LIMITED' });
-    assert.equal(warnMock.mock.calls.length, 1);
-    assert.match(String(warnMock.mock.calls[0].arguments[0]), /convex write rate limit exceeded/);
-  });
-
-  it('maps returned Convex-side BLOB_TOO_LARGE to 400', async () => {
-    process.env.CONVEX_URL = 'https://convex.test';
-
+  it('maps a returned BLOB_TOO_LARGE result to 400', async () => {
     __setUserPrefsDepsForTests({
       validateBearerToken: async () => ({ valid: true, userId: TEST_USER_ID }),
       checkScopedRateLimit: async () => ({
@@ -437,25 +344,30 @@ describe('user-prefs POST write rate limit', () => {
         reset: TEST_NOW + 60_000,
         degraded: false,
       }),
-      createConvexClient: () => ({
-        setAuth(): void {},
-        async query(): Promise<unknown> {
-          return null;
-        },
-        async mutation(): Promise<unknown> {
-          return {
-            ok: false,
-            reason: 'BLOB_TOO_LARGE',
-            size: 123,
-            max: 100,
-          };
-        },
-      }),
+      setUserPreferences: async () => ({ ok: false, reason: 'BLOB_TOO_LARGE', size: 123, max: 100 }),
     });
 
     const res = await handler(makePost());
 
     assert.equal(res.status, 400);
     assert.deepEqual(await res.json(), { error: 'BLOB_TOO_LARGE' });
+  });
+
+  it('maps a returned CONFLICT result to 409 with actualSyncVersion', async () => {
+    __setUserPrefsDepsForTests({
+      validateBearerToken: async () => ({ valid: true, userId: TEST_USER_ID }),
+      checkScopedRateLimit: async () => ({
+        allowed: true,
+        limit: USER_PREFS_WRITE_RATE_LIMIT,
+        reset: TEST_NOW + 60_000,
+        degraded: false,
+      }),
+      setUserPreferences: async () => ({ ok: false, reason: 'CONFLICT', actualSyncVersion: 9 }),
+    });
+
+    const res = await handler(makePost());
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(await res.json(), { error: 'CONFLICT', actualSyncVersion: 9 });
   });
 });

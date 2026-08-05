@@ -209,18 +209,6 @@ const NONDUE_SYNTHESIS_REUSE_MS = (() => {
   return minutes * 60_000;
 })();
 
-// Free-tier follow limit (PR C / U10). Mirrors the UI cap at
-// `src/components/FollowCountryButton.ts` and the server-side mutation
-// cap at `convex/followedCountries.ts::followCountry`. Three layers
-// total — UI / mutation / composer — per the
-// `paywalled-feature-needs-three-layer-entitlement-gate` pattern. The
-// composer clamp catches the post-downgrade case: a user accumulated
-// >3 follows as Pro then downgraded to free; existing rows are
-// grandfathered (mutation only blocks NEW writes), but the composer
-// must still bias only the first 3 in addedAt order so the soft uplift
-// matches what's gated.
-const FREE_TIER_FOLLOW_LIMIT = 3;
-
 // Phase 3c — analyst-backed whyMatters enrichment via an internal Vercel
 // edge endpoint. When the endpoint is reachable + returns a string, it
 // takes priority over the direct-Gemini path. On any failure the cron
@@ -1960,11 +1948,12 @@ async function composeAndStoreBriefForUser(userId, annotated, insightsNumbers, d
     }
   }
 
-  // PR C / U10: fetch the user's followed-countries watchlist, then
-  // apply the free-tier safety-net clamp. Three-layer gate: UI cap
-  // (FollowCountryButton) + mutation cap (followedCountries.ts) +
-  // this composer clamp (post-downgrade safety). Memory:
-  // `paywalled-feature-needs-three-layer-entitlement-gate`.
+  // PR C / U10: fetch the user's followed-countries watchlist. No
+  // free-tier clamp anymore — Stage 2 of the Convex/Clerk -> Supabase
+  // migration removed the follow cap entirely (Stage 1 already collapsed
+  // entitlements to "signed in = full access"; see memory
+  // `supabase-migration-stage1`). Every signed-in user's full followed
+  // list is used as-is.
   //
   // Failure modes are absorbed by fetchFollowedCountries (it returns
   // [] on any soft error, never throws) — the bias is purely an
@@ -1972,16 +1961,7 @@ async function composeAndStoreBriefForUser(userId, annotated, insightsNumbers, d
   // wrong brief.
   let followedCountriesUsed = [];
   try {
-    const followed = await fetchFollowedCountries(userId);
-    if (followed.length > 0) {
-      const tier = await getUserTier(userId);
-      // tier === null (relay unreachable) → fail-open: skip the clamp,
-      // honor the user's full followed list. Same polarity as
-      // isUserPro's fail-open (true = Pro). A transient outage must
-      // not silently demote a paying user's bias.
-      const isFree = tier !== null && tier < 1;
-      followedCountriesUsed = isFree ? followed.slice(0, FREE_TIER_FOLLOW_LIMIT) : followed;
-    }
+    followedCountriesUsed = await fetchFollowedCountries(userId);
   } catch (err) {
     console.warn(`[digest] brief: followed-countries fetch threw for ${userId}:`, err?.message);
   }

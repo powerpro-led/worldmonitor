@@ -8,11 +8,7 @@
  *    spinner (entitlement loading), hidden (feature flag off).
  *  - Click handler that calls into `addCountry` / `removeCountry`.
  *  - Subscription to watchlist + entitlement changes (re-render on update).
- *  - Branch on `FollowMutationResult.reason` — triggers sign-in on
- *    `FREE_CAP` (lazy `@/services/auth-provider`). FREE_CAP is an
- *    anonymous-only state post-billing-cut: `serviceEntitlementState()`
- *    only returns `'free'` for a signed-out user, since every signed-in
- *    user is fully entitled.
+ *  - Branch on `FollowMutationResult.reason`.
  *
  * Pattern:
  *  - `{ html, attach } → teardown` matches `src/services/notifications-settings.ts`.
@@ -30,22 +26,20 @@
  *  - `discriminated-union-over-sentinel-boolean` — branches on
  *    `FollowMutationResult.reason`, never on a boolean.
  *
- * NOTE: cap-drop toast (the `WM_FOLLOWED_COUNTRIES_CAP_DROP` event from
- * U3) is intentionally NOT handled here. The button is a per-country
- * primitive; the toast is App-level UI. TODO(U7+): wire a single
- * cap-drop listener at the App / toast-service level so it doesn't
- * fire once-per-mounted-button.
+ * Stage 2 of the Convex/Clerk -> Supabase migration removed the follow
+ * cap entirely (`FREE_TIER_FOLLOW_LIMIT`/`FREE_CAP` — Stage 1 already
+ * collapsed entitlements to "signed in = full access", so a per-tier cap
+ * had nothing left to differentiate). This button no longer has an
+ * at-cap visual state or an upgrade-trigger click branch.
  */
 
 import {
   addCountry,
   removeCountry,
   isFollowed,
-  getFollowed,
   subscribe,
   serviceEntitlementState,
   isFollowFeatureEnabled,
-  FREE_TIER_FOLLOW_LIMIT,
   type FollowMutationResult,
 } from '@/services/followed-countries';
 import { onEntitlementChange } from '@/services/entitlements';
@@ -85,56 +79,6 @@ export interface FollowButtonHandle {
 }
 
 // ---------------------------------------------------------------------------
-// Test-injection seam: upgrade-modal trigger
-// ---------------------------------------------------------------------------
-//
-// In production, the `FREE_CAP` branch dynamically imports auth-provider +
-// checkout (the same lazy path `notifications-settings.ts` uses for the
-// "Upgrade to Pro" button). Tests inject a synchronous fake here so
-// they can assert the trigger was called without spinning up the real
-// import graph.
-
-type UpgradeTrigger = (source: string) => void;
-
-let _upgradeTrigger: UpgradeTrigger = (source) => {
-  // FREE_CAP is an anonymous-only state post-billing-cut (see class doc
-  // comment) — sign in. Fall back to the `/pro` page if anything fails
-  // (consistent w/ ProBanner CTA).
-  try {
-    void import('@/services/auth-provider')
-      .then((authProvider) => authProvider.signInWithGithub())
-      .catch(() => {
-        window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
-      });
-  } catch {
-    try {
-      window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
-    } catch {
-      /* swallow — non-browser env */
-    }
-  }
-  // `source` is informational; analytics integration is App-level.
-  // We deliberately don't pull in `@/services/analytics` here to avoid
-  // a heavy import chain on the button factory.
-  void source;
-};
-
-/**
- * Test-only override for the upgrade-modal trigger. Pass `null` to
- * restore the production lazy-import path.
- */
-export function _setUpgradeTriggerForTests(fn: UpgradeTrigger | null): void {
-  _upgradeTrigger = fn ?? ((source) => {
-    void source;
-    try {
-      window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
-    } catch {
-      /* swallow */
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -142,49 +86,18 @@ interface ButtonViewState {
   visible: boolean;
   followed: boolean;
   loading: boolean;
-  atCap: boolean;
 }
 
 function computeViewState(countryCode: string): ButtonViewState {
   if (!isFollowFeatureEnabled()) {
-    return { visible: false, followed: false, loading: false, atCap: false };
+    return { visible: false, followed: false, loading: false };
   }
   const entState = serviceEntitlementState();
   if (entState === 'loading') {
-    return { visible: true, followed: false, loading: true, atCap: false };
+    return { visible: true, followed: false, loading: true };
   }
   const followed = isFollowed(countryCode);
-  // We don't query getFollowed().length here for `atCap` — the *click*
-  // path is the source of truth (the service rejects on FREE_CAP and
-  // returns the discriminated reason). The tooltip is the only thing
-  // that benefits from knowing "would clicking this fail?" upfront, and
-  // for that we do a cheap-and-correct check: if free + already at cap
-  // + not currently followed, the next click would hit FREE_CAP.
-  let atCap = false;
-  if (entState === 'free' && !followed) {
-    // Local import to avoid a circular dependency through addCountry's
-    // re-entry. We import getFollowed lazily via the top-level service.
-    // Doing this dynamically keeps the synchronous render path simple.
-    // (We DO statically import the rest of the service above.)
-    try {
-      // The countModule branch is intentionally a defensive try; if
-      // anything throws we fall back to atCap=false and let the click
-      // handler reveal the cap.
-      const list = _getFollowedListSafe();
-      atCap = list.length >= FREE_TIER_FOLLOW_LIMIT;
-    } catch {
-      atCap = false;
-    }
-  }
-  return { visible: true, followed, loading: false, atCap };
-}
-
-function _getFollowedListSafe(): string[] {
-  try {
-    return getFollowed();
-  } catch {
-    return [];
-  }
+  return { visible: true, followed, loading: false };
 }
 
 function renderHtml(state: ButtonViewState, props: FollowButtonProps): string {
@@ -223,11 +136,9 @@ function renderHtml(state: ButtonViewState, props: FollowButtonProps): string {
   }
 
   // Not followed.
-  const tooltip = state.atCap ? 'Upgrade to follow more' : `Follow ${displayName}`;
+  const tooltip = `Follow ${displayName}`;
   return (
-    `<button type="button" class="wm-follow-btn ${sizeCls} wm-follow-btn--unfollowed${
-      state.atCap ? ' wm-follow-btn--at-cap' : ''
-    }"` +
+    `<button type="button" class="wm-follow-btn ${sizeCls} wm-follow-btn--unfollowed"` +
     ` data-country="${safeCode}" data-state="unfollowed"` +
     ` aria-pressed="false"` +
     ` aria-label="${escapeHtml(tooltip)}"` +
@@ -390,16 +301,6 @@ async function onClick(
   }
 
   switch (result.reason) {
-    case 'FREE_CAP':
-      try {
-        _upgradeTrigger('follow-cap');
-      } catch (err) {
-        console.warn('[follow-button] upgrade trigger failed:', err);
-      }
-      // Re-render so the tooltip / aria-label settles back to the
-      // "Upgrade to follow more" state if it wasn't already there.
-      rerenderForFailure();
-      return;
     case 'HANDOFF_PENDING':
     case 'ENTITLEMENT_LOADING':
     case 'DISABLED':

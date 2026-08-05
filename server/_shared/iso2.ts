@@ -1,12 +1,18 @@
 /**
  * Canonical ISO 3166-1 alpha-2 registry — server-side validator for the
- * `followedCountries` watchlist primitive (plan U13).
+ * `followedCountries` watchlist primitive.
+ *
+ * Ported verbatim from `convex/lib/iso2.ts` as part of Stage 2 of the
+ * Convex/Clerk -> Supabase migration (see memory `supabase-migration-stage1`
+ * for the full chain). This is now the single source of truth for
+ * server-side ISO2 validation; `convex/lib/iso2.ts` is deleted.
  *
  * The set MUST stay in lockstep with the keys of `ISO2_TO_ISO3` in
- * `src/utils/country-codes.ts` (the client-side source of truth). Drift
- * is caught by the test
- * `convex/__tests__/followed-countries-mutations.test.ts::iso2 registry
- * parity` (U13). When adding/removing a country, update BOTH files.
+ * `src/utils/country-codes.ts` (the client-side source of truth). Drift is
+ * caught by the parity test (moved from
+ * `convex/__tests__/followed-countries-mutations.test.ts` to
+ * `server/__tests__/followed-countries.test.ts`). When adding/removing a
+ * country, update BOTH files.
  *
  * `isValidIso2` enforces:
  *   - exactly two uppercase ASCII letters (regex `^[A-Z]{2}$`)
@@ -51,8 +57,6 @@ export function validIso2Codes(): string[] {
   return [...ISO2_REGISTRY];
 }
 
-/**
- * Internal-only export for the `iso2 registry parity` test in U13. NOT for
- * runtime use; mutations should call `isValidIso2` instead.
- */
+/** Internal-only export for the `iso2 registry parity` test. NOT for
+ * runtime use; mutations should call `isValidIso2` instead. */
 export const _ISO2_REGISTRY_FOR_TESTS: ReadonlySet<string> = ISO2_REGISTRY;

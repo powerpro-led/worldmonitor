@@ -9,13 +9,10 @@ const source = readFileSync(resolve(__dirname, '..', 'convex', 'http.ts'), 'utf8
 
 const guardedPaths = [
   '/api/internal-entitlements',
-  '/api/user-prefs',
   '/api/telegram-pair-callback',
   '/relay/deactivate',
   '/relay/channels',
   '/relay/notification-channels',
-  '/relay/user-preferences',
-  '/relay/followed-countries',
   '/relay/entitlement',
   '/relay/register-referral-code',
   '/api/internal-validate-api-key',

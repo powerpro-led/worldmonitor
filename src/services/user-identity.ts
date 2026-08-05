@@ -26,7 +26,7 @@
  * @see https://github.com/koala73/worldmonitor/issues/2078
  */
 
-import { getCurrentClerkUser } from './clerk';
+import { getCurrentAuthUser } from './auth-provider';
 import { migrateLegacyKeysToHttpOnlySession, readLegacySessionKey } from './browser-key-session';
 import { getStoredAnonId, saveAnonId } from './anonymous-identity-storage';
 export {
@@ -76,8 +76,8 @@ export function getOrCreateAnonId(): string {
  * reading localStorage keys.
  */
 export function getUserId(): string | null {
-  // 1. Clerk auth — returns real Clerk user ID when signed in
-  const clerkUser = getCurrentClerkUser();
+  // 1. Auth provider — returns real user ID when signed in
+  const clerkUser = getCurrentAuthUser();
   if (clerkUser?.id) return clerkUser.id;
 
   // 2. Legacy wm-pro-key: preserve existing identity behavior while moving the
@@ -94,8 +94,8 @@ export function getUserId(): string | null {
  * Checks for Clerk auth or legacy pro key — not the auto-generated anon ID.
  */
 export function hasUserIdentity(): boolean {
-  // 1. Clerk auth
-  const clerkUser = getCurrentClerkUser();
+  // 1. Auth provider
+  const clerkUser = getCurrentAuthUser();
   if (clerkUser?.id) return true;
 
   // 2. Legacy pro key

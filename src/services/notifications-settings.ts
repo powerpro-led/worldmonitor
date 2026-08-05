@@ -18,7 +18,7 @@ import {
   type QuietHoursOverride,
   type DigestMode,
 } from '@/services/notification-channels';
-import { getCurrentClerkUser } from '@/services/clerk';
+import { getCurrentAuthUser } from '@/services/auth-provider';
 import { hasTier } from '@/services/entitlements';
 import { getMarketWatchlistEntries } from '@/services/market-watchlist';
 import { SITE_VARIANT } from '@/config/variant';
@@ -96,7 +96,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
   } else {
     html += `<div class="wm-pref-group-content wm-notif-tab-content">`;
     html += `<div class="ai-flow-toggle-desc">Get real-time intelligence alerts delivered to Telegram, Slack, Discord, and Email with configurable sensitivity, quiet hours, and digest scheduling.</div>`;
-    html += `<button type="button" class="panel-locked-cta" id="usNotifUpgradeBtn">Upgrade to Pro</button>`;
+    html += `<button type="button" class="panel-locked-cta" id="usNotifUpgradeBtn">Sign In</button>`;
     html += `</div>`;
   }
 
@@ -109,14 +109,11 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
       if (!isPro) {
         const upgradeBtn = container.querySelector<HTMLButtonElement>('#usNotifUpgradeBtn');
         if (upgradeBtn) {
+          // isPro is derived from host.isSignedIn (every signed-in user is
+          // fully entitled post-billing-cut), so reaching this gate always
+          // means signed-out — sign in rather than start a checkout.
           upgradeBtn.addEventListener('click', () => {
-            if (!host.isSignedIn) {
-              import('@/services/clerk').then(m => m.openSignIn()).catch(() => {
-                window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-              });
-              return;
-            }
-            import('@/services/checkout').then(m => import('@/config/products').then(p => m.startCheckout(p.DEFAULT_UPGRADE_PRODUCT))).catch(() => {
+            import('@/services/auth-provider').then(m => m.signInWithGithub()).catch(() => {
               window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
             });
           }, { signal });
@@ -897,7 +894,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
         }
 
         if (target.closest('#usConnectEmail')) {
-          const user = getCurrentClerkUser();
+          const user = getCurrentAuthUser();
           const email = user?.email;
           if (!email) {
             const rowEl = target.closest('.us-notif-ch-row') as HTMLElement | null;

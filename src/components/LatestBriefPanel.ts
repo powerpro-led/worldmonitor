@@ -20,7 +20,7 @@
  */
 
 import { Panel } from './Panel';
-import { getClerkToken, clearClerkTokenCache } from '@/services/clerk';
+import { getAuthToken, clearAuthTokenCache } from '@/services/auth-provider';
 import { PanelGateReason, hasPremiumAccess } from '@/services/panel-gating';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import { hasTier, getEntitlementState } from '@/services/entitlements';
@@ -136,7 +136,7 @@ export class LatestBriefPanel extends Panel {
       // the new session. Without this, /api/latest-brief derives
       // userId from the stale token's sub claim and paints the
       // previous user's brief in the new session for up to 50s.
-      clearClerkTokenCache();
+      clearAuthTokenCache();
       // Referral cache is self-invalidating: src/services/referral.ts
       // subscribes to auth-state at module load and drops its cache on
       // any id transition. No explicit call needed from the panel.
@@ -218,10 +218,9 @@ export class LatestBriefPanel extends Panel {
     try {
       const data = await this.fetchLatest(controller.signal);
       // Check #3 (post-response): verify we're still on the SAME
-      // user AND still unlocked. A Clerk account switch during the
-      // await (A→B) would otherwise paint user A's brief into user
-      // B's session because getClerkToken caches for up to 50s
-      // across account changes.
+      // user AND still unlocked. An account switch during the await
+      // (A→B) would otherwise paint user A's brief into user B's
+      // session if the response resolved after the switch.
       if (this.gateLocked || !hasPremiumAccess(getAuthState())) return;
       if ((getAuthState().user?.id ?? null) !== requestUserId) return;
       if (data.status === 'ready') {
@@ -289,7 +288,7 @@ export class LatestBriefPanel extends Panel {
     // and never sends Clerk, producing a 401 we can't recover from.
     // Always mint a fresh Bearer here — the refresh() pre-check
     // guaranteed authState.user exists.
-    const token = await getClerkToken();
+    const token = await getAuthToken();
     if (!token) {
       // Clerk token evicted between the pre-check and now (logout,
       // cache expiry + Clerk session gone). Surface as sign-in.

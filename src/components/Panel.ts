@@ -7,6 +7,8 @@ import { trackPanelResized } from '@/services/analytics';
 import { getAiFlowSettings } from '@/services/ai-flow-settings';
 import { getSecretState } from '@/services/runtime-config';
 import { PanelGateReason } from '@/services/panel-gating';
+import { getAuthState } from '@/services/auth-state';
+import { signInWithGithub } from '@/services/auth-provider';
 import { dataFreshness, type PanelFreshnessSummary } from '@/services/data-freshness';
 import { formatPanelFreshnessDisplay } from '@/services/panel-freshness-display';
 import {
@@ -45,7 +47,6 @@ export interface PanelOptions {
 
 const lockSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`;
 
-const upgradeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/></svg>`;
 
 const ROW_RESIZE_STEP_PX = 80;
 const COL_RESIZE_STEP_PX = 80;
@@ -898,6 +899,11 @@ export class Panel {
   }
 
   public showLocked(features: string[] = []): void {
+    // Every signed-in user already has full access post-billing-cut — the
+    // only thing left to unlock is a session. Nothing to render/lock here
+    // once one exists.
+    if (getAuthState().user) return;
+
     this._locked = true;
     this.clearRetryCountdown();
     this._snapshotContentForRestore();
@@ -923,14 +929,12 @@ export class Panel {
       lockedChildren.push(featureList);
     }
 
-    const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, 'Upgrade to Pro');
+    const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, t('premium.signIn'));
     if (isDesktopRuntime()) {
       ctaBtn.addEventListener('click', () => void invokeTauri<void>('open_url', { url: 'https://worldmonitor.app/pro' }).catch(() => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer')));
     } else {
       ctaBtn.addEventListener('click', () => {
-        import('@/services/checkout').then(m => import('@/config/products').then(p => m.startCheckout(p.DEFAULT_UPGRADE_PRODUCT))).catch(() => {
-          window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-        });
+        void signInWithGithub();
       });
     }
     lockedChildren.push(ctaBtn);
@@ -956,36 +960,6 @@ export class Panel {
           icon: lockSvg,
           desc: t('premium.signInToUnlock'),
           cta: t('premium.signIn'),
-        };
-      case PanelGateReason.FREE_TIER:
-        return {
-          icon: upgradeSvg,
-          desc: t('premium.upgradeDesc'),
-          cta: t('premium.upgradeToPro'),
-        };
-      case PanelGateReason.PAYMENT_ON_HOLD:
-        return {
-          icon: lockSvg,
-          desc: t('components.billingState.onHoldDesc'),
-          cta: t('components.billingState.updatePayment'),
-        };
-      case PanelGateReason.RENEWAL_PENDING:
-        return {
-          icon: lockSvg,
-          desc: t('components.billingState.renewalPendingDesc'),
-          cta: t('components.billingState.refreshStatus'),
-        };
-      case PanelGateReason.RENEWAL_FAILED:
-        return {
-          icon: lockSvg,
-          desc: t('components.billingState.renewalFailedDesc'),
-          cta: t('components.billingState.manageBilling'),
-        };
-      case PanelGateReason.LAPSED:
-        return {
-          icon: upgradeSvg,
-          desc: t('components.billingState.lapsedDesc'),
-          cta: t('components.billingState.resubscribe'),
         };
       default:
         return null;

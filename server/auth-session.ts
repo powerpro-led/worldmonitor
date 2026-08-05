@@ -1,40 +1,27 @@
 /**
  * Server-side session validation for the Vercel edge gateway.
  *
- * Validates Clerk-issued bearer tokens using local JWT verification
- * with jose + cached JWKS. No Convex round-trip needed.
- * Requires CLERK_PUBLISHABLE_KEY (server-side) and CLERK_JWT_ISSUER_DOMAIN.
+ * Validates Supabase-issued bearer tokens using local HS256 verification
+ * against the project's shared JWT secret (`SUPABASE_JWT_SECRET`). No JWKS
+ * fetch, no Convex round-trip, no external plan lookup.
  *
  * This module must NOT import anything from `src/` -- it runs in the
  * Vercel edge runtime, not the browser.
  */
 
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { jwtVerify } from 'jose';
 
-// Clerk JWT issuer domain -- set in Vercel env vars
-const CLERK_JWT_ISSUER_DOMAIN = process.env.CLERK_JWT_ISSUER_DOMAIN ?? '';
+// Supabase project URL -- set in Vercel env vars. The JWT issuer is always
+// `${SUPABASE_URL}/auth/v1` for GoTrue-issued tokens.
+const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 
-// Clerk Backend API secret -- used to look up user metadata when the JWT
-// does not include a `plan` claim (i.e. standard session token, no template).
-const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY ?? '';
+// Supabase project's legacy HS256 JWT signing secret -- Project Settings ->
+// API -> JWT Secret in the Supabase dashboard. Server-only, never exposed
+// to the browser.
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? '';
 
-// Module-scope JWKS resolver -- cached across warm invocations.
-// jose handles key rotation and caching internally.
-// Exported so server/_shared/auth-session.ts can reuse the same singleton
-// (avoids duplicate JWKS HTTP fetches on cold start).
-// Reads CLERK_JWT_ISSUER_DOMAIN lazily (not from module-scope const) so that
-// tests that set the env var after import still get a valid JWKS.
-let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-export function getJWKS() {
-  if (!_jwks) {
-    const issuerDomain = process.env.CLERK_JWT_ISSUER_DOMAIN;
-    if (issuerDomain) {
-      const jwksUrl = new URL('/.well-known/jwks.json', issuerDomain);
-      _jwks = createRemoteJWKSet(jwksUrl);
-    }
-  }
-  return _jwks;
-}
+// Supabase's default audience claim for authenticated user sessions.
+const SUPABASE_JWT_AUDIENCE = 'authenticated';
 
 export interface SessionResult {
   valid: boolean;
@@ -45,141 +32,67 @@ export interface SessionResult {
   name?: string;
 }
 
-function getAllowedAudiences(): string[] {
-  const configured = [
-    process.env.CLERK_JWT_AUDIENCE,
-    process.env.CLERK_PUBLISHABLE_KEY,
-  ]
-    .flatMap((value) => (value ?? '').split(','))
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(['convex', ...configured]));
-}
-
-export function getClerkJwtVerifyOptions() {
+function getSupabaseJwtVerifyOptions() {
   return {
-    issuer: CLERK_JWT_ISSUER_DOMAIN,
-    audience: getAllowedAudiences(),
-    algorithms: ['RS256'],
+    issuer: `${SUPABASE_URL}/auth/v1`,
+    audience: SUPABASE_JWT_AUDIENCE,
+    algorithms: ['HS256'],
   };
 }
 
-function extractOrgId(payload: Record<string, unknown>): string | null {
-  const orgClaim = payload.org as Record<string, unknown> | undefined;
-  return (
-    (typeof orgClaim?.id === 'string' ? orgClaim.id : null) ??
-    (typeof payload.org_id === 'string' ? payload.org_id : null)
-  );
-}
-
-// Short-lived in-memory cache for plan lookups (userId → { role, expiresAt }).
-// Avoids hammering the Clerk API on every premium request. TTL = 5 min.
-const _planCache = new Map<string, { role: 'free' | 'pro'; expiresAt: number }>();
-const PLAN_CACHE_TTL_MS = 5 * 60 * 1_000;
-
-// Matches the 3s budget used for the other external auth lookup
-// — an inline AbortSignal.timeout(3_000) in server/_shared/user-api-key.ts, and
-// the VALIDATION_TIMEOUT_MS constant in api/_user-api-key.js.
-const DEFAULT_PLAN_LOOKUP_TIMEOUT_MS = 3_000;
-const MAX_ABORT_SIGNAL_TIMEOUT_MS = 2_147_483_647;
-
-export function parsePlanLookupTimeoutMs(value: string | undefined): number {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= MAX_ABORT_SIGNAL_TIMEOUT_MS
-    ? parsed
-    : DEFAULT_PLAN_LOOKUP_TIMEOUT_MS;
-}
-
-const PLAN_LOOKUP_TIMEOUT_MS = parsePlanLookupTimeoutMs(process.env.CLERK_PLAN_LOOKUP_TIMEOUT_MS);
-
-async function lookupPlanFromClerk(userId: string): Promise<'free' | 'pro'> {
-  const cached = _planCache.get(userId);
-  if (cached && Date.now() < cached.expiresAt) return cached.role;
-
-  if (!CLERK_SECRET_KEY) return 'free';
-  try {
-    // Adversarial DoS guard: validateBearerToken awaits this on every standard
-    // (non-template) session token, so a Clerk API stall would otherwise let an
-    // authenticated caller pin gateway invocations open indefinitely.
-    const resp = await fetch(`https://api.clerk.com/v1/users/${userId}`, {
-      headers: {
-        Authorization: `Bearer ${CLERK_SECRET_KEY}`,
-        // AGENTS.md: always set User-Agent on server-side fetches. Matches the
-        // sibling auth lookups (entitlement-check.ts, _shared/user-api-key.ts).
-        'User-Agent': 'worldmonitor-gateway/1.0',
-      },
-      signal: AbortSignal.timeout(PLAN_LOOKUP_TIMEOUT_MS),
-    });
-    if (!resp.ok) return 'free';
-    const user = (await resp.json()) as { public_metadata?: Record<string, unknown> };
-    const role: 'free' | 'pro' = user.public_metadata?.plan === 'pro' ? 'pro' : 'free';
-    _planCache.set(userId, { role, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
-    return role;
-  } catch (err) {
-    // Log, don't swallow. This path downgrades a PRO user to 'free' for the
-    // request, and the AbortSignal.timeout added above made it newly reachable
-    // from a plain Clerk stall rather than only from a hard network error. With
-    // no log, a sustained Clerk outage is indistinguishable from a fleet of
-    // genuinely free users — the failure mode is silent revenue-affecting
-    // degradation. Not cached (see above), so the next request retries.
-    console.warn(
-      '[auth-session] lookupPlanFromClerk failed, degrading to free:',
-      err instanceof Error ? err.message : String(err),
-    );
-    return 'free';
+/**
+ * Extracts a display name from a Supabase JWT payload. GitHub-identity
+ * fields (`user_name`, `preferred_username`, `full_name`, `name`) live
+ * under `user_metadata` on Supabase-issued tokens, not at the top level.
+ */
+function extractName(userMetadata: Record<string, unknown> | undefined): string | undefined {
+  if (!userMetadata) return undefined;
+  const candidates = [
+    userMetadata.full_name,
+    userMetadata.name,
+    userMetadata.user_name,
+    userMetadata.preferred_username,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.length > 0) return candidate;
   }
+  return undefined;
 }
 
 /**
- * Validate a Clerk-issued bearer token using local JWKS verification.
- * Accepts both custom-template tokens (with `plan` claim) and standard
- * session tokens (plan looked up via Clerk Backend API).
- * Fails closed: invalid/expired/unverifiable tokens return { valid: false }.
+ * Validate a Supabase-issued bearer token using local HS256 verification
+ * against the shared project JWT secret.
+ *
+ * No plan/tier concept left: every verified token gets `role: 'pro'` (the
+ * wire shape stays `{userId, orgId, role}` so the many frontend consumers
+ * that check `role === 'pro'` keep working unchanged). `orgId` is always
+ * `null` -- Supabase Auth has no built-in org concept, and GitHub-org
+ * membership is enforced entirely at sign-up time via the Supabase
+ * before-user-created hook, not per-request here.
+ *
+ * Fails closed: invalid/expired/unverifiable tokens, or an unconfigured
+ * SUPABASE_JWT_SECRET, return { valid: false }.
  */
 export async function validateBearerToken(token: string): Promise<SessionResult> {
-  const jwks = getJWKS();
-  if (!jwks) return { valid: false };
+  if (!SUPABASE_JWT_SECRET) return { valid: false };
 
   try {
-    // Try with audience first (Clerk 'convex' template tokens include aud).
-    // Fall back without audience for standard Clerk session tokens (no aud claim).
-    let payload: Record<string, unknown>;
-    try {
-      ({ payload } = await jwtVerify(token, jwks, getClerkJwtVerifyOptions()));
-    } catch (audErr) {
-      if ((audErr as Error).message?.includes('missing required "aud"')) {
-        ({ payload } = await jwtVerify(token, jwks, {
-          issuer: CLERK_JWT_ISSUER_DOMAIN,
-          algorithms: ['RS256'],
-        }));
-      } else {
-        throw audErr;
-      }
-    }
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(SUPABASE_JWT_SECRET),
+      getSupabaseJwtVerifyOptions(),
+    );
 
     const userId = payload.sub as string | undefined;
     if (!userId) return { valid: false };
 
-    // `plan` claim is present only in 'convex' template tokens. For standard
-    // session tokens we fall back to a cached Clerk API lookup.
-    const rawPlan = (payload as Record<string, unknown>).plan;
-    const role: 'free' | 'pro' =
-      rawPlan !== undefined
-        ? rawPlan === 'pro'
-          ? 'pro'
-          : 'free'
-        : await lookupPlanFromClerk(userId);
-
     const email = typeof payload.email === 'string' ? payload.email : undefined;
-    const givenName = typeof payload.given_name === 'string' ? payload.given_name : undefined;
-    const familyName = typeof payload.family_name === 'string' ? payload.family_name : undefined;
-    const name = [givenName, familyName].filter(Boolean).join(' ') || undefined;
-    const orgId = extractOrgId(payload);
+    const userMetadata = payload.user_metadata as Record<string, unknown> | undefined;
+    const name = extractName(userMetadata);
 
-    return { valid: true, userId, orgId, role, email, name };
+    return { valid: true, userId, orgId: null, role: 'pro', email, name };
   } catch {
-    // Signature verification failed, expired, wrong issuer, etc.
+    // Signature verification failed, expired, wrong issuer/audience, etc.
     return { valid: false };
   }
 }

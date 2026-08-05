@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Σύνδεση",
     "createAccount": "Δημιουργία λογαριασμού",
-    "settings": "Ρυθμίσεις"
+    "settings": "Ρυθμίσεις",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Σύνδεση MCP",

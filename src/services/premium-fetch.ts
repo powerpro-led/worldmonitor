@@ -174,23 +174,23 @@ async function resolveClerkToken(): Promise<string | null> {
   if (_testProviders) {
     return _testProviders.getClerkToken ? _testProviders.getClerkToken() : null;
   }
-  const { getClerkToken } = await import('@/services/clerk');
-  return getClerkToken();
+  const { getAuthToken } = await import('@/services/auth-provider');
+  return getAuthToken();
 }
 
 /**
- * Whether a Clerk user is currently present. Gates the token retry: a present
- * user means a null token is a transient boot-window artifact worth retrying;
- * an absent user means a genuinely anonymous visitor who must NOT pay the
- * retry delay and should fall through immediately.
+ * Whether an authenticated user is currently present. Gates the token retry:
+ * a present user means a null token is a transient boot-window artifact
+ * worth retrying; an absent user means a genuinely anonymous visitor who
+ * must NOT pay the retry delay and should fall through immediately.
  */
 async function isClerkUserSignedIn(): Promise<boolean> {
   if (_testProviders) {
     return (await _testProviders.isClerkUserSignedIn?.()) ?? false;
   }
   try {
-    const { getCurrentClerkUser } = await import('@/services/clerk');
-    return getCurrentClerkUser() !== null;
+    const { getCurrentAuthUser } = await import('@/services/auth-provider');
+    return getCurrentAuthUser() !== null;
   } catch {
     return false;
   }

@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "로그인",
     "createAccount": "계정 만들기",
-    "settings": "설정"
+    "settings": "설정",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "MCP 연결",

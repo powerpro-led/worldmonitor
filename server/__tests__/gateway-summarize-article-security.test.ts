@@ -26,9 +26,9 @@ vi.mock("../_shared/entitlement-check", async (importOriginal) => {
   };
 });
 
-const resolveClerkSession = vi.fn();
+const resolveSupabaseSession = vi.fn();
 vi.mock("../_shared/auth-session", () => ({
-  resolveClerkSession: (...a: unknown[]) => resolveClerkSession(...a),
+  resolveSupabaseSession: (...a: unknown[]) => resolveSupabaseSession(...a),
 }));
 
 const validateApiKey = vi.fn();
@@ -103,7 +103,7 @@ beforeEach(() => {
   checkFailClosedScopedIpRateLimit.mockReset().mockResolvedValue(null);
   checkEntitlementDetailed.mockReset().mockResolvedValue({ response: null, entitlements: null });
   getEntitlements.mockReset().mockResolvedValue(null);
-  resolveClerkSession.mockReset().mockResolvedValue(null);
+  resolveSupabaseSession.mockReset().mockResolvedValue(null);
   validateApiKey.mockReset().mockResolvedValue({
     valid: false,
     required: true,
@@ -148,7 +148,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("basic bearer sessions also pass through the scoped endpoint limiter", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "free_user", orgId: null, role: "free" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "free_user", orgId: null, role: "free" });
     validateApiKey.mockResolvedValue({ valid: true, required: false, kind: "session" });
     const calls = { summarize: 0, cache: 0 };
 
@@ -176,7 +176,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("active Pro bearer sessions use a principal-scoped endpoint rate-limit bucket", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
     getEntitlements.mockResolvedValue({
       planKey: "pro_monthly",
       features: { tier: 1 },
@@ -212,7 +212,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("pre-attribution IP guard rejects before entitlement lookup or handler execution", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
     validateApiKey.mockResolvedValue({ valid: true, required: false, kind: "session" });
     checkFailClosedScopedIpRateLimit.mockResolvedValue(json({ error: "Too many requests" }, 429));
     const calls = { summarize: 0, cache: 0 };
@@ -229,7 +229,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("pre-attribution IP guard fails closed on degradation before entitlement lookup", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
     validateApiKey.mockResolvedValue({ valid: true, required: false, kind: "session" });
     checkFailClosedScopedIpRateLimit.mockResolvedValue(new Response(
       JSON.stringify({ error: "Rate-limit service temporarily unavailable" }),
@@ -276,7 +276,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("expired tier-1 bearer sessions retain the per-IP endpoint bucket", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "expired_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "expired_user", orgId: null, role: "pro" });
     getEntitlements.mockResolvedValue({
       planKey: "pro_monthly",
       features: { tier: 1 },
@@ -311,7 +311,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("unresolved Pro bearer sessions retain the per-IP endpoint bucket", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "unresolved_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "unresolved_user", orgId: null, role: "pro" });
     getEntitlements.mockResolvedValue(null);
     validateApiKey.mockResolvedValue({ valid: true, required: false, kind: "session" });
     checkEndpointRateLimit.mockResolvedValue(json({ error: "Too many requests" }, 429));
@@ -342,7 +342,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("signed-in free sessions remain on the shared per-IP endpoint bucket", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "free_user", orgId: null, role: "free" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "free_user", orgId: null, role: "free" });
     getEntitlements.mockResolvedValue({
       planKey: "free",
       features: { tier: 0 },
@@ -406,7 +406,7 @@ describe("summarize-article gateway spend controls", () => {
   });
 
   test("Redis-degraded endpoint rate limiting fails closed before the provider handler", async () => {
-    resolveClerkSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "pro_user", orgId: null, role: "pro" });
     validateApiKey.mockResolvedValue({ valid: true, required: false, kind: "session" });
     checkEndpointRateLimit.mockResolvedValue(json({ error: "Rate-limit service temporarily unavailable" }, 503));
     const calls = { summarize: 0, cache: 0 };

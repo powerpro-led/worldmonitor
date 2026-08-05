@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Aanmelden",
     "createAccount": "Account aanmaken",
-    "settings": "Instellingen"
+    "settings": "Instellingen",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "MCP Verbinden",

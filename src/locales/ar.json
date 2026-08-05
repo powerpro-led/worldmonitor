@@ -3336,7 +3336,8 @@
   "auth": {
     "signIn": "سجل الدخول",
     "createAccount": "إنشاء حساب",
-    "settings": "الإعدادات"
+    "settings": "الإعدادات",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "الاتصال بـ MCP",

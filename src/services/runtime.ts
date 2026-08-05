@@ -1,5 +1,5 @@
 import { SITE_VARIANT } from '@/config/variant';
-import { getClerkToken } from '@/services/clerk';
+import { getAuthToken } from '@/services/auth-provider';
 
 const ENV = (() => {
   try {
@@ -475,7 +475,7 @@ export function installWebApiRedirect(): void {
       return { ...withCredentials(init), headers };
     }
     // Clerk Pro: inject Bearer token (fallback for users without a tester key)
-    const token = await getClerkToken();
+    const token = await getAuthToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
       return { ...withCredentials(init), headers };

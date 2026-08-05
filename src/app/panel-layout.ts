@@ -40,20 +40,14 @@ import { resolveNewsCategories, enabledNewsCategoryKeys } from '@/config/feed-re
 import { BETA_MODE } from '@/config/beta';
 import { t } from '@/services/i18n';
 import { getCurrentTheme } from '@/utils';
-import { trackCriticalBannerAction, trackCheckoutSuccess, trackCheckoutFailed, replayPendingCheckoutSuccess, replayPendingProFunnelEvents } from '@/services/analytics';
+import { trackCriticalBannerAction, replayPendingProFunnelEvents } from '@/services/analytics';
 import { getStoredMapModePreference } from '@/services/map-mode-preference';
 import { loadWidgets, saveWidget, isProUser } from '@/services/widget-store';
 import type { CustomWidgetSpec } from '@/services/widget-store';
-import { initEntitlementSubscription, destroyEntitlementSubscription, isEntitled, hasTier, getEntitlementState, onEntitlementChange, shouldReloadOnEntitlementChange } from '@/services/entitlements';
-import { initSubscriptionWatch, destroySubscriptionWatch, onSubscriptionChange, openBillingPortal, prereserveBillingPortalTab } from '@/services/billing';
+import { initEntitlementSubscription, destroyEntitlementSubscription, isEntitled, onEntitlementChange, shouldReloadOnEntitlementChange } from '@/services/entitlements';
+import { initSubscriptionWatch, destroySubscriptionWatch, onSubscriptionChange } from '@/services/billing';
 import { initPaymentFailureBanner } from '@/components/payment-failure-banner';
-import { handleCheckoutReturn } from '@/services/checkout-return';
-import { registerCheckoutSuccessCallback, destroyCheckoutOverlay, showCheckoutSuccess, consumePostCheckoutFlag, clearCheckoutAttempt, loadCheckoutAttempt } from '@/services/checkout';
-import {
-  markProActivationPending,
-  ProActivationController,
-} from '@/app/pro-activation-controller';
-import { showCheckoutFailureBanner } from '@/components/checkout-failure-banner';
+import { ProActivationController } from '@/app/pro-activation-controller';
 import { PanelTabBar } from '@/components/PanelTabBar';
 import {
   loadTabsState,
@@ -67,7 +61,7 @@ import { loadMcpPanels, saveMcpPanel } from '@/services/mcp-store';
 import type { McpPanelSpec } from '@/services/mcp-store';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import type { AuthSession } from '@/services/auth-state';
-import { PanelGateReason, getPanelGateReason, hasPremiumAccess, resolveBillingAwareGateReason } from '@/services/panel-gating';
+import { PanelGateReason, getPanelGateReason, hasPremiumAccess } from '@/services/panel-gating';
 import { markLcpDebug } from '@/utils/lcp-debug';
 import type { Panel } from '@/components/Panel';
 import type { SupplyChainPanel } from '@/components/SupplyChainPanel';
@@ -120,23 +114,6 @@ const WEB_PREMIUM_PANELS = new Set([
   'regional-intelligence',
   'trade-policy',
   'global-procurement',
-]);
-
-/**
- * Panels that require a Clerk-authenticated PRO account specifically.
- * Desktop API key / browser tester keys do NOT satisfy the gate because
- * these panels are bound to a Clerk userId server-side (e.g. the Brief
- * is stored at brief:{clerkUserId}:{date} in Redis — no Clerk user, no
- * brief to fetch).
- *
- * Without this extra gate, API-key + free-Clerk users would see the
- * panel "unlocked" by hasPremiumAccess() and then hit a 403 when the
- * server re-checks entitlement from the JWT. This set promotes the
- * inconsistency to the layout gating layer so the user sees the
- * correct "Upgrade to Pro" CTA instead of a doomed fetch.
- */
-const WEB_CLERK_PRO_ONLY_PANELS = new Set([
-  'latest-brief',
 ]);
 
 const COLLIDING_NEWS_PANEL_KEYS = new Set(['markets', 'crypto', 'economic']);
@@ -365,68 +342,17 @@ export class PanelLayoutManager implements AppModule {
       this.applyTimeRangeFilterToNewsPanels();
     }, 120);
 
-    // Dodo Payments: entitlement subscription + billing watch for ALL users.
-    // Free users need the subscription active so they receive real-time
-    // entitlement updates after purchasing (P1: newly upgraded users must
-    // see their premium access without a manual page reload).
-    //
-    // Two return paths need to seed the transition detector as post-checkout:
-    //   1. Full-page Dodo redirect — handleCheckoutReturn() reads
-    //      subscription_id/status URL params and cleans them.
-    //   2. Dodo overlay success — setTimeout(reload) with no URL params;
-    //      we stash a session flag before the reload and consume it here.
-    const returnResult = handleCheckoutReturn();
-    const returnedFromOverlay = consumePostCheckoutFlag();
-    const returnedFromCheckout = returnResult.kind === 'success' || returnedFromOverlay;
+    // Entitlement subscription + billing watch for ALL users. Checkout is
+    // gone post-billing-cut (Stage 1 Supabase migration) — every signed-in
+    // user already has full access, so there is no post-checkout boot state
+    // to detect or reload for.
     this.proActivationController = new ProActivationController(ctx, {
-      reloadPending: returnedFromCheckout,
+      reloadPending: false,
       openAiAnalyst: () => this.revealAnalystPanel(),
     });
-    if (returnedFromCheckout) {
-      // Funnel (#4931): the purchase-complete signal on the client side.
-      // Queued by the analytics facade until Umami loads after first paint.
-      trackCheckoutSuccess(returnResult.kind === 'success' ? 'url-return' : 'overlay-flag');
-      // Pro Activation Onboarding: capture the plan identity from the attempt
-      // record and write the durable pending-onboarding marker BEFORE the
-      // clear below wipes the attempt. Success branch only (the `failed`
-      // branch structurally cannot reach here). An overlay-only return may
-      // carry no attempt record → the marker omits productId and the boot
-      // hook falls back to the live entitlement snapshot for plan identity
-      // (never a write-time frozen fallback — see decideActivationMount).
-      const activationProductId = loadCheckoutAttempt()?.productId ?? null;
-      markProActivationPending(activationProductId);
-      // Full-page return cleared its URL params; belt-and-braces clear
-      // of the attempt record here catches the success path where the
-      // overlay handler never ran (direct Dodo redirect).
-      clearCheckoutAttempt('success');
-      // waitForEntitlement: true keeps the banner mounted across the
-      // entitlement-watcher reload (post-PR-4 the watcher is the single
-      // reload source). If the user is already entitled on mount the
-      // banner goes straight to the "active" state; otherwise it waits
-      // up to 30s for the transition before surfacing a manual-refresh
-      // CTA. `email` is read from auth-state (authoritative on the main
-      // app) and masked in the banner before rendering to keep the raw
-      // address out of screenshots / screen-shares of the banner.
-      showCheckoutSuccess({
-        waitForEntitlement: true,
-        email: getAuthState().user?.email ?? null,
-      });
-    } else if (returnResult.kind === 'failed') {
-      trackCheckoutFailed(returnResult.rawStatus);
-      showCheckoutFailureBanner(returnResult.rawStatus);
-    }
-    if (!returnedFromCheckout) {
-      // #4934 round-2 F2: the entitlement watcher reloads the page the
-      // moment Pro lands — often before the deferred Umami queue flushes,
-      // which would silently drop the terminal checkout-success event.
-      // This boot-time replay re-queues it from the durable marker the
-      // pre-reload track left behind (no-op on ordinary loads).
-      replayPendingCheckoutSuccess();
-    }
-    // #4934 round-5: /pro checkout-start events that died with the Dodo
-    // redirect are mirrored in sessionStorage; the buyer lands back here
-    // in the same tab — on BOTH the checkout-return and ordinary branches —
-    // so this replay is unconditional (no-op when nothing is pending).
+    // /pro funnel-start events mirrored in sessionStorage before an
+    // unrelated navigation; replay is unconditional (no-op when nothing is
+    // pending).
     replayPendingProFunnelEvents();
 
     // Always register the payment-failure-banner listener — onSubscriptionChange
@@ -467,40 +393,17 @@ export class PanelLayoutManager implements AppModule {
       initSubscriptionWatch(userId).catch(() => {});
     }
 
-    // Overlay success fires BEFORE the entitlement-watcher reload. The
-    // banner stays mounted through the reload via waitForEntitlement so
-    // the user sees visual continuity from "Payment received!" through
-    // "Premium activated" without a blank intermediate state. Read the
-    // email lazily at fire-time (not at register-time) so a just-signed-
-    // in buyer who completes checkout in the same session still sees
-    // the receipt acknowledgement.
-    registerCheckoutSuccessCallback(() => showCheckoutSuccess({
-      waitForEntitlement: true,
-      email: getAuthState().user?.email ?? null,
-    }));
-
-    // Reload only on a free→pro transition. Legacy-pro users whose first
-    // snapshot is already pro (lastEntitled === null) must not trigger a
-    // reload loop, but a user who pays mid-session (false → true) must see
-    // their panels unlock without manual refresh.
-    //
-    // When we just returned from a Dodo full-page redirect checkout, seed
-    // lastEntitled = false instead of null. The webhook may have already
-    // landed by the time the user's browser comes back, so the first
-    // entitlement snapshot can arrive as pro. Without this seed the
-    // transition detector would swallow that snapshot as "legacy-pro" and
-    // the user would see locked panels until a manual refresh — exactly the
-    // symptom that caused the 2026-04-17/18 duplicate-subscription incident.
+    // Reload only on a free→pro (sign-in) transition. A user whose first
+    // snapshot is already signed-in (lastEntitled === null) must not trigger
+    // a reload loop, but a user who signs in mid-session (false → true) must
+    // see their panels unlock without manual refresh.
     //
     // REQUIRES_SKIP_INITIAL_SNAPSHOT_BEHAVIOR — the watcher is the SOLE
-    // automatic reload source for post-checkout success (the overlay
-    // handler in checkout.ts deliberately does NOT reload). If PR #3163's
-    // fix to `skipInitialSnapshot` is ever reverted, this detector
-    // swallows the activation silently and users see locked panels for
-    // 30s until the extended-unlock timeout fires a manual-refresh CTA.
-    // Regression guard: tests/entitlement-transition.test.mts locks the
-    // "incident sequence" semantics; see mirror marker in checkout.ts.
-    let lastEntitled: boolean | null = returnedFromCheckout ? false : null;
+    // automatic reload source for this transition. If PR #3163's fix to
+    // `skipInitialSnapshot` is ever reverted, this detector swallows the
+    // activation silently and users see locked panels until a manual
+    // refresh. Regression guard: tests/entitlement-transition.test.mts.
+    let lastEntitled: boolean | null = null;
     this.unsubscribeEntitlementChange = onEntitlementChange(() => {
       const entitled = isEntitled();
       const reload = shouldReloadOnEntitlementChange(lastEntitled, entitled);
@@ -689,55 +592,15 @@ export class PanelLayoutManager implements AppModule {
 
     this.proActivationController.destroy();
 
-    // Reset checkout overlay so next layout init can register its callback
-    destroyCheckoutOverlay();
-
     removeResponsiveZoneListener(this.responsiveZoneListener);
     this.responsiveZoneListener = null;
   }
 
   /** Reactively update premium panel gating based on auth state. */
   private updatePanelGating(state: AuthSession): void {
-    // #4771: resolve the billing-aware refinement of FREE_TIER once per pass
-    // — the inputs (subscription/entitlement snapshots, now) are invariant
-    // across the panel loop, and a single Date.now() keeps every panel on
-    // the same verdict at a period-end boundary.
-    const billingAwareFreeTier = resolveBillingAwareGateReason(PanelGateReason.FREE_TIER);
     for (const [key, panel] of Object.entries(this.ctx.panels)) {
       const isPremium = WEB_PREMIUM_PANELS.has(key);
-      let reason = getPanelGateReason(state, isPremium);
-
-      // Clerk-pro-only panels: even when hasPremiumAccess() returns
-      // true via API/tester key, these panels need a Clerk userId
-      // bound to a PRO entitlement. We DO NOT trust client-side
-      // entitlement state as an authoritative gate — the server-side
-      // /api/latest-brief check is authoritative. We only downgrade
-      // the gate reason here as AFFIRMATIVE DENIAL: when we KNOW
-      // (snapshot loaded AND tier < 1) the user is free. In every
-      // other case — snapshot not yet loaded, Convex subscription
-      // skipped, transient failure — we leave the panel unlocked
-      // and let the server 403 path drive the upgrade CTA inside
-      // the panel's refresh() catch block.
-      //
-      // Prior iterations of this code tried the opposite — gating
-      // positively on hasTier(1) — and locked legitimate Pro users
-      // out whenever the Convex snapshot was late, skipped, or
-      // failed. Affirmative-denial-only is the right shape: never
-      // over-gate, accept the one-doomed-fetch-per-session cost
-      // for API-key-only + free-Clerk users as the lesser harm.
-      if (
-        reason === PanelGateReason.NONE &&
-        WEB_CLERK_PRO_ONLY_PANELS.has(key) &&
-        getEntitlementState() !== null &&
-        !hasTier(1)
-      ) {
-        reason = state.user ? PanelGateReason.FREE_TIER : PanelGateReason.ANONYMOUS;
-      }
-
-      // #4771: a FREE_TIER verdict for a customer with stale paid evidence
-      // becomes a billing-state reason (verifying renewal / update payment /
-      // resubscribe) so we never push a paying user toward duplicate checkout.
-      if (reason === PanelGateReason.FREE_TIER) reason = billingAwareFreeTier;
+      const reason = getPanelGateReason(state, isPremium);
 
       if (reason === PanelGateReason.NONE) {
         // User has access -- unlock if previously locked
@@ -752,29 +615,10 @@ export class PanelLayoutManager implements AppModule {
 
   /** Return the action callback for a given gate reason. */
   private getGateAction(reason: PanelGateReason): () => void {
-    switch (reason) {
-      case PanelGateReason.ANONYMOUS:
-        return () => this.ctx.authModal?.open();
-      case PanelGateReason.FREE_TIER:
-        return () => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-      case PanelGateReason.PAYMENT_ON_HOLD:
-      case PanelGateReason.RENEWAL_FAILED:
-        // Pre-reserve the portal tab synchronously inside the click gesture
-        // so the async portal-session fetch survives the popup blocker
-        // (same pattern as payment-failure-banner.ts).
-        return () => {
-          const reservedWin = prereserveBillingPortalTab();
-          void openBillingPortal(reservedWin);
-        };
-      case PanelGateReason.RENEWAL_PENDING:
-        // Verification resolves server-side; a reload re-pulls entitlements
-        // for users who don't want to wait for the reactive update.
-        return () => window.location.reload();
-      case PanelGateReason.LAPSED:
-        return () => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-      default:
-        return () => {};
+    if (reason === PanelGateReason.ANONYMOUS) {
+      return () => this.ctx.authModal?.open();
     }
+    return () => {};
   }
 
   /** #5159/#5205 review: storage access can throw (blocked cookies, sandboxed

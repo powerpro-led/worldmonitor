@@ -49,7 +49,7 @@ describe('Panel base class — unlockPanel restores pre-lock content', () => {
 
     // Simulate updatePanelGating() seeing FREE/anon — content is replaced
     // with the locked CTA and Panel._locked flips to true.
-    panel.showGatedCta('free_tier', () => {});
+    panel.showGatedCta('anonymous', () => {});
 
     assert.equal(
       root.querySelector('.minimal-test-input'),
@@ -115,7 +115,7 @@ describe('Panel base class — unlockPanel restores pre-lock content', () => {
     assert.ok(inputAtMount, 'input present at mount');
 
     for (let i = 0; i < 3; i++) {
-      panel.showGatedCta('free_tier', () => {});
+      panel.showGatedCta('anonymous', () => {});
       panel.unlockPanel();
       const inputAfter = root.querySelector('.minimal-test-input');
       assert.equal(
@@ -138,7 +138,7 @@ describe('Panel base class — unlockPanel restores pre-lock content', () => {
     const root = panel.getElement();
     const inputBefore = root.querySelector('.minimal-test-input');
 
-    panel.showGatedCta('free_tier', () => {});
+    panel.showGatedCta('anonymous', () => {});
     // Re-entrant lock call — should NOT overwrite the cache with the
     // locked-state CTA, otherwise unlockPanel would "restore" the lock CTA.
     panel.showGatedCta('anonymous', () => {});

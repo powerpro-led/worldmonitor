@@ -39,8 +39,6 @@ const VERIFIED_NONCE = getInternalMcpVerifiedNonce();
 
 const HMAC_SECRET = 'test-internal-hmac-secret-32bytes-padding-xxxxxxxxxxxxxxxxxxxxx';
 const PRO_USER_ID = 'user_pro_abc';
-const FREE_USER_ID = 'user_free_xyz';
-const TIER1_NO_MCP_USER_ID = 'user_pro_legacy';
 
 const CONVEX_SITE = 'https://fake.convex.site';
 const CONVEX_SECRET = 'fake-convex-shared-secret';
@@ -87,35 +85,18 @@ function makeGateway() {
 }
 
 // ---------------------------------------------------------------------------
-// Convex `/api/internal-entitlements` stub — answers based on userId.
+// NOTE(stage1-supabase-migration): server/_shared/entitlement-check.ts's
+// getEntitlements() is now a pure local function (any non-empty userId ->
+// the same fixed {tier:1, apiAccess:true, mcpAccess:true, validUntil:
+// Infinity} entitlement) — it no longer makes a Convex HTTP round-trip. The
+// `/api/internal-entitlements` branch below is dead in practice (nothing
+// calls it), kept only because other stubbed endpoints in this same fetch
+// mock (redis pipeline, etc.) are still real dependencies exercised by the
+// tests below. Per-user entitlement differentiation (free/tier-1-no-mcp/
+// billing-lapsed) is no longer expressible through this seam — those cases
+// were deleted from this suite; see the removed-test notes further down.
 // ---------------------------------------------------------------------------
-function entitlementForUser(userId) {
-  if (userId === PRO_USER_ID) {
-    return {
-      planKey: 'pro',
-      features: { tier: 1, apiAccess: false, apiRateLimit: 60, maxDashboards: 10, prioritySupport: false, exportFormats: [], mcpAccess: true },
-      validUntil: Date.now() + 86_400_000,
-    };
-  }
-  if (userId === TIER1_NO_MCP_USER_ID) {
-    return {
-      planKey: 'pro',
-      features: { tier: 1, apiAccess: false, apiRateLimit: 60, maxDashboards: 10, prioritySupport: false, exportFormats: [], mcpAccess: false },
-      validUntil: Date.now() + 86_400_000,
-    };
-  }
-  if (userId === FREE_USER_ID) {
-    return {
-      planKey: 'free',
-      features: { tier: 0, apiAccess: false, apiRateLimit: 60, maxDashboards: 1, prioritySupport: false, exportFormats: [], mcpAccess: false },
-      validUntil: Date.now() + 86_400_000,
-    };
-  }
-  return null;
-}
-
 function installFetchStub(opts = {}) {
-  const overrideEntitlement = opts.entitlement;
   const replayCacheUnavailable = opts.replayCacheUnavailable === true;
   const replayCacheCommandError = opts.replayCacheCommandError === true;
   globalThis.fetch = async (input, init) => {
@@ -159,11 +140,6 @@ function installFetchStub(opts = {}) {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
-    }
-    if (typeof url === 'string' && url.includes('/api/internal-entitlements')) {
-      const body = JSON.parse(init?.body ?? '{}');
-      const ent = overrideEntitlement ? overrideEntitlement(body.userId) : entitlementForUser(body.userId);
-      return new Response(JSON.stringify(ent), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     // Anything else — fail loudly so tests can't silently depend on the network.
     throw new Error(`unexpected fetch in test: ${url}`);
@@ -436,29 +412,12 @@ describe('gateway internal-MCP HMAC verify — happy paths', () => {
     assert.equal(result, true);
   });
 
-  it('isCallerPremium returns FALSE when a request claims to be verified but the userId is tier 0 (defensive re-fetch)', async () => {
-    const req = new Request('https://api.worldmonitor.app/api/news/v1/summarize-article', {
-      method: 'POST',
-      headers: {
-        [INTERNAL_MCP_VERIFIED_HEADER]: VERIFIED_NONCE,
-        [TRUSTED_USER_ID_HEADER]: FREE_USER_ID,
-      },
-    });
-    const result = await isCallerPremium(req);
-    assert.equal(result, false, 'defensive re-fetch caught tier-0 userId');
-  });
-
-  it('isCallerPremium returns FALSE when verified-marker carries tier-1 user without mcpAccess (defensive re-fetch)', async () => {
-    const req = new Request('https://api.worldmonitor.app/api/news/v1/summarize-article', {
-      method: 'POST',
-      headers: {
-        [INTERNAL_MCP_VERIFIED_HEADER]: VERIFIED_NONCE,
-        [TRUSTED_USER_ID_HEADER]: TIER1_NO_MCP_USER_ID,
-      },
-    });
-    const result = await isCallerPremium(req);
-    assert.equal(result, false, 'mcpAccess: false fails defensively');
-  });
+  // NOTE(stage1-supabase-migration): "tier 0 userId" and "tier-1 without
+  // mcpAccess" defensive re-fetch tests were removed here. Post-Stage-1,
+  // getEntitlements() is a pure function of "is there a non-empty userId" —
+  // every verified user is synthesized as tier-1 + mcpAccess:true, so there
+  // is no longer a way to produce a differentiated tier-0 or no-mcpAccess
+  // entitlement through this seam to exercise the defensive re-fetch branch.
 
   it('reordered query params still verify (canonicalisation sorts keys)', async () => {
     const handler = makeGateway();
@@ -697,23 +656,19 @@ describe('gateway internal-MCP HMAC verify — error paths', () => {
     assert.equal(res.status, 401);
   });
 
-  it('tier-0 userId in X-WM-MCP-User-Id → 401 insufficient_entitlement', async () => {
-    const handler = makeGateway();
-    const req = await buildSignedRequest({ userId: FREE_USER_ID });
-    const res = await handler(req);
-    assert.equal(res.status, 401);
-    const j = await res.json();
-    assert.equal(j.error, 'insufficient_entitlement');
-  });
-
-  it('tier-1 user with mcpAccess: false → 401 insufficient_entitlement', async () => {
-    const handler = makeGateway();
-    const req = await buildSignedRequest({ userId: TIER1_NO_MCP_USER_ID });
-    const res = await handler(req);
-    assert.equal(res.status, 401);
-    const j = await res.json();
-    assert.equal(j.error, 'insufficient_entitlement');
-  });
+  // FIXME(stage1-supabase-migration): "tier-0 userId" and "tier-1 without
+  // mcpAccess" -> insufficient_entitlement tests were removed here. Post-
+  // Stage-1, `getEntitlements()` (server/_shared/entitlement-check.ts) is a
+  // pure function of "is there a non-empty userId" (always tier-1 +
+  // mcpAccess:true), and `signInternalMcpRequest` throws on an empty userId
+  // (server/_shared/mcp-internal-hmac.ts), so there is no longer any input
+  // that reaches server/gateway.ts's `insufficient_entitlement` branch on
+  // the internal-MCP path (an HMAC-verified request always carries a
+  // non-empty userId, which always resolves to a covering entitlement).
+  // That branch is now unreachable dead code on this path specifically —
+  // harmless (fails closed if it were ever reachable) but not exercisable
+  // by a test anymore. Not verified whether a future non-tier-collapsed
+  // entitlement source re-introduces a reachable path here.
 
   it('malformed signature header (no dot) → 401', async () => {
     const handler = makeGateway();
@@ -867,10 +822,22 @@ describe('gateway internal-MCP — header injection defense', () => {
     }
   });
 
-  it('isCallerPremium returns FALSE for an unknown userId even with valid nonce (defensive re-fetch)', async () => {
-    // Models the case where someone bypasses the gateway in tests / dev. The
-    // header check alone admits this — the defensive re-fetch must still
-    // confirm against Convex, and only PRO_USER_ID's entitlement passes.
+  // FIXME(stage1-supabase-migration): this test used to assert that the
+  // defensive re-fetch in resolvePremiumCallerIdentity/isCallerPremium
+  // rejects a made-up/unbacked userId even when the caller has somehow
+  // produced a valid verified-marker nonce, because the old Convex-backed
+  // getEntitlements() looked the user up and returned null for an unknown
+  // id. Post-Stage-1, getEntitlements() (server/_shared/entitlement-check.ts)
+  // is a pure function of "is the userId a non-empty string" — it no longer
+  // looks anything up, so ANY non-empty trustedUserId now passes this check
+  // once the nonce compare succeeds. This narrows what the defensive
+  // re-fetch actually defends against: it no longer catches a fabricated
+  // userId, only a missing/empty one. In practice the nonce itself is the
+  // real security boundary here (a per-process random value only the
+  // gateway knows), so this is judged acceptable for Stage 1's "one
+  // operator/org, no per-user entitlement tiers" model — but flagging since
+  // the old test enforced a stronger property than the new code provides.
+  it('isCallerPremium returns TRUE for any non-empty userId once the verified-marker nonce matches (post-Stage-1: no per-user entitlement lookup)', async () => {
     const req = new Request('https://api.worldmonitor.app/api/news/v1/summarize-article', {
       method: 'POST',
       headers: {
@@ -879,7 +846,7 @@ describe('gateway internal-MCP — header injection defense', () => {
       },
     });
     const result = await isCallerPremium(req);
-    assert.equal(result, false, 'unknown userId fails defensive re-fetch');
+    assert.equal(result, true, 'getEntitlements() synthesizes a fixed pro entitlement for any non-empty userId post-Stage-1');
   });
 
   it('isCallerPremium returns FALSE on a direct edge function when verified-marker is the constant "1" (not the per-process nonce)', async () => {
@@ -987,104 +954,20 @@ describe('gateway internal-MCP — legacy unaffected', () => {
 // ===========================================================================
 // F1, F7, F8 — review-pass fixes for the gateway internal-MCP path
 // ===========================================================================
-describe('gateway internal-MCP — F1: validUntil re-check', () => {
-  it('F1: tier-1 mcpAccess user with validUntil < now → 401 insufficient_entitlement', async () => {
-    // Override the entitlement stub to return a row with lapsed validUntil.
-    // The gateway's Convex-fallback re-check must reject — without F1 the
-    // request would propagate as authorized.
-    installFetchStub({
-      entitlement: () => ({
-        planKey: 'pro',
-        features: {
-          tier: 1, apiAccess: false, apiRateLimit: 60, maxDashboards: 10,
-          prioritySupport: false, exportFormats: [], mcpAccess: true,
-        },
-        validUntil: Date.now() - 1000, // expired 1s ago
-      }),
-    });
-    const handler = makeGateway();
-    const req = await buildSignedRequest();
-    const res = await handler(req);
-    assert.equal(res.status, 401, 'lapsed entitlement must 401 even with verified HMAC');
-    const j = await res.json();
-    assert.equal(j.error, 'insufficient_entitlement');
-    assert.equal(lastHandlerRequest, null, 'handler must NOT run when entitlement is stale');
-  });
-});
-
-describe('gateway internal-MCP — billing renewal verification', () => {
-  for (const billingStatus of ['renewal_verification_pending', 'renewal_verification_failed']) {
-    it(`${billingStatus} → retryable no-store 503`, async () => {
-      installFetchStub({
-        entitlement: () => ({
-          planKey: 'free',
-          features: {
-            tier: 0, apiAccess: false, apiRateLimit: 0, maxDashboards: 1,
-            prioritySupport: false, exportFormats: [], mcpAccess: false,
-          },
-          validUntil: 0,
-          billingStatus,
-          retryAfterSeconds: 17,
-        }),
-      });
-      const handler = makeGateway();
-      const req = await buildSignedRequest();
-      const res = await handler(req);
-
-      assert.equal(res.status, 503);
-      assert.equal(res.headers.get('Cache-Control'), 'no-store');
-      assert.equal(res.headers.get('Retry-After'), '17');
-      assert.equal(res.headers.get('X-Billing-Verification'), billingStatus);
-      assert.equal((await res.json()).code, billingStatus);
-      assert.equal(lastHandlerRequest, null, 'handler must not run while renewal verification is unresolved');
-    });
-  }
-
-  it('current Pro fallback remains usable while stronger renewal verification is pending', async () => {
-    installFetchStub({
-      entitlement: () => ({
-        planKey: 'pro_monthly',
-        features: {
-          tier: 1, apiAccess: false, apiRateLimit: 0, maxDashboards: 10,
-          prioritySupport: false, exportFormats: ['csv'], mcpAccess: true,
-        },
-        validUntil: Date.now() + 86_400_000,
-        billingStatus: 'renewal_verification_pending',
-        retryAfterSeconds: 17,
-      }),
-    });
-    const handler = makeGateway();
-    const req = await buildSignedRequest();
-    const res = await handler(req);
-
-    assert.equal(res.status, 200);
-    assert.notEqual(lastHandlerRequest, null, 'covered MCP request must reach the handler');
-  });
-
-  it('subscription_lapsed → distinct hard denial', async () => {
-    installFetchStub({
-      entitlement: () => ({
-        planKey: 'free',
-        features: {
-          tier: 0, apiAccess: false, apiRateLimit: 0, maxDashboards: 1,
-          prioritySupport: false, exportFormats: [], mcpAccess: false,
-        },
-        validUntil: 0,
-        billingStatus: 'subscription_lapsed',
-      }),
-    });
-    const handler = makeGateway();
-    const req = await buildSignedRequest();
-    const res = await handler(req);
-
-    assert.equal(res.status, 403);
-    assert.equal(res.headers.get('Cache-Control'), 'no-store');
-    assert.equal(res.headers.get('Retry-After'), null);
-    assert.equal(res.headers.get('X-Billing-Verification'), 'subscription_lapsed');
-    assert.equal((await res.json()).code, 'subscription_lapsed');
-    assert.equal(lastHandlerRequest, null, 'handler must not run after a confirmed lapse');
-  });
-});
+// NOTE(stage1-supabase-migration): the "F1: validUntil re-check" and
+// "billing renewal verification" describe blocks were removed here. Both
+// relied on `installFetchStub({ entitlement: ... })` to synthesize a
+// lapsed/renewal-pending/renewal-failed/subscription_lapsed entitlement row
+// from a mocked Convex `/api/internal-entitlements` response. Post-Stage-1,
+// `getEntitlements()` (server/_shared/entitlement-check.ts) never fetches
+// Convex at all -- it's a pure function that always returns
+// `{tier:1, mcpAccess:true, validUntil:Infinity}` for any non-empty userId,
+// and `getBillingVerificationDenial()` is a permanent no-op (always returns
+// null; see that module's header comment). There is no longer any way to
+// synthesize a lapsed/billing-pending entitlement through this seam, and
+// `billingStatus`/`renewal_verification_*` states have no meaning anymore
+// (Dodo-billing-specific, deleted with checkout.ts). The `denyForBillingVerification`
+// call site in server/gateway.ts is effectively dead on this path now.
 
 describe('gateway internal-MCP — F7: HMAC headers stripped before handler sees request', () => {
   it('handler receives no X-WM-MCP-Internal or X-WM-MCP-User-Id; only the trusted-marker pair', async () => {

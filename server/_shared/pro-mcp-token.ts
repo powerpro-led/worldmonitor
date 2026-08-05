@@ -1,37 +1,48 @@
 /**
- * Edge-runtime-safe wrappers around the Convex Pro-MCP-token internal
- * HTTP actions (U1).
+ * Edge-runtime-safe wrappers around `worldmonitor.mcp_pro_tokens` (Postgres,
+ * service-role Supabase client) — Stage 1 of the Convex/Clerk -> Supabase
+ * migration replaced the three Convex internal HTTP actions
+ * (`internal-issue-pro-mcp-token`, `internal-validate-pro-mcp-token`,
+ * `internal-revoke-pro-mcp-token`) with direct Postgres CRUD via
+ * `server/_shared/supabase-admin.ts`. Token identity IS the row id (uuid) —
+ * no separate hash, mirroring `convex/mcpProTokens.ts`'s design.
  *
- * Per plan U2: every Pro MCP request hits Convex `validateProMcpToken` —
+ * Per plan U2: every Pro MCP request hits `worldmonitor.mcp_pro_tokens` —
  * positive results are NEVER cached at the edge. Revoke takes effect on
  * the next request, period. A short-lived 60s **negative cache** is kept
  * for already-known-bad bearers (revoked / never-existed tokenIds) so a
- * misbehaving Claude client can't hammer Convex with a stale bearer.
+ * misbehaving Claude client can't hammer Postgres with a stale bearer.
+ * This negative-cache layer is UNCHANGED from the Convex-backed version —
+ * it was already independent of Convex/Clerk.
  *
  * Differences from `user-api-key.ts` (the closest sibling pattern):
  *   - That file positive-caches the {userId, keyId, name} payload for
  *     CACHE_TTL_SECONDS via `cachedFetchJson`. We do NOT — revoke must be
  *     authoritative on the next request (R3).
  *   - We still negative-cache for 60s, sharing the same fail-soft posture
- *     on Convex/network errors (returns null → caller's bearer resolution
- *     returns null → 401). See memory `entitlement-signal-server-outlier-sweep`
- *     — entitlement gates fail closed; bearer-resolution failures fail-soft
- *     so a transient Convex blip yields a clean 401 instead of a hung 500.
- *
- * The Convex validate route schedules `touchProMcpTokenLastUsed` in-mutation
- * via `ctx.scheduler.runAfter` (mirrors apiKeys at convex/http.ts:839). We
- * do NOT need a `touchProMcpTokenLastUsedFireAndForget` helper here.
+ *     on Postgres/network errors (returns null → caller's bearer resolution
+ *     returns null → 401). Entitlement gates fail closed; bearer-resolution
+ *     failures fail-soft so a transient Postgres blip yields a clean 401
+ *     instead of a hung 500.
  */
 
 import { deleteRedisKey } from './redis';
+import { getSupabaseAdmin } from './supabase-admin';
+
+/** Maximum number of active (non-revoked) Pro MCP tokens per user. Matches
+ *  convex/mcpProTokens.ts::MAX_TOKENS_PER_USER (ported as-is). */
+const MAX_TOKENS_PER_USER = 5;
 
 /** Negative-cache TTL: 60s — short enough that a re-issued tokenId (vanishingly
- *  rare given Convex IDs) becomes resolvable promptly, long enough to suppress
+ *  rare given uuid identity) becomes resolvable promptly, long enough to suppress
  *  hammering on a known-bad bearer. Plan U2 default. */
 const NEG_TTL_SECONDS = 60;
 
-/** Convex internal HTTP-action call timeout. Matches user-api-key.ts (3s). */
-const CONVEX_TIMEOUT_MS = 3_000;
+/** Postgres error code for "invalid input syntax" (e.g. a non-uuid tokenId).
+ *  Treated as structurally not-found/revoked, matching the old Convex
+ *  contract where a malformed id resolved to `null`, not a transient
+ *  failure. */
+const POSTGRES_INVALID_TEXT_REPRESENTATION = '22P02';
 
 /** Redis key namespace for the negative-cache sentinel. */
 const NEG_CACHE_KEY_PREFIX = 'pro-mcp-token-neg:';
@@ -49,15 +60,16 @@ export interface ProMcpValidateResult {
 
 /**
  * Discriminated union returned by `validateProMcpToken`. Distinguishes:
- *   - `valid`: Convex returned an active row → `{userId}` resolved.
- *   - `revoked`: Convex authoritatively returned null (row missing or revoked).
- *               Negative-cache sentinel is written; safe to fail-closed.
- *   - `transient`: Convex 5xx, network error, timeout, or malformed JSON.
+ *   - `valid`: Postgres returned an active row → `{userId}` resolved.
+ *   - `revoked`: Postgres authoritatively returned no row (missing,
+ *               revoked, or malformed id) → negative-cache sentinel is
+ *               written; safe to fail-closed.
+ *   - `transient`: Postgres/network error, timeout, or unconfigured backend.
  *                 No neg-cache write — a blip should not mark a legitimate
  *                 token as bad for 60s.
  *
  * Refresh-grant callers (api/oauth/token.ts) need this distinction so a
- * transient Convex blip does NOT consume the user's refresh token. See
+ * transient Postgres blip does NOT consume the user's refresh token. See
  * F3 in the U7+U8 review pass.
  */
 export type ProMcpValidateUnion =
@@ -69,12 +81,19 @@ export interface ProMcpIssueResult {
   tokenId: string;
 }
 
-/** Discriminated error kinds for `issueProMcpTokenForUser`. */
+/** Discriminated error kinds for `issueProMcpTokenForUser`.
+ *
+ * `pro-required` is retained for caller-side type compatibility
+ * (api/oauth/authorize-pro.ts branches on it) but this module never throws
+ * it anymore — every caller of `issueProMcpTokenForUser` already resolves
+ * and checks `getEntitlements(userId)` itself before calling in, and post-
+ * Stage-1 every verified userId is entitled (no plan gating left to
+ * re-check here). */
 export type IssueFailedKind =
-  | 'pro-required'        // Convex 403 PRO_REQUIRED — caller's user is not Pro.
-  | 'invalid-user-id'     // Convex 400 INVALID_USER_ID — empty/missing userId.
-  | 'config'              // Edge env (CONVEX_SITE_URL / shared secret) missing.
-  | 'network';            // Convex 5xx, network error, timeout, or unknown 4xx.
+  | 'pro-required'        // Retained for type compat; never thrown here.
+  | 'invalid-user-id'     // Empty/missing userId.
+  | 'config'              // Edge env (SUPABASE_URL / service role key) missing.
+  | 'network';            // Postgres error, network error, or unexpected shape.
 
 export class ProMcpIssueFailed extends Error {
   readonly kind: IssueFailedKind;
@@ -88,34 +107,12 @@ export class ProMcpIssueFailed extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Convex env wiring
-// ---------------------------------------------------------------------------
-
-interface ConvexEnv {
-  siteUrl: string;
-  sharedSecret: string;
-}
-
-function getConvexEnv(): ConvexEnv | null {
-  const siteUrl = process.env.CONVEX_SITE_URL;
-  const sharedSecret = process.env.CONVEX_SERVER_SHARED_SECRET;
-  if (!siteUrl || !sharedSecret) return null;
-  return { siteUrl, sharedSecret };
-}
-
-function convexHeaders(sharedSecret: string): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    'User-Agent': 'worldmonitor-gateway/1.0',
-    'x-convex-shared-secret': sharedSecret,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Negative-cache helpers — direct Upstash REST so the cache key is exactly
 // `pro-mcp-token-neg:<tokenId>` and does NOT inherit env-prefix semantics
-// from `redis.ts` (these tokenIds are Convex IDs scoped to the Convex deploy
-// already; double-prefixing would be redundant).
+// from `redis.ts` (these tokenIds are uuids scoped to this Supabase project
+// already; double-prefixing would be redundant). UNCHANGED from the
+// Convex-backed version — this layer was already independent of
+// Convex/Clerk.
 // ---------------------------------------------------------------------------
 
 const REDIS_OP_TIMEOUT_MS = 1_500;
@@ -137,8 +134,8 @@ async function readNegCache(tokenId: string): Promise<boolean> {
     const data = (await resp.json()) as { result?: string | null };
     return typeof data.result === 'string' && data.result.length > 0;
   } catch (err) {
-    // Fail-open on Redis errors: round-trip Convex this once; the worst
-    // case is one extra Convex call, which is the safe direction.
+    // Fail-open on Redis errors: round-trip Postgres this once; the worst
+    // case is one extra Postgres call, which is the safe direction.
     console.warn('[pro-mcp-token] readNegCache failed:', err instanceof Error ? err.message : String(err));
     return false;
   }
@@ -159,7 +156,7 @@ async function writeNegCache(tokenId: string): Promise<void> {
     );
   } catch (err) {
     // Best-effort: if we can't write the sentinel, the next request will
-    // re-hit Convex. Not load-bearing for correctness.
+    // re-hit Postgres. Not load-bearing for correctness.
     console.warn('[pro-mcp-token] writeNegCache failed:', err instanceof Error ? err.message : String(err));
   }
 }
@@ -169,89 +166,113 @@ async function writeNegCache(tokenId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Issue a new Pro MCP token row in Convex.
+ * Issue a new Pro MCP token row in `worldmonitor.mcp_pro_tokens`.
  *
- * Called from `/oauth/authorize-pro` (U5) AFTER the Clerk grant has been
- * verified. Throws a typed `ProMcpIssueFailed`:
- *   - `pro-required`: caller's userId is not Pro (Convex 403). U5 returns
- *     an HTML error page or redirects to upgrade.
- *   - `invalid-user-id`: empty/missing userId (Convex 400). U5 returns 400.
- *   - `network`: Convex 5xx, network error, timeout, or unknown 4xx. U5
+ * Called from `/oauth/authorize-pro` (U5) AFTER the caller has already
+ * verified entitlement (`getEntitlements(userId)` — tier ≥ 1 + mcpAccess,
+ * trivially true for every verified Supabase user post-Stage-1). Throws a
+ * typed `ProMcpIssueFailed`:
+ *   - `invalid-user-id`: empty/missing userId. U5 returns 400.
+ *   - `network`: Postgres error, network error, or unexpected shape. U5
  *     returns 503 (the OAuth flow is replayable — Claude will retry).
  *   - `config`: edge env missing. U5 returns 500.
+ *
+ * Per-user cap: enforces `MAX_TOKENS_PER_USER` (5) active rows with silent
+ * oldest-first rotation — mirrors `convex/mcpProTokens.ts::issueProMcpToken`'s
+ * race-tolerant design (revoke every active row beyond `MAX - 1` rather than
+ * "exactly one", so a brief concurrent-issue overshoot converges back to the
+ * cap on the next call instead of staying stuck above it).
  */
 export async function issueProMcpTokenForUser(
   userId: string,
   clientId?: string,
   name?: string,
 ): Promise<ProMcpIssueResult> {
-  const env = getConvexEnv();
-  if (!env) {
-    throw new ProMcpIssueFailed(
-      'config',
-      'CONVEX_SITE_URL or CONVEX_SERVER_SHARED_SECRET not configured',
-    );
-  }
-
-  let resp: Response;
-  try {
-    resp = await fetch(`${env.siteUrl}/api/internal-issue-pro-mcp-token`, {
-      method: 'POST',
-      headers: convexHeaders(env.sharedSecret),
-      body: JSON.stringify({ userId, clientId, name }),
-      signal: AbortSignal.timeout(CONVEX_TIMEOUT_MS),
-    });
-  } catch (err) {
-    throw new ProMcpIssueFailed(
-      'network',
-      `Convex issue request failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  if (resp.ok) {
-    const data = (await resp.json().catch(() => null)) as ProMcpIssueResult | null;
-    if (!data || typeof data.tokenId !== 'string' || !data.tokenId) {
-      throw new ProMcpIssueFailed('network', 'Convex issue response missing tokenId', resp.status);
-    }
-    return { tokenId: data.tokenId };
-  }
-
-  // Map Convex error responses (see convex/http.ts /api/internal-issue-pro-mcp-token).
-  if (resp.status === 403) {
-    throw new ProMcpIssueFailed('pro-required', 'Pro entitlement required to issue MCP token', 403);
-  }
-  if (resp.status === 400) {
+  if (!userId) {
     throw new ProMcpIssueFailed('invalid-user-id', 'Invalid userId for Pro MCP token issue', 400);
   }
-  // 401 (shared-secret mismatch) and 5xx and any other status → network/transient.
-  throw new ProMcpIssueFailed(
-    'network',
-    `Convex issue returned HTTP ${resp.status}`,
-    resp.status,
-  );
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new ProMcpIssueFailed(
+      'config',
+      'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured',
+    );
+  }
+
+  try {
+    const { data: active, error: listError } = await supabase
+      .from('mcp_pro_tokens')
+      .select('id, created_at')
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: true });
+
+    if (listError) {
+      throw new ProMcpIssueFailed('network', `Supabase active-token list failed: ${listError.message}`);
+    }
+
+    if (active && active.length >= MAX_TOKENS_PER_USER) {
+      const toRevoke = active.slice(0, active.length - (MAX_TOKENS_PER_USER - 1));
+      const revokeIds = toRevoke.map((row) => row.id as string);
+      if (revokeIds.length > 0) {
+        const { error: revokeError } = await supabase
+          .from('mcp_pro_tokens')
+          .update({ revoked_at: new Date().toISOString() })
+          .in('id', revokeIds);
+        if (revokeError) {
+          // Non-fatal: worst case is a transient cap overshoot that the
+          // next issue call's list+revoke pass converges back down.
+          console.warn('[pro-mcp-token] oldest-excess rotation failed (non-fatal):', revokeError.message);
+        }
+      }
+    }
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('mcp_pro_tokens')
+      .insert({ user_id: userId, client_id: clientId, name })
+      .select('id')
+      .single();
+
+    if (insertError || !inserted) {
+      throw new ProMcpIssueFailed(
+        'network',
+        `Supabase insert failed: ${insertError?.message ?? 'no row returned'}`,
+      );
+    }
+
+    return { tokenId: inserted.id as string };
+  } catch (err) {
+    if (err instanceof ProMcpIssueFailed) throw err;
+    throw new ProMcpIssueFailed(
+      'network',
+      `Supabase issue request failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 /**
  * Validate a Pro MCP token by tokenId — discriminated-union variant.
  *
  * Returns `{ok:'valid', userId}` if the row exists and is not revoked.
- * Returns `{ok:'revoked'}` if Convex authoritatively returned null
- * (row missing, revoked, or malformed-id). Returns `{ok:'transient'}` on
- * Convex 5xx / network error / timeout / non-JSON — caller can decide
- * whether to fail-closed (per-request validate) or preserve the refresh
- * token (refresh-grant path) instead of consuming it.
+ * Returns `{ok:'revoked'}` if Postgres authoritatively found no matching,
+ * non-revoked row (missing, revoked, or malformed id). Returns
+ * `{ok:'transient'}` on a Postgres/network error or unconfigured backend —
+ * caller can decide whether to fail-closed (per-request validate) or
+ * preserve the refresh token (refresh-grant path) instead of consuming it.
  *
  * Caching policy (load-bearing — see plan U2):
  *   1. Read `pro-mcp-token-neg:<tokenId>`. If sentinel is present, return
- *      `{ok:'revoked'}` IMMEDIATELY without hitting Convex.
- *   2. Otherwise round-trip Convex `/api/internal-validate-pro-mcp-token`.
- *   3. If Convex returns `{userId}`: return `{ok:'valid', userId}`. Do NOT
+ *      `{ok:'revoked'}` IMMEDIATELY without hitting Postgres.
+ *   2. Otherwise query `worldmonitor.mcp_pro_tokens` directly.
+ *   3. If a non-revoked row is found: return `{ok:'valid', userId}`. Do NOT
  *      cache positively (revoke must be authoritative on the next request).
- *   4. If Convex returns null / missing-userId: write the negative-cache
+ *   4. If no row / revoked / malformed id: write the negative-cache
  *      sentinel (60s TTL) and return `{ok:'revoked'}`.
- *   5. If Convex 5xx / network / timeout / non-JSON: log + return
- *      `{ok:'transient'}`. (Fail-soft. Do NOT write the sentinel — a blip
- *      should not mark a legitimate token as bad for 60s.)
+ *   5. If the query errors for any other reason, or Postgres is
+ *      unconfigured: log + return `{ok:'transient'}`. (Fail-soft. Do NOT
+ *      write the sentinel — a blip should not mark a legitimate token as
+ *      bad for 60s.)
  *
  * Most callers want the simpler `userId | null` shape (per-request
  * validate, fail-closed on transient is correct because a 401 will retry
@@ -264,57 +285,44 @@ export async function validateProMcpToken(tokenId: string): Promise<ProMcpValida
   // Step 1: negative-cache short-circuit.
   if (await readNegCache(tokenId)) return { ok: 'revoked' };
 
-  // Step 2: Convex round-trip.
-  const env = getConvexEnv();
-  if (!env) return { ok: 'transient' };
+  // Step 2: Postgres round-trip.
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: 'transient' };
 
-  let resp: Response;
+  let userId: string | null = null;
   try {
-    resp = await fetch(`${env.siteUrl}/api/internal-validate-pro-mcp-token`, {
-      method: 'POST',
-      headers: convexHeaders(env.sharedSecret),
-      body: JSON.stringify({ tokenId }),
-      signal: AbortSignal.timeout(CONVEX_TIMEOUT_MS),
-    });
+    const { data, error } = await supabase
+      .from('mcp_pro_tokens')
+      .select('user_id')
+      .eq('id', tokenId)
+      .is('revoked_at', null)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === POSTGRES_INVALID_TEXT_REPRESENTATION) {
+        // Malformed tokenId (not a uuid) -- structurally not-found, matches
+        // the old Convex malformed-id -> null contract. Not transient.
+        await writeNegCache(tokenId);
+        return { ok: 'revoked' };
+      }
+      console.warn(`[pro-mcp-token] validateProMcpToken Supabase query failed: ${error.message}`);
+      return { ok: 'transient' };
+    }
+
+    if (data && typeof data.user_id === 'string' && data.user_id.length > 0) {
+      userId = data.user_id;
+    }
   } catch (err) {
-    // Fail-soft: timeout / network error → transient, no neg-cache write.
     console.warn(
-      '[pro-mcp-token] validateProMcpToken Convex fetch failed:',
+      '[pro-mcp-token] validateProMcpToken Supabase fetch failed:',
       err instanceof Error ? err.message : String(err),
     );
     return { ok: 'transient' };
   }
 
-  if (!resp.ok) {
-    // 5xx / 401 / unexpected: fail-soft, no neg-cache write.
-    console.warn(`[pro-mcp-token] validateProMcpToken Convex HTTP ${resp.status}`);
-    return { ok: 'transient' };
-  }
-
-  let body: unknown;
-  try {
-    body = await resp.json();
-  } catch (err) {
-    console.warn(
-      '[pro-mcp-token] validateProMcpToken Convex JSON parse failed:',
-      err instanceof Error ? err.message : String(err),
-    );
-    // Malformed body — treat as transient (NOT revoked). Don't poison the
-    // cache for what is structurally a server-side glitch.
-    return { ok: 'transient' };
-  }
-
-  // Convex returns `null` for revoked / not-found / malformed-id; otherwise
-  // `{userId: string}`. Defensive-shape check before trusting.
-  if (
-    body &&
-    typeof body === 'object' &&
-    'userId' in body &&
-    typeof (body as { userId: unknown }).userId === 'string' &&
-    (body as { userId: string }).userId.length > 0
-  ) {
+  if (userId) {
     // Step 3: positive — return WITHOUT caching.
-    return { ok: 'valid', userId: (body as { userId: string }).userId };
+    return { ok: 'valid', userId };
   }
 
   // Step 4: negative — write sentinel and return revoked.
@@ -330,7 +338,7 @@ export async function validateProMcpToken(tokenId: string): Promise<ProMcpValida
  *
  * The refresh-grant path in `api/oauth/token.ts` MUST call
  * `validateProMcpToken` directly to distinguish transient from revoked,
- * otherwise a Convex blip silently consumes the refresh token.
+ * otherwise a Postgres blip silently consumes the refresh token.
  */
 export async function validateProMcpTokenOrNull(tokenId: string): Promise<ProMcpValidateResult | null> {
   const r = await validateProMcpToken(tokenId);
@@ -339,16 +347,21 @@ export async function validateProMcpTokenOrNull(tokenId: string): Promise<ProMcp
 }
 
 /**
- * Revoke a Pro MCP token via the internal Convex HTTP route (server-to-server,
- * shared-secret + in-mutation tenancy gate).
+ * Revoke a Pro MCP token directly against `worldmonitor.mcp_pro_tokens`
+ * (service-role Postgres update, tenancy-checked).
  *
  * Use this from rollback paths (e.g. `/oauth/authorize-pro` U5: after
- * `issueProMcpToken` succeeds but the `oauth:code` SETEX fails). The
- * settings-UI revoke endpoint (U9) calls the **public** `revokeProMcpToken`
- * Convex mutation directly, NOT this helper.
+ * `issueProMcpToken` succeeds but the `oauth:code` SETEX fails) and from
+ * the settings-UI revoke endpoint (U9).
  *
  * After a successful revoke, writes the negative-cache sentinel so any
  * already-resolved bearer with this tokenId stops on the next validate.
+ *
+ * Tenancy gate: the update is scoped to `id = tokenId AND user_id = userId`.
+ * A mismatch (wrong owner, or no such row) is reported as `not-found` —
+ * never `already-revoked` — so a misbehaving caller cannot use this
+ * endpoint to probe whether a tokenId exists or is revoked for another
+ * user's account.
  *
  * Returns `{ ok: true }` on success, `{ ok: false, reason }` on logical
  * failures (NOT_FOUND / ALREADY_REVOKED / config / network). Does not
@@ -361,41 +374,61 @@ export async function revokeProMcpToken(
 ): Promise<{ ok: true } | { ok: false; reason: 'config' | 'not-found' | 'already-revoked' | 'network' }> {
   if (!userId || !tokenId) return { ok: false, reason: 'not-found' };
 
-  const env = getConvexEnv();
-  if (!env) return { ok: false, reason: 'config' };
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return { ok: false, reason: 'config' };
 
-  let resp: Response;
   try {
-    resp = await fetch(`${env.siteUrl}/api/internal-revoke-pro-mcp-token`, {
-      method: 'POST',
-      headers: convexHeaders(env.sharedSecret),
-      body: JSON.stringify({ userId, tokenId }),
-      signal: AbortSignal.timeout(CONVEX_TIMEOUT_MS),
-    });
+    const { data: updated, error: updateError } = await supabase
+      .from('mcp_pro_tokens')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', tokenId)
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .select('id')
+      .maybeSingle();
+
+    if (updateError) {
+      if (updateError.code === POSTGRES_INVALID_TEXT_REPRESENTATION) {
+        return { ok: false, reason: 'not-found' };
+      }
+      console.warn('[pro-mcp-token] revokeProMcpToken update failed:', updateError.message);
+      return { ok: false, reason: 'network' };
+    }
+
+    if (updated) {
+      // Set the negative-cache sentinel so the next validate short-circuits
+      // even if some in-flight bearer has already been resolved.
+      await writeNegCache(tokenId);
+      return { ok: true };
+    }
+
+    // No row updated -- disambiguate the reason WITHOUT leaking existence
+    // of another user's token: only report 'already-revoked' when the row
+    // is confirmed to belong to this userId; anything else (missing row,
+    // owned by someone else) reports 'not-found'.
+    const { data: existing, error: selectError } = await supabase
+      .from('mcp_pro_tokens')
+      .select('user_id, revoked_at')
+      .eq('id', tokenId)
+      .maybeSingle();
+
+    if (selectError || !existing || existing.user_id !== userId) {
+      return { ok: false, reason: 'not-found' };
+    }
+    return { ok: false, reason: existing.revoked_at ? 'already-revoked' : 'not-found' };
   } catch (err) {
     console.warn(
-      '[pro-mcp-token] revokeProMcpToken Convex fetch failed:',
+      '[pro-mcp-token] revokeProMcpToken failed:',
       err instanceof Error ? err.message : String(err),
     );
     return { ok: false, reason: 'network' };
   }
-
-  if (resp.ok) {
-    // Set the negative-cache sentinel so the next validate short-circuits
-    // even if some in-flight bearer has already been resolved.
-    await writeNegCache(tokenId);
-    return { ok: true };
-  }
-
-  if (resp.status === 404) return { ok: false, reason: 'not-found' };
-  if (resp.status === 409) return { ok: false, reason: 'already-revoked' };
-  return { ok: false, reason: 'network' };
 }
 
 /**
  * Set the negative-cache sentinel for a tokenId. Public so the U9 settings
- * revoke endpoint (which talks to the public Convex mutation directly) can
- * call this after a successful revoke to invalidate any cached bearers.
+ * revoke endpoint can call this after a successful revoke to invalidate any
+ * cached bearers.
  *
  * Equivalent to writing `pro-mcp-token-neg:<tokenId>` = "1" with 60s EX.
  */
@@ -442,9 +475,9 @@ export async function clearProMcpTokenNegCache(tokenId: string): Promise<void> {
  * runtime and the gateway, and direct Upstash REST callers in this module
  * cannot consume the JSON-helper-specific paths in `redis.ts`.
  *
- * @param userId Clerk userId. Empty / falsy → returns "" (caller should
- *               never reach the INCR path with no userId, but the empty-
- *               key fail-soft mirrors the rest of this module).
+ * @param userId Supabase auth.users id. Empty / falsy → returns "" (caller
+ *               should never reach the INCR path with no userId, but the
+ *               empty-key fail-soft mirrors the rest of this module).
  * @param date   Optional Date for test injection; defaults to `new Date()`.
  */
 export function dailyCounterKey(userId: string, date?: Date): string {

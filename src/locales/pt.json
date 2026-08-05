@@ -3282,7 +3282,8 @@
   "auth": {
     "signIn": "Entrar",
     "createAccount": "Criar conta",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Conectar MCP",

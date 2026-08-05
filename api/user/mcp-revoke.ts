@@ -44,7 +44,7 @@ export const config = { runtime: 'edge' };
 import { getCorsHeaders } from '../_cors.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from '../_sentry-edge.js';
-import { resolveClerkSession } from '../../server/_shared/auth-session';
+import { resolveSupabaseSession } from '../../server/_shared/auth-session';
 import { invalidateProMcpTokenCache } from '../../server/_shared/pro-mcp-token';
 
 /** Convex internal HTTP-action call timeout. Mirrors U2's pro-mcp-token.ts. */
@@ -208,7 +208,7 @@ export async function revokeHandler(req: Request, deps: RevokeDeps): Promise<Res
 
 export default async function handler(req: Request): Promise<Response> {
   return revokeHandler(req, {
-    resolveUserId: async (r) => (await resolveClerkSession(r))?.userId ?? null,
+    resolveUserId: async (r) => (await resolveSupabaseSession(r))?.userId ?? null,
     convexRevoke: callConvexRevoke,
     invalidateCache: invalidateProMcpTokenCache,
   });

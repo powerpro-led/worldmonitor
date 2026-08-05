@@ -73,9 +73,10 @@ async function loadChatAnalystPanel() {
       export const PanelGateReason = Object.freeze({
         NONE: 'none',
         ANONYMOUS: 'anonymous',
-        FREE_TIER: 'free_tier',
       });
     `],
+    ['auth-state-stub', `export function getAuthState() { return { user: null, isPending: false }; }`],
+    ['auth-provider-stub', `export function signInWithGithub() { return Promise.resolve(); }`],
     ['premium-fetch-stub', `
       export function premiumFetch() { return Promise.reject(new Error('not wired in test')); }
     `],
@@ -87,12 +88,6 @@ async function loadChatAnalystPanel() {
     `],
     ['dompurify-stub', `
       export default { sanitize: (s) => s };
-    `],
-    ['checkout-stub', `
-      export function startCheckout() {}
-    `],
-    ['products-stub', `
-      export const DEFAULT_UPGRADE_PRODUCT = 'pro';
     `],
   ]);
 
@@ -107,10 +102,10 @@ async function loadChatAnalystPanel() {
     ['@/services/ai-flow-settings', 'ai-flow-settings-stub'],
     ['@/services/runtime-config', 'runtime-config-stub'],
     ['@/services/panel-gating', 'panel-gating-stub'],
+    ['@/services/auth-state', 'auth-state-stub'],
+    ['@/services/auth-provider', 'auth-provider-stub'],
     ['@/services/premium-fetch', 'premium-fetch-stub'],
     ['@/utils/analyst-markdown', 'analyst-markdown-stub'],
-    ['@/services/checkout', 'checkout-stub'],
-    ['@/config/products', 'products-stub'],
     ['marked', 'marked-stub'],
     ['dompurify', 'dompurify-stub'],
   ]);

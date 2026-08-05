@@ -3,6 +3,7 @@
 import { loadEnvFile, loadSharedConfig, sleep, CHROME_UA, runSeed, parseYahooChart, writeExtraKey, extendExistingTtl, readCanonicalEnvelopeMeta, readSeedSnapshot, writeFreshnessMetadata } from './_seed-utils.mjs';
 import { fetchYahooJson } from './_yahoo-fetch.mjs';
 import { fetchAvBulkQuotes } from './_shared-av.mjs';
+import { fetchInfowayBulkQuotes } from './_shared-infoway.mjs';
 import { CHINA_COUNTRY_STOCK_INDEX_KEY, buildCountryStockIndexSnapshot } from './_country-stock-index.mjs';
 import { getUsEquitySession, isMultiMarketEquityTradingDay } from './shared/market-hours.cjs';
 import { mergeLastGoodQuotes } from './shared/market-quote-refresh.cjs';
@@ -51,13 +52,27 @@ async function fetchYahooQuote(symbol) {
 async function fetchMarketQuotes() {
   const previousPayloadPromise = readSeedSnapshot(CANONICAL_KEY);
   const quotes = [];
+  const infowayKey = process.env.INFOWAY_API_KEY;
   const avKey = process.env.ALPHA_VANTAGE_API_KEY;
   const finnhubKey = process.env.FINNHUB_API_KEY;
 
-  // --- Primary: Alpha Vantage REALTIME_BULK_QUOTES ---
+  // --- Primary: Infoway batch_kline (paid, real-time-adjacent daily candles) ---
+  if (infowayKey) {
+    // Infoway's US equities endpoint doesn't cover indices or Indian NSE symbols — skip those
+    const infowaySymbols = MARKET_SYMBOLS.filter((s) => !YAHOO_ONLY.has(s) && !s.endsWith('.NS'));
+    const infowayResults = await fetchInfowayBulkQuotes(infowaySymbols, infowayKey);
+    for (const [sym, q] of infowayResults) {
+      const meta = stocksConfig.symbols.find(s => s.symbol === sym);
+      quotes.push({ symbol: sym, name: meta?.name || sym, display: meta?.display || sym, price: q.price, change: q.change, sparkline: q.sparkline });
+      console.log(`  [Infoway] ${sym}: $${q.price} (${q.change > 0 ? '+' : ''}${q.change.toFixed(2)}%)`);
+    }
+  }
+
+  // --- Secondary: Alpha Vantage REALTIME_BULK_QUOTES (for anything Infoway missed) ---
   if (avKey) {
+    const covered0 = new Set(quotes.map((q) => q.symbol));
     // AV doesn't support Indian NSE symbols or Yahoo-only indices — skip those
-    const avSymbols = MARKET_SYMBOLS.filter((s) => !YAHOO_ONLY.has(s) && !s.endsWith('.NS'));
+    const avSymbols = MARKET_SYMBOLS.filter((s) => !covered0.has(s) && !YAHOO_ONLY.has(s) && !s.endsWith('.NS'));
     const avResults = await fetchAvBulkQuotes(avSymbols, avKey);
     for (const [sym, q] of avResults) {
       const meta = stocksConfig.symbols.find(s => s.symbol === sym);
@@ -68,7 +83,7 @@ async function fetchMarketQuotes() {
 
   const covered = new Set(quotes.map((q) => q.symbol));
 
-  // --- Secondary: Finnhub (for any stocks not covered by AV or if AV key not set) ---
+  // --- Tertiary: Finnhub (for any stocks not covered by Infoway/AV or if those keys aren't set) ---
   if (finnhubKey) {
     const finnhubSymbols = MARKET_SYMBOLS.filter((s) => !covered.has(s) && !YAHOO_ONLY.has(s));
     for (let i = 0; i < finnhubSymbols.length; i++) {
@@ -108,8 +123,8 @@ async function fetchMarketQuotes() {
 
   return {
     quotes: mergedQuotes,
-    finnhubSkipped: !finnhubKey && !avKey,
-    skipReason: (!finnhubKey && !avKey) ? 'ALPHA_VANTAGE_API_KEY and FINNHUB_API_KEY not configured' : '',
+    finnhubSkipped: !infowayKey && !finnhubKey && !avKey,
+    skipReason: (!infowayKey && !finnhubKey && !avKey) ? 'INFOWAY_API_KEY, ALPHA_VANTAGE_API_KEY and FINNHUB_API_KEY not configured' : '',
     rateLimited: false,
   };
 }
@@ -141,7 +156,7 @@ if (!isMultiMarketEquityTradingDay()) {
   if (lastGood) {
     const extended = await extendExistingTtl([CANONICAL_KEY, 'seed-meta:market:stocks', RPC_KEY, CHINA_COUNTRY_STOCK_INDEX_KEY], CACHE_TTL);
     if (extended) {
-      await writeFreshnessMetadata('market', 'stocks', lastGood.recordCount, lastGood.sourceVersion || 'alphavantage+finnhub+yahoo', CACHE_TTL);
+      await writeFreshnessMetadata('market', 'stocks', lastGood.recordCount, lastGood.sourceVersion || 'infoway+alphavantage+finnhub+yahoo', CACHE_TTL);
       console.log(`[seed-market-quotes] Tracked equity markets closed (US session=${getUsEquitySession()}) — skipping upstream fetch, extended TTL`);
       process.exit(0);
     }
@@ -185,7 +200,7 @@ async function writeChinaCountryStockIndex() {
 runSeed('market', 'stocks', CANONICAL_KEY, fetchMarketQuotes, {
   validateFn: validate,
   ttlSeconds: CACHE_TTL,
-  sourceVersion: 'alphavantage+finnhub+yahoo',
+  sourceVersion: 'infoway+alphavantage+finnhub+yahoo',
   declareRecords,
   schemaVersion: 1,
   maxStaleMin: 30,

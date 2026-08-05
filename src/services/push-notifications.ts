@@ -20,7 +20,7 @@
 //     we return it without re-prompting. Re-linking an already-linked
 //     device is a no-op from the user's perspective.
 
-import { getClerkToken, getCurrentClerkUser } from '@/services/clerk';
+import { getAuthToken, getCurrentAuthUser } from '@/services/auth-provider';
 import { VAPID_PUBLIC_KEY, isWebPushConfigured, urlBase64ToUint8Array, arrayBufferToBase64 } from '@/config/push';
 
 export type PushPermission = 'default' | 'granted' | 'denied' | 'unsupported';
@@ -95,7 +95,7 @@ function subscriptionToPayload(sub: PushSubscription): SubscriptionPayload | nul
 }
 
 function assertExpectedAccount(expectedUserId?: string): void {
-  if (expectedUserId && getCurrentClerkUser()?.id !== expectedUserId) {
+  if (expectedUserId && getCurrentAuthUser()?.id !== expectedUserId) {
     throw new Error('Authenticated account changed during push setup');
   }
 }
@@ -106,7 +106,7 @@ async function authFetch(
   expectedUserId?: string,
 ): Promise<Response> {
   assertExpectedAccount(expectedUserId);
-  const token = await getClerkToken();
+  const token = await getAuthToken();
   if (!token) throw new Error('Not authenticated');
   assertExpectedAccount(expectedUserId);
   return fetch(path, {

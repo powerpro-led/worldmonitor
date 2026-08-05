@@ -2470,65 +2470,30 @@ describe('api/mcp.ts — PRO MCP Server', () => {
     assert.equal(body.error?.code, -32603, 'total outage must return -32603');
   });
 
-  it('get_airspace surfaces a mid-call billing denial instead of a generic failure', async () => {
-    globalThis.fetch = async () => new Response(
-      JSON.stringify({ error: 'Renewal verification pending', code: 'renewal_verification_pending' }),
-      {
-        status: 503,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-          'Retry-After': '21',
-          'X-Billing-Verification': 'renewal_verification_pending',
-        },
-      },
-    );
-
-    const res = await handler(makeReq('POST', {
-      jsonrpc: '2.0', id: 15, method: 'tools/call',
-      params: { name: 'get_airspace', arguments: { country_code: 'GB' } },
-    }));
-
-    assert.equal(res.status, 503);
-    assert.equal(res.headers.get('Retry-After'), '21');
-    assert.equal(res.headers.get('X-Billing-Verification'), 'renewal_verification_pending');
-    const body = await res.json();
-    assert.equal(body.error?.code, -32603);
-    assert.equal(body.error?.data?.code, 'renewal_verification_pending');
-  });
-
-  it('get_airspace type=civilian rethrows a billing denial instead of serving partial data', async () => {
-    globalThis.fetch = async (url) => {
-      const u = url.toString();
-      if (u.includes('/api/aviation/v1/track-aircraft')) {
-        return new Response(
-          JSON.stringify({ error: 'Subscription lapsed', code: 'subscription_lapsed' }),
-          {
-            status: 403,
-            headers: {
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-store',
-              'X-Billing-Verification': 'subscription_lapsed',
-            },
-          },
-        );
-      }
-      return originalFetch(url);
-    };
-
-    const res = await handler(makeReq('POST', {
-      jsonrpc: '2.0', id: 16, method: 'tools/call',
-      params: { name: 'get_airspace', arguments: { country_code: 'DE', type: 'civilian' } },
-    }));
-
-    // Pre-fix behavior was a plausible-looking 200 with partial:true — a
-    // billing lapse masked as a data-source outage.
-    assert.equal(res.status, 403);
-    assert.equal(res.headers.get('X-Billing-Verification'), 'subscription_lapsed');
-    const body = await res.json();
-    assert.equal(body.error?.code, -32002);
-    assert.equal(body.error?.data?.code, 'subscription_lapsed');
-  });
+  // FIXME(stage1-supabase-migration): "get_airspace surfaces a mid-call
+  // billing denial instead of a generic failure" and "get_airspace
+  // type=civilian rethrows a billing denial instead of serving partial data"
+  // were removed here. Both simulated a downstream gateway response carrying
+  // X-Billing-Verification: renewal_verification_pending / subscription_lapsed
+  // and asserted the BillingDenialError passthrough (api/mcp/dispatch.ts ->
+  // getMcpBillingVerificationDenial in api/mcp/auth.ts) preserves the typed
+  // 503/403 contract instead of flattening to a generic error.
+  //
+  // That passthrough now silently degrades for these Dodo-billing-specific
+  // codes: getMcpBillingVerificationDenial() delegates them to
+  // server/_shared/entitlement-check.ts's getBillingVerificationDenial(),
+  // which Stage 1 turned into a PERMANENT NO-OP (always returns null; see
+  // that module's header comment). Believed harmless in practice -- no code
+  // path in this codebase produces a downstream response carrying
+  // X-Billing-Verification: renewal_verification_pending /
+  // renewal_verification_failed / subscription_lapsed anymore (Dodo billing
+  // is deleted, and getEntitlements() never sets `billingStatus`) -- so this
+  // is dead code guarding an unreachable state, not a live regression. Full
+  // writeup of the same root cause: tests/mcp-world-brief-routing.test.mjs's
+  // removed "preserves a genuine billing denial..." test. A future cleanup
+  // pass should delete the now-dead BillingDenialError passthrough machinery
+  // (api/mcp/dispatch.ts, api/mcp/auth.ts, api/mcp/billing-denial.ts) or
+  // restore its correctness if a non-Dodo billing state needs it again.
 
   it('get_airspace type=civilian skips military fetch', async () => {
     let militaryFetched = false;
@@ -2921,55 +2886,21 @@ describe('api/mcp.ts — U7 Pro-path', () => {
     assert.equal(pipe.count, 1);
   });
 
-  for (const billingStatus of ['renewal_verification_pending', 'renewal_verification_failed']) {
-    it(`error: ${billingStatus} → JSON-RPC retryable no-store 503`, async () => {
-      const { deps, pipe } = makeProDeps({
-        getEntitlements: async () => ({
-          planKey: 'free',
-          features: { tier: 0, mcpAccess: false },
-          validUntil: 0,
-          billingStatus,
-          retryAfterSeconds: 19,
-        }),
-      });
-      const res = await mcpHandler(proReq('POST', callBody('get_market_data')), deps);
-
-      assert.equal(res.status, 503);
-      assert.equal(res.headers.get('Cache-Control'), 'no-store');
-      assert.equal(res.headers.get('Retry-After'), '19');
-      assert.equal(res.headers.get('X-Billing-Verification'), billingStatus);
-      const body = await res.json();
-      assert.equal(body.jsonrpc, '2.0');
-      assert.equal(body.error?.code, -32603);
-      assert.equal(body.error?.data?.code, billingStatus);
-      assert.equal(pipe.count, 0);
-    });
-  }
-
-  it('error: subscription_lapsed → distinct JSON-RPC hard denial', async () => {
-    const { deps, pipe } = makeProDeps({
-      getEntitlements: async () => ({
-        planKey: 'free',
-        features: { tier: 0, mcpAccess: false },
-        validUntil: 0,
-        billingStatus: 'subscription_lapsed',
-      }),
-    });
-    const res = await mcpHandler(proReq('POST', callBody('get_market_data')), deps);
-
-    assert.equal(res.status, 403);
-    assert.equal(res.headers.get('Cache-Control'), 'no-store');
-    assert.equal(res.headers.get('Retry-After'), null);
-    assert.equal(res.headers.get('X-Billing-Verification'), 'subscription_lapsed');
-    const body = await res.json();
-    assert.equal(body.jsonrpc, '2.0');
-    // -32002, NOT -32001: the catalog reserves -32001 for HTTP 401 auth
-    // failures with OAuth-reauth recovery; a confirmed lapse cannot be fixed
-    // by re-authenticating.
-    assert.equal(body.error?.code, -32002);
-    assert.equal(body.error?.data?.code, 'subscription_lapsed');
-    assert.equal(pipe.count, 0);
-  });
+  // FIXME(stage1-supabase-migration): the "renewal_verification_pending" /
+  // "renewal_verification_failed" -> JSON-RPC retryable no-store 503 loop and
+  // "subscription_lapsed" -> distinct JSON-RPC hard denial test were removed
+  // here. Both injected a `billingStatus` field via the `getEntitlements`
+  // deps mock and asserted `getMcpBillingVerificationDenial()` (api/mcp/auth.ts)
+  // turns it into the typed 503/403 contract. Same root cause as the
+  // get_airspace billing-denial tests removed above:
+  // server/_shared/entitlement-check.ts's getBillingVerificationDenial() is a
+  // permanent no-op post-Stage-1, so these Dodo-billing-specific codes no
+  // longer produce a denial Response here either -- and, separately, nothing
+  // in the post-Stage-1 codebase can make a real `getEntitlements()` call
+  // return a `billingStatus` field at all (see that module's fixed-entitlement
+  // implementation), so this scenario is doubly unreachable via deps
+  // injection alone reflecting production. See the get_airspace FIXME above
+  // for the full writeup.
 
   it('error: transient entitlement-lookup failure → retryable 503, not a -32001 re-auth loop', async () => {
     const { deps, pipe } = makeProDeps({
@@ -2995,35 +2926,11 @@ describe('api/mcp.ts — U7 Pro-path', () => {
     assert.equal(pipe.count, 0);
   });
 
-  it('error: mid-call billing 503 from the gateway keeps its contract (no -32603 flatten)', async () => {
-    const { deps } = makeProDeps();
-    globalThis.fetch = async () => new Response(
-      JSON.stringify({ error: 'Renewal verification pending', code: 'renewal_verification_pending' }),
-      {
-        status: 503,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-          'Retry-After': '21',
-          'X-Billing-Verification': 'renewal_verification_pending',
-        },
-      },
-    );
-    try {
-      const res = await mcpHandler(proReq('POST', callBody('get_country_risk', { country_code: 'US' })), deps);
-
-      assert.equal(res.status, 503);
-      assert.equal(res.headers.get('Retry-After'), '21');
-      assert.equal(res.headers.get('Cache-Control'), 'no-store');
-      assert.equal(res.headers.get('X-Billing-Verification'), 'renewal_verification_pending');
-      const body = await res.json();
-      assert.equal(body.error?.code, -32603);
-      assert.equal(body.error?.data?.code, 'renewal_verification_pending');
-      assert.equal(body.id, 100);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
+  // FIXME(stage1-supabase-migration): "mid-call billing 503 from the gateway
+  // keeps its contract (no -32603 flatten)" was removed here -- same
+  // downstream-mocked-response BillingDenialError scenario and same
+  // getBillingVerificationDenial()-is-now-a-no-op root cause as the
+  // get_airspace tests above.
 
   it('error: mid-call backend-unreachable 503 keeps the entitlement_verification_unavailable contract', async () => {
     const { deps } = makeProDeps();
@@ -3055,32 +2962,11 @@ describe('api/mcp.ts — U7 Pro-path', () => {
     }
   });
 
-  it('error: mid-call confirmed lapse from the gateway surfaces -32002 + 403', async () => {
-    const { deps } = makeProDeps();
-    globalThis.fetch = async () => new Response(
-      JSON.stringify({ error: 'Subscription lapsed', code: 'subscription_lapsed' }),
-      {
-        status: 403,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-          'X-Billing-Verification': 'subscription_lapsed',
-        },
-      },
-    );
-    try {
-      const res = await mcpHandler(proReq('POST', callBody('get_country_risk', { country_code: 'US' })), deps);
-
-      assert.equal(res.status, 403);
-      assert.equal(res.headers.get('X-Billing-Verification'), 'subscription_lapsed');
-      const body = await res.json();
-      assert.equal(body.error?.code, -32002);
-      assert.equal(body.error?.data?.code, 'subscription_lapsed');
-      assert.equal(body.id, 100);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
+  // FIXME(stage1-supabase-migration): "mid-call confirmed lapse from the
+  // gateway surfaces -32002 + 403" was removed here -- same
+  // downstream-mocked-response BillingDenialError scenario and same
+  // getBillingVerificationDenial()-is-now-a-no-op root cause as the
+  // get_airspace tests above.
 
   it('classifies billing-verification denials distinctly in usage telemetry', async () => {
     const { mcpReasonFor } = await import('../api/mcp/usage.ts');

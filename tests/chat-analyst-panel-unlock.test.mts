@@ -40,7 +40,7 @@ describe('ChatAnalystPanel — unlockPanel restores chat surface', () => {
 
     // Simulate updatePanelGating() seeing FREE/anon — content is replaced
     // with the locked CTA and Panel._locked flips to true.
-    panel.showGatedCta('free_tier', () => {});
+    panel.showGatedCta('anonymous', () => {});
 
     assert.equal(
       root.querySelector('.chat-analyst-input'),
@@ -77,7 +77,7 @@ describe('ChatAnalystPanel — unlockPanel restores chat surface', () => {
     const root = panel.getElement();
 
     for (let i = 0; i < 3; i++) {
-      panel.showGatedCta('free_tier', () => {});
+      panel.showGatedCta('anonymous', () => {});
       panel.unlockPanel();
 
       assert.ok(

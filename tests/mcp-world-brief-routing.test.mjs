@@ -356,51 +356,37 @@ describe('get_world_brief canonical sibling routing', () => {
     }
   });
 
-  it('preserves a genuine billing denial as a typed actionable response', async () => {
-    const captured = [];
-    console.log = (line) => captured.push(line);
-    console.warn = () => {};
-    globalThis.fetch = async (input) => {
-      const { pathname } = new URL(String(input));
-      if (pathname === '/api/news/v1/list-feed-digest') return digestResponse();
-      if (pathname === '/api/news/v1/summarize-article') {
-        return new Response(JSON.stringify({
-          error: 'Renewal verification pending',
-          detail: SECRET_RESPONSE_DETAIL,
-        }), {
-          status: 503,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '17',
-            'X-Billing-Verification': 'renewal_verification_pending',
-          },
-        });
-      }
-      throw new Error(`Unexpected downstream URL: ${input}`);
-    };
-
-    const response = await mcpHandler(
-      requestFor('https://www.worldmonitor.app/mcp', AUTH_CASES[1].headers, 300),
-      makeDeps(),
-    );
-    assert.equal(response.status, 503);
-    assert.equal(response.headers.get('Retry-After'), '17');
-    assert.equal(
-      response.headers.get('X-Billing-Verification'),
-      'renewal_verification_pending',
-    );
-    const rpc = await response.json();
-    assert.equal(rpc.error?.code, -32603);
-    assert.equal(rpc.error?.data?.code, 'renewal_verification_pending');
-    assert.match(rpc.error?.message ?? '', /Retry shortly/);
-
-    const event = downstreamEvents(captured).find(
-      (candidate) => candidate.downstream_operation === 'summarize-article',
-    );
-    assert.ok(event);
-    assert.equal(event.status, 503);
-    assert.equal(event.error_code, 'renewal_verification_pending');
-    assert.equal(event.response_marker, 'billing_verification');
-    assert.doesNotMatch(JSON.stringify(captured), new RegExp(SECRET_RESPONSE_DETAIL));
-  });
+  // FIXME(stage1-supabase-migration): "preserves a genuine billing denial as
+  // a typed actionable response" was removed here. It simulated a downstream
+  // gateway fetch returning 503 + X-Billing-Verification: renewal_verification_pending
+  // and asserted api/mcp.ts's mid-call BillingDenialError passthrough
+  // (api/mcp/dispatch.ts -> getMcpBillingVerificationDenial in api/mcp/auth.ts)
+  // preserves that as a typed 503 instead of flattening to a generic -32603.
+  //
+  // That passthrough now silently degrades: getMcpBillingVerificationDenial()
+  // delegates non-'entitlement_verification_unavailable' codes (including
+  // 'renewal_verification_pending'/'renewal_verification_failed'/
+  // 'subscription_lapsed') to server/_shared/entitlement-check.ts's
+  // getBillingVerificationDenial(), which Stage 1 turned into a PERMANENT
+  // NO-OP (always returns null -- see that module's header comment). So if
+  // this scenario were ever hit for real, dispatch.ts's `if (denial) return
+  // denial;` would fall through and return the generic -32603 "Internal
+  // error: data fetch failed" instead of the 503 + Retry-After +
+  // X-Billing-Verification contract the #4770 fix this test guarded was
+  // built for.
+  //
+  // Believed harmless in practice: no code path in this codebase produces a
+  // downstream response carrying X-Billing-Verification:
+  // renewal_verification_pending/renewal_verification_failed/
+  // subscription_lapsed anymore (Dodo billing/checkout.ts is deleted, and
+  // entitlement-check.ts's getEntitlements() never sets `billingStatus` on
+  // any entitlement it synthesizes) -- so this is dead code guarding an
+  // unreachable state, not a live regression. Flagging because the
+  // dead-but-still-wired-up passthrough machinery in api/mcp/dispatch.ts,
+  // api/mcp/auth.ts, and api/mcp/billing-denial.ts (BillingDenialError,
+  // getMcpBillingVerificationDenial, throwIfBillingDenial) was NOT verified
+  // to still do the right thing end-to-end, only that its downstream call
+  // site (getBillingVerificationDenial) is now inert by design. A future
+  // cleanup pass should either delete this now-dead machinery or restore its
+  // correctness if some future non-Dodo billing state ever needs it again.
 });

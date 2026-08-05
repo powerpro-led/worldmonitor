@@ -59,7 +59,7 @@ export class FrameworkSelector {
       btn.classList.add('framework-settings-btn--locked');
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        opts.panel?.showGatedCta(PanelGateReason.FREE_TIER, () => {});
+        opts.panel?.showGatedCta(PanelGateReason.ANONYMOUS, () => {});
       });
     }
 

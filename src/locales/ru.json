@@ -3300,7 +3300,8 @@
   "auth": {
     "signIn": "Вход",
     "createAccount": "Создать аккаунт",
-    "settings": "Параметры"
+    "settings": "Параметры",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Подключить MCP",

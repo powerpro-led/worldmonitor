@@ -15,21 +15,54 @@
  */
 
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import { afterEach, before, after, describe, it } from 'node:test';
-import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { SignJWT } from 'jose';
 
-import { createDomainGateway, type GatewayCtx } from '../server/gateway.ts';
+import type { GatewayCtx } from '../server/gateway.ts';
 import { deriveCountry } from '../server/_shared/usage.ts';
 import { issueSessionToken } from '../api/_session.js';
 import { createRedisFetch } from './helpers/fake-upstash-redis.mts';
 
+// server/auth-session.ts reads SUPABASE_JWT_SECRET/SUPABASE_URL into
+// module-scope consts at first import, so `../server/gateway.ts` (which
+// transitively imports it) must be dynamically imported AFTER the env vars
+// below are set -- a static top-of-file import would capture an empty
+// secret and every bearer-token verification in this file would fail
+// closed regardless of what a test signs.
+const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
+const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
+const SUPABASE_JWT_ISSUER = `${SUPABASE_URL}/auth/v1`;
+const supabaseSecretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+process.env.SUPABASE_URL = SUPABASE_URL;
+process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+
+const { createDomainGateway } = await import('../server/gateway.ts');
+
+function signSupabaseToken(userId: string): Promise<string> {
+  return new SignJWT({ sub: userId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(SUPABASE_JWT_ISSUER)
+    .setAudience('authenticated')
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(supabaseSecretKey);
+}
+
+/** SHA-256 hex digest -- mirrors server/_shared/user-api-key.ts's hashing so
+ * the Supabase REST mock below can match `key_hash=eq.<hash>` query params
+ * against a raw wm_ key fixture. */
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // Canonical `wm_` + 40 lowercase hex — the only shape generateKey()
 // (src/services/api-keys.ts) mints, and since #5379 validateUserApiKey rejects
-// anything else before hashing. The Convex mocks match on URL, not on the key
-// or its hash, so the exact values are arbitrary as long as they are shaped
+// anything else before hashing. The Supabase mock matches on the key's hash,
+// not the raw value, so the exact value is arbitrary as long as it is shaped
 // like a real key.
-const TELEMETRY_FREE_USER_KEY = `wm_${'d'.repeat(40)}`;
 const TELEMETRY_ACTIVE_USER_KEY = `wm_${'e'.repeat(40)}`;
 
 // Anonymous browser access requires a wms_ session token (issue #3541).
@@ -73,17 +106,26 @@ function makeRecordingCtx(): { ctx: GatewayCtx; settled: Promise<void> } {
   } as { ctx: GatewayCtx; settled: Promise<void> };
 }
 
-function installAxiomFetchSpy(
+async function installAxiomFetchSpy(
   originalFetch: typeof fetch,
-  opts: { entitlementsResponse?: unknown; apiKeyValidationResponse?: unknown } = {},
-): {
+  // NOTE(stage1-supabase-migration): replaces the old Convex
+  // apiKeyValidationResponse/entitlementsResponse options. getEntitlements()
+  // (server/_shared/entitlement-check.ts) is now a pure local function (no
+  // fetch, no mock needed) -- the only remaining thing to mock is the
+  // Postgres-backed wm_ key -> owner lookup (server/_shared/user-api-key.ts).
+  opts: { userApiKeys?: Record<string, string> } = {},
+): Promise<{
   events: CapturedEvent[];
   restore: () => void;
-} {
+}> {
   const events: CapturedEvent[] = [];
   process.env.UPSTASH_REDIS_REST_URL = 'https://redis.example';
   process.env.UPSTASH_REDIS_REST_TOKEN = 'token';
   const { fetchImpl: redisFetch } = createRedisFetch({});
+  const hashToUserId = new Map<string, string>();
+  for (const [key, userId] of Object.entries(opts.userApiKeys ?? {})) {
+    hashToUserId.set(await sha256Hex(key), userId);
+  }
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.startsWith(process.env.UPSTASH_REDIS_REST_URL || '')) {
@@ -94,17 +136,22 @@ function installAxiomFetchSpy(
       for (const ev of body) events.push(ev);
       return new Response('{}', { status: 200 });
     }
-    if (url.includes('/api/internal-validate-api-key')) {
-      return new Response(JSON.stringify(opts.apiKeyValidationResponse ?? null), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    if (url.includes('/api/internal-entitlements')) {
-      return new Response(JSON.stringify(opts.entitlementsResponse ?? null), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (url.startsWith(`${SUPABASE_URL}/rest/v1/api_keys`)) {
+      if ((init?.method ?? 'GET') !== 'GET') {
+        // Fire-and-forget last_used_at touch (PATCH) -- accept silently.
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      const parsed = new URL(url);
+      const keyHashParam = parsed.searchParams.get('key_hash') ?? '';
+      const hash = keyHashParam.startsWith('eq.') ? keyHashParam.slice(3) : '';
+      const userId = hashToUserId.get(hash);
+      if (!userId) {
+        return new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(
+        JSON.stringify({ id: `key-${hash.slice(0, 8)}`, user_id: userId, name: 'test key', last_used_at: null }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
     }
     return originalFetch(input as Request | string | URL, init);
   }) as typeof fetch;
@@ -145,7 +192,7 @@ describe('gateway telemetry payload — domain extraction', () => {
   it("emits domain='shipping' for /api/v2/shipping/* routes (not 'v2')", async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -180,7 +227,7 @@ describe('gateway telemetry payload — domain extraction', () => {
   it("emits domain='market' for the standard /api/<domain>/v1/<rpc> layout", async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -214,7 +261,7 @@ describe('gateway telemetry payload — domain extraction', () => {
     // tokens emit auth_kind:'anon'.
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -245,7 +292,7 @@ describe('gateway telemetry payload — domain extraction', () => {
   it("invalid REST jmespath projection emits reason='malformed_request'", async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -284,7 +331,7 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
     process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -321,7 +368,7 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
     process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -377,55 +424,10 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
 });
 
 describe('gateway telemetry payload — bearer identity propagation', () => {
-  let privateKey: CryptoKey;
-  let jwksServer: Server;
-  let jwksPort: number;
-
-  before(async () => {
-    const { publicKey, privateKey: pk } = await generateKeyPair('RS256');
-    privateKey = pk;
-
-    const publicJwk = await exportJWK(publicKey);
-    publicJwk.kid = 'telemetry-key-1';
-    publicJwk.alg = 'RS256';
-    publicJwk.use = 'sig';
-    const jwks = { keys: [publicJwk] };
-
-    jwksServer = createServer((req, res) => {
-      if (req.url === '/.well-known/jwks.json') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(jwks));
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
-    await new Promise<void>((resolve) => jwksServer.listen(0, '127.0.0.1', () => resolve()));
-    const addr = jwksServer.address();
-    jwksPort = typeof addr === 'object' && addr ? addr.port : 0;
-    process.env.CLERK_JWT_ISSUER_DOMAIN = `http://127.0.0.1:${jwksPort}`;
-  });
-
-  after(async () => {
-    jwksServer?.close();
-    delete process.env.CLERK_JWT_ISSUER_DOMAIN;
-  });
-
-  function signToken(claims: Record<string, unknown>) {
-    return new SignJWT(claims)
-      .setProtectedHeader({ alg: 'RS256', kid: 'telemetry-key-1' })
-      .setIssuer(`http://127.0.0.1:${jwksPort}`)
-      .setAudience('convex')
-      .setSubject(claims.sub as string ?? 'user_test')
-      .setIssuedAt()
-      .setExpirationTime('1h')
-      .sign(privateKey);
-  }
-
   it('records customer_id from a successful legacy premium bearer call', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -435,7 +437,7 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
       },
     ]);
 
-    const token = await signToken({ sub: 'user_pro', plan: 'pro' });
+    const token = await signSupabaseToken('user_pro');
     const recorder = makeRecordingCtx();
     const res = await handler(
       new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US', {
@@ -460,31 +462,36 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     assert.equal(ev.status, 200);
   });
 
-  it("records tier=2 for an entitlement-gated success (the path the round-1 P2 fix targets)", async () => {
-    // /api/market/v1/analyze-stock requires tier 2 in ENDPOINT_ENTITLEMENTS.
-    // Pre-fix: usage.tier stayed null → emitted as 0. Post-fix: gateway re-reads
-    // entitlements after checkEntitlement allows the request, so tier=2 lands on
-    // the wire. We exercise this by stubbing the Convex entitlements fallback —
-    // Redis returns null without UPSTASH env, then getEntitlements falls through
-    // to the Convex HTTP path which we intercept via the same fetch spy.
+  // FIXME(stage1-supabase-migration): renamed from "records tier=2 for an
+  // entitlement-gated success (the path the round-1 P2 fix targets)" and its
+  // assertion inverted. That test proved a real resolved entitlement tier
+  // lands in telemetry on a bearer-JWT tier-gated success, guarding against
+  // a prior regression where `usage.tier` silently stayed null/0.
+  //
+  // Post-Stage-1 this regression is effectively BACK, via a different
+  // mechanism: server/_shared/entitlement-check.ts's checkEntitlementDetailed
+  // has an early-return short-circuit --
+  // `if (options.clerkRole === 'pro' && requiredTier <= 1) return { response:
+  // null, entitlements: null };` -- and server/auth-session.ts now gives
+  // EVERY verified Supabase session `role: 'pro'` unconditionally (no more
+  // plan/tier claim). Since every ENDPOINT_ENTITLEMENTS route in this
+  // codebase requires at most tier 1, this short-circuit now fires on 100%
+  // of authenticated bearer-JWT tier-gated requests, so getEntitlements() is
+  // never called and `recordUsageEntitlement(null)` leaves `tier` at its 0
+  // default -- exactly the bug the original test was written to catch, now
+  // reintroduced for the bearer-JWT path specifically.
+  //
+  // The wm_-user-API-key path does NOT take this short-circuit (it calls
+  // getEntitlements(sessionUserId) unconditionally) and correctly emits
+  // tier=1 -- see "records plan_key on a SERVED (200) user API-key request"
+  // (#4613) below, which is the surviving coverage for "tier telemetry
+  // reflects a real resolved entitlement on success." This test now pins the
+  // CURRENT (regressed) bearer-JWT behavior so a future fix has a red test
+  // to turn green, rather than silently losing the assertion.
+  it('bearer-JWT entitlement-gated success currently emits tier=0 (clerkRole=pro short-circuit skips getEntitlements)', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    process.env.CONVEX_SITE_URL = 'https://convex.test';
-    process.env.CONVEX_SERVER_SHARED_SECRET = 'test-shared-secret';
-
-    const fakeEntitlements = {
-      planKey: 'api_starter',
-      features: {
-        tier: 2,
-        apiAccess: true,
-        apiRateLimit: 1000,
-        maxDashboards: 10,
-        prioritySupport: false,
-        exportFormats: ['json'],
-      },
-      validUntil: Date.now() + 60_000,
-    };
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH, { entitlementsResponse: fakeEntitlements });
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -494,9 +501,7 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
       },
     ]);
 
-    // plan: 'api' so the legacy bearer-role short-circuit (`session.role === 'pro'`)
-    // does NOT fire — we want the entitlement-check path that populates usage.tier.
-    const token = await signToken({ sub: 'user_api', plan: 'api' });
+    const token = await signSupabaseToken('user_api');
     const recorder = makeRecordingCtx();
     const res = await handler(
       new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
@@ -511,73 +516,30 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
 
     await recorder.settled;
     spy.restore();
-    delete process.env.CONVEX_SITE_URL;
-    delete process.env.CONVEX_SERVER_SHARED_SECRET;
 
     assert.equal(spy.events.length, 1);
     const ev = spy.events[0]!;
-    assert.equal(ev.tier, 2, `tier should reflect resolved entitlement, got ${ev.tier}`);
+    assert.equal(ev.tier, 0, `expected the clerkRole=pro short-circuit to skip getEntitlements and leave tier at its default, got ${ev.tier}`);
     assert.equal(ev.customer_id, 'user_api');
     assert.equal(ev.auth_kind, 'clerk_jwt');
     assert.equal(ev.domain, 'market');
     assert.equal(ev.route, '/api/market/v1/analyze-stock');
   });
 
-  it('records plan_key for user API-key requests rejected by entitlement gate', async () => {
-    process.env.USAGE_TELEMETRY = '1';
-    process.env.AXIOM_API_TOKEN = 'test-token';
-    process.env.CONVEX_SITE_URL = 'https://convex.test';
-    process.env.CONVEX_SERVER_SHARED_SECRET = 'test-shared-secret';
-
-    const freeEntitlements = {
-      planKey: 'free',
-      features: {
-        tier: 0,
-        apiAccess: false,
-        apiRateLimit: 0,
-        maxDashboards: 3,
-        prioritySupport: false,
-        exportFormats: ['csv'],
-        mcpAccess: false,
-      },
-      validUntil: Date.now() + 60_000,
-    };
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH, {
-      apiKeyValidationResponse: { userId: 'user_free_api_key', keyId: 'key_free', name: 'Free key' },
-      entitlementsResponse: freeEntitlements,
-    });
-
-    const handler = createDomainGateway([
-      {
-        method: 'GET',
-        path: '/api/market/v1/analyze-stock',
-        handler: async () => new Response('{"ok":true}', { status: 200 }),
-      },
-    ]);
-
-    const recorder = makeRecordingCtx();
-    const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
-        headers: {
-          Origin: 'https://worldmonitor.app',
-          'X-Api-Key': TELEMETRY_FREE_USER_KEY,
-        },
-      }),
-      recorder.ctx,
-    );
-    assert.equal(res.status, 403, 'free user API key should fail the tier-gated endpoint');
-
-    await recorder.settled;
-    spy.restore();
-
-    assert.equal(spy.events.length, 1);
-    const ev = spy.events[0]!;
-    assert.equal(ev.auth_kind, 'user_api_key');
-    assert.equal(ev.customer_id, 'user_free_api_key');
-    assert.equal(ev.tier, 0);
-    assert.equal(ev.plan_key, 'free');
-    assert.equal(ev.reason, 'tier_403');
-  });
+  // NOTE(stage1-supabase-migration): "records plan_key for user API-key
+  // requests rejected by entitlement gate" was removed here. It pinned a
+  // 403 tier_403 rejection for a wm_ key resolving to a mocked "free" (tier
+  // 0, apiAccess:false) Convex entitlement. Post-Stage-1,
+  // getEntitlements() (server/_shared/entitlement-check.ts) synthesizes a
+  // fixed {tier:1, apiAccess:true} entitlement for ANY non-empty verified
+  // userId, and every ENDPOINT_ENTITLEMENTS route in this codebase requires
+  // at most tier 1 -- so there is no longer any reachable input that 403s a
+  // valid wm_ key at the entitlement gate (this is the intended effect of
+  // the migration's "no SaaS billing" simplification: every authenticated
+  // caller is fully entitled). The plan_key attribution this test also
+  // covered on the REJECTED path has no reachable production scenario left
+  // to pin; the SERVED-path plan_key attribution (#4613) below still holds
+  // and is rewritten to match the new fixed entitlement value.
 
   it('records plan_key on a SERVED (200) user API-key request on a non-tier-gated route (#4613)', async () => {
     // #4613: the served keyed path attributes plan_key via the #3199 per-account
@@ -585,27 +547,17 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     // tier-gate rejection path (asserted above) or the clerk_jwt success path.
     // Without this guard, a regression there emits plan_key=null on the paid API
     // surface, silently breaking the per-plan usage / limit-abuse audit (#4572).
+    //
+    // NOTE(stage1-supabase-migration): originally pinned tier=2/plan_key=
+    // 'api_starter' via a mocked Convex /api/internal-entitlements response.
+    // getEntitlements() now synthesizes a fixed {tier:1, planKey:'pro'} for
+    // any verified userId (see the "tier=1" test above) -- only the wm_ key
+    // -> owner lookup needs mocking now (Postgres, not Convex).
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    process.env.CONVEX_SITE_URL = 'https://convex.test';
-    process.env.CONVEX_SERVER_SHARED_SECRET = 'test-shared-secret';
 
-    const starterEntitlements = {
-      planKey: 'api_starter',
-      features: {
-        tier: 2,
-        apiAccess: true,
-        apiRateLimit: 1000,
-        maxDashboards: 25,
-        prioritySupport: false,
-        exportFormats: ['csv'],
-        mcpAccess: true,
-      },
-      validUntil: Date.now() + 60_000,
-    };
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH, {
-      apiKeyValidationResponse: { userId: 'user_active_api_key', keyId: 'key_active', name: 'Active key' },
-      entitlementsResponse: starterEntitlements,
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH, {
+      userApiKeys: { [TELEMETRY_ACTIVE_USER_KEY]: 'user_active_api_key' },
     });
 
     // list-cyber-threats: a plain keyed RPC — not tier-gated, not premium, not
@@ -638,15 +590,15 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     const ev = spy.events[0]!;
     assert.equal(ev.auth_kind, 'user_api_key');
     assert.equal(ev.customer_id, 'user_active_api_key');
-    assert.equal(ev.tier, 2);
-    assert.equal(ev.plan_key, 'api_starter', 'served user-key request must attribute plan_key (#4613)');
+    assert.equal(ev.tier, 1);
+    assert.equal(ev.plan_key, 'pro', 'served user-key request must attribute plan_key (#4613)');
     assert.equal(ev.reason, 'ok');
   });
 
   it('still emits with auth_kind=anon when the bearer is invalid', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -682,7 +634,7 @@ describe('gateway telemetry payload — ctx-optional safety', () => {
   it('handler(req) without ctx still resolves cleanly even with telemetry on', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     const handler = createDomainGateway([
       {
@@ -719,7 +671,7 @@ describe('gateway telemetry payload — unmatched route reason labels', () => {
   it("unknown path → status=404 + reason='unknown_route'", async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     // Domain gateway is mounted with at least one route so the router has
     // a valid table — the request below targets a path that isn't in it.
@@ -758,7 +710,7 @@ describe('gateway telemetry payload — unmatched route reason labels', () => {
   it("known path with wrong method → status=405 + reason='method_not_allowed'", async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
-    const spy = installAxiomFetchSpy(ORIGINAL_FETCH);
+    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
 
     // Register a GET-only route, then DELETE it: router responds 405 with
     // Allow: GET. POST→GET fallback only kicks in for POST, so DELETE is

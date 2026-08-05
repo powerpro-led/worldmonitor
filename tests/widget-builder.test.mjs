@@ -1920,56 +1920,20 @@ describe('panel-layout — Pro add-block gating reacts to entitlement updates', 
   });
 });
 
-describe('entitlement-check — cache-write failure does not collapse confirmed entitlement', () => {
-  const src_ = src('server/_shared/entitlement-check.ts');
-
-  it('setCachedJson call is wrapped in its own try/catch', () => {
-    // Find the success-path block: `if (result) { … setCachedJson(…) … return result }`
-    const successIdx = src_.indexOf('if (result) {');
-    assert.ok(successIdx !== -1, 'success-path "if (result)" branch not found');
-    const region = src_.slice(successIdx, successIdx + 1500);
-
-    const setIdx = region.indexOf('setCachedJson(');
-    assert.ok(setIdx !== -1, 'setCachedJson call missing from success path');
-
-    // Walk backward from setCachedJson to find the nearest enclosing `try {`
-    // BEFORE the outer catch. The outer try is at the top of the function,
-    // far away — we want a LOCAL try/catch around the cache write so the
-    // safety property is explicit at the call site.
-    const beforeSet = region.slice(0, setIdx);
-    const lastTry = beforeSet.lastIndexOf('try {');
-    const lastCatch = beforeSet.lastIndexOf('catch');
-    assert.ok(
-      lastTry !== -1 && lastTry > lastCatch,
-      'setCachedJson must be inside a LOCAL try/catch within the success branch — relying on setCachedJson to swallow its own errors is fragile',
-    );
-
-    // The success-path return must come AFTER the try/catch, not inside the catch.
-    const returnIdx = region.indexOf('return result', setIdx);
-    assert.ok(
-      returnIdx !== -1,
-      '`return result` must follow the cache-write try/catch so a swallowed cache error still returns the confirmed entitlement',
-    );
-  });
-
-  it('cache-write catch logs but does not return null or throw', () => {
-    const successIdx = src_.indexOf('if (result) {');
-    const region = src_.slice(successIdx, successIdx + 1500);
-    // The catch block for cache write must NOT contain `return null` — that
-    // would re-introduce the bug. It also must not rethrow.
-    const cacheCatchMatch = region.match(/catch\s*\(\s*cacheErr[^)]*\)\s*\{([^}]*)\}/);
-    assert.ok(cacheCatchMatch, 'cache-write catch block must be named distinctly (e.g. cacheErr) so future readers see the intent');
-    const cacheCatchBody = cacheCatchMatch[1];
-    assert.ok(
-      !/return\s+null/.test(cacheCatchBody),
-      'cache-write catch must NOT return null — a confirmed entitlement must survive cache-write failure',
-    );
-    assert.ok(
-      !/throw\b/.test(cacheCatchBody),
-      'cache-write catch must NOT rethrow — that would bubble to the outer catch and collapse to null',
-    );
-  });
-});
+// NOTE(stage1-supabase-migration): the "entitlement-check — cache-write
+// failure does not collapse confirmed entitlement" describe block (2 tests)
+// was removed here. Both tests statically inspected
+// server/_shared/entitlement-check.ts's source text for a
+// `if (result) { ... setCachedJson(...) ... }` success-path shape with a
+// local try/catch around the cache write, guarding against a Redis
+// cache-write error collapsing a confirmed Convex entitlement to null.
+// Stage 1 deleted that entire Redis-cache + Convex-HTTP-fallback +
+// billing-verification-retry machinery: getEntitlements() is now a pure,
+// synchronous function of "is there a non-empty userId" with no cache, no
+// setCachedJson call, and no `if (result) {` block to find (see that
+// module's header comment and full implementation) -- there is nothing left
+// for either regex-anchored assertion to inspect, and no cache-write failure
+// mode exists anymore to collapse anything.
 
 describe('WidgetChatModal — preflight 403 message branches on auth mode', () => {
   const modal = src('src/components/WidgetChatModal.ts');

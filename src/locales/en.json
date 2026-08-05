@@ -3263,6 +3263,7 @@
   },
   "auth": {
     "signIn": "Sign In",
+    "signOut": "Sign Out",
     "createAccount": "Create account",
     "settings": "Settings"
   },

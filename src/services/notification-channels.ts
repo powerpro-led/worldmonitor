@@ -1,4 +1,4 @@
-import { getClerkToken, getCurrentClerkUser } from '@/services/clerk';
+import { getAuthToken, getCurrentAuthUser } from '@/services/auth-provider';
 import { SITE_VARIANT } from '@/config/variant';
 
 export type ChannelType = 'telegram' | 'slack' | 'email' | 'discord' | 'webhook' | 'web_push';
@@ -51,7 +51,7 @@ export interface ChannelsData {
 }
 
 function assertExpectedAccount(expectedUserId?: string): void {
-  if (expectedUserId && getCurrentClerkUser()?.id !== expectedUserId) {
+  if (expectedUserId && getCurrentAuthUser()?.id !== expectedUserId) {
     throw new Error('Authenticated account changed during notification setup');
   }
 }
@@ -62,13 +62,13 @@ async function authFetch(
   expectedUserId?: string,
 ): Promise<Response> {
   assertExpectedAccount(expectedUserId);
-  let token = await getClerkToken();
+  let token = await getAuthToken();
   if (!token) {
-    console.warn('[authFetch] getClerkToken returned null, retrying in 2s...');
+    console.warn('[authFetch] getAuthToken returned null, retrying in 2s...');
     await new Promise((r) => setTimeout(r, 2000));
-    token = await getClerkToken();
+    token = await getAuthToken();
   }
-  if (!token) throw new Error('Not authenticated (Clerk token null after retry)');
+  if (!token) throw new Error('Not authenticated (auth token null after retry)');
   // The token was resolved asynchronously. Re-check immediately before the
   // request so a modal opened by user A cannot write under user B's session.
   assertExpectedAccount(expectedUserId);

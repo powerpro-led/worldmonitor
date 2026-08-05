@@ -42,19 +42,12 @@ test('funnel events exist in the typed catalog', () => {
   }
 });
 
-test('dashboard checkout entry fires checkout-start', () => {
-  const src = read('src/services/checkout.ts');
-  assert.ok(src.includes('trackCheckoutStart(productId'),
-    'startCheckout no longer fires trackCheckoutStart — funnel start is blind');
-});
-
-test('checkout-return reconciliation fires success/failed events', () => {
-  const src = read('src/app/panel-layout.ts');
-  assert.ok(src.includes('trackCheckoutSuccess('),
-    'checkout-return success path no longer fires trackCheckoutSuccess');
-  assert.ok(src.includes('trackCheckoutFailed('),
-    'checkout-return failed path no longer fires trackCheckoutFailed');
-});
+// Dashboard checkout-start/checkout-return wiring (src/services/checkout.ts,
+// the panel-layout.ts checkout-return branch) was removed in the Stage 1
+// Supabase migration — every signed-in user is already fully entitled, so
+// the dashboard never runs a checkout again. The /pro-side checkout funnel
+// (pro-test/src/services/checkout.ts) is a separate, still-active app and
+// is covered by the tests below.
 
 test('/pro and welcome pages load the Umami tracker (www + nonce)', () => {
   for (const page of ['pro-test/index.html', 'pro-test/welcome.html']) {
@@ -105,15 +98,17 @@ test('tracker tags are async and the pro SPA excludes query strings', () => {
     'pro-test/index.html: data-exclude-search missing — checkout-intent (wm_checkout_*) and Clerk handshake params would land in analytics');
 });
 
-test('checkout-success is durable across the entitlement reload', () => {
+test('checkout-success marker delivery contract stays intact in analytics.ts', () => {
+  // The dashboard no longer calls trackCheckoutSuccess (checkout.ts and the
+  // panel-layout.ts checkout-return branch are gone — see
+  // tests/checkout-success-durable.test.mts for the full behavioral
+  // contract), but analytics.ts's own marker write/clear pairing is generic
+  // infrastructure kept for the /pro-side funnel and must stay self-consistent.
   const analytics = read('src/services/analytics.ts');
   assert.ok(analytics.includes('sessionStorage.setItem(CHECKOUT_SUCCESS_PENDING_KEY'),
     'trackCheckoutSuccess no longer writes the durable marker');
   assert.ok(analytics.includes('clearPendingCheckoutSuccessMarker()'),
     'delivery-time marker clear missing from sendUmamiCall');
-  const layout = read('src/app/panel-layout.ts');
-  assert.ok(layout.includes('replayPendingCheckoutSuccess()'),
-    'panel-layout boot no longer replays a pending checkout-success');
 });
 
 test('checkout-failed status is bucketed to a closed vocabulary', () => {

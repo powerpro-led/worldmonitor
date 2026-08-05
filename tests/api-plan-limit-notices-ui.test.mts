@@ -21,10 +21,13 @@ describe('API plan-limit notice UI wiring', () => {
     assert.match(settings, /renderMcpClientsContent/);
   });
 
-  it('routes notice CTAs through billing portal, checkout, or support', () => {
+  it('routes notice CTAs through billing portal or support', () => {
+    // Post-billing-cut (Stage 1 Supabase migration): every signed-in user
+    // is already fully entitled, so a plan-limit notice never needs a fresh
+    // checkout — both 'billing_portal' and 'checkout' ctaKind values route
+    // through the billing portal now (see handlePlanLimitNoticeCta).
     assert.match(settings, /handlePlanLimitNoticeCta/);
     assert.match(settings, /openBillingPortal/);
-    assert.match(settings, /startCheckout/);
     assert.match(settings, /mailto:support@worldmonitor\.app/);
   });
 

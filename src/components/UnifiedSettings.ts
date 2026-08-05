@@ -753,11 +753,13 @@ export class UnifiedSettings {
       `;
     }
 
+    // No auth.user reaches here — every signed-in user is entitled
+    // post-billing-cut, so the only thing left to unlock is a session.
     return `
       <div class="upgrade-pro-section">
-        <div class="upgrade-pro-title">Upgrade to Pro</div>
+        <div class="upgrade-pro-title">${escapeHtml(t('premium.signInToUnlock'))}</div>
         <div class="upgrade-pro-desc">Unlock all panels, AI analysis, and priority data refresh.</div>
-        <button class="upgrade-pro-cta">Upgrade to Pro</button>
+        <button class="upgrade-pro-cta">${escapeHtml(t('premium.signIn'))}</button>
       </div>
     `;
   }
@@ -786,14 +788,11 @@ export class UnifiedSettings {
       });
       return;
     }
+    // Reaching here means the click came from the anonymous fallback CTA
+    // (every signed-in user is entitled and short-circuits above) — sign in
+    // rather than start a checkout.
     this.close();
-    if (this.config.isDesktopApp) {
-      window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-      return;
-    }
-    import('@/services/checkout').then(m => import('@/config/products').then(p => m.startCheckout(p.DEFAULT_UPGRADE_PRODUCT))).catch(() => {
-      window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-    });
+    void import('@/services/auth-provider').then(m => m.signInWithGithub()).catch(() => {});
   }
 
   private categoryMatchesVariant(catDef: { variants?: string[] }): boolean {
@@ -1103,10 +1102,8 @@ export class UnifiedSettings {
           const ratio = notice.usageRatio == null ? '' : ` (${Math.round(notice.usageRatio * 100)}%)`;
           const cta = notice.ctaKind === 'contact_support'
             ? 'Contact support'
-            : notice.ctaKind === 'billing_portal'
+            : notice.ctaKind === 'billing_portal' || notice.ctaKind === 'checkout'
             ? 'Manage billing'
-            : notice.ctaKind === 'checkout'
-            ? 'Upgrade'
             : '';
           return `
             <div class="api-plan-limit-notice ${escapeHtml(notice.state)}">
@@ -1152,30 +1149,17 @@ export class UnifiedSettings {
       return;
     }
     if (notice.ctaKind === 'checkout') {
-      // Never send an active subscriber to a fresh checkout. The upgrade target
-      // (api_starter) sits in a DIFFERENT tierGroup than an existing Pro sub, and
-      // getCheckoutBlockingSubscription only blocks a same-tierGroup duplicate
-      // (#4797) — so startCheckout would STACK a second live subscription and
-      // double-charge. Route entitled users to the billing portal instead (same
-      // precedent as handleUpgradeClick); its no-customer outcome surfaces the
-      // support path for a subscription managed outside Dodo.
-      if (isEntitled()) {
-        const reservedWin = prereserveBillingPortalTab();
-        void openBillingPortal(reservedWin).then((result) => {
-          if (result.outcome === 'no-customer') {
-            showToast('Subscription is managed outside Dodo. Email support@worldmonitor.app for help.');
-          }
-        });
-        return;
-      }
-      this.close();
-      import('@/services/checkout').then(m => import('@/config/products').then((p) => {
-        const product = notice.upgradeTargetPlanKey === 'api_starter'
-          ? p.DODO_PRODUCTS.API_STARTER_MONTHLY
-          : p.DODO_PRODUCTS.PRO_MONTHLY;
-        return m.startCheckout(product);
-      })).catch(() => {
-        window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
+      // A plan-limit notice only ever surfaces for a signed-in API key
+      // holder, and every signed-in user is already fully entitled
+      // post-billing-cut — route to the billing portal rather than a fresh
+      // checkout (same precedent as handleUpgradeClick / billing_portal
+      // above); its no-customer outcome surfaces the support path for a
+      // subscription managed outside Dodo.
+      const reservedWin = prereserveBillingPortalTab();
+      void openBillingPortal(reservedWin).then((result) => {
+        if (result.outcome === 'no-customer') {
+          showToast('Subscription is managed outside Dodo. Email support@worldmonitor.app for help.');
+        }
       });
       return;
     }
@@ -1197,19 +1181,13 @@ export class UnifiedSettings {
       });
     }
 
-    // Gate CTA click (sign-in for anonymous, checkout for free)
+    // Gate CTA click — only ever rendered for a signed-out user post-billing-cut
+    // (every signed-in user already has full API access), so this is always sign-in.
     const gateBtn = this.overlay.querySelector<HTMLElement>('.api-keys-gate-btn');
     if (gateBtn) {
       gateBtn.addEventListener('click', () => {
-        if (!getAuthState().user) {
-          this.close();
-          import('@/services/clerk').then(m => m.openSignIn()).catch(() => {});
-        } else {
-          this.close();
-          import('@/services/checkout').then(m => import('@/config/products').then(p => m.startCheckout(p.DODO_PRODUCTS.API_STARTER_MONTHLY))).catch(() => {
-            window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-          });
-        }
+        this.close();
+        void import('@/services/auth-provider').then(m => m.signInWithGithub()).catch(() => {});
       });
     }
   }
@@ -1227,15 +1205,10 @@ export class UnifiedSettings {
         </div>`;
     }
 
-    if (!hasFeature('apiAccess')) {
-      const upgradeIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/></svg>`;
-      return `
-        <div class="panel-locked-state">
-          <div class="panel-locked-icon">${upgradeIcon}</div>
-          <div class="panel-locked-desc">Create and manage API keys to access WorldMonitor data programmatically.</div>
-          <button class="panel-locked-cta api-keys-gate-btn">Upgrade to API Starter</button>
-        </div>`;
-    }
+    // hasFeature('apiAccess') is unreachable-false here: every signed-in
+    // user is fully entitled post-billing-cut (the `!authState.user` branch
+    // above already caught the only other case), so there is no "signed-in
+    // but free" state left to show an Upgrade CTA for.
 
     return `
       <div class="api-keys-section">

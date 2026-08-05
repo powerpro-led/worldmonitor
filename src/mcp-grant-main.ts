@@ -1,13 +1,13 @@
 /**
  * Apex `/mcp-grant` page bootstrap.
  *
- * Clerk-protected consent screen for the cross-subdomain Pro MCP flow.
- * The user lands here from the api-subdomain consent page (U4 will add
- * a "Sign in with WorldMonitor Pro" CTA on `api/oauth/authorize.js`).
+ * Supabase-auth-protected consent screen for the cross-subdomain Pro MCP
+ * flow. The user lands here from the api-subdomain consent page (U4 will
+ * add a "Sign in with WorldMonitor Pro" CTA on `api/oauth/authorize.js`).
  *
  * Flow on this page:
- *   1. Boot Clerk; if signed-out, openSignIn(). On sign-in, the modal
- *      closes and we re-enter via subscribeClerk().
+ *   1. Init the auth provider; if signed-out, signInWithGithub() (real
+ *      browser redirect). On sign-in, we re-enter via subscribeAuthProvider().
  *   2. Read `?nonce=<n>` from the query string.
  *   3. GET /api/internal/mcp-grant-context?nonce=<n> with Bearer JWT to
  *      load the REAL `client_name` + `redirect_host`.
@@ -18,7 +18,7 @@
  *      apex page never controls the host).
  */
 
-import { initClerk, getClerkToken, getCurrentClerkUser, openSignIn, subscribeClerk } from '@/services/clerk';
+import { initAuthProvider, getAuthToken, getCurrentAuthUser, signInWithGithub, subscribeAuthProvider } from '@/services/auth-provider';
 
 // Apply user's saved theme preference. Inlined here (not the index.html head)
 // because the page's global CSP is hash-allowlisted and adding per-page
@@ -72,7 +72,7 @@ function getNonceFromQuery(): string | null {
 }
 
 async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getClerkToken();
+  const token = await getAuthToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return fetch(`${API_BASE}${path}`, { ...init, headers });
@@ -89,7 +89,7 @@ async function loadContext(nonce: string): Promise<void> {
 
   if (resp.status === 401) {
     // Token went stale between page load and fetch — re-prompt.
-    openSignIn();
+    void signInWithGithub();
     return;
   }
 
@@ -111,7 +111,7 @@ async function loadContext(nonce: string): Promise<void> {
 
   setText('clientName', ctx.client_name);
   setText('clientHost', ctx.redirect_host);
-  const u = getCurrentClerkUser();
+  const u = getCurrentAuthUser();
   setText('userEmail', u?.email ?? 'your account');
   hide('loading');
   show('consent');
@@ -159,7 +159,7 @@ async function onAuthorizeClick(nonce: string): Promise<void> {
   }
 
   if (resp.status === 401) {
-    openSignIn();
+    void signInWithGithub();
     btn.disabled = false;
     btn.textContent = 'Authorize';
     return;
@@ -210,22 +210,23 @@ async function bootstrap(): Promise<void> {
   }
 
   try {
-    await initClerk();
+    await initAuthProvider();
   } catch {
     showErrorView('Sign-in is unavailable. Please try again later.');
     return;
   }
 
   const reactToAuth = async (): Promise<void> => {
-    if (!getCurrentClerkUser()) {
-      // Open sign-in modal; on success subscribeClerk() fires reactToAuth again.
-      openSignIn();
+    if (!getCurrentAuthUser()) {
+      // Trigger GitHub OAuth sign-in (real redirect); on return,
+      // subscribeAuthProvider() fires reactToAuth again.
+      void signInWithGithub();
       return;
     }
     await loadContext(nonce);
   };
 
-  subscribeClerk(() => { void reactToAuth(); });
+  subscribeAuthProvider(() => { void reactToAuth(); });
   await reactToAuth();
 
   $('authorizeBtn').addEventListener('click', () => { void onAuthorizeClick(nonce); });

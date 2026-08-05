@@ -37,7 +37,7 @@ import {
   isEntitlementBackendConfigured,
   type CachedEntitlements,
 } from './_shared/entitlement-check';
-import { resolveClerkSession } from './_shared/auth-session';
+import { resolveSupabaseSession } from './_shared/auth-session';
 import {
   INTERNAL_MCP_SIG_HEADER,
   INTERNAL_MCP_USER_ID_HEADER,
@@ -1132,7 +1132,7 @@ export function createDomainGateway(
     let sessionUserId: string | null = null;
     let sessionRole: 'free' | 'pro' | null = null;
     if (isTierGated || requiresDirectLlmQuota || needsProFreshnessResolution) {
-      const session = await resolveClerkSession(request);
+      const session = await resolveSupabaseSession(request);
       sessionUserId = session?.userId ?? null;
       sessionRole = session?.role ?? null;
       usage.sessionUserId = sessionUserId;
@@ -1353,7 +1353,7 @@ export function createDomainGateway(
             return createGatewayAuthErrorResponse(401, 'Invalid or expired session', corsHeaders);
           }
           // Capture identity for telemetry — legacy bearer auth bypasses the
-          // earlier resolveClerkSession() block (only runs for tier-gated routes),
+          // earlier resolveSupabaseSession() block (only runs for tier-gated routes),
           // so without this premium bearer requests would emit as anonymous.
           if (session.userId) {
             sessionUserId = session.userId;

@@ -98,17 +98,19 @@ vi.mock("../_shared/user-api-key", () => ({
   validateUserApiKey: (...a: unknown[]) => validateUserApiKey(...a),
 }));
 
-// --- Stub Clerk session resolution for mixed bearer + wm_ requests. ----------
-type MockClerkSession = { userId: string; orgId: string | null } | null;
-let clerkSession: MockClerkSession = null;
-const resolveClerkSession = vi.fn(async () => clerkSession);
+// --- Stub Supabase session resolution for mixed bearer + wm_ requests. ------
+// server/_shared/auth-session.ts renamed resolveClerkSession ->
+// resolveSupabaseSession as part of the Stage 1 Supabase migration.
+type MockSupabaseSession = { userId: string; orgId: string | null; role?: "free" | "pro" } | null;
+let clerkSession: MockSupabaseSession = null;
+const resolveSupabaseSession = vi.fn(async () => clerkSession);
 const validateBearerToken = vi.fn(async () => ({
   valid: true,
   userId: "acct_lapsed",
   role: "free" as const,
 }));
 vi.mock("../_shared/auth-session", () => ({
-  resolveClerkSession: (...a: unknown[]) => resolveClerkSession(...a),
+  resolveSupabaseSession: (...a: unknown[]) => resolveSupabaseSession(...a),
   validateBearerToken: (...a: unknown[]) => validateBearerToken(...a),
 }));
 vi.mock("../auth-session", () => ({
@@ -172,7 +174,7 @@ beforeEach(() => {
   // silently make a subsequent test pass (or fail) for the wrong reason. The
   // lambda is identical to the one at the vi.fn() declaration above.
   getEntitlements.mockClear().mockImplementation(async (userId: string) => entitlementsByUser.get(userId) ?? entitlement);
-  resolveClerkSession.mockClear();
+  resolveSupabaseSession.mockClear();
   validateBearerToken.mockClear();
   entitlementBackendConfigured = true;
   checkEntitlementDetailedMock.mockReset().mockResolvedValue({ response: null, entitlements: null });
@@ -268,7 +270,7 @@ describe("#4611 — expired wm_ key rejected on all route classes", () => {
     );
 
     expect(res.status).toBe(403);
-    expect(resolveClerkSession).toHaveBeenCalledTimes(1);
+    expect(resolveSupabaseSession).toHaveBeenCalledTimes(1);
     expect(validateUserApiKey).toHaveBeenCalledWith("wm_lapsed_customer_key");
     expect(getEntitlements).toHaveBeenCalledWith("acct_lapsed");
     expect(checkBurst).not.toHaveBeenCalled();
@@ -282,78 +284,20 @@ describe("#4611 — expired wm_ key rejected on all route classes", () => {
     expect(res.status).toBe(403);
   });
 
-  test("renewal verification pending on a wm_ key returns retryable 503", async () => {
-    entitlement = {
-      planKey: "free",
-      features: { tier: 0, apiAccess: false, apiRateLimit: 0 },
-      validUntil: 0,
-      billingStatus: "renewal_verification_pending",
-      retryAfterSeconds: 13,
-    };
-
-    const res = await makeGateway()(keyReq(REGULAR_PATH), ctx);
-
-    expect(res.status).toBe(503);
-    expect(res.headers.get("Retry-After")).toBe("13");
-    expect(await res.json()).toMatchObject({ code: "renewal_verification_pending" });
-  });
-
-  test("current Pro fallback still returns retryable 503 for API-key access", async () => {
-    entitlement = {
-      planKey: "pro_monthly",
-      features: {
-        tier: 1,
-        apiAccess: false,
-        apiRateLimit: 0,
-        mcpAccess: true,
-      },
-      validUntil: Date.now() + 86_400_000,
-      billingStatus: "renewal_verification_pending",
-      retryAfterSeconds: 13,
-    };
-
-    const res = await makeGateway()(keyReq(REGULAR_PATH), ctx);
-
-    expect(res.status).toBe(503);
-    expect(res.headers.get("Retry-After")).toBe("13");
-    expect(await res.json()).toMatchObject({
-      code: "renewal_verification_pending",
-    });
-  });
-
-  test("confirmed lapse on a wm_ key returns subscription_lapsed", async () => {
-    entitlement = {
-      planKey: "free",
-      features: { tier: 0, apiAccess: false, apiRateLimit: 0 },
-      validUntil: 0,
-      billingStatus: "subscription_lapsed",
-    };
-
-    const res = await makeGateway()(keyReq(REGULAR_PATH), ctx);
-
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ code: "subscription_lapsed" });
-  });
-
-  test("legacy premium bearer surfaces renewal verification failure", async () => {
-    entitlement = {
-      planKey: "free",
-      features: { tier: 0, apiAccess: false, apiRateLimit: 0 },
-      validUntil: 0,
-      billingStatus: "renewal_verification_failed",
-      retryAfterSeconds: 23,
-    };
-    const req = new Request(`https://www.worldmonitor.app${PREMIUM_PATH}`, {
-      method: "POST",
-      headers: { Authorization: "Bearer valid-legacy-session" },
-    });
-
-    const res = await makeGateway()(req, ctx);
-
-    expect(res.status).toBe(503);
-    expect(res.headers.get("Retry-After")).toBe("23");
-    expect(await res.json()).toMatchObject({ code: "renewal_verification_failed" });
-  });
+  // Deleted: "renewal verification pending on a wm_ key returns retryable
+  // 503", "current Pro fallback still returns retryable 503 for API-key
+  // access", "confirmed lapse on a wm_ key returns subscription_lapsed", and
+  // "legacy premium bearer surfaces renewal verification failure" -- all four
+  // fed the entitlement fixture a `billingStatus` value. Post-Stage-1
+  // getBillingVerificationDenial() (server/_shared/entitlement-check.ts) is a
+  // permanent no-op regardless of what a mocked getEntitlements() returns, so
+  // server/gateway.ts's denyForBillingVerification() call sites can never
+  // produce these 503s / `code`d 403s anymore -- a fixture carrying
+  // billingStatus now falls straight through to the plain apiAccess/validUntil
+  // check below it and gets the generic 403. That's tested removed
+  // functionality, not a regression: no real getEntitlements() implementation
+  // can produce a billingStatus value post-Stage-1, so the dead branch has no
+  // reachable behavior left to pin.
 
   test("null entitlement (verification timeout/cache failure) → retryable no-store 503", async () => {
     entitlement = null;

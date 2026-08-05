@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Влез",
     "createAccount": "Създай профил",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Свързване на MCP",

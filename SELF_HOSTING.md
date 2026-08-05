@@ -61,6 +61,7 @@ services:
       OPENROUTER_API_KEY: ""      # https://openrouter.ai (free, 50 req/day)
 
       # 📊 Markets & Economics
+      INFOWAY_API_KEY: ""         # https://infoway.io (paid)
       FINNHUB_API_KEY: ""         # https://finnhub.io (free tier)
       FRED_API_KEY: ""            # https://fred.stlouisfed.org/docs/api/api_key.html (free)
       EIA_API_KEY: ""             # https://www.eia.gov/opendata/ (free)

@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Bejelentkezés",
     "createAccount": "Fiók létrehozása",
-    "settings": "Beállítások"
+    "settings": "Beállítások",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "MCP csatlakoztatása",

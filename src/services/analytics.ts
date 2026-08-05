@@ -8,7 +8,7 @@
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
 import { subscribeAuthState, type AuthSession } from './auth-state';
 import { onSubscriptionChange, type SubscriptionInfo } from './billing';
-import { getClerkUserCreatedAt } from './clerk';
+import { getAuthUserCreatedAt } from './auth-provider';
 import { DODO_PRODUCT_IDS } from '@/config/product-ids.generated';
 import type { ActivationEventName, ActivationStepId } from './pro-activation-state';
 
@@ -306,7 +306,7 @@ export function initAuthAnalytics(): void {
       if (
         nextUserId !== null &&
         !hasTrackedSignupInSession(nextUserId) &&
-        isLikelyFreshSignup(prevUserId, nextUserId, getClerkUserCreatedAt(), Date.now())
+        isLikelyFreshSignup(prevUserId, nextUserId, getAuthUserCreatedAt(), Date.now())
       ) {
         trackSignUp('clerk');
         markSignupTrackedInSession(nextUserId);

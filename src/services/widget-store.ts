@@ -195,7 +195,7 @@ export function isWidgetFeatureEnabled(): boolean {
 
 export function getWidgetAgentKey(): string {
   migrateLegacyKeyStorage();
-  return '';
+  return import.meta.env.VITE_WIDGET_AGENT_KEY || '';
 }
 
 export function getBrowserTesterKeys(): string[] {
@@ -231,5 +231,5 @@ export function isProUser(): boolean {
 
 export function getProWidgetKey(): string {
   migrateLegacyKeyStorage();
-  return '';
+  return import.meta.env.VITE_PRO_WIDGET_KEY || '';
 }

@@ -1,24 +1,21 @@
 /**
  * Validates user-owned API keys by hashing the provided key and looking up
- * the hash in Convex via the internal HTTP action.
+ * the hash directly in `worldmonitor.api_keys` (Postgres, service-role
+ * client) -- Stage 1 of the Convex/Clerk -> Supabase migration replaced the
+ * old Convex internal HTTP action with a direct query.
  *
  * Uses cachedFetchJson for Redis caching with in-flight coalescing and
  * environment-partitioned keys (no raw=true — keys are prefixed by deploy).
  */
 
 import { cachedFetchJson, deleteRedisKey } from './redis';
+import { getSupabaseAdmin } from './supabase-admin';
 
 interface UserKeyResult {
   userId: string;
   /**
-   * Only `userId` is guaranteed. Two producers write the shared
-   * `user-api-key:<hash>` cache entry with DIFFERENT shapes:
-   *   - fetchFromConvex below returns validateKeyByHash's row verbatim
-   *     (`{ id, userId, name }`) — so `keyId` is undefined on that path.
-   *   - api/_user-api-key.js maps `id` → `keyId` before caching.
-   * No caller reads keyId/name (they read only `.userId`), so the runtime
-   * guard below requires only `userId` — mirroring the sibling module's
-   * check. Requiring keyId here would 401 every fresh Convex validation.
+   * Only `userId` is guaranteed. No caller reads keyId/name (they read only
+   * `.userId`), so the runtime guard below requires only `userId`.
    */
   keyId?: string;
   name?: string;
@@ -37,11 +34,16 @@ interface UserKeyResult {
 const USER_API_KEY_RE = /^wm_[a-f0-9]{40}$/;
 
 const CACHE_TTL_SECONDS = 60; // 1 min — short to limit staleness on revocation
-const NEG_TTL_SECONDS = 60;   // negative cache: avoid hammering Convex with invalid keys
+const NEG_TTL_SECONDS = 60;   // negative cache: avoid hammering Postgres with invalid keys
 const CACHE_KEY_PREFIX = 'user-api-key:';
 
+// Debounce window for the last_used_at touch — mirrors the old Convex
+// touchKeyLastUsed's 5-min debounce so an actively-used key doesn't write
+// on every cache-miss lookup.
+const LAST_USED_DEBOUNCE_MS = 5 * 60 * 1_000;
+
 /**
- * Runtime shape guard for whatever comes back from the cache or Convex.
+ * Runtime shape guard for whatever comes back from the cache or Postgres.
  * `cachedFetchJson<UserKeyResult>` only CASTS its payload, so a poisoned cache
  * entry or an upstream shape drift (e.g. `{}`) would otherwise reach callers as
  * a truthy "authenticated principal" whose `.userId` reads as undefined.
@@ -70,7 +72,7 @@ async function sha256Hex(input: string): Promise<string> {
  */
 export async function validateUserApiKey(key: string): Promise<UserKeyResult | null> {
   // Reject malformed keys BEFORE hashing. `startsWith('wm_')` alone let `wm_x`
-  // burn a SHA-256, a Redis round-trip and a Convex lookup per attempt, turning
+  // burn a SHA-256, a Redis round-trip and a Postgres lookup per attempt, turning
   // an unauthenticated caller into a backend amplifier.
   if (!USER_API_KEY_RE.test(key ?? '')) return null;
 
@@ -81,7 +83,7 @@ export async function validateUserApiKey(key: string): Promise<UserKeyResult | n
     const result = await cachedFetchJson<UserKeyResult>(
       cacheKey,
       CACHE_TTL_SECONDS,
-      () => fetchFromConvex(keyHash),
+      () => fetchFromSupabase(keyHash),
       NEG_TTL_SECONDS,
     );
     // null is the legitimate negative-cache / unknown-key answer — pass it
@@ -94,32 +96,65 @@ export async function validateUserApiKey(key: string): Promise<UserKeyResult | n
     }
     return result;
   } catch (err) {
-    // Fail-soft: transient Convex/network errors degrade to unauthorized
+    // Fail-soft: transient Postgres/network errors degrade to unauthorized
     // rather than bubbling a 500 through the gateway or isCallerPremium.
     console.warn('[user-api-key] validateUserApiKey failed:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
 
-/** Fetch key validation from Convex internal endpoint. */
-async function fetchFromConvex(keyHash: string): Promise<UserKeyResult | null> {
-  const convexSiteUrl = process.env.CONVEX_SITE_URL;
-  const convexSharedSecret = process.env.CONVEX_SERVER_SHARED_SECRET;
-  if (!convexSiteUrl || !convexSharedSecret) return null;
+/** Fetch key validation directly from `worldmonitor.api_keys` (service-role). */
+async function fetchFromSupabase(keyHash: string): Promise<UserKeyResult | null> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
 
-  const resp = await fetch(`${convexSiteUrl}/api/internal-validate-api-key`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'worldmonitor-gateway/1.0',
-      'x-convex-shared-secret': convexSharedSecret,
-    },
-    body: JSON.stringify({ keyHash }),
-    signal: AbortSignal.timeout(3_000),
-  });
+  const { data, error } = await supabase
+    .from('api_keys')
+    .select('id, user_id, name, last_used_at')
+    .eq('key_hash', keyHash)
+    .is('revoked_at', null)
+    .maybeSingle();
 
-  if (!resp.ok) return null;
-  return resp.json() as Promise<UserKeyResult | null>;
+  if (error) {
+    console.warn('[user-api-key] Supabase lookup failed:', error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  // Best-effort, debounced last_used_at touch. Not awaited — this is a
+  // fire-and-forget freshness update, not load-bearing for the validation
+  // result itself, mirroring the old Convex touchKeyLastUsed debounce.
+  touchLastUsedFireAndForget(data.id as string, data.last_used_at as string | null);
+
+  return {
+    userId: data.user_id as string,
+    keyId: data.id as string,
+    name: (data.name as string | null) ?? undefined,
+  };
+}
+
+/**
+ * Fire-and-forget `last_used_at` touch, debounced against the row's
+ * previously-read value so an actively-polled key doesn't write on every
+ * cache-miss lookup. Errors are logged, never thrown — this must never
+ * fail the validation it rides along with.
+ */
+function touchLastUsedFireAndForget(keyId: string, lastUsedAt: string | null): void {
+  const lastUsedMs = lastUsedAt ? Date.parse(lastUsedAt) : NaN;
+  if (Number.isFinite(lastUsedMs) && Date.now() - lastUsedMs < LAST_USED_DEBOUNCE_MS) return;
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return;
+
+  void supabase
+    .from('api_keys')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', keyId)
+    .then(({ error }: { error: { message: string } | null }) => {
+      if (error) {
+        console.warn('[user-api-key] last_used_at touch failed:', error.message);
+      }
+    });
 }
 
 /**

@@ -30,7 +30,7 @@
 
 export const config = { runtime: 'edge' };
 
-import { resolveClerkSession } from '../../server/_shared/auth-session';
+import { resolveSupabaseSession } from '../../server/_shared/auth-session';
 import { getEntitlements } from '../../server/_shared/entitlement-check';
 
 const NO_STORE_JSON: Record<string, string> = {
@@ -171,7 +171,7 @@ export async function grantContextHandler(req: Request, deps: ContextDeps): Prom
 
 export default async function handler(req: Request): Promise<Response> {
   return grantContextHandler(req, {
-    resolveUserId: async (r) => (await resolveClerkSession(r))?.userId ?? null,
+    resolveUserId: async (r) => (await resolveSupabaseSession(r))?.userId ?? null,
     redisGet: rawRedisGet,
     getEntitlements: (userId) => getEntitlements(userId),
     now: () => Date.now(),

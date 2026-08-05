@@ -193,11 +193,12 @@ export class ResilienceWidget {
     return this.renderScoreCard(this.currentData);
   }
 
-  private renderLocked(gateReason: PanelGateReason): HTMLElement {
-    const description = gateReason === PanelGateReason.ANONYMOUS
-      ? 'Sign in to unlock premium resilience scores.'
-      : 'Upgrade to Pro to unlock resilience scores.';
-    const cta = gateReason === PanelGateReason.ANONYMOUS ? 'Sign In' : 'Upgrade to Pro';
+  private renderLocked(_gateReason: PanelGateReason): HTMLElement {
+    // renderBody() only calls this when gateReason !== NONE, and ANONYMOUS
+    // is the only other value post-billing-cut — every signed-in user is
+    // already entitled, so this is always the sign-in state.
+    const description = 'Sign in to unlock premium resilience scores.';
+    const cta = 'Sign In';
 
     const preview = this.renderScoreCard(LOCKED_PREVIEW, true);
     preview.classList.add('resilience-widget__preview');
@@ -206,15 +207,9 @@ export class ResilienceWidget {
       type: 'button',
       className: 'panel-locked-cta resilience-widget__cta',
       onclick: () => {
-        if (gateReason === PanelGateReason.ANONYMOUS) {
-          void import('@/services/clerk')
-            .then((module) => module.openSignIn())
-            .catch(() => this.showAuthUnavailable());
-          return;
-        }
-        void this.openUpgradeFlow().catch(() => {
-          window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-        });
+        void import('@/services/auth-provider')
+          .then((module) => module.signInWithGithub())
+          .catch(() => this.showAuthUnavailable());
       },
     }, cta) as HTMLButtonElement;
 
@@ -474,23 +469,4 @@ export class ResilienceWidget {
     return h('div', { className: 'cdp-empty' }, text);
   }
 
-  private async openUpgradeFlow(): Promise<void> {
-    const [{ DEFAULT_UPGRADE_PRODUCT }, { isDesktopRuntime }] = await Promise.all([
-      import('@/config/products'),
-      import('@/services/runtime'),
-    ]);
-
-    if (isDesktopRuntime()) {
-      const { invokeTauri } = await import('@/services/tauri-bridge');
-      await invokeTauri<void>('open_url', { url: 'https://worldmonitor.app/pro' })
-        .catch(() => { window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer'); });
-      return;
-    }
-
-    await import('@/services/checkout')
-      .then((module) => module.startCheckout(DEFAULT_UPGRADE_PRODUCT))
-      .catch(() => {
-        window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
-      });
-  }
 }

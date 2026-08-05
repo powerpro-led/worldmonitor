@@ -125,11 +125,6 @@ import {
   installFollowedCountriesAuthListener,
 } from '@/services/followed-countries';
 import {
-  capturePendingCheckoutIntentFromUrl,
-  initCheckoutWatchers,
-  resumePendingCheckout,
-} from '@/services/checkout';
-import {
   clearStoredAnonIdentity,
   getFreshStoredAnonClaimToken,
   getStoredAnonId,
@@ -1528,9 +1523,6 @@ export class App {
             }
           })();
         }
-        void resumePendingCheckout({
-          openAuth: () => this.state.authModal?.open(),
-        });
       } else if (userId === null && _prevUserId !== null) {
         destroyEntitlementSubscription();
         destroySubscriptionWatch();
@@ -1593,29 +1585,9 @@ export class App {
     this.eventHandlers.setupUnifiedSettings();
     this.eventHandlers.setupAuthWidget();
     // Capture any ?ref= / ?wm_referral= from the URL into localStorage
-    // and strip from the visible URL. Runs BEFORE the pending-checkout
-    // capture so a /dashboard?ref=X&checkoutProduct=Y landing preserves both
-    // signals. Pure read of current URL — no-op when neither param is
-    // present.
+    // and strip from the visible URL. Pure read of current URL — no-op
+    // when the param is not present.
     captureReferralFromUrl();
-    // Wire checkout-attempt lifecycle watchers (sign-out clear) before
-    // any capture/resume path runs, so a stale session from a prior
-    // user can't bleed into the current one.
-    initCheckoutWatchers();
-    // Stale attempt records are ignored by loadCheckoutAttempt() via
-    // the 24h TTL — no separate sweep needed. The attempt record's
-    // only consumer (the failure-retry banner) runs handleCheckoutReturn
-    // synchronously during panel-layout mount, which is after the
-    // captureePendingCheckoutIntentFromUrl repopulates it for any /pro
-    // handoff — so no race exists that would want to sweep pre-capture.
-    const pendingCheckout = capturePendingCheckoutIntentFromUrl();
-    if (pendingCheckout) {
-      // Checkout intent from /pro page redirect. Resume immediately if
-      // already authenticated, otherwise the auth callback handles it.
-      void resumePendingCheckout({
-        openAuth: () => this.state.authModal?.open(),
-      });
-    }
 
     // Phase 4: MapLayerHandlers, CountryIntel. SearchManager is lazy-loaded
     // on first CMD+K/search-button open so its modal catalog stays off startup.

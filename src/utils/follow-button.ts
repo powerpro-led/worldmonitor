@@ -8,9 +8,11 @@
  *    spinner (entitlement loading), hidden (feature flag off).
  *  - Click handler that calls into `addCountry` / `removeCountry`.
  *  - Subscription to watchlist + entitlement changes (re-render on update).
- *  - Branch on `FollowMutationResult.reason` — opens the upgrade modal
- *    on `FREE_CAP` via the same path `notifications-settings.ts` uses
- *    (lazy `@/services/clerk` + `@/services/checkout`).
+ *  - Branch on `FollowMutationResult.reason` — triggers sign-in on
+ *    `FREE_CAP` (lazy `@/services/auth-provider`). FREE_CAP is an
+ *    anonymous-only state post-billing-cut: `serviceEntitlementState()`
+ *    only returns `'free'` for a signed-out user, since every signed-in
+ *    user is fully entitled.
  *
  * Pattern:
  *  - `{ html, attach } → teardown` matches `src/services/notifications-settings.ts`.
@@ -86,7 +88,7 @@ export interface FollowButtonHandle {
 // Test-injection seam: upgrade-modal trigger
 // ---------------------------------------------------------------------------
 //
-// In production, the `FREE_CAP` branch dynamically imports clerk +
+// In production, the `FREE_CAP` branch dynamically imports auth-provider +
 // checkout (the same lazy path `notifications-settings.ts` uses for the
 // "Upgrade to Pro" button). Tests inject a synchronous fake here so
 // they can assert the trigger was called without spinning up the real
@@ -95,38 +97,15 @@ export interface FollowButtonHandle {
 type UpgradeTrigger = (source: string) => void;
 
 let _upgradeTrigger: UpgradeTrigger = (source) => {
-  // Match the notifications-settings.ts pattern: try sign-in first if no
-  // user, otherwise drop into checkout. If anything fails we fall back
-  // to the `/pro` page (consistent w/ ProBanner CTA).
+  // FREE_CAP is an anonymous-only state post-billing-cut (see class doc
+  // comment) — sign in. Fall back to the `/pro` page if anything fails
+  // (consistent w/ ProBanner CTA).
   try {
-    void import('@/services/clerk').then((clerk) => {
-      const user = clerk.getCurrentClerkUser?.();
-      if (!user) {
-        const opener = clerk.openSignIn;
-        if (typeof opener === 'function') {
-          opener();
-          return;
-        }
-      }
-      // Signed-in OR no openSignIn helper — go straight to checkout.
-      void import('@/services/checkout')
-        .then((checkout) =>
-          import('@/config/products').then((products) => {
-            const product = (products as { DEFAULT_UPGRADE_PRODUCT?: unknown })
-              .DEFAULT_UPGRADE_PRODUCT;
-            if (product && typeof checkout.startCheckout === 'function') {
-              checkout.startCheckout(
-                product as Parameters<typeof checkout.startCheckout>[0],
-              );
-            } else {
-              window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
-            }
-          }),
-        )
-        .catch(() => {
-          window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
-        });
-    });
+    void import('@/services/auth-provider')
+      .then((authProvider) => authProvider.signInWithGithub())
+      .catch(() => {
+        window.open('/pro#pricing', '_blank', 'noopener,noreferrer');
+      });
   } catch {
     try {
       window.open('/pro#pricing', '_blank', 'noopener,noreferrer');

@@ -41,7 +41,7 @@ import {
   getEntitlementState as _getEntitlementState,
   hasTier as _hasTier,
 } from './entitlements';
-import { getCurrentClerkUser as _getCurrentClerkUser } from './clerk';
+import { getCurrentAuthUser as _getCurrentClerkUser } from './auth-provider';
 import { subscribeAuthState as _subscribeAuthState } from './auth-state';
 import {
   getConvexClient as _getConvexClient,

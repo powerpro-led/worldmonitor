@@ -3300,7 +3300,8 @@
   "auth": {
     "signIn": "Zaloguj się",
     "createAccount": "Utwórz konto",
-    "settings": "Ustawienia"
+    "settings": "Ustawienia",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Połącz MCP",

@@ -1,6 +1,6 @@
 import type { CustomWidgetSpec } from '@/services/widget-store';
 import { getBrowserTesterKey, getWidgetAgentKey, getProWidgetKey } from '@/services/widget-store';
-import { getClerkToken } from '@/services/clerk';
+import { getAuthToken } from '@/services/auth-provider';
 import { t } from '@/services/i18n';
 import { escapeHtml } from '@/utils/sanitize';
 import { widgetAgentHealthUrl, widgetAgentUrl } from '@/utils/proxy';
@@ -66,7 +66,7 @@ async function buildWidgetAuthHeaders(isPro: boolean): Promise<BuiltAuthHeaders>
     if (isPro && proKey) headers['X-Pro-Key'] = proKey;
     return { headers, usedTesterKey: true };
   }
-  const token = await getClerkToken();
+  const token = await getAuthToken();
   if (token) return { headers: { 'Authorization': `Bearer ${token}` }, usedTesterKey: false };
   return { headers: {}, usedTesterKey: false };
 }

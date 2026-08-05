@@ -336,6 +336,10 @@ function startupSecondaryFlowImportOffenders() {
 
 function checkoutSdkValueImportOffenders() {
   const filePath = resolve(repoRoot, 'src/services/checkout.ts');
+  // Stage 1 Supabase migration: the dashboard checkout flow (and its
+  // dodopayments-checkout SDK import) was removed entirely — no checkout.ts
+  // means the "SDK must be dynamically imported" invariant is vacuously true.
+  if (!existsSync(filePath)) return [];
   const ast = astForPath(filePath);
   const offenders = [];
   for (const statement of ast.statements) {

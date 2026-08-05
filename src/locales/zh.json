@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "登录",
     "createAccount": "创建账户",
-    "settings": "设置"
+    "settings": "设置",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "连接 MCP",

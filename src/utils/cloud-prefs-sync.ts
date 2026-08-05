@@ -14,7 +14,7 @@
 
 import { CLOUD_SYNC_KEYS, type CloudSyncKey } from './sync-keys';
 import { isDesktopRuntime } from '@/services/runtime';
-import { getClerkToken } from '@/services/clerk';
+import { getAuthToken } from '@/services/auth-provider';
 import { FEEDS } from '@/config/feeds';
 import {
   applyMigrationChain,
@@ -451,7 +451,7 @@ export async function onSignIn(userId: string, variant: string): Promise<void> {
   _currentVariant = variant;
   setState('syncing');
 
-  const token = await getClerkToken();
+  const token = await getAuthToken();
   if (!token) { setState('error'); return; }
   _cachedToken = token;
 
@@ -591,7 +591,7 @@ async function uploadNow(variant: string): Promise<void> {
   _uploadsInFlight += 1;
 
   try {
-    const token = await getClerkToken();
+    const token = await getAuthToken();
     if (!token) return;
     _cachedToken = token;
 

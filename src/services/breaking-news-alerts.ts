@@ -8,7 +8,7 @@ import type { NewsItem } from '@/types';
 import type { OrefAlert } from '@/services/oref-alerts';
 import { getSourceTier } from '@/config/feeds';
 import { isDesktopRuntime, getRemoteApiBaseUrl } from '@/services/runtime';
-import { getClerkToken } from '@/services/clerk';
+import { getAuthToken } from '@/services/auth-provider';
 import { SITE_VARIANT } from '@/config/variant';
 import { effectivePubDateMs } from '@/services/feed-date';
 
@@ -194,7 +194,7 @@ function dispatchAlert(alert: BreakingAlert): void {
 
   if (!RELAY_GATES_READY) {
     void (async () => {
-      const token = await getClerkToken();
+      const token = await getAuthToken();
       if (!token) { console.warn('[breaking-news-alerts] no Clerk token, skipping notify'); return; }
       // source: rss (list-feed-digest) — RSS-origin producer; carries
       // `description` when the upstream NewsItem had a snippet so the relay

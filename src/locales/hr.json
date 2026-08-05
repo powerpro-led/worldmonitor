@@ -3482,7 +3482,8 @@
   "auth": {
     "signIn": "Prijava",
     "createAccount": "Kreiraj račun",
-    "settings": "Postavke"
+    "settings": "Postavke",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Poveži MCP",

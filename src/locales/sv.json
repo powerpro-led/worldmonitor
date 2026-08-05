@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Logga in",
     "createAccount": "Skapa konto",
-    "settings": "Inställningar"
+    "settings": "Inställningar",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Anslut MCP",

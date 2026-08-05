@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Oturum Aç",
     "createAccount": "Hesap oluştur",
-    "settings": "Ayarlar"
+    "settings": "Ayarlar",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "MCP'yi Bağla",

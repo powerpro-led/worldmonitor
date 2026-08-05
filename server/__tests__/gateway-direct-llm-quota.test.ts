@@ -24,9 +24,9 @@ vi.mock("../_shared/entitlement-check", async (importOriginal) => {
   };
 });
 
-const resolveClerkSession = vi.fn();
+const resolveSupabaseSession = vi.fn();
 vi.mock("../_shared/auth-session", () => ({
-  resolveClerkSession: (...a: unknown[]) => resolveClerkSession(...a),
+  resolveSupabaseSession: (...a: unknown[]) => resolveSupabaseSession(...a),
 }));
 
 const validateApiKey = vi.fn();
@@ -105,7 +105,7 @@ beforeEach(() => {
   checkRateLimit.mockReset().mockResolvedValue(null);
   checkEntitlementDetailed.mockReset().mockResolvedValue({ response: null, entitlements: null });
   getEntitlements.mockReset().mockResolvedValue(null);
-  resolveClerkSession.mockReset().mockResolvedValue(null);
+  resolveSupabaseSession.mockReset().mockResolvedValue(null);
   validateApiKey.mockReset().mockResolvedValue({
     valid: false,
     required: true,
@@ -125,7 +125,7 @@ describe("gateway direct LLM quota", () => {
 
   test("free bearer country brief is rejected before quota or handler spend", async () => {
     const calls = { classify: 0, deduct: 0, country: 0, cache: 0 };
-    resolveClerkSession.mockResolvedValue({ userId: "user_free", orgId: null, role: "free" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "user_free", orgId: null, role: "free" });
     checkEntitlementDetailed.mockResolvedValue({
       response: json({ error: "Upgrade required", requiredTier: 1, currentTier: 0 }, 403),
       entitlements: null,
@@ -151,7 +151,7 @@ describe("gateway direct LLM quota", () => {
 
   test("Pro bearer country brief reserves quota and reaches the handler", async () => {
     const calls = { classify: 0, deduct: 0, country: 0, cache: 0 };
-    resolveClerkSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
 
     const res = await makeGateway(calls)(
       req(`${COUNTRY_BRIEF_PATH}?country_code=US`, {
@@ -189,7 +189,7 @@ describe("gateway direct LLM quota", () => {
 
   test("Pro bearer classify-event reserves direct LLM quota before the handler", async () => {
     const calls = { classify: 0, deduct: 0, cache: 0 };
-    resolveClerkSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
     validateApiKey.mockResolvedValue({ valid: false, required: true, error: "API key required" });
 
     const res = await makeGateway(calls)(
@@ -208,7 +208,7 @@ describe("gateway direct LLM quota", () => {
 
   test("direct LLM quota exhaustion returns 429 with Retry-After and skips handler", async () => {
     const calls = { classify: 0, deduct: 0, cache: 0 };
-    resolveClerkSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
+    resolveSupabaseSession.mockResolvedValue({ userId: "user_pro", orgId: null, role: "pro" });
     validateApiKey.mockResolvedValue({ valid: false, required: true, error: "API key required" });
     reserveDirectLlmQuota.mockResolvedValue({
       ok: false,

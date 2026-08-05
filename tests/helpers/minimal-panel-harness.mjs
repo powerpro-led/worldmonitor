@@ -126,11 +126,10 @@ async function loadMinimalPanel() {
       export const PanelGateReason = Object.freeze({
         NONE: 'none',
         ANONYMOUS: 'anonymous',
-        FREE_TIER: 'free_tier',
       });
     `],
-    ['checkout-stub', `export function startCheckout() {}`],
-    ['products-stub', `export const DEFAULT_UPGRADE_PRODUCT = 'pro';`],
+    ['auth-state-stub', `export function getAuthState() { return { user: null, isPending: false }; }`],
+    ['auth-provider-stub', `export function signInWithGithub() { return Promise.resolve(); }`],
     ['theme-colors-stub', `export function getCSSColor() { return '#000'; }`],
     ['virtual-entry', virtualEntrySource],
   ]);
@@ -146,8 +145,8 @@ async function loadMinimalPanel() {
     ['@/services/ai-flow-settings', 'ai-flow-settings-stub'],
     ['@/services/runtime-config', 'runtime-config-stub'],
     ['@/services/panel-gating', 'panel-gating-stub'],
-    ['@/services/checkout', 'checkout-stub'],
-    ['@/config/products', 'products-stub'],
+    ['@/services/auth-state', 'auth-state-stub'],
+    ['@/services/auth-provider', 'auth-provider-stub'],
     ['@/utils/theme-colors', 'theme-colors-stub'],
     ['virtual:minimal-entry', 'virtual-entry'],
   ]);

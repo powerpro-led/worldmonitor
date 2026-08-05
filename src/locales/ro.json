@@ -3282,7 +3282,8 @@
   "auth": {
     "signIn": "Conectare",
     "createAccount": "Creare cont",
-    "settings": "Setări"
+    "settings": "Setări",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Conectare MCP",

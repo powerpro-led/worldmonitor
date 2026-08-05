@@ -5,7 +5,7 @@
 
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { premiumFetch } from '@/services/premium-fetch';
-import { getCurrentClerkUser } from '@/services/clerk';
+import { getCurrentAuthUser } from '@/services/auth-provider';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { onEntitlementChange } from '@/services/entitlements';
 import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
@@ -79,7 +79,7 @@ let lastPremiumFingerprint: string | null | undefined; // undefined = never obse
 function currentPremiumFingerprint(): string {
   let userId = 'anon';
   try {
-    userId = getCurrentClerkUser()?.id ?? 'anon';
+    userId = getCurrentAuthUser()?.id ?? 'anon';
   } catch { /* Clerk not loaded yet */ }
   let entitled = false;
   try {

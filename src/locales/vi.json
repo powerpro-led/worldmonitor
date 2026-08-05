@@ -3264,7 +3264,8 @@
   "auth": {
     "signIn": "Đăng nhập",
     "createAccount": "Tạo tài khoản",
-    "settings": "Cài đặt"
+    "settings": "Cài đặt",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Kết nối MCP",

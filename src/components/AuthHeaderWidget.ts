@@ -1,5 +1,5 @@
 import { subscribeAuthState, type AuthSession } from '@/services/auth-state';
-import { mountUserButton, openSignIn, openSignUp } from '@/services/clerk';
+import { getCurrentAuthUser, signInWithGithub, signOut } from '@/services/auth-provider';
 import { t } from '@/services/i18n';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
@@ -7,9 +7,10 @@ import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 export class AuthHeaderWidget {
   private container: HTMLElement;
   private unsubscribeAuth: (() => void) | null = null;
-  private unmountUserButton: (() => void) | null = null;
   private onSignInClick?: () => void;
   private onSettingsClick?: () => void;
+  private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(onSignInClick?: () => void, onSettingsClick?: () => void) {
     this.onSignInClick = onSignInClick;
@@ -31,8 +32,7 @@ export class AuthHeaderWidget {
   }
 
   public destroy(): void {
-    this.unmountUserButton?.();
-    this.unmountUserButton = null;
+    this.detachMenuListeners();
     if (this.unsubscribeAuth) {
       this.unsubscribeAuth();
       this.unsubscribeAuth = null;
@@ -40,8 +40,7 @@ export class AuthHeaderWidget {
   }
 
   private render(state: AuthSession): void {
-    this.unmountUserButton?.();
-    this.unmountUserButton = null;
+    this.detachMenuListeners();
     this.container.classList.remove('auth-header-widget-pending');
     this.container.removeAttribute('aria-busy');
     setTrustedHtml(this.container, trustedHtml('', "legacy direct innerHTML migration"));
@@ -54,8 +53,7 @@ export class AuthHeaderWidget {
   }
 
   private renderPending(): void {
-    this.unmountUserButton?.();
-    this.unmountUserButton = null;
+    this.detachMenuListeners();
     this.container.classList.add('auth-header-widget-pending');
     this.container.setAttribute('aria-busy', 'true');
     setTrustedHtml(this.container, trustedHtml('', "legacy direct innerHTML migration"));
@@ -77,22 +75,128 @@ export class AuthHeaderWidget {
     signInBtn.textContent = t('auth.signIn');
     signInBtn.addEventListener('click', () => {
       if (this.onSignInClick) this.onSignInClick();
-      else openSignIn();
+      else void signInWithGithub();
     });
     this.container.appendChild(signInBtn);
-
-    const signUpLink = document.createElement('button');
-    signUpLink.className = 'auth-signup-link';
-    signUpLink.textContent = t('auth.createAccount');
-    signUpLink.addEventListener('click', () => openSignUp());
-    this.container.appendChild(signUpLink);
   }
 
+  private detachMenuListeners(): void {
+    if (this.outsideClickHandler) {
+      document.removeEventListener('click', this.outsideClickHandler, true);
+      this.outsideClickHandler = null;
+    }
+    if (this.keydownHandler) {
+      document.removeEventListener('keydown', this.keydownHandler);
+      this.keydownHandler = null;
+    }
+  }
+
+  /**
+   * No Supabase equivalent to Clerk's `mountUserButton` — this builds a
+   * minimal avatar-triggered dropdown from `getCurrentAuthUser()` instead.
+   * Reuses the `.auth-avatar-btn` / `.auth-dropdown` class family already
+   * defined in main.css (pre-dating Clerk, orphaned since the custom OTP
+   * modal was replaced) rather than inventing a new style system.
+   */
   private renderSignedIn(): void {
-    const userBtnEl = document.createElement('div');
-    userBtnEl.className = 'auth-clerk-user-button';
-    this.container.appendChild(userBtnEl);
-    this.unmountUserButton = mountUserButton(userBtnEl);
+    const user = getCurrentAuthUser();
+    const initial = (user?.name?.trim()?.[0] ?? '?').toUpperCase();
+
+    const avatarBtn = document.createElement('button');
+    avatarBtn.type = 'button';
+    avatarBtn.className = 'auth-avatar-btn';
+    avatarBtn.setAttribute('aria-haspopup', 'true');
+    avatarBtn.setAttribute('aria-expanded', 'false');
+    avatarBtn.setAttribute('aria-label', user?.name ? `${user.name} — ${t('auth.settings')}` : t('auth.settings'));
+
+    if (user?.image) {
+      const avatarImg = document.createElement('img');
+      avatarImg.className = 'auth-avatar-img';
+      avatarImg.src = user.image;
+      avatarImg.alt = '';
+      avatarBtn.appendChild(avatarImg);
+    } else {
+      const initials = document.createElement('span');
+      initials.className = 'auth-avatar-initials';
+      initials.textContent = initial;
+      avatarBtn.appendChild(initials);
+    }
+    this.container.appendChild(avatarBtn);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'auth-dropdown';
+
+    const header = document.createElement('div');
+    header.className = 'auth-dropdown-header';
+
+    const avatarWrap = document.createElement('div');
+    avatarWrap.className = 'auth-dropdown-avatar-wrap';
+    if (user?.image) {
+      const avatarImg = document.createElement('img');
+      avatarImg.className = 'auth-avatar-img';
+      avatarImg.src = user.image;
+      avatarImg.alt = '';
+      avatarWrap.appendChild(avatarImg);
+    } else {
+      const initials = document.createElement('span');
+      initials.className = 'auth-avatar-initials';
+      initials.textContent = initial;
+      avatarWrap.appendChild(initials);
+    }
+    header.appendChild(avatarWrap);
+
+    const info = document.createElement('div');
+    info.className = 'auth-dropdown-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'auth-dropdown-name';
+    nameEl.textContent = user?.name ?? '';
+    const emailEl = document.createElement('div');
+    emailEl.className = 'auth-dropdown-email';
+    emailEl.textContent = user?.email ?? '';
+    info.appendChild(nameEl);
+    info.appendChild(emailEl);
+    header.appendChild(info);
+    dropdown.appendChild(header);
+
+    const divider = document.createElement('div');
+    divider.className = 'auth-dropdown-divider';
+    dropdown.appendChild(divider);
+
+    const signOutBtn = document.createElement('button');
+    signOutBtn.type = 'button';
+    signOutBtn.className = 'auth-dropdown-item auth-signout-item';
+    signOutBtn.textContent = t('auth.signOut');
+    signOutBtn.addEventListener('click', () => {
+      closeMenu();
+      void signOut();
+    });
+    dropdown.appendChild(signOutBtn);
+
+    this.container.appendChild(dropdown);
+
+    const closeMenu = (): void => {
+      dropdown.classList.remove('open');
+      avatarBtn.setAttribute('aria-expanded', 'false');
+      this.detachMenuListeners();
+    };
+    const openMenu = (): void => {
+      dropdown.classList.add('open');
+      avatarBtn.setAttribute('aria-expanded', 'true');
+      this.outsideClickHandler = (e: MouseEvent) => {
+        if (!this.container.contains(e.target as Node)) closeMenu();
+      };
+      this.keydownHandler = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') closeMenu();
+      };
+      document.addEventListener('click', this.outsideClickHandler, true);
+      document.addEventListener('keydown', this.keydownHandler);
+    };
+
+    avatarBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dropdown.classList.contains('open')) closeMenu();
+      else openMenu();
+    });
 
     if (this.onSettingsClick) {
       const settingsBtn = document.createElement('button');

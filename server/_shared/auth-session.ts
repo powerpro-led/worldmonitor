@@ -1,20 +1,20 @@
 /**
- * Gateway-level JWT verification for Clerk bearer tokens.
+ * Gateway-level JWT verification for Supabase bearer tokens.
  *
  * Extracts and verifies the `Authorization: Bearer <token>` header using the
  * shared bearer-token validator from `server/auth-session.ts`. Returns the
  * resolved session identity on success, or null on any failure.
  *
- * Shares the same JWKS cache as `validateBearerToken` — no duplicate
- * key fetches on cold start.
- *
- * Activated by setting CLERK_JWT_ISSUER_DOMAIN env var. When not set,
- * all calls return null and the gateway falls back to API-key-only auth.
+ * Activated by setting SUPABASE_JWT_SECRET + SUPABASE_URL env vars (Supabase
+ * HS256 shared-secret verification -- see `server/auth-session.ts`). When
+ * not set, all calls return null and the gateway falls back to
+ * API-key-only auth. Mirrors the old CLERK_JWT_ISSUER_DOMAIN gate this
+ * module replaced.
  */
 
 import { validateBearerToken } from '../auth-session';
 
-export interface ClerkSession {
+export interface SupabaseSession {
   userId: string;
   orgId: string | null;
   role: 'free' | 'pro';
@@ -26,7 +26,7 @@ export interface ClerkSession {
  *
  * Fail-open: errors are logged but never thrown.
  */
-export async function resolveClerkSession(request: Request): Promise<ClerkSession | null> {
+export async function resolveSupabaseSession(request: Request): Promise<SupabaseSession | null> {
   try {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) return null;
@@ -49,9 +49,9 @@ export async function resolveClerkSession(request: Request): Promise<ClerkSessio
 }
 
 /**
- * Back-compat wrapper. Prefer resolveClerkSession() for new callers.
+ * Back-compat wrapper. Prefer resolveSupabaseSession() for new callers.
  */
 export async function resolveSessionUserId(request: Request): Promise<string | null> {
-  const session = await resolveClerkSession(request);
+  const session = await resolveSupabaseSession(request);
   return session?.userId ?? null;
 }

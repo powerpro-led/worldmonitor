@@ -10,7 +10,7 @@
  */
 
 import type { ConvexClient } from 'convex/browser';
-import { getClerkToken, clearClerkTokenCache, getCurrentClerkUser } from './clerk';
+import { getAuthToken, clearAuthTokenCache, getCurrentAuthUser } from './auth-provider';
 
 // Use typeof to get the exact generated API type without importing statically
 type ConvexApi = typeof import('../../convex/_generated/api').api;
@@ -55,12 +55,20 @@ export async function getConvexClient(): Promise<ConvexClient | null> {
     authReadyResolve = null;
     return null;
   }
+  // Stage 1 Supabase migration: this swaps the token-supplier's source from
+  // Clerk to auth-provider.ts for compile/behavioral consistency, but
+  // Convex's own auth.config.ts (untouched here, Stage 2/3 territory) still
+  // trusts Clerk's issuer — so Convex will NOT actually authenticate
+  // Supabase-issued JWTs until auth.config.ts is reconfigured or these
+  // features migrate off Convex. isAuthenticated below will read false for
+  // every Supabase-signed-in user until then; see the Stage 1 plan's
+  // "transitional gap" note.
   client.setAuth(
     async ({ forceRefreshToken }: { forceRefreshToken?: boolean } = {}) => {
       if (forceRefreshToken) {
-        clearClerkTokenCache();
+        clearAuthTokenCache();
       }
-      return getClerkToken();
+      return getAuthToken();
     },
     (isAuthenticated: boolean) => {
       if (isAuthenticated) {
@@ -104,7 +112,7 @@ async function callEnsureRecord(c: ConvexClient): Promise<void> {
     return;
   }
 
-  const user = getCurrentClerkUser();
+  const user = getCurrentAuthUser();
   if (!user) return;
   const userId = user.id;
   if (userId === lastEnsuredUserId) return;
@@ -177,7 +185,7 @@ async function callEnsureRecord(c: ConvexClient): Promise<void> {
     // new user's record gets created. Bounded recursion: the next call's
     // top-of-function `userId === lastEnsuredUserId` guard short-circuits
     // if they didn't actually change.
-    const currentUser = getCurrentClerkUser();
+    const currentUser = getCurrentAuthUser();
     if (currentUser && currentUser.id !== userId) {
       void callEnsureRecord(c);
     }

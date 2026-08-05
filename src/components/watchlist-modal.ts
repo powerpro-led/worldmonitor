@@ -90,11 +90,11 @@ export function openWatchlistModal(): void {
     // when the rule is disabled or never opted in.
     void (async () => {
       try {
-        const [{ hasTier }, { getCurrentClerkUser }] = await Promise.all([
+        const [{ hasTier }, { getCurrentAuthUser }] = await Promise.all([
           import('@/services/entitlements'),
-          import('@/services/clerk'),
+          import('@/services/auth-provider'),
         ]);
-        if (!getCurrentClerkUser() || !hasTier(1)) return;
+        if (!getCurrentAuthUser() || !hasTier(1)) return;
         const { syncWatchlistTickersToAlertRule } = await import('@/services/notification-channels');
         await syncWatchlistTickersToAlertRule(entries.map((e) => e.symbol));
       } catch (err) {

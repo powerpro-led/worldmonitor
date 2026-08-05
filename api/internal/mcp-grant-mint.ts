@@ -53,7 +53,7 @@
 
 export const config = { runtime: 'edge' };
 
-import { resolveClerkSession } from '../../server/_shared/auth-session';
+import { resolveSupabaseSession } from '../../server/_shared/auth-session';
 import { getEntitlements } from '../../server/_shared/entitlement-check';
 // @ts-expect-error — JS module, no declaration file
 import { isAllowedRedirectUri } from '../oauth/register.js';
@@ -331,7 +331,7 @@ export async function mintGrantHandler(req: Request, deps: MintDeps): Promise<Re
 
 export default async function handler(req: Request): Promise<Response> {
   return mintGrantHandler(req, {
-    resolveUserId: async (r) => (await resolveClerkSession(r))?.userId ?? null,
+    resolveUserId: async (r) => (await resolveSupabaseSession(r))?.userId ?? null,
     redisGet: rawRedisGet,
     redisSetEx: rawRedisSetEx,
     redisSetNxEx: rawRedisSetNxEx,

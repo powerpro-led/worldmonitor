@@ -3300,7 +3300,8 @@
   "auth": {
     "signIn": "Přihlášení",
     "createAccount": "Vytvořit účet",
-    "settings": "Nastavení"
+    "settings": "Nastavení",
+    "signOut": "Sign Out"
   },
   "mcp": {
     "connectPanel": "Připojit MCP",

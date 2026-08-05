@@ -341,13 +341,16 @@ export class RouteExplorer {
   }
 
   private renderFreeGate(): void {
+    // hasPremiumAccess() only fails here when nobody is signed in — every
+    // signed-in user is fully entitled post-billing-cut — so this gate is
+    // always the sign-in state now.
     this.leftRail?.element.classList.add('re-leftrail--blurred');
     this.leftRail?.element.setAttribute('aria-hidden', 'true');
     if (this.contentEl) {
       setTrustedHtml(this.contentEl, trustedHtml('<div class="re-content__gate">' +
         '<h3>Unlock route intelligence</h3>' +
         '<ul><li>Current route with chokepoint risk</li><li>Ranked bypass alternatives</li><li>Overland corridor options</li></ul>' +
-        '<button class="re-content__upgrade" type="button">Upgrade to PRO</button>' +
+        '<button class="re-content__upgrade" type="button">Sign In</button>' +
         '</div>', "legacy direct innerHTML migration"));
       const btn = this.contentEl.querySelector<HTMLButtonElement>('.re-content__upgrade');
       btn?.addEventListener('click', () => {
@@ -356,8 +359,8 @@ export class RouteExplorer {
           to: this.state.toIso2 ?? '',
           hs2: this.state.hs2 ?? '',
         });
-        void import('@/services/checkout')
-          .then((m) => m.startCheckout('pro_monthly'))
+        void import('@/services/auth-provider')
+          .then((m) => m.signInWithGithub())
           .catch(() => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer'));
       }, { once: true });
     }

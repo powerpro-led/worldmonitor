@@ -1,63 +1,28 @@
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
 import { after, before, describe, it } from 'node:test';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { SignJWT } from 'jose';
 
 import { issueSessionToken } from '../api/_session.js';
-import { createDomainGateway } from '../server/gateway.ts';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '../src/shared/pro-fresh-rpc.ts';
 
-const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_ENV = {
-  CLERK_JWT_ISSUER_DOMAIN: process.env.CLERK_JWT_ISSUER_DOMAIN,
-  CONVEX_SITE_URL: process.env.CONVEX_SITE_URL,
-  CONVEX_SERVER_SHARED_SECRET: process.env.CONVEX_SERVER_SHARED_SECRET,
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET,
   WM_SESSION_SECRET: process.env.WM_SESSION_SECRET,
 };
 
-type Entitlement = {
-  planKey: string;
-  validUntil: number;
-  features: {
-    tier: number;
-    apiAccess: boolean;
-    apiRateLimit: number;
-    maxDashboards: number;
-    prioritySupport: boolean;
-    exportFormats: string[];
-    mcpAccess: boolean;
-  };
-};
+const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
+const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
+const ISSUER = `${SUPABASE_URL}/auth/v1`;
+const secretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
 
-const entitlements = new Map<string, Entitlement | null>();
-let privateKey: CryptoKey;
-let jwksServer: Server;
-let jwksPort = 0;
 let anonymousSessionToken = '';
-
-const handler = createDomainGateway(
-  [...PRO_FRESH_CACHE_RPC_PATHS].map((path) => ({
-    method: 'GET' as const,
-    path,
-    handler: async () => new Response('{"ok":true}', { status: 200 }),
-  })),
-);
-
-function entitlement(planKey: string, tier: number, validUntil = Date.now() + 60_000): Entitlement {
-  return {
-    planKey,
-    validUntil,
-    features: {
-      tier,
-      apiAccess: tier >= 2,
-      apiRateLimit: tier >= 2 ? 60 : 0,
-      maxDashboards: tier >= 1 ? 10 : 3,
-      prioritySupport: false,
-      exportFormats: [],
-      mcpAccess: tier >= 1,
-    },
-  };
-}
+// server/auth-session.ts reads SUPABASE_JWT_SECRET/SUPABASE_URL into
+// module-scope consts at first import, so `../server/gateway.ts` (which
+// transitively imports it) must be dynamically imported AFTER the env vars
+// below are set -- a static top-of-file import would capture an empty
+// secret and every bearer-token verification would fail closed.
+let handler: (req: Request) => Promise<Response>;
 
 function request(path: string, headers: HeadersInit): Request {
   return new Request(`https://worldmonitor.app${path}?_debug=1`, {
@@ -74,65 +39,34 @@ function assertPrivateCache(res: Response): void {
   assert.doesNotMatch(res.headers.get('Cache-Control') ?? '', /\bpublic\b|\bs-maxage=/i);
 }
 
-async function signToken(userId: string, plan = 'free'): Promise<string> {
-  return new SignJWT({ sub: userId, plan })
-    .setProtectedHeader({ alg: 'RS256', kid: 'pro-fresh-test-key' })
-    .setIssuer(`http://127.0.0.1:${jwksPort}`)
-    .setAudience('convex')
+async function signSupabaseToken(userId: string): Promise<string> {
+  return new SignJWT({ sub: userId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(ISSUER)
+    .setAudience('authenticated')
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime('1h')
-    .sign(privateKey);
+    .sign(secretKey);
 }
 
 before(async () => {
-  const { publicKey, privateKey: generatedPrivateKey } = await generateKeyPair('RS256');
-  privateKey = generatedPrivateKey;
-  const publicJwk = await exportJWK(publicKey);
-  publicJwk.kid = 'pro-fresh-test-key';
-  publicJwk.alg = 'RS256';
-  publicJwk.use = 'sig';
-
-  jwksServer = createServer((req, res) => {
-    if (req.url === '/.well-known/jwks.json') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ keys: [publicJwk] }));
-      return;
-    }
-    res.writeHead(404);
-    res.end();
-  });
-  await new Promise<void>((resolve) => jwksServer.listen(0, '127.0.0.1', resolve));
-  const address = jwksServer.address();
-  jwksPort = typeof address === 'object' && address ? address.port : 0;
-
-  process.env.CLERK_JWT_ISSUER_DOMAIN = `http://127.0.0.1:${jwksPort}`;
-  process.env.CONVEX_SITE_URL = 'https://convex.test';
-  process.env.CONVEX_SERVER_SHARED_SECRET = 'pro-fresh-shared-secret';
+  process.env.SUPABASE_URL = SUPABASE_URL;
+  process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
   process.env.WM_SESSION_SECRET = 'pro-fresh-session-secret-at-least-32-chars';
   anonymousSessionToken = (await issueSessionToken()).token;
 
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url;
-    if (url.endsWith('/api/internal-entitlements')) {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { userId?: string };
-      return new Response(JSON.stringify(entitlements.get(body.userId ?? '') ?? null), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    return ORIGINAL_FETCH(input, init);
-  }) as typeof fetch;
+  const { createDomainGateway } = await import(`../server/gateway.ts?pro-fresh-cache-repro=${Date.now()}`);
+  handler = createDomainGateway(
+    [...PRO_FRESH_CACHE_RPC_PATHS].map((path) => ({
+      method: 'GET' as const,
+      path,
+      handler: async () => new Response('{"ok":true}', { status: 200 }),
+    })),
+  );
 });
 
 after(async () => {
-  globalThis.fetch = ORIGINAL_FETCH;
-  await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
   for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -153,9 +87,15 @@ describe('Pro-only market freshness cache contract', () => {
     );
   });
 
-  it('gives active Pro-or-higher plans a 30-second private browser tier on all five routes', async () => {
-    entitlements.set('user_pro_fresh', entitlement('pro_monthly', 1));
-    const token = await signToken('user_pro_fresh');
+  // NOTE(stage1-supabase-migration): post-Stage-1, getEntitlements()
+  // (server/_shared/entitlement-check.ts) synthesizes a fixed
+  // {tier:1, validUntil:Infinity} entitlement for ANY verified Supabase
+  // userId -- there is no more free/pro plan distinction, so any
+  // authenticated caller now qualifies for the 30-second live-browser
+  // tier on these five routes (this is what actually fixed the "Upgrade
+  // to Pro" gating described in the migration plan).
+  it('gives any signed-in Supabase user a 30-second private browser tier on all five routes', async () => {
+    const token = await signSupabaseToken('user-pro-fresh-uuid');
 
     for (const path of PRO_FRESH_CACHE_RPC_PATHS) {
       const res = await handler(request(path, { Authorization: `Bearer ${token}` }));
@@ -163,23 +103,6 @@ describe('Pro-only market freshness cache contract', () => {
       assert.equal(res.headers.get('X-Cache-Tier'), 'live-browser', path);
       assert.match(res.headers.get('Cache-Control') ?? '', /\bmax-age=30\b/, path);
       assert.match(res.headers.get('Cache-Control') ?? '', /\bprivate\b/, path);
-      assertPrivateCache(res);
-    }
-  });
-
-  it('keeps signed-in free and expired paid plans on the existing five-minute private tier', async () => {
-    entitlements.set('user_free_cache', entitlement('free', 0));
-    entitlements.set('user_expired_pro_cache', entitlement('pro_annual', 1, Date.now() - 1));
-
-    for (const userId of ['user_free_cache', 'user_expired_pro_cache']) {
-      const token = await signToken(userId, userId.includes('expired') ? 'pro' : 'free');
-      const res = await handler(request(
-        '/api/market/v1/list-market-quotes',
-        { Authorization: `Bearer ${token}` },
-      ));
-      assert.equal(res.status, 200);
-      assert.equal(res.headers.get('X-Cache-Tier'), 'slow-browser');
-      assert.match(res.headers.get('Cache-Control') ?? '', /\bmax-age=300\b/);
       assertPrivateCache(res);
     }
   });
@@ -195,16 +118,29 @@ describe('Pro-only market freshness cache contract', () => {
     assertPrivateCache(res);
   });
 
-  it('fails closed to ordinary freshness when entitlement resolution is unavailable', async () => {
-    entitlements.set('user_unresolved_cache', null);
-    const token = await signToken('user_unresolved_cache', 'pro');
+  it('an invalid/unverifiable bearer token does not upgrade an otherwise-anonymous request to the live-browser tier', async () => {
+    // The route still needs SOME credential to pass the gateway's general
+    // key requirement (unrelated to Pro-freshness, see api/_api-key.js) --
+    // pair the anonymous session token with a garbage Authorization header
+    // to isolate "bearer token fails to verify" from "no credential at all".
     const res = await handler(request(
       '/api/market/v1/list-market-quotes',
-      { Authorization: `Bearer ${token}` },
+      { 'X-WorldMonitor-Key': anonymousSessionToken, Authorization: 'Bearer not-a-real-token' },
     ));
-
-    assert.equal(res.status, 200, 'freshness lookup failure must not block public market data');
-    assert.equal(res.headers.get('X-Cache-Tier'), 'slow-browser');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('X-Cache-Tier'), 'slow-browser', 'an unverifiable bearer token must not grant live-browser freshness');
+    assert.match(res.headers.get('Cache-Control') ?? '', /\bmax-age=300\b/);
     assertPrivateCache(res);
   });
+
+  // NOTE(stage1-supabase-migration): the old "keeps signed-in free and
+  // expired paid plans on the five-minute tier" and "fails closed when
+  // entitlement resolution is unavailable" tests were removed here. Both
+  // depended on a mocked Convex `/api/internal-entitlements` response
+  // returning a differentiated (free-plan / lapsed / null) entitlement row
+  // for a *verified* Supabase session -- getEntitlements() no longer makes
+  // a network call and cannot return null/lapsed for a non-empty, verified
+  // userId, so neither scenario is reachable through this seam anymore.
+  // The test above is the closest remaining equivalent: an Authorization
+  // header that fails to verify must not grant the Pro-freshness tier.
 });

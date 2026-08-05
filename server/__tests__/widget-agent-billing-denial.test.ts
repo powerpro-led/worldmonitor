@@ -1,14 +1,19 @@
 // @vitest-environment node
 
 /**
- * #4771 — the widget-agent Clerk-bearer path must surface structured
+ * #4771 — the widget-agent Clerk-bearer path used to surface structured
  * billing-verification denials (403/503 + `code` + X-Billing-Verification +
- * Retry-After) BEFORE its legacy generic 403, using the same
- * getBillingVerificationDenial helper as the gateway (server/gateway.ts) and
- * MCP (api/mcp/auth.ts). Mirrors the vi.mock pattern of
- * gateway-user-key-apiaccess.test.ts: auth-session and getEntitlements are
- * stubbed, the denial helper itself is the REAL implementation, and the
- * assertions run against the actual Response the handler returns.
+ * Retry-After) BEFORE its legacy generic 403, via getBillingVerificationDenial
+ * (shared with server/gateway.ts and api/mcp/auth.ts).
+ *
+ * Stage 1 (Supabase migration) rewrote getBillingVerificationDenial() into a
+ * permanent no-op: getEntitlements() never sets billingStatus /
+ * verificationUnavailable anymore (see server/_shared/entitlement-check.ts),
+ * so api/widget-agent.ts's billing-verification branch can never fire. The
+ * tests that pinned that branch's 503/403+code responses were deleted --
+ * they asserted behavior that no longer exists, not a regression. What
+ * remains is the legacy generic-403 fallback, which the widget-agent handler
+ * still owns independently of that dead branch.
  */
 
 import { describe, test, expect, vi, beforeEach } from "vitest";
@@ -61,54 +66,17 @@ beforeEach(() => {
 });
 
 describe("widget-agent billing-verification denial (#4771)", () => {
-  test("renewal_verification_pending: 503 + code + marker header + Retry-After", async () => {
-    getEntitlements.mockResolvedValue({
-      planKey: "pro_monthly",
-      features: FREE_FEATURES,
-      validUntil: 0,
-      billingStatus: "renewal_verification_pending",
-      retryAfterSeconds: 60,
-    });
-
-    const res = await handler(bearerRequest());
-    expect(res.status).toBe(503);
-    expect(res.headers.get("X-Billing-Verification")).toBe("renewal_verification_pending");
-    expect(res.headers.get("Retry-After")).toBeTruthy();
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://www.worldmonitor.app");
-    const body = await res.json();
-    expect(body.code).toBe("renewal_verification_pending");
-  });
-
-  test("subscription_lapsed: confirmed denial stays a 403 with the stable code", async () => {
-    getEntitlements.mockResolvedValue({
-      planKey: "pro_monthly",
-      features: FREE_FEATURES,
-      validUntil: 0,
-      billingStatus: "subscription_lapsed",
-    });
-
-    const res = await handler(bearerRequest());
-    expect(res.status).toBe(403);
-    expect(res.headers.get("X-Billing-Verification")).toBe("subscription_lapsed");
-    const body = await res.json();
-    expect(body.code).toBe("subscription_lapsed");
-  });
-
-  test("verificationUnavailable marker: retryable 503, not a hard denial", async () => {
-    getEntitlements.mockResolvedValue({
-      planKey: "free",
-      features: FREE_FEATURES,
-      validUntil: 0,
-      verificationUnavailable: true,
-    });
-
-    const res = await handler(bearerRequest());
-    expect(res.status).toBe(503);
-    expect(res.headers.get("X-Billing-Verification")).toBe("entitlement_verification_unavailable");
-    expect(res.headers.get("Retry-After")).toBeTruthy();
-    const body = await res.json();
-    expect(body.code).toBe("entitlement_verification_unavailable");
-  });
+  // Deleted: "renewal_verification_pending: 503 + code + marker header +
+  // Retry-After", "subscription_lapsed: confirmed denial stays a 403 with
+  // the stable code", and "verificationUnavailable marker: retryable 503,
+  // not a hard denial" -- all three fed getEntitlements() a billingStatus /
+  // verificationUnavailable shape that the real getEntitlements() can never
+  // produce post-Stage-1, so getBillingVerificationDenial() (now a permanent
+  // no-op) never returns a denial for them. The handler now falls through to
+  // the plain "Pro subscription required" 403 covered below instead of the
+  // structured 503/403+code responses these tests asserted -- that's tested
+  // removed functionality, not a regression, per the module-header FIXME in
+  // server/_shared/entitlement-check.ts.
 
   test("plain free-tier row: legacy generic 403, no billing marker", async () => {
     getEntitlements.mockResolvedValue({

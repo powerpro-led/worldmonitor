@@ -228,13 +228,13 @@ next, so building out of order means building against something that doesn't exi
 None of this depends on the separate Nitric/GCP migration thread
 ([nitric-gcp-scaffold.md](nitric-gcp-scaffold.md)) — see "Full picture" above.
 
-1. **Seed scripts → Upstash freshness.** OPEN. Confirmed 2026-08-06: nothing currently
-   runs the ~156 `scripts/seed-*.mjs` on any schedule for this fork (no Vercel/Railway
-   deployment of its own exists — see [[supabase-migration-stage1]]). Upstash already
-   has real data (3,913 keys, checked live), but it's a frozen snapshot from ad-hoc
-   `nitric start` test sessions, not a running pipeline. Needs a decision on where these
-   run continuously — doesn't have to be GCP; a cheap always-on VPS, a resurrected
-   Railway project, or anything that can hold a cron are all on the table.
+1. **Seed scripts → Upstash freshness.** DECIDED 2026-08-06 (dev-stage answer, not the
+   permanent one): manual/ad-hoc for now — run `nitric start` or individual seed
+   scripts by hand when fresh data is wanted, same as today. No new infra while still
+   at dev stage. Upstash already has real data (3,913 keys, checked live) from ad-hoc
+   `nitric start` test sessions; it'll go stale between manual runs, which is accepted
+   for now. Revisit (VPS / Railway / wait for the GCP path) once this moves past dev
+   stage — none of those were chosen, just deferred.
 2. **Shared Upstash store.** DONE — already exists, already the single source of truth,
    nothing further needed here.
 3. **Operator's local SQLite store.** NOT STARTED. Schema design + the sync script

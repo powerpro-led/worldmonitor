@@ -1,0 +1,104 @@
+name: Deploy Backend to GCP (Nitric)
+
+# Manual-only by design (#operator-space-nitric-port). worldmonitor's api/ and
+# scripts/ trees change on essentially every push during this dev phase —
+# an on-push trigger here would mean every unrelated merge to main re-deploys
+# live GCP infrastructure. Modeled on platform/backend's own
+# .github/workflows/nitric-deploy.yml (sibling repo, same target project),
+# adapted to worldmonitor's npm/node24 toolchain and root-level nitric.yaml
+# (platform's backend/ subdir doesn't apply here).
+#
+# See docs/architecture/nitric-gcp-scaffold.md before ever running this for
+# real — "nitric up" has never been run against apps-453107 as of this
+# workflow's creation; this file exists so the deploy step is ready, not as
+# a signal that a deploy has happened or is scheduled.
+#
+# Required repo secrets:
+#   GCP_CREDENTIALS      — service account JSON key with deploy access to
+#                           GCP project apps-453107 (us-central1).
+#   PULUMI_ACCESS_TOKEN   — Nitric's GCP provider deploys via Pulumi under
+#                           the hood; needs a Pulumi Cloud backend token.
+#   PRODUCTION_ENV_FILE   — full contents of the .env the deployed services
+#                           read at runtime (Upstash, Supabase, provider
+#                           API keys, etc. — see .env.example for the shape).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to confirm — this deploys real infrastructure to GCP project apps-453107.'
+        required: true
+      stack-name:
+        description: 'Nitric stack to deploy (matches the nitric.<stack-name>.yaml suffix).'
+        required: false
+        default: 'gcp'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy Nitric Stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require explicit confirmation
+        if: ${{ inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}'). Re-run and type DEPLOY to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Setup GCP Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install and configure Pulumi
+        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
+
+      - name: Create production env file
+        env:
+          ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        # nitric.yaml lives at repo root (unlike platform's backend/ subdir),
+        # so the runtime .env Nitric picks up automatically goes there too.
+        run: echo "$ENV_FILE" > .env
+
+      # Runners are ephemeral, so the Dockerfiles' BuildKit cache mounts start
+      # cold every run. Nitric imports/exports its layer cache here; this is
+      # what makes the `npm install` layer survive between deploys. Covers
+      # both the two generated gcp/*/node.dockerfile builds and the 5
+      # existing Dockerfile.* long-running services reused unchanged from
+      # nitric.yaml's `services:` list.
+      - name: Cache Nitric Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .nitric/docker-cache
+          key: nitric-docker-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
+          restore-keys: |
+            nitric-docker-${{ runner.os }}-
+
+      - name: Deploy Infrastructure
+        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
+        with:
+          command: up
+          stack-name: ${{ inputs.stack-name }}
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

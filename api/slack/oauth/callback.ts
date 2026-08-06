@@ -13,14 +13,13 @@ export const config = { runtime: 'edge' };
 
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from '../../_sentry-edge.js';
+import { setSlackOAuthChannel } from '../../../server/_shared/notification-channels';
 
 const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID ?? '';
 const SLACK_CLIENT_SECRET = process.env.SLACK_CLIENT_SECRET ?? '';
 const SLACK_REDIRECT_URI = process.env.SLACK_REDIRECT_URI ?? '';
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL ?? (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
-const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
 const NOTIFICATION_ENCRYPTION_KEY = process.env.NOTIFICATION_ENCRYPTION_KEY ?? '';
 // Use '*' targetOrigin so the message is delivered regardless of which WM subdomain or
 // preview URL the opener is running on. There are no secrets in the payload (channelName,
@@ -133,7 +132,7 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
   if (errorParam) return errorAndClose(errorParam);
   if (!code || !state) return errorAndClose('missing_params');
 
-  if (!UPSTASH_URL || !SLACK_CLIENT_ID || !SLACK_CLIENT_SECRET || !CONVEX_SITE_URL || !RELAY_SHARED_SECRET || !NOTIFICATION_ENCRYPTION_KEY) {
+  if (!UPSTASH_URL || !SLACK_CLIENT_ID || !SLACK_CLIENT_SECRET || !NOTIFICATION_ENCRYPTION_KEY) {
     return errorAndClose('misconfigured');
   }
 
@@ -181,26 +180,24 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
     return errorAndClose('encryption_failed');
   }
 
-  // Store via Convex relay
-  const convexRes = await fetch(`${CONVEX_SITE_URL}/relay/notification-channels`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RELAY_SHARED_SECRET}` },
-    body: JSON.stringify({
-      action: 'set-slack-oauth',
-      userId,
+  // Store directly in Postgres (worldmonitor.notification_channels)
+  let isNew: boolean;
+  try {
+    const result = await setSlackOAuthChannel(userId, {
       webhookEnvelope,
       slackChannelName: tokenData.incoming_webhook.channel,
       slackTeamName: tokenData.team?.name,
       slackConfigurationUrl: tokenData.incoming_webhook.configuration_url,
-    }),
-    signal: AbortSignal.timeout(10000),
-  }).catch(() => null);
+    });
+    isNew = result.isNew;
+  } catch (err) {
+    console.error('[slack-oauth] setSlackOAuthChannel failed:', (err as Error).message);
+    await captureSilentError(err, { tags: { route: 'api/slack/oauth/callback', step: 'set-slack-oauth' } });
+    return errorAndClose('storage_failed');
+  }
 
-  if (!convexRes?.ok) return errorAndClose('storage_failed');
-
-  const stored = await convexRes.json() as { ok: boolean; isNew?: boolean };
-  console.log(`[slack-oauth] Convex set-slack-oauth: isNew=${stored.isNew}`);
-  if (stored.isNew) ctx.waitUntil(publishWelcome(userId, 'slack'));
+  console.log(`[slack-oauth] set-slack-oauth: isNew=${isNew}`);
+  if (isNew) ctx.waitUntil(publishWelcome(userId, 'slack'));
 
   return postAndClose({
     type: 'wm:slack_connected',

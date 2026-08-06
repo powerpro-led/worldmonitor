@@ -16,15 +16,17 @@ const {
   classifySetNxResult,
   recordDedupOutcome,
 } = require('./shared/notification-dedup.cjs');
+// Stage 3 of the Convex/Clerk -> Supabase migration: `worldmonitor.alert_rules`
+// / `worldmonitor.notification_channels` are read directly from Postgres now
+// (service-role client) instead of through Convex's shared-secret /relay/*
+// HTTP actions. See scripts/lib/{alert-rules-fetch,notification-channels-fetch}.cjs.
+const { fetchEnabledRules } = require('./lib/alert-rules-fetch.cjs');
+const { fetchChannelsForUser, deactivateChannel } = require('./lib/notification-channels-fetch.cjs');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
-const CONVEX_URL = process.env.CONVEX_URL ?? '';
-// Convex HTTP actions are hosted at *.convex.site (not *.convex.cloud)
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL ?? CONVEX_URL.replace('.convex.cloud', '.convex.site');
-const RELAY_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
 const RESEND_FROM = process.env.RESEND_FROM_EMAIL ?? 'WorldMonitor <alerts@worldmonitor.app>';
@@ -39,25 +41,8 @@ const WELCOME_V2_QUEUE_KEY = 'wm:events:queue:welcome-v2';
 const WELCOME_V2_POLL_EVERY = 10;
 
 if (!UPSTASH_URL || !UPSTASH_TOKEN) { console.error('[relay] UPSTASH_REDIS_REST_URL/TOKEN not set'); process.exit(1); }
-if (!CONVEX_URL) { console.error('[relay] CONVEX_URL not set'); process.exit(1); }
-if (!RELAY_SECRET) { console.error('[relay] RELAY_SHARED_SECRET not set'); process.exit(1); }
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-
-// Fetch all enabled alertRules via the shared-secret /relay/enabled-rules
-// action. The underlying `alertRules.getByEnabled` is an internalQuery
-// (GHSA-r649-4cqj-w93h) — unreachable via ConvexHttpClient — so we go through
-// the HTTP action, mirroring the other /relay/* service calls. Throws on
-// non-2xx so callers keep their existing try/catch (fail-closed: deliver
-// nothing rather than fan out on a stale/partial rule set).
-async function fetchEnabledRules(enabled = true) {
-  const res = await fetch(`${CONVEX_SITE_URL}/relay/enabled-rules?enabled=${enabled}`, {
-    headers: { Authorization: `Bearer ${RELAY_SECRET}`, 'User-Agent': 'worldmonitor-relay/1.0' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`enabled-rules HTTP ${res.status}`);
-  return await res.json();
-}
 
 // ── Upstash REST helpers ──────────────────────────────────────────────────────
 
@@ -108,95 +93,15 @@ async function checkDedup(userId, eventType, title, coalesceKey) {
   return upstashDedupSetNx(key);
 }
 
-// ── Channel deactivation ──────────────────────────────────────────────────────
-
-async function deactivateChannel(userId, channelType) {
-  try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/deactivate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RELAY_SECRET}`,
-        'User-Agent': 'worldmonitor-relay/1.0',
-      },
-      body: JSON.stringify({ userId, channelType }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) console.warn(`[relay] Deactivate failed ${userId}/${channelType}: ${res.status}`);
-  } catch (err) {
-    console.warn(`[relay] Deactivate request failed for ${userId}/${channelType}:`, err.message);
-  }
-}
-
-// ── Entitlement check (PRO gate for delivery) ───────────────────────────────
-
-const ENTITLEMENT_CACHE_TTL = 900; // 15 min — success-path cache
-// Short-TTL cache for fail-closed results during entitlement-endpoint
-// outages. Without this, every event during a sustained outage would
-// re-attempt the 5-second fetch per unique user — turning a high-frequency
-// event stream into a continuous 5-sec stall per poll iteration. 60s
-// absorbs a poll burst, recovers quickly when the endpoint comes back.
-// Cache value "0" (free); the success path naturally refreshes with the
-// real tier on the next attempt past TTL.
-const ENTITLEMENT_FAILCLOSED_CACHE_TTL = 60;
-
-/**
- * Layer-3 PRO gate. Returns true iff the user has tier>=1 entitlement.
- *
- * Fail-CLOSED policy (changed from fail-open in PR #3485 following the
- * 2026-04-28 audit that found 7 of 28 enabled alertRules belonged to free-
- * tier users — the relay's PRO filter has been silently masking a write-side
- * gap, but the previous fail-open policy meant any entitlement-endpoint
- * outage would briefly let those free users receive notifications).
- *
- * Three-layer model context:
- *   - Layer 1 (UI paywall): visual, necessary, insufficient.
- *   - Layer 2 (server-side mutation gate): primary defense (PR #3483).
- *   - Layer 3 (THIS function): defense-in-depth at delivery time.
- *
- * Caching:
- *   - Success path: 15-min Upstash TTL.
- *   - Fail-closed paths (HTTP non-OK, transport error, timeout): cache "0"
- *     with 60s TTL — see ENTITLEMENT_FAILCLOSED_CACHE_TTL note above.
- *
- * Tradeoff: an entitlement-endpoint outage drops notifications for
- * legitimate PRO users for up to 60s after each cache miss. Pair with
- * monitoring on `[relay][entitlement-fail-closed]` log lines.
- */
-async function isUserPro(userId) {
-  const cacheKey = `relay:entitlement:${userId}`;
-  try {
-    const cached = await upstashRest('GET', cacheKey);
-    if (cached !== null) return Number(cached) >= 1;
-  } catch { /* miss */ }
-  try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/entitlement`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RELAY_SECRET}`, 'User-Agent': 'worldmonitor-relay/1.0' },
-      body: JSON.stringify({ userId }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) {
-      // fail-CLOSED: drop delivery rather than risk exposing a paywalled
-      // feature to a free-tier user during an entitlement-endpoint outage.
-      // Cache "0" with short TTL so subsequent events for this user during
-      // the same outage skip the 5-sec fetch. Logged with stable prefix
-      // for alerting on volume.
-      console.error(`[relay][entitlement-fail-closed] HTTP ${res.status} for ${userId}; dropping delivery`);
-      try { await upstashRest('SET', cacheKey, '0', 'EX', String(ENTITLEMENT_FAILCLOSED_CACHE_TTL)); } catch { /* cache write best-effort */ }
-      return false;
-    }
-    const { tier } = await res.json();
-    await upstashRest('SET', cacheKey, String(tier ?? 0), 'EX', String(ENTITLEMENT_CACHE_TTL));
-    return (tier ?? 0) >= 1;
-  } catch (err) {
-    // Same fail-CLOSED policy on transport error / timeout. Same short-TTL
-    // cache write so we don't re-attempt the 5-sec fetch for every event.
-    console.error(`[relay][entitlement-fail-closed] error for ${userId}: ${err && err.message ? err.message : err}; dropping delivery`);
-    try { await upstashRest('SET', cacheKey, '0', 'EX', String(ENTITLEMENT_FAILCLOSED_CACHE_TTL)); } catch { /* cache write best-effort */ }
-    return false;
-  }
-}
+// Channel deactivation (deactivateChannel) and the entitlement/PRO gate
+// (isUserPro) both moved. deactivateChannel is now imported from
+// ./lib/notification-channels-fetch.cjs (Postgres write). isUserPro is
+// deleted outright, not ported — Convex's `entitlements` table has had
+// nothing writing to it since Stage 1 deleted Dodo billing, so this Layer-3
+// delivery-time PRO filter had degenerated into "drop every delivery."
+// Dropped entirely, consistent with the write-side gate removal in
+// server/_shared/{notification-channels,alert-rules}.ts: any signed-in
+// user's enabled rules now deliver.
 
 // ── Quiet hours ───────────────────────────────────────────────────────────────
 
@@ -244,19 +149,7 @@ async function drainHeldForUser(userId, variant, allowedChannelTypes) {
   const text = lines.join('\n');
   const subject = `WorldMonitor — ${events.length} held alert${events.length !== 1 ? 's' : ''}`;
 
-  let channels = [];
-  try {
-    const chRes = await fetch(`${CONVEX_SITE_URL}/relay/channels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RELAY_SECRET}`, 'User-Agent': 'worldmonitor-relay/1.0' },
-      body: JSON.stringify({ userId }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (chRes.ok) channels = await chRes.json();
-  } catch (err) {
-    console.warn(`[relay] drainHeldForUser: channel fetch failed for ${userId}:`, err.message);
-    return;
-  }
+  const channels = await fetchChannelsForUser(userId);
 
   const verifiedChannels = channels.filter(c =>
     c.verified && (allowedChannelTypes == null || allowedChannelTypes.includes(c.channelType)),
@@ -325,9 +218,10 @@ async function processFlushQuietHeld(event) {
   const { userId, variant = 'full' } = event;
   if (!userId) return;
   console.log(`[relay] flush_quiet_held for ${userId} (${variant})`);
-  // Fetch enabled rules via the shared-secret /relay/enabled-rules action —
-  // getByEnabled is an internalQuery (GHSA-r649-4cqj-w93h), unreachable via
-  // ConvexHttpClient.
+  // Fetch enabled rules via fetchEnabledRules() (Postgres, service-role
+  // client — see scripts/lib/alert-rules-fetch.cjs). Same GHSA-r649-4cqj-w93h
+  // posture as before: service-role-only, no user scoping, never exposed to
+  // a browser-reachable endpoint.
   let allowedChannels = null;
   try {
     const allRules = await fetchEnabledRules(true);
@@ -934,26 +828,17 @@ function formatMessage(event) {
 async function processWelcome(event) {
   const { userId, channelType, welcomeId } = event;
   if (!userId || !channelType) return;
-  // Telegram welcome is sent directly by Convex; no relay send needed.
+  // Telegram welcome is sent directly by api/telegram/pair-callback.ts; no relay send needed.
   if (channelType === 'telegram') return;
-  let channels = [];
-  try {
-    const chRes = await fetch(`${CONVEX_SITE_URL}/relay/channels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RELAY_SECRET}`, 'User-Agent': 'worldmonitor-relay/1.0' },
-      body: JSON.stringify({ userId }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (chRes.ok) channels = (await chRes.json()) ?? [];
-  } catch {}
+  const channels = await fetchChannelsForUser(userId);
 
   const ch = channels.find(c =>
     c.channelType === channelType &&
     c.verified &&
-    // Events created before connection-scoped welcome IDs remain compatible.
-    // New events must still target the exact channel document that scheduled
-    // them, so a delayed retry cannot welcome a replacement connection.
-    (!welcomeId || String(c._id) === welcomeId)
+    // Events published before connection-scoped welcome IDs remain compatible.
+    // New events must still target the exact channel row that published
+    // them, so a delayed delivery cannot welcome a replacement connection.
+    (!welcomeId || c.id === welcomeId)
   );
   if (!ch) return;
 
@@ -1172,21 +1057,11 @@ async function processEvent(event) {
 
   if (matching.length === 0) return;
 
-  // Batch PRO check: resolve all unique userIds in parallel instead of one-by-one.
-  // isUserPro() has a 15-min Redis cache, so this is cheap after the first call.
-  const uniqueUserIds = [...new Set(matching.map(r => r.userId))];
-  const proResults = await Promise.all(uniqueUserIds.map(async uid => [uid, await isUserPro(uid)]));
-  const proSet = new Set(proResults.filter(([, isPro]) => isPro).map(([uid]) => uid));
-  const skippedCount = uniqueUserIds.length - proSet.size;
-  if (skippedCount > 0) console.log(`[relay] Skipping ${skippedCount} non-PRO user(s)`);
-
   const text = formatMessage(event);
   const subject = `WorldMonitor Alert: ${event.payload?.title ?? event.eventType}`;
   const eventSeverity = event.severity ?? 'high';
 
   for (const rule of matching) {
-    if (!proSet.has(rule.userId)) continue;
-
     const quietAction = resolveQuietAction(rule, eventSeverity);
 
     if (quietAction === 'suppress') {
@@ -1232,24 +1107,7 @@ async function processEvent(event) {
       continue;
     }
 
-    let channels = [];
-    try {
-      const chRes = await fetch(`${CONVEX_SITE_URL}/relay/channels`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${RELAY_SECRET}`,
-          'User-Agent': 'worldmonitor-relay/1.0',
-        },
-        body: JSON.stringify({ userId: rule.userId }),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!chRes.ok) throw new Error(`HTTP ${chRes.status}`);
-      channels = (await chRes.json()) ?? [];
-    } catch (err) {
-      console.warn(`[relay] Failed to fetch channels for ${rule.userId}:`, err.message);
-      channels = [];
-    }
+    const channels = await fetchChannelsForUser(rule.userId);
 
     const verifiedChannels = channels.filter(c => c.verified && rule.channels.includes(c.channelType));
     if (verifiedChannels.length === 0) continue;
@@ -1313,7 +1171,7 @@ async function popNextEvent(pollNumber) {
 
 async function subscribe() {
   console.log('[relay] Starting notification relay...');
-  console.log('[relay] UPSTASH_URL set:', !!UPSTASH_URL, '| CONVEX_URL set:', !!CONVEX_URL, '| RELAY_SECRET set:', !!RELAY_SECRET);
+  console.log('[relay] UPSTASH_URL set:', !!UPSTASH_URL, '| SUPABASE_URL set:', !!process.env.SUPABASE_URL);
   console.log('[relay] TELEGRAM_BOT_TOKEN set:', !!TELEGRAM_BOT_TOKEN, '| RESEND_API_KEY set:', !!RESEND_API_KEY);
   let idleCount = 0;
   let lastDrainMs = 0;

@@ -4827,46 +4827,13 @@ describe("getSubscriptionForUser activation onboarding eligibility", () => {
     },
   );
 
-  test("does not backfill onboarding after a configured Pro delivery is active", async () => {
-    const t = convexTest(schema, modules);
-    const activationKey = await seedSubscription(t, {
-      planKey: "pro_monthly",
-      dodoProductId: PRODUCT_CATALOG.pro_monthly.dodoProductId!,
-      status: "active",
-      currentPeriodEnd: NOW + 30 * DAY_MS,
-      suffix: "activation_delivery",
-    });
-    await t.run(async (ctx) => {
-      await ctx.db.insert("notificationChannels", {
-        userId: TEST_USER_ID,
-        channelType: "email",
-        email: "activated@example.com",
-        verified: true,
-        linkedAt: NOW,
-      });
-      await ctx.db.insert("alertRules", {
-        userId: TEST_USER_ID,
-        variant: "full",
-        enabled: true,
-        eventTypes: [],
-        sensitivity: "critical",
-        channels: ["email"],
-        updatedAt: NOW,
-        digestMode: "daily",
-      });
-    });
-
-    const result = await t
-      .withIdentity(IDENTITY)
-      .query(api.payments.billing.getSubscriptionForUser, {});
-
-    expect(result?.activationOnboardingEligible).toBe(true);
-    const claim = await t.withIdentity(IDENTITY).mutation(
-      api.payments.billing.claimProActivationPresentation,
-      { activationKey, claimNonce: "delivery-device" },
-    );
-    expect(claim.status).toBe("not_eligible");
-  });
+  // "does not backfill onboarding after a configured Pro delivery is
+  // active" removed — Stage 3 of the Convex/Clerk -> Supabase migration
+  // moved `notificationChannels`/`alertRules` to
+  // `worldmonitor.{notification_channels,alert_rules}` (Postgres).
+  // `hasActivatedServerProFunctionality` runs inside a Convex query/
+  // mutation, which cannot reach Postgres, so the delivery signal this test
+  // covered no longer exists. See memory `supabase-migration-stage1`.
 
   test("does not backfill onboarding after API setup", async () => {
     const t = convexTest(schema, modules);
@@ -4928,7 +4895,7 @@ describe("getSubscriptionForUser activation onboarding eligibility", () => {
     expect(claim.status).toBe("not_eligible");
   });
 
-  test("keeps inactive delivery and revoked credentials eligible", async () => {
+  test("keeps revoked credentials eligible", async () => {
     const t = convexTest(schema, modules);
     const activationKey = await seedSubscription(t, {
       planKey: "pro_monthly",
@@ -4938,22 +4905,6 @@ describe("getSubscriptionForUser activation onboarding eligibility", () => {
       suffix: "activation_inactive_setup",
     });
     await t.run(async (ctx) => {
-      await ctx.db.insert("notificationChannels", {
-        userId: TEST_USER_ID,
-        channelType: "email",
-        email: "unverified@example.com",
-        verified: false,
-        linkedAt: NOW,
-      });
-      await ctx.db.insert("alertRules", {
-        userId: TEST_USER_ID,
-        variant: "full",
-        enabled: true,
-        eventTypes: [],
-        sensitivity: "critical",
-        channels: ["email"],
-        updatedAt: NOW,
-      });
       await ctx.db.insert("userApiKeys", {
         userId: TEST_USER_ID,
         name: "Revoked key",

@@ -1,8 +1,16 @@
 /**
- * Regression test: scripts/notification-relay.cjs's /relay/enabled-rules fetch
- * must be bounded. This call feeds the hot notification path, quiet-hours
- * drain, and flush handler; a stalled Convex HTTP action must fail closed
- * instead of hanging relay work indefinitely.
+ * Regression test: scripts/notification-relay.cjs must read enabled alert
+ * rules through scripts/lib/alert-rules-fetch.cjs (Postgres, service-role
+ * client), not a raw Convex `/relay/enabled-rules` fetch.
+ *
+ * Stage 3 of the Convex/Clerk -> Supabase migration replaced the old
+ * `fetchEnabledRules()` — a hand-rolled fetch with its own
+ * `AbortSignal.timeout(10000)` bound against a Convex HTTP action — with an
+ * import from `./lib/alert-rules-fetch.cjs`, which never throws and has no
+ * comparable per-call timeout to assert on (Postgres query timeouts are the
+ * Supabase client's concern, not this file's). This test guards against
+ * regressing back to a raw Convex relay fetch, rather than asserting a
+ * timeout value that no longer applies to this call shape.
  *
  * Why source-grep: notification-relay.cjs is a runtime script with minimal
  * exports. Existing relay invariants use source-grep tests for this shape.
@@ -22,16 +30,16 @@ const relaySrc = readFileSync(
   'utf-8',
 );
 
-describe('notification-relay enabled-rules fetch timeout', () => {
-  it('bounds the /relay/enabled-rules fetch with AbortSignal.timeout', () => {
-    const match = relaySrc.match(
-      /async function fetchEnabledRules[\s\S]*?fetch\(`\$\{CONVEX_SITE_URL\}\/relay\/enabled-rules\?enabled=\$\{enabled\}`,\s*\{([\s\S]*?)\}\);/,
-    );
-    assert.ok(match, 'fetchEnabledRules /relay/enabled-rules fetch block not found');
+describe('notification-relay enabled-rules source', () => {
+  it('imports fetchEnabledRules from lib/alert-rules-fetch.cjs', () => {
     assert.match(
-      match[1] ?? '',
-      /signal:\s*AbortSignal\.timeout\(10000\)/,
-      'fetchEnabledRules must use the same 10s timeout policy as sibling relay Convex HTTP calls',
+      relaySrc,
+      /const \{ fetchEnabledRules \} = require\('\.\/lib\/alert-rules-fetch\.cjs'\);/,
     );
+  });
+
+  it('does not reference the retired Convex relay host for rule fetches', () => {
+    assert.doesNotMatch(relaySrc, /CONVEX_SITE_URL/);
+    assert.doesNotMatch(relaySrc, /\/relay\/enabled-rules/);
   });
 });

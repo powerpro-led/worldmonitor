@@ -1,6 +1,5 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { channelTypeValidator, digestModeValidator, quietHoursOverrideValidator, sensitivityValidator } from "./constants";
 
 // Subscription status enum — maps Dodo statuses to our internal set
 const subscriptionStatus = v.union(
@@ -60,101 +59,9 @@ export default defineSchema({
   // the Convex/Clerk -> Supabase migration — now `worldmonitor.user_preferences`
   // (Postgres). See memory `supabase-migration-stage1`.
 
-  notificationChannels: defineTable(
-    v.union(
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("telegram"),
-        chatId: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-      }),
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("slack"),
-        webhookEnvelope: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-        slackChannelName: v.optional(v.string()),
-        slackTeamName: v.optional(v.string()),
-        slackConfigurationUrl: v.optional(v.string()),
-      }),
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("email"),
-        email: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-      }),
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("discord"),
-        webhookEnvelope: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-        discordGuildId: v.optional(v.string()),
-        discordChannelId: v.optional(v.string()),
-      }),
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("webhook"),
-        webhookEnvelope: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-        webhookLabel: v.optional(v.string()),
-        webhookSecret: v.optional(v.string()),
-      }),
-      // Web Push (Phase 6). endpoint+p256dh+auth are the standard
-      // PushSubscription identity triple — not secrets, just per-device
-      // pairing material (they identify the browser's push endpoint at
-      // Mozilla/Google/Apple). Stored plaintext to match the rest of
-      // this table. userAgent is cosmetic: lets the settings UI show
-      // "Chrome · MacOS" next to the Remove button so users can tell
-      // which device a subscription belongs to.
-      v.object({
-        userId: v.string(),
-        channelType: v.literal("web_push"),
-        endpoint: v.string(),
-        p256dh: v.string(),
-        auth: v.string(),
-        verified: v.boolean(),
-        linkedAt: v.number(),
-        userAgent: v.optional(v.string()),
-      }),
-    ),
-  )
-    .index("by_user", ["userId"])
-    .index("by_user_channel", ["userId", "channelType"]),
-
-  alertRules: defineTable({
-    userId: v.string(),
-    variant: v.string(),
-    enabled: v.boolean(),
-    eventTypes: v.array(v.string()),
-    sensitivity: sensitivityValidator,
-    channels: v.array(channelTypeValidator),
-    updatedAt: v.number(),
-    quietHoursEnabled: v.optional(v.boolean()),
-    quietHoursStart: v.optional(v.number()),
-    quietHoursEnd: v.optional(v.number()),
-    quietHoursTimezone: v.optional(v.string()),
-    quietHoursOverride: v.optional(quietHoursOverrideValidator),
-    // Digest mode fields (absent = realtime, same as digestMode: "realtime")
-    digestMode: v.optional(digestModeValidator),
-    digestHour: v.optional(v.number()),       // 0-23 local hour for daily/twice_daily
-    digestTimezone: v.optional(v.string()),   // IANA timezone, e.g. "America/New_York"
-    aiDigestEnabled: v.optional(v.boolean()), // opt-in AI executive summary in digests (default true for new rules)
-    // Optional country-scope (ISO-3166 alpha-2). Empty/absent → all countries (current behavior).
-    countries: v.optional(v.array(v.string())),
-    // Optional watchlist ticker-scope (#4922 U3, e.g. ["AAPL", "RELIANCE.NS"]).
-    // Unlike `countries`, this is OPT-IN scoped: empty/absent → the rule
-    // receives NO `watchlist_story_alert` events (the relay requires a
-    // non-empty intersection with the story's tickers).
-    tickers: v.optional(v.array(v.string())),
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_variant", ["userId", "variant"])
-    .index("by_enabled", ["enabled"]),
+  // `notificationChannels` / `alertRules` retired in Stage 3 of the
+  // Convex/Clerk -> Supabase migration — now `worldmonitor.notification_channels`
+  // / `worldmonitor.alert_rules` (Postgres). See memory `supabase-migration-stage1`.
 
   // Followed countries (watchlist primitive) + its counter/lock/shard
   // support tables retired in Stage 2 of the Convex/Clerk -> Supabase
@@ -165,15 +72,9 @@ export default defineSchema({
   // Convex document-level-OCC workaround with no Postgres equivalent
   // needed. See memory `supabase-migration-stage1`.
 
-  telegramPairingTokens: defineTable({
-    userId: v.string(),
-    token: v.string(),
-    expiresAt: v.number(),
-    used: v.boolean(),
-    variant: v.optional(v.string()),
-  })
-    .index("by_token", ["token"])
-    .index("by_user", ["userId"]),
+  // `telegramPairingTokens` retired in Stage 3 of the Convex/Clerk ->
+  // Supabase migration — now `worldmonitor.telegram_pairing_tokens`
+  // (Postgres). See memory `supabase-migration-stage1`.
 
   registrations: defineTable({
     email: v.string(),

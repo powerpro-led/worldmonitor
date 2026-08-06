@@ -507,15 +507,17 @@ async function hasActivatedServerProFunctionality(
   ctx: QueryCtx | MutationCtx,
   userId: string,
 ): Promise<boolean> {
-  const [channels, rules, apiKeys, mcpTokens] = await Promise.all([
-    ctx.db
-      .query("notificationChannels")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect(),
-    ctx.db
-      .query("alertRules")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect(),
+  // The notification-delivery signal (verified channel + enabled rule
+  // targeting it) is NOT checked here anymore — Stage 3 of the Convex/Clerk
+  // -> Supabase migration moved `notificationChannels`/`alertRules` to
+  // `worldmonitor.{notification_channels,alert_rules}` (Postgres), and this
+  // function runs inside a Convex query/mutation, which cannot make an
+  // outbound Postgres call the way an `action` could. Falls back to the
+  // apiKeys/mcpTokens signals only — a user who has ONLY configured
+  // notification delivery (no API key, no MCP token) may see the Pro
+  // Activation interstitial again; a minor onboarding-UX regression, not a
+  // functional break. See memory `supabase-migration-stage1`.
+  const [apiKeys, mcpTokens] = await Promise.all([
     ctx.db
       .query("userApiKeys")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -526,19 +528,9 @@ async function hasActivatedServerProFunctionality(
       .collect(),
   ]);
 
-  const verifiedChannels = new Set(
-    channels
-      .filter((channel) => channel.verified)
-      .map((channel) => channel.channelType),
-  );
-  const hasConfiguredDelivery = rules.some(
-    (rule) =>
-      rule.enabled &&
-      rule.channels.some((channelType) => verifiedChannels.has(channelType)),
-  );
   const hasApiSetup = apiKeys.some((key) => key.revokedAt === undefined);
   const hasMcpSetup = mcpTokens.some((token) => token.revokedAt === undefined);
-  return hasConfiguredDelivery || hasApiSetup || hasMcpSetup;
+  return hasApiSetup || hasMcpSetup;
 }
 
 async function hasConfirmedActivationPresentation(

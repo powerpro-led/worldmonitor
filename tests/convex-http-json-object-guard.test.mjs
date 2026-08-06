@@ -7,13 +7,13 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(__dirname, '..', 'convex', 'http.ts'), 'utf8');
 
+// /api/telegram-pair-callback, /relay/deactivate, /relay/channels,
+// /relay/notification-channels, and /relay/entitlement retired in Stage 3 of
+// the Convex/Clerk -> Supabase migration alongside
+// convex/{notificationChannels,alertRules,telegramPairingTokens}.ts. See
+// memory `supabase-migration-stage1`.
 const guardedPaths = [
   '/api/internal-entitlements',
-  '/api/telegram-pair-callback',
-  '/relay/deactivate',
-  '/relay/channels',
-  '/relay/notification-channels',
-  '/relay/entitlement',
   '/relay/register-referral-code',
   '/api/internal-validate-api-key',
   '/api/internal-get-key-owner',

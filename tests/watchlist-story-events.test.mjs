@@ -211,7 +211,7 @@ describe('seed-digest-notifications.mjs — enqueue wiring (source-grep contract
     // The scan must run BEFORE the digest-rules fetch so an empty/failed
     // rules fetch cannot suppress watchlist alerts.
     const scanIdx = digestSrc.indexOf('await scanAndEnqueueWatchlistStoryEvents(nowMs)');
-    const rulesIdx = digestSrc.indexOf("fetch(`${CONVEX_SITE_URL}/relay/digest-rules`");
+    const rulesIdx = digestSrc.indexOf('const rules = await fetchDigestRules();');
     assert.ok(scanIdx > 0 && rulesIdx > 0 && scanIdx < rulesIdx,
       'watchlist scan must run before the digest-rules fetch in main()');
   });

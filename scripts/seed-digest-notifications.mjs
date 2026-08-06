@@ -37,6 +37,15 @@ const { callLLM } = require('./lib/llm-chain.cjs');
 const { flushPendingLlmEvents } = require('./lib/llm-telemetry.cjs');
 const { fetchUserPreferences, extractUserContext, formatUserProfile } = require('./lib/user-context.cjs');
 const { fetchFollowedCountries } = require('./lib/followed-countries-fetch.cjs');
+// Stage 3 of the Convex/Clerk -> Supabase migration: `worldmonitor.alert_rules`
+// / `worldmonitor.notification_channels` / `worldmonitor.telegram_pairing_tokens`
+// are read/written directly via Postgres now (service-role client) instead of
+// through Convex's shared-secret /relay/* HTTP actions. RELAY_SHARED_SECRET
+// stays in this file — it's still used by callAnalystWhyMatters below, an
+// unrelated Vercel-hosted endpoint.
+const { fetchDigestRules } = require('./lib/alert-rules-fetch.cjs');
+const { fetchChannelsForUser, deactivateChannel } = require('./lib/notification-channels-fetch.cjs');
+const { cleanupExpiredPairingTokens } = require('./lib/telegram-pairing-cleanup.cjs');
 const { Resend } = require('resend');
 const { normalizeResendSender } = require('./lib/resend-from.cjs');
 import { readRawJsonFromUpstash, redisPipeline } from '../api/_upstash-json.js';
@@ -111,9 +120,10 @@ function compactDroppedEphemeralLiveTitle(title) {
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
-const CONVEX_SITE_URL =
-  process.env.CONVEX_SITE_URL ??
-  (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
+// Still used by callAnalystWhyMatters (an unrelated Vercel-hosted endpoint) —
+// that call site already soft-degrades to null when unset, so this is no
+// longer a hard startup requirement now that the four Convex /relay/* calls
+// that used to require it are gone.
 const RELAY_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
@@ -142,10 +152,6 @@ if (!UPSTASH_URL || !UPSTASH_TOKEN) {
   console.error('[digest] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN not set');
   process.exit(1);
 }
-if (!CONVEX_SITE_URL || !RELAY_SECRET) {
-  console.error('[digest] CONVEX_SITE_URL / RELAY_SHARED_SECRET not set');
-  process.exit(1);
-}
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
@@ -155,7 +161,6 @@ const DIGEST_CRITICAL_LIMIT = Infinity;
 const DIGEST_HIGH_LIMIT = 15;
 const DIGEST_MEDIUM_LIMIT = 10;
 const AI_DIGEST_ENABLED = process.env.AI_DIGEST_ENABLED !== '0';
-const ENTITLEMENT_CACHE_TTL = 900; // 15 min
 
 // Absolute importance-score floor applied to the digest AFTER dedup.
 // Mirrors the realtime notification-relay gate (IMPORTANCE_SCORE_MIN)
@@ -1259,27 +1264,8 @@ function briefStoriesToFormatterShape(briefStories) {
 // The `digest:ai-summary:v1:*` cache rows from the legacy code path
 // expire on their existing 1h TTL — no cleanup pass needed.
 
-// ── Channel deactivation ──────────────────────────────────────────────────────
-
-async function deactivateChannel(userId, channelType) {
-  try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/deactivate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${RELAY_SECRET}`,
-        'User-Agent': 'worldmonitor-digest/1.0',
-      },
-      body: JSON.stringify({ userId, channelType }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) {
-      console.warn(`[digest] Deactivate failed ${userId}/${channelType}: ${res.status}`);
-    }
-  } catch (err) {
-    console.warn(`[digest] Deactivate request failed for ${userId}/${channelType}:`, err.message);
-  }
-}
+// Channel deactivation (deactivateChannel) is now imported from
+// ./lib/notification-channels-fetch.cjs (Postgres write) — see top of file.
 
 // ── Send functions ────────────────────────────────────────────────────────────
 
@@ -1544,53 +1530,13 @@ async function sendWebhook(userId, webhookEnvelope, stories, aiSummary) {
   }
 }
 
-// ── Entitlement check ────────────────────────────────────────────────────────
-
-/**
- * Resolve the caller's entitlement tier (0 = free, 1 = pro, etc).
- * Reads the relay:entitlement:{userId} cache first; falls back to the
- * /relay/entitlement HTTP action and back-fills the cache.
- *
- * Failure mode: returns `null` when neither cache nor relay yields a
- * usable number. Callers MUST treat null as "unknown" — never "free"
- * — so a transient relay outage doesn't accidentally clamp legitimate
- * paying users out of paywalled affordances. The digest cron's
- * `isUserPro` uses null → fail-open (true); the followed-country
- * composer clamp uses null → "skip clamp" (treat as Pro for the
- * duration of the outage). Same fail-open polarity in both call
- * sites, but explicit so future readers can audit the choice.
- */
-async function getUserTier(userId) {
-  const cacheKey = `relay:entitlement:${userId}`;
-  try {
-    const cached = await upstashRest('GET', cacheKey);
-    if (cached !== null) {
-      const n = Number(cached);
-      if (Number.isFinite(n)) return n;
-    }
-  } catch { /* miss */ }
-  try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/entitlement`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RELAY_SECRET}`, 'User-Agent': 'worldmonitor-digest/1.0' },
-      body: JSON.stringify({ userId }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null; // unknown — caller decides fail-open polarity
-    const { tier } = await res.json();
-    const safeTier = Number.isFinite(tier) ? tier : 0;
-    await upstashRest('SET', cacheKey, String(safeTier), 'EX', String(ENTITLEMENT_CACHE_TTL));
-    return safeTier;
-  } catch {
-    return null;
-  }
-}
-
-async function isUserPro(userId) {
-  const tier = await getUserTier(userId);
-  if (tier === null) return true; // fail-open — preserve historic polarity
-  return tier >= 1;
-}
+// The entitlement/PRO gate (getUserTier/isUserPro) is deleted outright, not
+// ported — Convex's `entitlements` table has had nothing writing to it since
+// Stage 1 deleted Dodo billing, so this delivery-time PRO filter had
+// degenerated into "always fail-open true" in practice already. Dropped
+// entirely, consistent with the write-side gate removal in
+// server/_shared/{notification-channels,alert-rules}.ts and the same
+// deletion in notification-relay.cjs: every enabled digest rule now delivers.
 
 // ── Per-channel body composition ─────────────────────────────────────────────
 
@@ -2229,37 +2175,19 @@ async function main() {
   // whether any story also ships in a digest. Never throws.
   await scanAndEnqueueWatchlistStoryEvents(nowMs);
 
-  let rules;
-  try {
-    const res = await fetch(`${CONVEX_SITE_URL}/relay/digest-rules`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${RELAY_SECRET}`,
-        'User-Agent': 'worldmonitor-digest/1.0',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) {
-      console.error('[digest] Failed to fetch rules:', res.status);
-      await writeDigestLastRunMeta({
-        startedAtMs: nowMs,
-        status: 'error',
-        errorReason: `fetch_rules_http_${res.status}`,
-      });
-      return;
-    }
-    rules = await res.json();
-  } catch (err) {
-    console.error('[digest] Fetch rules failed:', err.message);
-    await writeDigestLastRunMeta({
-      startedAtMs: nowMs,
-      status: 'error',
-      errorReason: `fetch_rules_failed:${err.message}`,
-    });
-    return;
-  }
+  // Best-effort housekeeping piggybacked on this cadence — Convex's hourly
+  // cleanup cron has no direct Postgres equivalent. Never throws.
+  await cleanupExpiredPairingTokens();
 
-  if (!Array.isArray(rules) || rules.length === 0) {
+  // fetchDigestRules() never throws — Postgres/config failures are logged
+  // internally and collapse to an empty array, same "graceful degradation"
+  // contract as the other migrated scripts/lib/*.cjs fetch helpers (see
+  // followed-countries-fetch.cjs). An outage therefore reports as "0 digest
+  // rules, nothing to do" rather than a distinct SEED_ERROR heartbeat — the
+  // lib's console.warn is the ops signal (Railway log grep).
+  const rules = await fetchDigestRules();
+
+  if (rules.length === 0) {
     console.log('[digest] No digest rules found — nothing to do');
     await writeDigestLastRunMeta({ startedAtMs: nowMs, sentCount: 0 });
     return;
@@ -2409,7 +2337,7 @@ async function main() {
         composeMissUsers.add(rule.userId);
       }
       // Fall through — no canonical filter; this rule iterates
-      // through isDue / isUserPro / buildDigest / send normally.
+      // through isDue / buildDigest / send normally.
     }
 
     const lastSentKey = `digest:last-sent:v1:${rule.userId}:${rule.variant}`;
@@ -2420,12 +2348,6 @@ async function main() {
 
     if (!isDue(rule, lastSentAt)) continue;
 
-    const pro = await isUserPro(rule.userId);
-    if (!pro) {
-      console.log(`[digest] Skipping ${rule.userId} — not PRO`);
-      continue;
-    }
-
     const windowStart = digestWindowStartMs(lastSentAt, nowMs, DIGEST_LOOKBACK_MS);
     const stories = await buildDigest(rule, windowStart);
     if (!stories) {
@@ -2433,22 +2355,7 @@ async function main() {
       continue;
     }
 
-    let channels = [];
-    try {
-      const chRes = await fetch(`${CONVEX_SITE_URL}/relay/channels`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${RELAY_SECRET}`,
-          'User-Agent': 'worldmonitor-digest/1.0',
-        },
-        body: JSON.stringify({ userId: rule.userId }),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (chRes.ok) channels = await chRes.json();
-    } catch (err) {
-      console.warn(`[digest] Channel fetch failed for ${rule.userId}:`, err.message);
-    }
+    const channels = await fetchChannelsForUser(rule.userId);
 
     const ruleChannelSet = new Set(rule.channels ?? []);
     const deliverableChannels = channels.filter(ch => ruleChannelSet.has(ch.channelType) && ch.verified);

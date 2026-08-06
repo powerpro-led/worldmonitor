@@ -1,11 +1,17 @@
 /**
  * Regression tests for the quiet-hours rollout flag paths.
  *
- * Covers three invariants reviewers flagged as untested:
+ * Covers two invariants reviewers flagged as untested:
  *   1. VITE_QUIET_HOURS_BATCH_ENABLED gates the batch_on_wake option in the UI.
- *   2. quietHoursTimezone is validated through the public setQuietHours mutation.
- *   3. quietHoursTimezone is validated through the internal setQuietHoursForUser
- *      mutation (the edge-to-Convex path bypasses the public mutation).
+ *   2. quietHoursTimezone is validated through setQuietHours.
+ *
+ * Stage 3 of the Convex/Clerk -> Supabase migration collapsed Convex's
+ * public `setQuietHours` mutation + internal `setQuietHoursForUser` mutation
+ * (two code paths, both independently required to validate
+ * quietHoursTimezone so the edge-relay path couldn't bypass validation) into
+ * a single `setQuietHours` function in `server/_shared/alert-rules.ts` —
+ * there's only one caller (`api/notification-channels.ts`) and no
+ * public/internal split in Postgres, so there's only one path left to check.
  *
  * Run: node --test tests/quiet-hours-rollout-flags.test.mjs
  */
@@ -22,7 +28,7 @@ const prefSrc = readFileSync(
   'utf-8',
 );
 const alertRulesSrc = readFileSync(
-  resolve(__dirname, '../convex/alertRules.ts'),
+  resolve(__dirname, '../server/_shared/alert-rules.ts'),
   'utf-8',
 );
 
@@ -65,98 +71,33 @@ describe('VITE_QUIET_HOURS_BATCH_ENABLED gates batch_on_wake UI', () => {
   });
 });
 
-// ── Public mutation timezone validation ───────────────────────────────────────
+// ── setQuietHours timezone validation ─────────────────────────────────────────
 
-describe('setQuietHours validates quietHoursTimezone (public mutation)', () => {
-  const publicStart = alertRulesSrc.indexOf('export const setQuietHours');
-  const nextExport = alertRulesSrc.indexOf('\nexport const ', publicStart + 1);
-  const publicBody = alertRulesSrc.slice(publicStart, nextExport === -1 ? undefined : nextExport);
+describe('setQuietHours validates quietHoursTimezone', () => {
+  const start = alertRulesSrc.indexOf('export async function setQuietHours');
+  const nextExport = alertRulesSrc.indexOf('\nexport async function ', start + 1);
+  const body = alertRulesSrc.slice(start, nextExport === -1 ? undefined : nextExport);
 
-  it('setQuietHours exists as a mutation', () => {
-    assert.ok(publicStart !== -1, 'setQuietHours must exist in alertRules.ts');
-    assert.ok(publicBody.includes('mutation('), 'setQuietHours must use mutation()');
+  it('setQuietHours exists', () => {
+    assert.ok(start !== -1, 'setQuietHours must exist in server/_shared/alert-rules.ts');
   });
 
-  it('public mutation validates quietHoursTimezone via validateQuietHoursArgs or Intl.DateTimeFormat', () => {
-    const hasValidator =
-      publicBody.includes('validateQuietHoursArgs') ||
-      (publicBody.includes('Intl.DateTimeFormat') && publicBody.includes('quietHoursTimezone'));
+  it('validates quietHoursTimezone via validateQuietHours (Intl.DateTimeFormat)', () => {
     assert.ok(
-      hasValidator,
-      'setQuietHours must validate quietHoursTimezone',
+      body.includes('validateQuietHours(args)'),
+      'setQuietHours must validate quietHoursTimezone via validateQuietHours',
     );
-  });
-
-  it('validateQuietHoursArgs validates with Intl.DateTimeFormat', () => {
-    // Whether inlined or via helper, validation must use Intl.DateTimeFormat
     assert.ok(
       alertRulesSrc.includes('Intl.DateTimeFormat') && alertRulesSrc.includes('quietHoursTimezone'),
-      'alertRules.ts must validate quietHoursTimezone using Intl.DateTimeFormat',
+      'validateQuietHours must use Intl.DateTimeFormat',
     );
   });
 
-  it('timezone validation throws ConvexError for invalid values', () => {
-    assert.ok(
-      alertRulesSrc.includes('ConvexError') && alertRulesSrc.includes('quietHoursTimezone'),
-      'alertRules.ts must throw ConvexError on invalid quietHoursTimezone',
+  it('throws AlertRulesError(INVALID_INPUT) for invalid timezone', () => {
+    assert.match(
+      alertRulesSrc,
+      /function validateTimezone[\s\S]*?throw new AlertRulesError\('INVALID_INPUT'/,
+      'validateTimezone (called from validateQuietHours) must throw AlertRulesError(INVALID_INPUT)',
     );
-  });
-});
-
-// ── Internal mutation timezone validation (edge-to-Convex path) ───────────────
-
-describe('setQuietHoursForUser validates quietHoursTimezone (internalMutation)', () => {
-  const internalStart = alertRulesSrc.indexOf('export const setQuietHoursForUser');
-  const afterInternal = alertRulesSrc.indexOf('\nexport const ', internalStart + 1);
-  const internalBody = alertRulesSrc.slice(
-    internalStart,
-    afterInternal === -1 ? undefined : afterInternal,
-  );
-
-  it('setQuietHoursForUser exists as an internalMutation', () => {
-    assert.ok(internalStart !== -1, 'setQuietHoursForUser must exist in alertRules.ts');
-    assert.ok(
-      internalBody.includes('internalMutation('),
-      'setQuietHoursForUser must use internalMutation()',
-    );
-  });
-
-  it('internal mutation validates quietHoursTimezone (no bypass via edge path)', () => {
-    const hasValidator =
-      internalBody.includes('validateQuietHoursArgs') ||
-      (internalBody.includes('Intl.DateTimeFormat') && internalBody.includes('quietHoursTimezone'));
-    assert.ok(
-      hasValidator,
-      'setQuietHoursForUser must validate quietHoursTimezone — edge relay calls this path directly',
-    );
-  });
-
-  it('both public and internal mutations share the same validation path', () => {
-    // If a shared validateQuietHoursArgs helper exists, both must call it
-    if (alertRulesSrc.includes('function validateQuietHoursArgs')) {
-      const publicBody = alertRulesSrc.slice(
-        alertRulesSrc.indexOf('export const setQuietHours'),
-        alertRulesSrc.indexOf('export const setQuietHoursForUser'),
-      );
-      assert.ok(
-        publicBody.includes('validateQuietHoursArgs'),
-        'setQuietHours must call validateQuietHoursArgs',
-      );
-      assert.ok(
-        internalBody.includes('validateQuietHoursArgs'),
-        'setQuietHoursForUser must also call validateQuietHoursArgs',
-      );
-    } else {
-      // Both must have inline Intl.DateTimeFormat validation
-      const publicHas = alertRulesSrc.slice(
-        alertRulesSrc.indexOf('export const setQuietHours'),
-        alertRulesSrc.indexOf('export const setQuietHoursForUser'),
-      ).includes('Intl.DateTimeFormat');
-      const internalHas = internalBody.includes('Intl.DateTimeFormat');
-      assert.ok(
-        publicHas && internalHas,
-        'quietHoursTimezone validation must exist in BOTH setQuietHours and setQuietHoursForUser',
-      );
-    }
   });
 });

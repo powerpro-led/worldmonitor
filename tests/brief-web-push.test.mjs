@@ -281,32 +281,42 @@ describe('set-web-push SSRF allow-list', () => {
       resolve(__d, '../api/notification-channels.ts'),
       'utf-8',
     );
-    // The guard must fire BEFORE convexRelay() — once the row lands
-    // in Convex, the relay will POST to it. Assert the guard appears
-    // inside the set-web-push branch before the convexRelay call.
-    const branch = src.match(/action === 'set-web-push'[\s\S]+?convexRelay/);
-    assert.ok(branch, "set-web-push branch must contain a convexRelay call");
-    assert.match(branch[0], /isAllowedPushEndpointHost/, 'allow-list check must precede the relay call');
+    // The guard must fire BEFORE setWebPushChannel() — once the row lands
+    // in Postgres, the relay will POST to it. Assert the guard appears
+    // inside the set-web-push branch before the write call.
+    const branch = src.match(/action === 'set-web-push'[\s\S]+?setWebPushChannel/);
+    assert.ok(branch, "set-web-push branch must call setWebPushChannel");
+    assert.match(branch[0], /isAllowedPushEndpointHost/, 'allow-list check must precede the write call');
   });
 });
 
 // REGRESSION: PR #3173 P1 (cross-account subscription leak).
-// setWebPushChannelForUser must dedupe by endpoint across all users,
-// not just by (userId, channelType). Otherwise a shared device
-// delivers user A's alerts to user B after an account switch.
-describe('setWebPushChannelForUser endpoint dedupe', () => {
-  it('source deletes any existing rows with the same endpoint before insert', async () => {
+// setWebPushChannel must dedupe by endpoint across all users, not just by
+// (userId, channelType). Otherwise a shared device delivers user A's alerts
+// to user B after an account switch.
+//
+// Stage 3 of the Convex/Clerk -> Supabase migration replaced Convex's
+// full-table-scan-and-compare dedupe (no endpoint index existed) with an
+// indexed Postgres delete against
+// `notification_channels_web_push_endpoint_idx` (unique, partial on
+// channel_type='web_push') — same invariant, cheaper mechanism.
+describe('setWebPushChannel endpoint dedupe', () => {
+  it('source deletes any existing rows with the same endpoint (other users) before upsert', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, resolve } = await import('node:path');
     const __d = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(
-      resolve(__d, '../convex/notificationChannels.ts'),
+      resolve(__d, '../server/_shared/notification-channels.ts'),
       'utf-8',
     );
-    // Lock both the scan-by-endpoint AND the delete-before-insert
-    // pattern. If either drifts, the review finding reappears.
-    assert.match(src, /row\.endpoint === args\.endpoint/, 'setWebPushChannelForUser must compare rows by endpoint');
-    assert.match(src, /await ctx\.db\.delete\(row\._id\)/, 'matching rows must be deleted before upsert');
+    // Lock both the endpoint-scoped delete AND the cross-account
+    // (neq user_id) guard. If either drifts, the review finding reappears.
+    assert.match(src, /export async function setWebPushChannel/, 'setWebPushChannel must exist');
+    assert.match(
+      src,
+      /\.eq\('channel_type', 'web_push'\)\s*\n\s*\.eq\('endpoint', fields\.endpoint\)\s*\n\s*\.neq\('user_id', userId\)/,
+      'matching rows for OTHER users must be deleted by endpoint before upsert',
+    );
   });
 });

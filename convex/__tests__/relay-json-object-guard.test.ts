@@ -5,11 +5,11 @@ import schema from "../schema";
 const modules = import.meta.glob("../**/*.ts");
 const RELAY_SECRET = "test-relay-secret-json-object-guard";
 
+// /relay/deactivate, /relay/channels, /relay/notification-channels, and
+// /relay/entitlement retired in Stage 3 of the Convex/Clerk -> Supabase
+// migration alongside convex/{notificationChannels,alertRules}.ts. See
+// memory `supabase-migration-stage1`.
 const routes = [
-  "/relay/deactivate",
-  "/relay/channels",
-  "/relay/notification-channels",
-  "/relay/entitlement",
   "/relay/register-referral-code",
   "/relay/create-checkout",
   "/relay/customer-portal",

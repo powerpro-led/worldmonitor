@@ -39,15 +39,20 @@ describe('digest-notifications last-run health heartbeat', () => {
     assert.match(writer, /\['SET', DIGEST_LAST_RUN_META_KEY, JSON\.stringify\(run\), 'EX', String\(DIGEST_LAST_RUN_TTL_SECONDS\)\]/);
   });
 
-  it('stamps SEED_ERROR metadata for rule-fetch failures', () => {
-    assert.match(
-      src,
-      /if \(!res\.ok\) \{[\s\S]*?await writeDigestLastRunMeta\(\{[\s\S]*?status: 'error'[\s\S]*?errorReason: `fetch_rules_http_\$\{res\.status\}`,[\s\S]*?\}\);[\s\S]*?return;/,
-    );
-    assert.match(
-      src,
-      /catch \(err\) \{[\s\S]*?await writeDigestLastRunMeta\(\{[\s\S]*?status: 'error'[\s\S]*?errorReason: `fetch_rules_failed:\$\{err\.message\}`,[\s\S]*?\}\);[\s\S]*?return;/,
-    );
+  // Stage 3 of the Convex/Clerk -> Supabase migration: the digest-rules fetch
+  // moved from a Convex /relay/digest-rules HTTP call (which could fail with
+  // a distinct HTTP-status-error or transport-error shape, each stamping its
+  // own SEED_ERROR heartbeat) to `fetchDigestRules()` in
+  // scripts/lib/alert-rules-fetch.cjs, which never throws — Postgres/config
+  // failures are logged internally (console.warn) and collapse to an empty
+  // array, same "graceful degradation" contract as the sibling migrated
+  // fetch helpers (see followed-countries-fetch.cjs). There is no longer a
+  // distinct rule-fetch-failure code shape to assert on here; an outage now
+  // reports as "0 digest rules, nothing to do" (covered by the "stamps a
+  // healthy run even when there is nothing to send" case below).
+  it('reads digest rules via fetchDigestRules(), not a raw Convex relay fetch', () => {
+    assert.match(src, /const rules = await fetchDigestRules\(\);/);
+    assert.doesNotMatch(src, /CONVEX_SITE_URL/);
   });
 
   it('stamps a healthy run even when there is nothing to send', () => {

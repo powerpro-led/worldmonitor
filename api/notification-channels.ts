@@ -4,9 +4,21 @@
  * GET  /api/notification-channels → { channels, alertRules }
  * POST /api/notification-channels → various actions (see below)
  *
- * Authenticates the caller via Clerk JWKS (bearer token), then forwards
- * to the Convex /relay/notification-channels HTTP action using the
- * RELAY_SHARED_SECRET — no Convex-specific JWT template required.
+ * Authenticates the caller via Supabase bearer token, then calls
+ * `server/_shared/{notification-channels,alert-rules,telegram-pairing}.ts`
+ * directly — Postgres, service-role client.
+ *
+ * Stage 3 of the Convex/Clerk -> Supabase migration: this endpoint used to
+ * forward every action to Convex's `/relay/notification-channels` HTTP
+ * action (RELAY_SHARED_SECRET) and negotiate a "durable welcome scheduling"
+ * capability with it (that negotiation existed only because Convex and
+ * Vercel deploy independently — with the write and the welcome-queue publish
+ * now in the same request, there's nothing to negotiate). The PRO-entitlement
+ * gate that used to 403 this endpoint is also dropped — see
+ * `server/_shared/notification-channels.ts`'s module doc for why (Convex's
+ * `entitlements` table has had nothing writing to it since Stage 1, so the
+ * gate had degenerated into "reject every write"). Any signed-in user now
+ * gets full access, consistent with every other Stage 1/2/3 surface.
  */
 
 export const config = { runtime: 'edge' };
@@ -22,27 +34,60 @@ import {
 } from './_idempotency.js';
 import { assertNotificationWebhookRegistrationUrlSafe } from './_notification-webhook-ssrf';
 import { validateBearerToken } from '../server/auth-session';
-import { getEntitlements } from '../server/_shared/entitlement-check';
+import {
+  deleteChannel,
+  getChannels,
+  NotificationChannelsError,
+  setChannel,
+  setWebPushChannel,
+  type ChannelType,
+} from '../server/_shared/notification-channels';
+import {
+  AlertRulesError,
+  getAlertRules,
+  setAlertRules,
+  setDigestSettings,
+  setNotificationConfig,
+  setQuietHours,
+} from '../server/_shared/alert-rules';
+import { createPairingToken, TelegramPairingError } from '../server/_shared/telegram-pairing';
 
-// Prefer explicit CONVEX_SITE_URL; fall back to deriving from CONVEX_URL (same pattern as notification-relay.cjs).
-const CONVEX_SITE_URL =
-  process.env.CONVEX_SITE_URL ??
-  (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
-const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
 
+// Every server/_shared/* call this handler makes is injectable, same
+// convention as api/user-prefs.ts / api/followed-countries.ts (Stage 2) —
+// lets tests exercise NETWORK/CONFIG failure paths without a live Postgres
+// connection.
 type NotificationChannelsDeps = {
   validateBearerToken: typeof validateBearerToken;
-  getEntitlements: typeof getEntitlements;
   fetch: typeof fetch;
+  getChannels: typeof getChannels;
+  setChannel: typeof setChannel;
+  setWebPushChannel: typeof setWebPushChannel;
+  deleteChannel: typeof deleteChannel;
+  createPairingToken: typeof createPairingToken;
+  getAlertRules: typeof getAlertRules;
+  setAlertRules: typeof setAlertRules;
+  setDigestSettings: typeof setDigestSettings;
+  setQuietHours: typeof setQuietHours;
+  setNotificationConfig: typeof setNotificationConfig;
 };
 
 function createDefaultNotificationChannelsDeps(): NotificationChannelsDeps {
   return {
     validateBearerToken,
-    getEntitlements,
     fetch: (...args) => globalThis.fetch(...args),
+    getChannels,
+    setChannel,
+    setWebPushChannel,
+    deleteChannel,
+    createPairingToken,
+    getAlertRules,
+    setAlertRules,
+    setDigestSettings,
+    setQuietHours,
+    setNotificationConfig,
   };
 }
 
@@ -79,14 +124,14 @@ async function encryptSlackWebhook(webhookUrl: string): Promise<string> {
 /**
  * Allow-list of hostnames every major browser's push service uses.
  *
- * A PushSubscription's endpoint URL is assigned by the browser's
- * push platform — users can't pick it. That means we CAN safely
- * constrain accepted endpoints to known push-service hosts and
- * reject anything else before it hits Convex storage (and later
- * the relay's outbound fetch). Without this allow-list the relay's
- * sendWebPush() becomes a server-side-request primitive for any
- * PRO user: they could submit `https://internal.example.com/admin`
- * as their endpoint and the relay would faithfully POST to it.
+ * A PushSubscription's endpoint URL is assigned by the browser's push
+ * platform — users can't pick it. That means we CAN safely constrain
+ * accepted endpoints to known push-service hosts and reject anything else
+ * before it hits storage (and later the relay's outbound fetch). Without
+ * this allow-list the relay's sendWebPush() becomes a server-side-request
+ * primitive for any signed-in user: they could submit
+ * `https://internal.example.com/admin` as their endpoint and the relay
+ * would faithfully POST to it.
  *
  * Sources (verified 2026-04-18):
  *   - Chrome / Edge / Brave:  fcm.googleapis.com
@@ -94,8 +139,8 @@ async function encryptSlackWebhook(webhookUrl: string): Promise<string> {
  *   - Safari (macOS 13+):     web.push.apple.com
  *   - Windows Notification:   *.notify.windows.com (wns2-*, etc.)
  *
- * If a future browser ships a new push service we'll need to widen
- * this list — fail-closed is the right default.
+ * If a future browser ships a new push service we'll need to widen this
+ * list — fail-closed is the right default.
  */
 function isAllowedPushEndpointHost(host: string): boolean {
   const h = host.toLowerCase();
@@ -107,12 +152,16 @@ function isAllowedPushEndpointHost(host: string): boolean {
   return false;
 }
 
-async function publishWelcome(userId: string, channelType: string): Promise<void> {
+async function publishWelcome(userId: string, channelType: string, welcomeId?: string): Promise<void> {
   if (!UPSTASH_URL || !UPSTASH_TOKEN) {
     console.error('[notification-channels] publishWelcome: UPSTASH env vars missing — welcome not queued');
     return;
   }
-  const msg = JSON.stringify({ eventType: 'channel_welcome', userId, channelType });
+  // welcomeId (the channel row's id) lets the relay's processWelcome refuse
+  // to deliver a delayed/duplicate welcome to a connection that's since been
+  // replaced (e.g. the user re-links a different channel between this
+  // publish and the relay consuming it) — see notification-relay.cjs.
+  const msg = JSON.stringify({ eventType: 'channel_welcome', userId, channelType, welcomeId });
   try {
     const res = await notificationChannelsDeps.fetch(
       `${UPSTASH_URL}/lpush/wm:events:queue/${encodeURIComponent(msg)}`,
@@ -164,89 +213,6 @@ function json(body: unknown, status: number, cors: Record<string, string>, noCac
   });
 }
 
-const CONVEX_RELAY_TIMEOUT_MS = 15_000;
-
-async function convexRelay(
-  body: Record<string, unknown>,
-  signal = AbortSignal.timeout(CONVEX_RELAY_TIMEOUT_MS),
-): Promise<Response> {
-  return notificationChannelsDeps.fetch(`${CONVEX_SITE_URL}/relay/notification-channels`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${RELAY_SHARED_SECRET}`,
-      'User-Agent': 'worldmonitor-edge/1.0',
-    },
-    body: JSON.stringify(body),
-    // Matches the 15s timeout api/customer-portal.ts and
-    // api/create-checkout.ts already use for the same Convex host.
-    // Without this, a hung relay call outlives the edge runtime's invocation
-    // budget before the handler's own catch can run finish() to release the
-    // idempotency lock this endpoint holds across the call — leaving retries
-    // 409ing for its full 180s TTL (#5426).
-    signal,
-  });
-}
-
-type WelcomeRelayResult = {
-  response: Response;
-  durableWelcomeScheduling: boolean;
-};
-
-/**
- * Negotiate durable welcome scheduling before a first-connect mutation.
- *
- * Convex and Vercel deploy independently. New Convex only owns welcome
- * scheduling when the new edge explicitly opts in; old edge therefore keeps
- * its legacy publisher. New edge probes before opting in. An old Convex
- * deployment answers "Unknown action", so edge fails closed before sending a
- * mutation and releases the idempotency marker for retry. That short
- * availability tradeoff avoids both mixed-version duplicate welcomes and the
- * original timeout-after-commit ambiguity.
- */
-async function convexRelayWithDurableWelcome(
-  body: Record<string, unknown>,
-): Promise<WelcomeRelayResult> {
-  // One deadline covers both negotiation and mutation. Two independent 15s
-  // waits can exceed the edge response-start budget before the handler reaches
-  // finish() and releases its idempotency marker.
-  const relaySignal = AbortSignal.timeout(CONVEX_RELAY_TIMEOUT_MS);
-  const capability = await convexRelay({
-    action: 'welcome-scheduling-capability',
-    userId: body.userId,
-  }, relaySignal);
-  if (capability.ok) {
-    const payload = await capability.json().catch(() => null) as {
-      durableWelcomeScheduling?: boolean;
-    } | null;
-    if (payload?.durableWelcomeScheduling !== true) {
-      throw new Error('Convex returned an invalid welcome scheduling capability response');
-    }
-    return {
-      response: await convexRelay(
-        { ...body, scheduleWelcome: true },
-        relaySignal,
-      ),
-      durableWelcomeScheduling: true,
-    };
-  }
-
-  const payload = await capability.clone().json().catch(() => null) as {
-    error?: string;
-  } | null;
-  if (capability.status === 400 && payload?.error === 'Unknown action') {
-    return {
-      response: Response.json(
-        { error: 'DURABLE_WELCOME_UNAVAILABLE' },
-        { status: 503 },
-      ),
-      durableWelcomeScheduling: false,
-    };
-  }
-
-  return { response: capability, durableWelcomeScheduling: false };
-}
-
 interface PostBody {
   action?: string;
   channelType?: string;
@@ -272,10 +238,54 @@ interface PostBody {
   digestHour?: number;
   digestTimezone?: string;
   aiDigestEnabled?: boolean;
-  // Optional ISO-3166 alpha-2 country-scope; relay re-validates + normalizes.
+  // Optional ISO-3166 alpha-2 country-scope; server/_shared re-validates + normalizes.
   countries?: string[];
-  // Optional watchlist ticker-scope (#4922 U3); relay re-validates + normalizes.
+  // Optional watchlist ticker-scope (#4922 U3); server/_shared re-validates + normalizes.
   tickers?: string[];
+}
+
+/** Maps thrown NotificationChannelsError/AlertRulesError/TelegramPairingError to an HTTP response. */
+async function handleBackendError(
+  err: unknown,
+  action: string,
+  userId: string,
+  cors: Record<string, string>,
+  ctx: { waitUntil: (p: Promise<unknown>) => void },
+): Promise<Response> {
+  if (err instanceof NotificationChannelsError || err instanceof TelegramPairingError) {
+    if (err instanceof NotificationChannelsError && err.kind === 'MISSING_FIELD') {
+      return json({ error: err.message }, 400, cors);
+    }
+    console.warn(`[notification-channels] POST ${action} backend unavailable:`, err.message);
+    captureSilentError(err, {
+      tags: { route: 'api/notification-channels', action, user_id: userId, kind: err.kind },
+      fingerprint: ['api/notification-channels', action, err.kind],
+      ctx,
+      level: 'warning',
+    });
+    return json({ error: 'Service unavailable' }, 503, { ...cors, 'Retry-After': '5' });
+  }
+  if (err instanceof AlertRulesError) {
+    if (
+      err.kind === 'INCOMPATIBLE_DELIVERY' ||
+      err.kind === 'TICKERS_LIMIT_EXCEEDED' ||
+      err.kind === 'COUNTRIES_LIMIT_EXCEEDED' ||
+      err.kind === 'INVALID_INPUT'
+    ) {
+      return json({ error: err.kind === 'INVALID_INPUT' ? 'Validation failed' : err.kind, message: err.message }, 400, cors);
+    }
+    console.warn(`[notification-channels] POST ${action} backend unavailable:`, err.message);
+    captureSilentError(err, {
+      tags: { route: 'api/notification-channels', action, user_id: userId, kind: err.kind },
+      fingerprint: ['api/notification-channels', action, err.kind],
+      ctx,
+      level: 'warning',
+    });
+    return json({ error: 'Service unavailable' }, 503, { ...cors, 'Retry-After': '5' });
+  }
+  console.error(`[notification-channels] POST ${action} error:`, err);
+  captureEdgeException(err, { handler: 'notification-channels', action }, ctx);
+  return json({ error: 'Operation failed' }, 500, cors);
 }
 
 export default async function handler(req: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
@@ -298,40 +308,20 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
 
   const session = await notificationChannelsDeps.validateBearerToken(token);
   if (!session.valid || !session.userId) return json({ error: 'Unauthorized' }, 401, corsHeaders);
+  const userId = session.userId;
 
   const idempotencyRequest = req.method === 'POST' ? req.clone() : null;
 
-  if (!CONVEX_SITE_URL || !RELAY_SHARED_SECRET) {
-    return json({ error: 'Service unavailable' }, 503, corsHeaders);
-  }
-
   if (req.method === 'GET') {
     try {
-      const resp = await convexRelay({ action: 'get', userId: session.userId });
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error('[notification-channels] GET relay error:', resp.status, errText);
-        return json({ error: 'Failed to fetch' }, 500, corsHeaders);
-      }
-      const data = await resp.json();
-      return json(data, 200, corsHeaders, true);
+      const [channels, alertRules] = await Promise.all([notificationChannelsDeps.getChannels(userId), notificationChannelsDeps.getAlertRules(userId)]);
+      return json({ channels, alertRules }, 200, corsHeaders, true);
     } catch (err) {
-      console.error('[notification-channels] GET error:', err);
-      captureEdgeException(err, { handler: 'notification-channels', method: 'GET' }, ctx);
-      return json({ error: 'Failed to fetch' }, 500, corsHeaders);
+      return handleBackendError(err, 'get', userId, corsHeaders, ctx);
     }
   }
 
   if (req.method === 'POST') {
-    const ent = await notificationChannelsDeps.getEntitlements(session.userId);
-    if (!ent || ent.features.tier < 1) {
-      return json({
-        error: 'pro_required',
-        message: 'Real-time alerts are available on the Pro plan.',
-        upgradeUrl: 'https://worldmonitor.app/pro',
-      }, 403, corsHeaders);
-    }
-
     let body: PostBody;
     try {
       body = (await req.json()) as PostBody;
@@ -344,7 +334,7 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
       ? await beginStandaloneIdempotency({
         request: idempotencyRequest ?? req,
         pathname: '/api/notification-channels',
-        scope: `user:${session.userId}`,
+        scope: `user:${userId}`,
         idempotencyKey,
         corsHeaders,
       })
@@ -361,57 +351,18 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
 
     const { action } = body;
 
-    // session.userId is narrowed to string by the auth guard above, but
-    // property narrowing does not flow into closures — capture it once.
-    const welcomeUserId = session.userId;
-    // Shared tail for the two durable-welcome mutations (set-channel,
-    // set-web-push): map relay failures (503 deploy-window fail-closed vs
-    // generic 500), then publish the legacy welcome only when Convex did not
-    // acknowledge scheduling ownership. Requiring the mutation response to
-    // re-acknowledge protects the success path even if Convex rolls back
-    // between the capability probe and the mutation.
-    const finishDurableWelcomeRelay = async (
-      relay: WelcomeRelayResult,
-      relayAction: string,
-      welcomeChannelType: string,
-    ): Promise<Response> => {
-      const resp = relay.response;
-      if (!resp.ok) {
-        console.error(`[notification-channels] POST ${relayAction} relay error:`, resp.status);
-        if (resp.status === 503) {
-          return finish(json({ error: 'Service unavailable' }, 503, corsHeaders));
-        }
-        return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-      }
-      const result = await resp.json() as {
-        isNew?: boolean;
-        durableWelcomeScheduling?: boolean;
-      };
-      if (
-        result.isNew &&
-        (!relay.durableWelcomeScheduling ||
-          result.durableWelcomeScheduling !== true)
-      ) {
-        ctx.waitUntil(publishWelcome(welcomeUserId, welcomeChannelType));
-      }
-      return finish(json({ ok: true }, 200, corsHeaders));
-    };
-
     try {
       if (action === 'create-pairing-token') {
-        const relayBody: Record<string, unknown> = { action: 'create-pairing-token', userId: session.userId };
-        if (body.variant) relayBody.variant = body.variant;
-        const resp = await convexRelay(relayBody);
-        if (!resp.ok) {
-          console.error('[notification-channels] POST create-pairing-token relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
-        return finish(json(await resp.json(), 200, corsHeaders));
+        const result = await notificationChannelsDeps.createPairingToken(userId, body.variant);
+        return finish(json(result, 200, corsHeaders));
       }
 
       if (action === 'set-channel') {
         const { channelType, email, webhookEnvelope, webhookLabel } = body;
         if (!channelType) return finish(json({ error: 'channelType required' }, 400, corsHeaders));
+        if (channelType !== 'telegram' && channelType !== 'slack' && channelType !== 'email' && channelType !== 'webhook') {
+          return finish(json({ error: 'discord/web_push channels must be set via their own flow' }, 400, corsHeaders));
+        }
 
         if (webhookEnvelope) {
           try {
@@ -422,18 +373,22 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
           }
         }
 
-        const relayBody: Record<string, unknown> = { action: 'set-channel', userId: session.userId, channelType };
-        if (email !== undefined) relayBody.email = email;
-        if (webhookLabel !== undefined) relayBody.webhookLabel = String(webhookLabel).slice(0, 100);
+        let encryptedWebhookEnvelope: string | undefined;
         if (webhookEnvelope !== undefined) {
           try {
-            relayBody.webhookEnvelope = await encryptSlackWebhook(webhookEnvelope);
+            encryptedWebhookEnvelope = await encryptSlackWebhook(webhookEnvelope);
           } catch {
             return finish(json({ error: 'Encryption unavailable' }, 503, corsHeaders));
           }
         }
-        const relay = await convexRelayWithDurableWelcome(relayBody);
-        return finishDurableWelcomeRelay(relay, 'set-channel', channelType);
+
+        const { isNew, id } = await notificationChannelsDeps.setChannel(userId, channelType, {
+          email,
+          webhookLabel: webhookLabel !== undefined ? String(webhookLabel).slice(0, 100) : undefined,
+          webhookEnvelope: encryptedWebhookEnvelope,
+        });
+        if (isNew) ctx.waitUntil(publishWelcome(userId, channelType, id));
+        return finish(json({ ok: true }, 200, corsHeaders));
       }
 
       if (action === 'set-web-push') {
@@ -444,11 +399,11 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
         // SSRF defence. The relay later POSTs to whatever endpoint we
         // persist here, so an unvalidated user-submitted URL is a
         // server-side-request primitive bounded only by the relay's
-        // network egress. Browsers always produce endpoints at one
-        // of a small set of push-service hosts (FCM, Mozilla, Apple,
-        // Windows Notification Service); anything else is either an
-        // exotic browser (rare) or an attack. Allow-list the known
-        // hosts and reject everything else.
+        // network egress. Browsers always produce endpoints at one of a
+        // small set of push-service hosts (FCM, Mozilla, Apple, Windows
+        // Notification Service); anything else is either an exotic
+        // browser (rare) or an attack. Allow-list the known hosts and
+        // reject everything else.
         try {
           const u = new URL(endpoint);
           if (u.protocol !== 'https:') {
@@ -464,62 +419,43 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
         } catch {
           return finish(json({ error: 'invalid endpoint' }, 400, corsHeaders));
         }
-        const relay = await convexRelayWithDurableWelcome({
-          action: 'set-web-push',
-          userId: session.userId,
+        const { isNew, id } = await notificationChannelsDeps.setWebPushChannel(userId, {
           endpoint,
           p256dh,
           auth,
-          // Trim user agent; it's cosmetic for the settings UI, not identity.
           userAgent: typeof userAgent === 'string' ? userAgent.slice(0, 200) : undefined,
         });
-        return finishDurableWelcomeRelay(relay, 'set-web-push', 'web_push');
+        if (isNew) ctx.waitUntil(publishWelcome(userId, 'web_push', id));
+        return finish(json({ ok: true }, 200, corsHeaders));
       }
 
       if (action === 'delete-channel') {
         const { channelType } = body;
         if (!channelType) return finish(json({ error: 'channelType required' }, 400, corsHeaders));
-        const resp = await convexRelay({ action: 'delete-channel', userId: session.userId, channelType });
-        if (!resp.ok) {
-          console.error('[notification-channels] POST delete-channel relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
+        await notificationChannelsDeps.deleteChannel(userId, channelType as ChannelType);
         return finish(json({ ok: true }, 200, corsHeaders));
       }
 
       if (action === 'set-alert-rules') {
         const { variant, enabled, eventTypes, sensitivity, channels, aiDigestEnabled, countries, tickers } = body;
+        if (!variant || enabled === undefined || !Array.isArray(eventTypes) || !Array.isArray(channels)) {
+          return finish(json({ error: 'MISSING_REQUIRED_FIELDS' }, 400, corsHeaders));
+        }
         if (tickers !== undefined && !Array.isArray(tickers)) {
           return finish(json({ error: 'TICKERS_MUST_BE_ARRAY' }, 400, corsHeaders));
         }
-        const resp = await convexRelay({
-          action: 'set-alert-rules',
-          userId: session.userId,
-          variant,
+        if (countries !== undefined && !Array.isArray(countries)) {
+          return finish(json({ error: 'COUNTRIES_MUST_BE_ARRAY' }, 400, corsHeaders));
+        }
+        await notificationChannelsDeps.setAlertRules(userId, variant, {
           enabled,
           eventTypes,
-          sensitivity,
-          channels,
+          channels: channels as ChannelType[],
+          sensitivity: sensitivity as 'all' | 'high' | 'critical' | undefined,
           aiDigestEnabled,
           countries,
           tickers,
         });
-        if (!resp.ok) {
-          // A 400 carries a structured validation code (TICKERS_LIMIT_EXCEEDED /
-          // COUNTRIES_LIMIT_EXCEEDED); 402 is the paywall (PRO_REQUIRED). Pass
-          // both through with body intact so the client renders the real reason
-          // instead of a generic toast — mirrors set-notification-config below.
-          if (resp.status === 400 || resp.status === 402) {
-            const text = await resp.text().catch(() => '');
-            let payload: unknown = { error: 'Validation failed' };
-            if (text) {
-              try { payload = JSON.parse(text); } catch { /* keep default */ }
-            }
-            return finish(json(payload, resp.status, corsHeaders));
-          }
-          console.error('[notification-channels] POST set-alert-rules relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
         return finish(json({ ok: true }, 200, corsHeaders));
       }
 
@@ -532,25 +468,18 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
         if (quietHoursOverride !== undefined && !VALID_OVERRIDE.has(quietHoursOverride)) {
           return finish(json({ error: 'invalid quietHoursOverride' }, 400, corsHeaders));
         }
-        const resp = await convexRelay({
-          action: 'set-quiet-hours',
-          userId: session.userId,
-          variant,
+        await notificationChannelsDeps.setQuietHours(userId, variant, {
           quietHoursEnabled,
           quietHoursStart,
           quietHoursEnd,
           quietHoursTimezone,
-          quietHoursOverride,
+          quietHoursOverride: quietHoursOverride as 'critical_only' | 'silence_all' | 'batch_on_wake' | undefined,
           countries,
         });
-        if (!resp.ok) {
-          console.error('[notification-channels] POST set-quiet-hours relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
         // If quiet hours were disabled or override changed away from batch_on_wake,
         // flush any held events so they're delivered rather than expiring silently.
         const abandonsBatch = !quietHoursEnabled || quietHoursOverride !== 'batch_on_wake';
-        if (abandonsBatch) ctx.waitUntil(publishFlushHeld(session.userId, variant));
+        if (abandonsBatch) ctx.waitUntil(publishFlushHeld(userId, variant));
         return finish(json({ ok: true }, 200, corsHeaders));
       }
 
@@ -560,28 +489,21 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
         if (!variant || !digestMode || !VALID_DIGEST_MODE.has(digestMode)) {
           return finish(json({ error: 'variant and valid digestMode required' }, 400, corsHeaders));
         }
-        const resp = await convexRelay({
-          action: 'set-digest-settings',
-          userId: session.userId,
-          variant,
-          digestMode,
+        if (countries !== undefined && !Array.isArray(countries)) {
+          return finish(json({ error: 'COUNTRIES_MUST_BE_ARRAY' }, 400, corsHeaders));
+        }
+        await notificationChannelsDeps.setDigestSettings(userId, variant, {
+          digestMode: digestMode as 'realtime' | 'daily' | 'twice_daily' | 'weekly',
           digestHour,
           digestTimezone,
           countries,
         });
-        if (!resp.ok) {
-          console.error('[notification-channels] POST set-digest-settings relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
         return finish(json({ ok: true }, 200, corsHeaders));
       }
 
       // Atomic update of (digestMode, sensitivity) and any subset of the alert-rule
       // fields. The UI's delivery-mode change flow uses this to avoid the two-call
       // race against the cross-field validator.
-      // Critical: 400 responses from the relay must pass through with their body
-      // intact so the client can render INCOMPATIBLE_DELIVERY helper text.
-      // See docs/archive/plans/forbid-realtime-all-events.md §1f.
       if (action === 'set-notification-config') {
         const VALID_SENSITIVITY = new Set(['all', 'high', 'critical']);
         const VALID_DIGEST_MODE = new Set(['realtime', 'daily', 'twice_daily', 'weekly']);
@@ -599,46 +521,24 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
         if (tickers !== undefined && !Array.isArray(tickers)) {
           return finish(json({ error: 'TICKERS_MUST_BE_ARRAY' }, 400, corsHeaders));
         }
-        const resp = await convexRelay({
-          action: 'set-notification-config',
-          userId: session.userId,
-          variant,
+        await notificationChannelsDeps.setNotificationConfig(userId, variant, {
           enabled,
           eventTypes,
-          sensitivity,
-          channels,
+          sensitivity: sensitivity as 'all' | 'high' | 'critical' | undefined,
+          channels: channels as ChannelType[] | undefined,
           aiDigestEnabled,
-          digestMode,
+          digestMode: digestMode as 'realtime' | 'daily' | 'twice_daily' | 'weekly' | undefined,
           digestHour,
           digestTimezone,
           countries,
           tickers,
         });
-        if (!resp.ok) {
-          // 400 from convex/http means user-facing validation failure (e.g.
-          // INCOMPATIBLE_DELIVERY). 402 means paywall (PRO_REQUIRED). Both
-          // must pass through with body intact so the client renders the
-          // real reason — inline helper text for 400, upgrade-flow modal
-          // for 402 — instead of a generic toast.
-          if (resp.status === 400 || resp.status === 402) {
-            const text = await resp.text().catch(() => '');
-            let payload: unknown = { error: 'Validation failed' };
-            if (text) {
-              try { payload = JSON.parse(text); } catch { /* keep default */ }
-            }
-            return finish(json(payload, resp.status, corsHeaders));
-          }
-          console.error('[notification-channels] POST set-notification-config relay error:', resp.status);
-          return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
-        }
         return finish(json({ ok: true }, 200, corsHeaders));
       }
 
       return finish(json({ error: 'Unknown action' }, 400, corsHeaders));
     } catch (err) {
-      console.error('[notification-channels] POST error:', err);
-      captureEdgeException(err, { handler: 'notification-channels', method: 'POST' }, ctx);
-      return finish(json({ error: 'Operation failed' }, 500, corsHeaders));
+      return finish(await handleBackendError(err, action ?? 'unknown', userId, corsHeaders, ctx));
     }
   }
 

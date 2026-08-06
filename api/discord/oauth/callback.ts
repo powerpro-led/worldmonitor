@@ -11,13 +11,15 @@
 
 export const config = { runtime: 'edge' };
 
+// @ts-expect-error — JS module, no declaration file
+import { captureSilentError } from '../../_sentry-edge.js';
+import { setDiscordOAuthChannel } from '../../../server/_shared/notification-channels';
+
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET ?? '';
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI ?? '';
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL ?? (process.env.CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site');
-const RELAY_SHARED_SECRET = process.env.RELAY_SHARED_SECRET ?? '';
 const NOTIFICATION_ENCRYPTION_KEY = process.env.NOTIFICATION_ENCRYPTION_KEY ?? '';
 const APP_ORIGIN = '*';
 
@@ -112,7 +114,7 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
   if (errorParam) return errorAndClose(errorParam);
   if (!code || !state) return errorAndClose('missing_params');
 
-  if (!UPSTASH_URL || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !CONVEX_SITE_URL || !RELAY_SHARED_SECRET || !NOTIFICATION_ENCRYPTION_KEY) {
+  if (!UPSTASH_URL || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !NOTIFICATION_ENCRYPTION_KEY) {
     return errorAndClose('misconfigured');
   }
 
@@ -160,24 +162,22 @@ export default async function handler(req: Request, ctx: { waitUntil: (p: Promis
     return errorAndClose('encryption_failed');
   }
 
-  // Store via Convex relay
-  const convexRes = await fetch(`${CONVEX_SITE_URL}/relay/notification-channels`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RELAY_SHARED_SECRET}` },
-    body: JSON.stringify({
-      action: 'set-discord-oauth',
-      userId,
+  // Store directly in Postgres (worldmonitor.notification_channels)
+  let isNew: boolean;
+  try {
+    const result = await setDiscordOAuthChannel(userId, {
       webhookEnvelope,
       discordGuildId: tokenData.webhook.guild_id,
       discordChannelId: tokenData.webhook.channel_id,
-    }),
-    signal: AbortSignal.timeout(10000),
-  }).catch(() => null);
+    });
+    isNew = result.isNew;
+  } catch (err) {
+    console.error('[discord-oauth] setDiscordOAuthChannel failed:', (err as Error).message);
+    await captureSilentError(err, { tags: { route: 'api/discord/oauth/callback', step: 'set-discord-oauth' } });
+    return errorAndClose('storage_failed');
+  }
 
-  if (!convexRes?.ok) return errorAndClose('storage_failed');
-
-  const stored = await convexRes.json() as { ok: boolean; isNew?: boolean };
-  if (stored.isNew) ctx.waitUntil(publishWelcome(userId));
+  if (isNew) ctx.waitUntil(publishWelcome(userId));
 
   return postAndClose({
     type: 'wm:discord_connected',

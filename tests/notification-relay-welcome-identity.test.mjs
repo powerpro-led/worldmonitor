@@ -7,9 +7,6 @@ const require = createRequire(import.meta.url);
 const originalFetch = globalThis.fetch;
 const originalUpstashUrl = process.env.UPSTASH_REDIS_REST_URL;
 const originalUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-const originalConvexUrl = process.env.CONVEX_URL;
-const originalConvexSiteUrl = process.env.CONVEX_SITE_URL;
-const originalRelaySecret = process.env.RELAY_SHARED_SECRET;
 const originalResendApiKey = process.env.RESEND_API_KEY;
 
 afterEach(() => {
@@ -19,62 +16,64 @@ afterEach(() => {
   else process.env.UPSTASH_REDIS_REST_URL = originalUpstashUrl;
   if (originalUpstashToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
   else process.env.UPSTASH_REDIS_REST_TOKEN = originalUpstashToken;
-  if (originalConvexUrl === undefined) delete process.env.CONVEX_URL;
-  else process.env.CONVEX_URL = originalConvexUrl;
-  if (originalConvexSiteUrl === undefined) delete process.env.CONVEX_SITE_URL;
-  else process.env.CONVEX_SITE_URL = originalConvexSiteUrl;
-  if (originalRelaySecret === undefined) delete process.env.RELAY_SHARED_SECRET;
-  else process.env.RELAY_SHARED_SECRET = originalRelaySecret;
   if (originalResendApiKey === undefined) delete process.env.RESEND_API_KEY;
   else process.env.RESEND_API_KEY = originalResendApiKey;
 });
+
+// Stage 3 of the Convex/Clerk -> Supabase migration: notification-relay.cjs's
+// processWelcome() reads channels via scripts/lib/notification-channels-fetch.cjs
+// (Postgres, service-role client) instead of a raw Convex `/relay/channels`
+// fetch, and channel identity is the Postgres row's `id` (not Convex's
+// `_id`). Load the relay with both the `resend` module AND
+// `./lib/notification-channels-fetch.cjs` mocked, same
+// Module._load-interception pattern the `resend` mock already used.
+function loadRelayWithMocks({ channels, resendSends }) {
+  const relayPath = require.resolve('../scripts/notification-relay.cjs');
+  delete require.cache[relayPath];
+  const originalLoad = Module._load;
+  Module._load = function patchedLoad(request, parent, ...rest) {
+    if (request === 'resend') {
+      return {
+        Resend: class {
+          emails = {
+            send: async (message) => {
+              resendSends.push(message);
+              return { data: { id: 'sent' }, error: null };
+            },
+          };
+        },
+      };
+    }
+    if (request === './lib/notification-channels-fetch.cjs') {
+      return {
+        fetchChannelsForUser: async () => channels,
+        deactivateChannel: async () => true,
+      };
+    }
+    return originalLoad.call(this, request, parent, ...rest);
+  };
+  try {
+    return require(relayPath);
+  } finally {
+    Module._load = originalLoad;
+  }
+}
 
 describe('notification relay welcome identity', () => {
   it('does not deliver a delayed welcome to a replacement channel', async () => {
     process.env.UPSTASH_REDIS_REST_URL = 'https://upstash.test';
     process.env.UPSTASH_REDIS_REST_TOKEN = 'upstash-token';
-    process.env.CONVEX_URL = 'https://convex.test';
-    process.env.CONVEX_SITE_URL = 'https://convex.test';
-    process.env.RELAY_SHARED_SECRET = 'relay-secret';
     process.env.RESEND_API_KEY = 'resend-key';
     const resendSends = [];
-    const relayPath = require.resolve('../scripts/notification-relay.cjs');
-    delete require.cache[relayPath];
-    const originalLoad = Module._load;
-    Module._load = function patchedLoad(request, parent, ...rest) {
-      if (request === 'resend') {
-        return {
-          Resend: class {
-            emails = {
-              send: async (message) => {
-                resendSends.push(message);
-                return { data: { id: 'sent' }, error: null };
-              },
-            };
-          },
-        };
-      }
-      return originalLoad.call(this, request, parent, ...rest);
-    };
-    let processWelcome;
-    let popNextEvent;
-    try {
-      ({ processWelcome, popNextEvent } = require(relayPath));
-    } finally {
-      Module._load = originalLoad;
-    }
-
-    const fetchMock = mock.fn(async (input) => {
-      assert.equal(String(input), 'https://convex.test/relay/channels');
-      return Response.json([{
-        _id: 'replacement-channel-id',
-        userId: 'user-welcome',
+    const { processWelcome, popNextEvent } = loadRelayWithMocks({
+      channels: [{
+        id: 'replacement-channel-id',
         channelType: 'email',
         email: 'replacement@example.com',
         verified: true,
-      }]);
+      }],
+      resendSends,
     });
-    globalThis.fetch = fetchMock;
 
     await processWelcome({
       eventType: 'channel_welcome',
@@ -83,7 +82,6 @@ describe('notification relay welcome identity', () => {
       welcomeId: 'original-channel-id',
     });
 
-    assert.equal(fetchMock.mock.calls.length, 1, 'replacement channel must not receive the stale welcome');
     assert.equal(resendSends.length, 0, 'replacement email channel must not receive the stale welcome');
 
     const queueCalls = [];
@@ -103,48 +101,19 @@ describe('notification relay welcome identity', () => {
     assert.equal(queueCalls.length, 1, 'v2 welcome must not be exposed to the legacy queue consumer');
   });
 
-  it('delivers legacy events without welcomeId and v2 events whose welcomeId matches', async () => {
+  it('delivers legacy events without welcomeId and events whose welcomeId matches', async () => {
     process.env.UPSTASH_REDIS_REST_URL = 'https://upstash.test';
     process.env.UPSTASH_REDIS_REST_TOKEN = 'upstash-token';
-    process.env.CONVEX_URL = 'https://convex.test';
-    process.env.CONVEX_SITE_URL = 'https://convex.test';
-    process.env.RELAY_SHARED_SECRET = 'relay-secret';
     process.env.RESEND_API_KEY = 'resend-key';
     const resendSends = [];
-    const relayPath = require.resolve('../scripts/notification-relay.cjs');
-    delete require.cache[relayPath];
-    const originalLoad = Module._load;
-    Module._load = function patchedLoad(request, parent, ...rest) {
-      if (request === 'resend') {
-        return {
-          Resend: class {
-            emails = {
-              send: async (message) => {
-                resendSends.push(message);
-                return { data: { id: 'sent' }, error: null };
-              },
-            };
-          },
-        };
-      }
-      return originalLoad.call(this, request, parent, ...rest);
-    };
-    let processWelcome;
-    try {
-      ({ processWelcome } = require(relayPath));
-    } finally {
-      Module._load = originalLoad;
-    }
-
-    globalThis.fetch = mock.fn(async (input) => {
-      assert.equal(String(input), 'https://convex.test/relay/channels');
-      return Response.json([{
-        _id: 'current-channel-id',
-        userId: 'user-welcome',
+    const { processWelcome } = loadRelayWithMocks({
+      channels: [{
+        id: 'current-channel-id',
         channelType: 'email',
         email: 'current@example.com',
         verified: true,
-      }]);
+      }],
+      resendSends,
     });
 
     await processWelcome({

@@ -4,8 +4,10 @@
  *
  * Modeled on tests/notification-relay-country-filter.test.mjs — two surfaces:
  *  1. Source-grep: the filter MUST be wired into the per-rule matching loop
- *     alongside shouldNotify/eventMatchesCountryScope, and the delivery loop
- *     must still consult the batch PRO gate (isUserPro → proSet).
+ *     alongside shouldNotify/eventMatchesCountryScope. The former "must still
+ *     consult the batch PRO gate" surface was removed in Stage 3 of the
+ *     Convex/Clerk -> Supabase migration — see the PRO-gate-removal test
+ *     below.
  *  2. Behavioural: re-execute the filter logic against a synthetic
  *     rule × event matrix to lock in the OPT-IN semantics:
  *       - unlike `countries` (empty = unscoped, all events match), an empty
@@ -16,7 +18,9 @@
  *         wildcard behaviour for broadcast event types (rss_alert etc.).
  *
  * Also locks the tickers forwarding contract through the API layers
- * (api/notification-channels.ts + convex/http.ts), mirroring
+ * (api/notification-channels.ts + server/_shared/alert-rules.ts — collapsed
+ * from the old two-layer api/notification-channels.ts + convex/http.ts
+ * relay in Stage 3), mirroring
  * tests/notification-channels-countries-contract.test.mjs.
  *
  * Run: node --test tests/notification-relay-ticker-filter.test.mjs
@@ -34,8 +38,7 @@ const relaySrc = readFileSync(
   'utf-8',
 );
 const edgeSrc = readFileSync(resolve(__dirname, '..', 'api', 'notification-channels.ts'), 'utf-8');
-const convexHttpSrc = readFileSync(resolve(__dirname, '..', 'convex', 'http.ts'), 'utf-8');
-const convexRulesSrc = readFileSync(resolve(__dirname, '..', 'convex', 'alertRules.ts'), 'utf-8');
+const sharedRulesSrc = readFileSync(resolve(__dirname, '..', 'server', '_shared', 'alert-rules.ts'), 'utf-8');
 
 // ── Mirror implementations (kept in sync via the source-grep tests below;
 // the relay file is a runtime script with no exports — same pattern as the
@@ -128,25 +131,18 @@ describe('notification-relay watchlist ticker filter — source-grep contract', 
     );
   });
 
-  it('layer-3 PRO gate still guards delivery for every matched rule (fail-closed isUserPro)', () => {
-    // The batch PRO check runs on the SAME `matching` set the ticker filter
-    // built, and the per-rule delivery loop skips non-PRO users. Watchlist
-    // events route through this unchanged code path.
-    assert.match(
-      relaySrc,
-      /const uniqueUserIds = \[\.\.\.new Set\(matching\.map\(r => r\.userId\)\)\]/,
-      'batch PRO check must be derived from the matching set',
-    );
-    assert.match(
-      relaySrc,
-      /uniqueUserIds\.map\(async uid => \[uid, await isUserPro\(uid\)\]\)/,
-      'isUserPro must be consulted per unique user',
-    );
-    assert.match(
-      relaySrc,
-      /if \(!proSet\.has\(rule\.userId\)\) continue;/,
-      'delivery loop must skip users that failed the PRO gate',
-    );
+  it('layer-3 PRO gate was removed, not silently left as dead code (Stage 3 migration)', () => {
+    // Convex's `entitlements` table has had nothing writing to it since
+    // Stage 1 deleted Dodo billing, so this delivery-time PRO filter had
+    // degenerated into "drop every delivery." Stage 3 of the Convex/Clerk ->
+    // Supabase migration deleted it outright — every matched rule (including
+    // watchlist_story_alert rules) now delivers unconditionally. See memory
+    // `supabase-migration-stage1`.
+    // Match the call/usage shape, not the bare word — the retirement comment
+    // at the top of the file legitimately mentions "isUserPro" by name to
+    // document why it's gone.
+    assert.doesNotMatch(relaySrc, /isUserPro\(/, 'isUserPro must not be called anywhere in the relay');
+    assert.doesNotMatch(relaySrc, /proSet\.has/, 'proSet must not be consulted anywhere in the relay');
   });
 });
 
@@ -223,46 +219,32 @@ describe('notification-relay watchlist ticker filter — behavioural', () => {
 });
 
 describe('tickers forwarding contract — API layers (mirror of the countries contract)', () => {
-  it('Vercel edge set-alert-rules forwards tickers to the Convex relay', () => {
+  it('Vercel edge set-alert-rules forwards tickers to setAlertRules', () => {
     assert.match(
       edgeSrc,
-      /action === 'set-alert-rules'[\s\S]*?tickers[\s\S]*?convexRelay\(\{[\s\S]*?tickers/,
-      'set-alert-rules must forward tickers',
+      /action === 'set-alert-rules'[\s\S]*?tickers[\s\S]*?setAlertRules\(userId, variant, \{[\s\S]*?tickers/,
+      'set-alert-rules must forward tickers to server/_shared/alert-rules.ts',
     );
   });
 
-  it('Convex HTTP set-alert-rules forwards tickers into setAlertRulesForUser', () => {
-    assert.match(
-      convexHttpSrc,
-      /setAlertRulesForUser[\s\S]*?tickers:\s*Array\.isArray\(body\.tickers\)/,
-      'setAlertRulesForUser call must include tickers',
-    );
-  });
-
-  it('set-notification-config forwards tickers and rejects non-arrays at both layers', () => {
+  it('set-notification-config forwards tickers and rejects non-arrays', () => {
     assert.match(
       edgeSrc,
       /tickers\s*!==\s*undefined\s*&&\s*!Array\.isArray\(tickers\)[\s\S]*?TICKERS_MUST_BE_ARRAY/,
       'Vercel edge route must reject non-array tickers',
     );
     assert.match(
-      convexHttpSrc,
-      /body\.tickers\s*!==\s*undefined\s*&&\s*!Array\.isArray\(body\.tickers\)[\s\S]*?TICKERS_MUST_BE_ARRAY/,
-      'Convex HTTP route must reject non-array tickers',
-    );
-    assert.match(
-      convexHttpSrc,
-      /setNotificationConfigForUser[\s\S]*?tickers:\s*Array\.isArray\(body\.tickers\)/,
-      'setNotificationConfigForUser call must include tickers',
+      edgeSrc,
+      /action === 'set-notification-config'[\s\S]*?setNotificationConfig\(userId, variant, \{[\s\S]*?tickers/,
+      'set-notification-config must forward tickers to server/_shared/alert-rules.ts',
     );
   });
 
-  it('convex/alertRules.ts normalizes tickers on write (normalizeTickers, TICKERS_MAX=50)', () => {
-    assert.match(convexRulesSrc, /function normalizeTickers\(input: string\[\]\): string\[\]/);
-    assert.match(convexRulesSrc, /const TICKERS_MAX = 50/);
+  it('server/_shared/alert-rules.ts normalizes tickers on write (normalizeTickers, TICKERS_MAX=50)', () => {
+    assert.match(sharedRulesSrc, /function normalizeTickers\(input: string\[\]\): string\[\]/);
+    assert.match(sharedRulesSrc, /const TICKERS_MAX = 50/);
     // Shape must accept every non-index shared/stocks.json symbol
-    // (RELIANCE.NS 8-char base, BRK-B, M&M.NS) — see alertRules-tickers
-    // convex test for the behavioural matrix.
-    assert.match(convexRulesSrc, /\^\[A-Z\]\[A-Z0-9&-\]\{0,11\}\(\\\.\[A-Z\]\{1,3\}\)\?\$/);
+    // (RELIANCE.NS 8-char base, BRK-B, M&M.NS).
+    assert.match(sharedRulesSrc, /\^\[A-Z\]\[A-Z0-9&-\]\{0,11\}\(\\\.\[A-Z\]\{1,3\}\)\?\$/);
   });
 });

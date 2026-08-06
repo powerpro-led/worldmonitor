@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as alertRules from "../alertRules.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as apiPlanLimitEmails from "../apiPlanLimitEmails.js";
 import type * as apiPlanLimitNotices from "../apiPlanLimitNotices.js";
@@ -38,7 +37,6 @@ import type * as lib_entitlements from "../lib/entitlements.js";
 import type * as lib_env from "../lib/env.js";
 import type * as lib_identitySigning from "../lib/identitySigning.js";
 import type * as mcpProTokens from "../mcpProTokens.js";
-import type * as notificationChannels from "../notificationChannels.js";
 import type * as payments_backfillCustomerNormalizedEmail from "../payments/backfillCustomerNormalizedEmail.js";
 import type * as payments_billing from "../payments/billing.js";
 import type * as payments_businessSeats from "../payments/businessSeats.js";
@@ -51,7 +49,6 @@ import type * as payments_webhookHandlers from "../payments/webhookHandlers.js";
 import type * as payments_webhookMutations from "../payments/webhookMutations.js";
 import type * as registerInterest from "../registerInterest.js";
 import type * as resendWebhookHandler from "../resendWebhookHandler.js";
-import type * as telegramPairingTokens from "../telegramPairingTokens.js";
 import type * as users from "../users.js";
 
 import type {
@@ -61,7 +58,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  alertRules: typeof alertRules;
   apiKeys: typeof apiKeys;
   apiPlanLimitEmails: typeof apiPlanLimitEmails;
   apiPlanLimitNotices: typeof apiPlanLimitNotices;
@@ -91,7 +87,6 @@ declare const fullApi: ApiFromModules<{
   "lib/env": typeof lib_env;
   "lib/identitySigning": typeof lib_identitySigning;
   mcpProTokens: typeof mcpProTokens;
-  notificationChannels: typeof notificationChannels;
   "payments/backfillCustomerNormalizedEmail": typeof payments_backfillCustomerNormalizedEmail;
   "payments/billing": typeof payments_billing;
   "payments/businessSeats": typeof payments_businessSeats;
@@ -104,7 +99,6 @@ declare const fullApi: ApiFromModules<{
   "payments/webhookMutations": typeof payments_webhookMutations;
   registerInterest: typeof registerInterest;
   resendWebhookHandler: typeof resendWebhookHandler;
-  telegramPairingTokens: typeof telegramPairingTokens;
   users: typeof users;
 }>;
 

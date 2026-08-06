@@ -3,11 +3,11 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-crons.hourly(
-  "cleanup-expired-pairing-tokens",
-  { minuteUTC: 27 },
-  internal.telegramPairingTokens.cleanupExpired,
-);
+// `cleanup-expired-pairing-tokens` retired in Stage 3 of the Convex/Clerk ->
+// Supabase migration alongside `convex/telegramPairingTokens.ts` —
+// `cleanupExpiredPairingTokens()` (scripts/lib/telegram-pairing-cleanup.cjs)
+// now runs once per `seed-digest-notifications.mjs` Railway run instead. See
+// memory `supabase-migration-stage1`.
 
 crons.hourly(
   "api-plan-limit-usage-scan",

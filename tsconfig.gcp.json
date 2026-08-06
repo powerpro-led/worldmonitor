@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.gcp.tsbuildinfo"
+  },
+  "include": ["gcp", "api", "server", "src/generated"],
+  "exclude": ["server/__tests__/**", "api/**/*.test.mjs", "api/**/*.test.mts"]
+}

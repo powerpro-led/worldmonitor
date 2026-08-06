@@ -1,0 +1,60 @@
+name: worldmonitor
+# Local dev-mode service matcher for `nitric start`/`nitric run`. Modeled on
+# platform/backend's nitric.yaml (sibling repo, same GCP target). Each entry's
+# `runtime` key must have a matching block in `runtimes:` below, which is what
+# `nitric.gcp.yaml` + `nitric build` use to produce the deployable image.
+#
+# Scaffold-only pass — see docs/architecture/nitric-gcp-scaffold.md for what's
+# real vs. stubbed here. No `nitric up` has been run against this config.
+services:
+  - match: gcp/api/main.ts
+    start: npx tsx watch --env-file=.env $SERVICE_PATH
+    runtime: api
+  - match: gcp/scheduler/main.ts
+    start: npx tsx watch --env-file=.env $SERVICE_PATH
+    runtime: scheduler
+  # The 5 `deployMode: "dockerfile"` entries in scripts/railway-services.json
+  # (long-running processes, not discrete cron runs) — reuse their EXISTING
+  # Dockerfiles unchanged, no Nitric SDK wrapper needed since none of them
+  # import @nitric/sdk yet. min-instances for these will need a
+  # nitric.gcp.yaml `config:` override before real deploy — scale-to-zero
+  # breaks a persistent websocket relay / queue consumer. Not decided here;
+  # see docs/architecture/nitric-gcp-scaffold.md.
+  - match: scripts/ais-relay.cjs
+    start: node $SERVICE_PATH
+    runtime: relay
+  - match: scripts/seed-digest-notifications.mjs
+    start: node $SERVICE_PATH
+    runtime: digest-notifications
+  - match: scripts/seed-bundle-portwatch-port-activity.mjs
+    start: node $SERVICE_PATH
+    runtime: seed-bundle-portwatch-port-activity
+  - match: scripts/seed-bundle-resilience-validation.mjs
+    start: node $SERVICE_PATH
+    runtime: seed-bundle-resilience-validation
+  - match: scripts/publish-bootstrap-tiers.mjs
+    start: node $SERVICE_PATH --loop
+    runtime: publish-bootstrap-tiers
+
+runtimes:
+  api:
+    dockerfile: gcp/api/node.dockerfile
+    context: .
+  scheduler:
+    dockerfile: gcp/scheduler/node.dockerfile
+    context: .
+  relay:
+    dockerfile: Dockerfile.relay
+    context: .
+  digest-notifications:
+    dockerfile: Dockerfile.digest-notifications
+    context: .
+  seed-bundle-portwatch-port-activity:
+    dockerfile: Dockerfile.seed-bundle-portwatch-port-activity
+    context: .
+  seed-bundle-resilience-validation:
+    dockerfile: Dockerfile.seed-bundle-resilience-validation
+    context: .
+  publish-bootstrap-tiers:
+    dockerfile: Dockerfile.publish-bootstrap-tiers
+    context: .

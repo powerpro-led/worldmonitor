@@ -154,6 +154,7 @@
     "@dodopayments/convex": "^0.2.8",
     "@fontsource/nunito": "^5.2.7",
     "@fontsource/tajawal": "^5.2.7",
+    "@nitric/sdk": "^1.4.2",
     "@protomaps/basemaps": "^5.7.1",
     "@sentry/browser": "^10.39.0",
     "@supabase/supabase-js": "^2.112.0",

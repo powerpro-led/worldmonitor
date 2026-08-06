@@ -45,6 +45,10 @@ src-tauri/sidecar/node/*
 # AI planning session state
 .planning/
 
+# Nitric local dev/build runtime cache (nitric start / nitric build) — see
+# docs/architecture/nitric-gcp-scaffold.md
+.nitric/
+
 # Compiled sebuf gateway bundle (built by scripts/build-sidecar-sebuf.mjs)
 api/[[][[].*.js
 

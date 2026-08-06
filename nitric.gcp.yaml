@@ -1,0 +1,39 @@
+# Deployment target config for `nitric build` / `nitric up`. Modeled directly
+# on platform/backend/nitric.gcp.yaml (sibling repo, same GCP project/region).
+#
+# Scaffold-only pass — this file has been validated/built locally but
+# `nitric up`/`nitric stack update` have NOT been run against it. See
+# docs/architecture/nitric-gcp-scaffold.md.
+
+# The provider to use and its published version
+provider: nitric/gcp@1.27.6
+
+# The target GCP region to deploy to — matches `platform`'s own deployment;
+# most of worldmonitor's data vendors (FRED, EIA, NASA FIRMS, ACLED, Finnhub,
+# INFOWAY) are US-based.
+region: us-central1
+
+# ID of the google cloud project to deploy into — confirmed 2026-08-06.
+gcp-project-id: apps-453107
+
+# Apply configuration to nitric APIs
+apis:
+  api:
+    description: "worldmonitor public REST API — ported api/*.ts Vercel Edge handlers"
+  mcp:
+    description: "worldmonitor agent-facing MCP server (already shipped surface, isolated for its own scaling/timeout tuning)"
+
+# Configure your deployed services
+config:
+  default:
+    cloudrun:
+      memory: 512
+      timeout: 60
+      min-instances: 0
+      max-instances: 10
+      concurrency: 80
+  # TODO before real deploy: relay/digest-notifications/publish-bootstrap-tiers
+  # are long-running processes (websocket relay, queue consumer, --loop seed)
+  # — min-instances: 0 means Cloud Run can scale them to zero between
+  # requests, which breaks a persistent connection. Needs an explicit
+  # min-instances: 1 override (cost tradeoff — not decided in this pass).

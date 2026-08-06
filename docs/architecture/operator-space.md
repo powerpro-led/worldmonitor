@@ -221,6 +221,35 @@ default.
 5. Track key count + approximate KV size as an ongoing signal (cheap to add to the seed
    pipeline itself) so growth is visible before it's a surprise bill.
 
+## Local data layer roadmap (2026-08-06)
+
+Build order deliberately mirrors the pipeline's own data flow — each stage feeds the
+next, so building out of order means building against something that doesn't exist yet.
+None of this depends on the separate Nitric/GCP migration thread
+([nitric-gcp-scaffold.md](nitric-gcp-scaffold.md)) — see "Full picture" above.
+
+1. **Seed scripts → Upstash freshness.** OPEN. Confirmed 2026-08-06: nothing currently
+   runs the ~156 `scripts/seed-*.mjs` on any schedule for this fork (no Vercel/Railway
+   deployment of its own exists — see [[supabase-migration-stage1]]). Upstash already
+   has real data (3,913 keys, checked live), but it's a frozen snapshot from ad-hoc
+   `nitric start` test sessions, not a running pipeline. Needs a decision on where these
+   run continuously — doesn't have to be GCP; a cheap always-on VPS, a resurrected
+   Railway project, or anything that can hold a cron are all on the table.
+2. **Shared Upstash store.** DONE — already exists, already the single source of truth,
+   nothing further needed here.
+3. **Operator's local SQLite store.** NOT STARTED. Schema design + the sync script
+   itself (direct Upstash REST pull → SQLite write, same shape as the seed scripts).
+   Buildable and testable today regardless of stage 1's outcome — the sync script's
+   *code* doesn't care whether Upstash is being kept fresh by a real pipeline or by an
+   operator's ad-hoc test run, only that it can read from Upstash right now, which it
+   can. Open sub-question: read-only-scoped Upstash token vs. reusing the seed scripts'
+   full read/write token — see "Open items" below.
+4. **`src-tauri/sidecar/local-api-server.mjs` repoint.** NOT STARTED. Currently proxies
+   to live Redis; needs to read from the local SQLite cache instead. First non-additive
+   edit to existing non-`gcp/` code in this whole design thread.
+5. **VS Code extension webview + local Agent (MCP over localhost).** NOT STARTED.
+   Genuinely zero code exists. Depends on stage 4's local read API existing first.
+
 ## Open items
 
 - ~~Auth model for the shared backend~~ — **decided 2026-08-06**: keep worldmonitor's

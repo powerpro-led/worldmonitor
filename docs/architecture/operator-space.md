@@ -40,11 +40,29 @@ managed backend you run on GCP**, chosen over Vercel/Railway because most data v
 
 ### Full picture
 
+**2026-08-06 update:** the KV row below was re-checked against Nitric's actual `kv()`
+API (Context7 docs, not assumption) during the redis.ts port stage. It's a plain
+get/set/delete/keys(prefix) document store — no TTL, no atomic increment, no sorted
+sets, no geo queries, no scripting. `server/_shared/redis.ts`'s ~101 call sites use a
+full Redis command surface (sorted sets, lists, sets, hashes, `GEOSEARCH`, a Lua `EVAL`
+compare-and-delete, `SET NX EX` distributed locks) that a plain KV store can't support
+without reimplementing large parts of Redis by hand — a correctness risk on the
+distributed-lock and ranking code paths, not attempted. **Decided: Upstash stays** as
+the shared store, unchanged, called the same way (REST API) from GCP Cloud Run as it is
+from Vercel Edge today. "Replaces Upstash" is dropped as a goal. Real Memorystore for
+Redis (true wire-compatible Redis, reachable via VPC connector) remains a future option
+if Upstash ever becomes the actual bottleneck, but requires a custom Nitric Pulumi
+provider (Go) since Memorystore isn't a stock `nitric.yaml` resource — not undertaken
+without a concrete reason. See
+[nitric-gcp-scaffold.md](nitric-gcp-scaffold.md#whats-explicitly-stubbed--deferred)
+for the scaffold-side record of this decision.
+
 ```
 seed scripts (Cloud Scheduler, GCP us-central1)
         │  ~156 scripts/seed-*.mjs pulling FRED/EIA/NASA FIRMS/ACLED/Finnhub/INFOWAY/AISSTREAM/…
         ▼
-shared Nitric-managed KV (GCP us-central1) — replaces Upstash, single source of truth
+shared Upstash Redis (unchanged) — same instance, same REST API, called from GCP Cloud Run
+instead of Vercel Edge; still the single source of truth
         │
         ▼
 Nitric API + MCP server (Cloud Run, GCP us-central1)
@@ -67,22 +85,23 @@ local SQLite cache (each operator's machine)
 |---|---|---|
 | `api/*.ts` (Vercel Edge handlers) + [api/mcp.ts](../../api/mcp.ts) | Vercel | Nitric API service on Cloud Run |
 | AIS relay, digest-notifications, seed crons (91 of 156 seed scripts) | Railway (`scripts/railway-services.json`) | Nitric services / GCP Cloud Scheduler jobs |
-| Redis (Upstash) | Upstash cloud | Nitric-managed `kv()` on GCP |
+| Redis (Upstash) | Upstash cloud | **Unchanged** — GCP Cloud Run calls the same Upstash REST API; `redis.ts` needs zero code change (2026-08-06 decision, see "Full picture" note above) |
 | Frontend SPA (`src/`, Vite/React) | Vercel static + Tauri desktop | VS Code webview extension (new — mirrors `apps/workos-vscode-web`) |
 | Tauri sidecar ([src-tauri/sidecar/local-api-server.mjs](../../src-tauri/sidecar/local-api-server.mjs)) | operator's machine, proxies to live Redis | Repointed at the local SQLite sync cache — becomes the local read API for both the VS Code extension and the local Agent |
 | Convex (`apiKeys`, `entitlements`, `mcpProTokens`, Clerk auth, Pro-tier billing) | Convex/Clerk | Likely cut entirely — this is SaaS billing/entitlement machinery for a public product this fork doesn't run. Confirm before deleting, don't port by default. |
 
 ### Sync, not replication
 
-Considered "shared Nitric KV → operator's local Nitric KV, kept in sync" and rejected the
-literal reading of that: **Nitric's `kv()` resource doesn't provide cross-environment
-sync.** It's a get/set/delete/scan abstraction over one provider's store per deployment —
-running Nitric locally is a dev-time emulator, not a production replication target. Two
-separate `kv()` declarations (GCP + local) are two unrelated stores with nothing to keep
-them consistent.
+Considered "shared KV → operator's local Nitric KV, kept in sync" and rejected the
+literal reading of that: even setting aside the 2026-08-06 decision to keep Upstash
+rather than move to Nitric's `kv()`, that resource **wouldn't have provided
+cross-environment sync anyway** — it's a get/set/delete/scan abstraction over one
+provider's store per deployment, and running Nitric locally is a dev-time emulator, not
+a production replication target. Two separate `kv()` declarations (GCP + local) would
+have been two unrelated stores with nothing to keep them consistent.
 
 What's actually needed, and simpler than real replication: a **one-way, periodic pull**
-from the shared KV into a local SQLite file — shaped exactly like the seed scripts
+from the shared store (Upstash) into a local SQLite file — shaped exactly like the seed scripts
 themselves (pull from a source, write to a local store), just one hop further downstream.
 This works because the data is:
 
@@ -156,10 +175,11 @@ default.
   ([docs/railway-seed-consolidation-runbook.md](../railway-seed-consolidation-runbook.md)).
   Do the same on GCP from day one — bundle seed scripts by cadence into a handful of
   Cloud Scheduler → Cloud Run jobs, not 156 separate triggers.
-- **Nitric KV** — priced per read/write op + storage, not flat. Since writes overwrite
+- **Upstash Redis** — unchanged from today (2026-08-06 decision: kept, not replaced by
+  Nitric `kv()`). Priced per read/write op + storage, not flat. Since writes overwrite
   capped keys rather than accumulate, storage stays roughly flat; write *frequency* (156
-  scripts × their intervals) is the actual cost driver, same shape as today's Upstash
-  usage.
+  scripts × their intervals) is the actual cost driver — same shape as today, no change
+  from moving compute to GCP.
 - **Egress for sync pulls** — the one cost dimension that scales with adoption:
   `operator count × sync frequency × snapshot size`. Worth watching as a real metric once
   there's more than a couple of operators; not worth pre-optimizing (delta sync) before
@@ -175,8 +195,9 @@ default.
 
 ### Strategy, summarized
 
-1. Port the existing cap/rolling-window discipline into the Nitric KV writes — don't lose
-   it in translation.
+1. ~~Port the existing cap/rolling-window discipline into the Nitric KV writes~~ — moot:
+   Upstash stays, `redis.ts` and its cap discipline (`UCDP_MAX_EVENTS`, etc.) are
+   untouched (2026-08-06 decision).
 2. Never let large static/binary assets (map tiles, imagery) into the KV/sync pipeline —
    CDN, direct fetch, unchanged.
 3. Bundle seed jobs into scheduled groups on GCP the same way `platform` already did on

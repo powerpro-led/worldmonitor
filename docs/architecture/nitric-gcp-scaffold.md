@@ -47,14 +47,21 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
 
 ## What's explicitly stubbed / deferred (not this pass)
 
-- **KV / Upstash Redis.** `gcp/kv/resources.ts` declares one `kv()` resource as a
-  placeholder. `server/_shared/redis.ts`'s ~101 call sites are **untouched** — still
-  talking to Upstash. Swapping the implementation behind that existing abstraction is
-  real behavioral work (different command shape: ioredis/Upstash REST vs. Nitric's
-  get/set/delete/scan) and is the next real port stage, not attempted here.
-  operator-space.md's cap/rolling-window discipline (`UCDP_MAX_EVENTS`,
-  `OREF_PERSIST_MAX_WAVES`, etc.) has to be carried over deliberately when that
-  happens — it's convention, not automatic.
+- **KV / Upstash Redis — decided, not deferred.** 2026-08-06: checked Nitric's `kv()`
+  API against the actual command surface `server/_shared/redis.ts`'s ~101 call sites
+  use (grepped every Redis verb in the codebase) — sorted sets, lists, sets, hashes,
+  `GEOSEARCH`, a Lua `EVAL` compare-and-delete, `SET NX EX` distributed locks. Nitric's
+  `kv()` (confirmed via Context7 docs) is a plain get/set/delete/keys(prefix) document
+  store with none of that. Reimplementing it by hand would risk the distributed-lock and
+  resilience-ranking code paths for no clear benefit. **Decision: keep Upstash,
+  unchanged.** `gcp/kv/resources.ts` (the placeholder `kv()` declaration from the
+  scaffold pass) has been deleted — nothing referenced it. `redis.ts` needs zero code
+  change; GCP Cloud Run calls the same Upstash REST API Vercel Edge calls today. Real
+  Memorystore for Redis is a possible future path if Upstash ever becomes a measured
+  bottleneck, but needs a custom Nitric Pulumi provider (Go) since it isn't a stock
+  `nitric.yaml` resource. See
+  [operator-space.md](operator-space.md#2026-08-04-this-fork-is-not-worldmonitorapp--full-self-host-redesign)
+  for the full writeup.
 - **Cloud Scheduler cadences.** Every `schedule()` in `gcp/scheduler/main.ts` uses one
   placeholder rate (`DEFAULT_SCAFFOLD_RATE = '30 minutes'`).
   `scripts/railway-services.json` doesn't carry per-script intervals — real cadences
@@ -122,12 +129,12 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
   right local-dev validation path). Nothing in this pass has touched the live
   `apps-453107` project.
 
-## Next steps (not started)
+## Next steps
 
 1. Fill in real Cloud Scheduler cadences per script.
 2. Decide + apply `min-instances` overrides for the 5 long-running services.
-3. Port `server/_shared/redis.ts` to the `gcp/kv/resources.ts` store (the actual
-   behavioral migration — this pass only declared the resource).
+3. ~~Port `server/_shared/redis.ts` to `gcp/kv/resources.ts`~~ — **resolved 2026-08-06,
+   not needed.** Upstash stays; see "What's explicitly stubbed / deferred" above.
 4. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a
    different adapter shape).
 5. Resolve operator-space.md's remaining open items (auth model, VS Code extension

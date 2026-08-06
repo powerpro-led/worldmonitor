@@ -31,13 +31,17 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
   than a hand-copied list. Each handler spawns the **existing, unmodified** script as a
   child process — not an in-process import, because `runSeed()` calls `process.exit()`
   on completion, which would kill a long-lived container if imported directly.
-- **5 long-running services wired directly in root `nitric.yaml`** (`ais-relay.cjs`,
-  `seed-digest-notifications.mjs`, the 2 seed-bundle dockerfile entries,
-  `publish-bootstrap-tiers.mjs --loop`) — reuse their **existing** `Dockerfile.*` files
-  unchanged. No Nitric SDK wrapper: none of them import `@nitric/sdk` yet, and Nitric
-  doesn't require one — any container matched in `nitric.yaml`'s `services:` list
-  deploys as its own Cloud Run service regardless of whether it uses Nitric-managed
-  resources.
+- **8 long-running services wired directly in root `nitric.yaml`**: the original 5
+  (`ais-relay.cjs`, `seed-digest-notifications.mjs`, the 2 seed-bundle dockerfile
+  entries, `publish-bootstrap-tiers.mjs --loop`) reuse their **existing** `Dockerfile.*`
+  files unchanged; 3 more (`process-simulation-tasks.mjs`,
+  `process-deep-forecast-tasks.mjs`, `scenario-worker.mjs`) were added 2026-08-06 with
+  **new** `Dockerfile.*` files (they had none — Railway ran them via bare nixpacks
+  detection) after being discovered mid-way through the Cloud Scheduler cadence pass —
+  see "What's explicitly stubbed / deferred" below. No Nitric SDK wrapper: none of them
+  import `@nitric/sdk`, and Nitric doesn't require one — any container matched in
+  `nitric.yaml`'s `services:` list deploys as its own Cloud Run service regardless of
+  whether it uses Nitric-managed resources.
 - **Typecheck**: `npx tsc --noEmit -p tsconfig.gcp.json` (new config, scoped to `gcp/`
   + `api/` + `server/`) surfaces exactly the same 4 pre-existing errors documented in
   the Stage 3 Supabase migration (`api/user-prefs.ts` unused var,
@@ -78,24 +82,33 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
   `nitric start --ci` showed `gcp-scheduler-main [Running]` with no crash (the file
   throws at module load if any entry is unmapped — didn't fire).
 
-  **Found while doing this, not assumed away**: 3 of those 31 `nixpacks-*` entries
-  (`process-simulation-tasks.mjs`, `process-deep-forecast-tasks.mjs`,
+  **Found while doing this, wired the same day, not left deferred**: 3 of those 31
+  `nixpacks-*` entries (`process-simulation-tasks.mjs`, `process-deep-forecast-tasks.mjs`,
   `scenario-worker.mjs`) are actually **always-on Railway workers**, not periodic
   crons — the scaffold's original assumption ("`nixpacks-*` = one-off cron,
   `dockerfile` = long-running") was wrong for these three. All default to an infinite
   poll/block loop (`for (;;) { ...; await sleep(...) }` or Redis `BLMOVE`) unless
   invoked with `--once`, and the runbook's own "Long-running services" table already
-  lists two of them as always-on. Registering these via `schedule()` would spawn a
-  child process that never exits, hanging that scheduled invocation permanently. They're
-  now explicitly excluded from `gcp/scheduler/main.ts`'s loop (`ALWAYS_ON_NOT_SCHEDULED`)
-  rather than mis-scheduled. **New next-step**: these three need real long-running
-  Cloud Run service wiring in root `nitric.yaml` (new Dockerfiles, same treatment as the
-  existing 5 `dockerfile`-mode services) — not attempted in this pass, added to "Next
-  steps" below.
-- **min-instances for the 5 (soon likely 8) long-running services.** `nitric.gcp.yaml`'s
-  default `min-instances: 0` (scale-to-zero) breaks a persistent websocket relay or queue
-  consumer. Needs an explicit override — cost tradeoff, not decided in this pass. The 3
-  newly-discovered always-on workers above will need the same treatment once wired.
+  lists two of them as always-on. Registering these via `schedule()` would have spawned a
+  child process that never exits, hanging that scheduled invocation permanently — instead
+  excluded from `gcp/scheduler/main.ts`'s loop (`ALWAYS_ON_NOT_SCHEDULED`) and wired as 3
+  new long-running Cloud Run services (`Dockerfile.process-simulation-tasks`,
+  `Dockerfile.process-deep-forecast-tasks`, `Dockerfile.scenario-worker`, matched in root
+  `nitric.yaml` alongside the original 5). No existing Dockerfiles to reuse — Railway ran
+  these via bare nixpacks detection, so these 3 are genuinely new images, following the
+  "ship the whole `scripts/` tree, don't cherry-pick imports" lesson
+  `Dockerfile.seed-bundle-portwatch-port-activity` /
+  `Dockerfile.seed-bundle-resilience-validation` already document (PRs #3041/#3052/#3196
+  — cherry-picked COPY lists kept breaking on new local imports). Verified with a real
+  `nitric start --ci`: all 10 services came up `[Running]`, and the 3 new workers showed
+  their actual poll/listen behavior in logs (`scenario-worker`: "listening on
+  scenario-queue:pending"; both forecast workers: `Starting (once=false, ...)` with
+  repeated `Queue check: 0 task(s)` lines) — not a crash, not a hang.
+- **min-instances for the now-8 long-running services.** `nitric.gcp.yaml`'s default
+  `min-instances: 0` (scale-to-zero) breaks a persistent websocket relay or queue
+  consumer — now also true for the 3 newly-wired workers above (their `TODO` comment in
+  `nitric.gcp.yaml` was updated to list them). Needs an explicit override — cost
+  tradeoff, not decided in this pass.
 - **The 38 skipped `api/` files** — visible in `routes.generated.ts`'s header comment,
   not silently dropped:
   - `api/[...notfound].ts` — catch-all dynamic segment, unsupported by this generator
@@ -159,13 +172,12 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
 
 1. ~~Fill in real Cloud Scheduler cadences per script~~ — **done 2026-08-06**. See
    "What's explicitly stubbed / deferred" above for what was found along the way.
-2. **New, found 2026-08-06**: wire `process-simulation-tasks.mjs`,
-   `process-deep-forecast-tasks.mjs`, `scenario-worker.mjs` as real long-running Cloud
-   Run services (root `nitric.yaml`, new Dockerfiles) — they're always-on Railway
-   workers, not periodic crons, and are currently excluded from
-   `gcp/scheduler/main.ts` rather than mis-scheduled. Not attempted yet.
-3. Decide + apply `min-instances` overrides for the 5 (soon 8, pending item 2)
-   long-running services.
+2. ~~Wire `process-simulation-tasks.mjs`, `process-deep-forecast-tasks.mjs`,
+   `scenario-worker.mjs` as real long-running Cloud Run services~~ — **done 2026-08-06**,
+   same session as item 1 (found while doing it). New Dockerfiles + `nitric.yaml`
+   entries, verified with `nitric start --ci`. See "What's explicitly stubbed /
+   deferred" above.
+3. Decide + apply `min-instances` overrides for the now-8 long-running services.
 4. ~~Port `server/_shared/redis.ts` to `gcp/kv/resources.ts`~~ — **resolved 2026-08-06,
    not needed.** Upstash stays; see "What's explicitly stubbed / deferred" above.
 5. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a

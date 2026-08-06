@@ -35,6 +35,21 @@ services:
   - match: scripts/publish-bootstrap-tiers.mjs
     start: node $SERVICE_PATH --loop
     runtime: publish-bootstrap-tiers
+  # 3 more always-on services, added 2026-08-06 after discovering (while
+  # filling in gcp/scheduler/main.ts's cadences) that these `deployMode:
+  # "nixpacks-root-scripts"` registry entries are actually always-on Railway
+  # workers, not periodic crons — see docs/architecture/nitric-gcp-scaffold.md.
+  # New Dockerfiles (not reused from Railway, which used bare nixpacks
+  # detection) since GCP/Nitric needs an explicit image.
+  - match: scripts/process-simulation-tasks.mjs
+    start: node $SERVICE_PATH
+    runtime: process-simulation-tasks
+  - match: scripts/process-deep-forecast-tasks.mjs
+    start: node $SERVICE_PATH
+    runtime: process-deep-forecast-tasks
+  - match: scripts/scenario-worker.mjs
+    start: node $SERVICE_PATH
+    runtime: scenario-worker
 
 runtimes:
   api:
@@ -57,4 +72,13 @@ runtimes:
     context: .
   publish-bootstrap-tiers:
     dockerfile: Dockerfile.publish-bootstrap-tiers
+    context: .
+  process-simulation-tasks:
+    dockerfile: Dockerfile.process-simulation-tasks
+    context: .
+  process-deep-forecast-tasks:
+    dockerfile: Dockerfile.process-deep-forecast-tasks
+    context: .
+  scenario-worker:
+    dockerfile: Dockerfile.scenario-worker
     context: .

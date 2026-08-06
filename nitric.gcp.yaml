@@ -33,7 +33,9 @@ config:
       max-instances: 10
       concurrency: 80
   # TODO before real deploy: relay/digest-notifications/publish-bootstrap-tiers
-  # are long-running processes (websocket relay, queue consumer, --loop seed)
-  # — min-instances: 0 means Cloud Run can scale them to zero between
+  # plus process-simulation-tasks/process-deep-forecast-tasks/scenario-worker
+  # (added 2026-08-06, see nitric.yaml) are all long-running processes
+  # (websocket relay, queue consumers, --loop seed, poll/BLMOVE loops) —
+  # min-instances: 0 means Cloud Run can scale them to zero between
   # requests, which breaks a persistent connection. Needs an explicit
   # min-instances: 1 override (cost tradeoff — not decided in this pass).

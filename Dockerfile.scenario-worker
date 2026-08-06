@@ -1,0 +1,41 @@
+# =============================================================================
+# Scenario Engine Worker (always-on Railway service — NOT a cron)
+# =============================================================================
+# Runs scripts/scenario-worker.mjs, which its own header docblock states
+# directly: "Railway config: cronSchedule: <none> (always-on long-running
+# process)". Atomically dequeues scenario jobs from Redis via BLMOVE
+# (blocks on the connection waiting for queue items — scripts/railway-
+# services.json's `deployMode: "nixpacks-root-scripts"` for this entry does
+# NOT mean periodic cron the way most nixpacks-* entries do; found
+# 2026-08-06 while filling in gcp/scheduler/main.ts's cadences — see
+# docs/architecture/nitric-gcp-scaffold.md), runs computeScenario(), and
+# writes results back to Redis with a 24h TTL. Backs
+# server/worldmonitor/scenario/v1/run-scenario.ts's enqueue path.
+#
+# Much lighter dependency footprint than the two seed-forecasts.mjs-backed
+# workers (Dockerfile.process-simulation-tasks / .process-deep-forecast-
+# tasks) — scenario-worker.mjs imports only ./_seed-utils.mjs directly. Still
+# shipping the full scripts/ tree rather than cherry-picking, for the same
+# reason documented there: _seed-utils.mjs and its own transitive imports
+# have changed under scripts before without every consuming Dockerfile
+# being updated (PRs #3041/#3052/#3196).
+#
+# Required env (Railway/Cloud Run service vars):
+#   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
+# =============================================================================
+
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+
+WORKDIR /app
+
+# Install scripts/ runtime dependencies.
+COPY scripts/package.json scripts/package-lock.json ./scripts/
+RUN npm ci --prefix scripts --omit=dev
+
+# Ship the full scripts/ tree — see rationale above.
+COPY scripts/ ./scripts/
+COPY shared/ ./shared/
+
+ENV NODE_OPTIONS="--max-old-space-size=1024 --dns-result-order=ipv4first"
+
+CMD ["node", "scripts/scenario-worker.mjs"]

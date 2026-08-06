@@ -1,0 +1,51 @@
+# =============================================================================
+# Simulation Worker (always-on Railway service — NOT a cron)
+# =============================================================================
+# Runs scripts/process-simulation-tasks.mjs, which without --once (the
+# invocation used here) polls scripts/seed-forecasts.mjs's exported
+# runSimulationWorker() in a `for (;;) { ...; await sleep(30_000); }` loop,
+# dequeuing scenario-simulation jobs enqueued by
+# server/worldmonitor/scenario/v1/run-scenario.ts. See runbook's
+# "Long-running services" table (scripts/railway-services.json's
+# `deployMode: "nixpacks-root-scripts"` for this entry does NOT mean
+# periodic cron the way most nixpacks-* entries do — discovered 2026-08-06
+# while filling in gcp/scheduler/main.ts's cadences; see
+# docs/architecture/nitric-gcp-scaffold.md).
+#
+# Ship the full scripts/ tree rather than cherry-picking imports.
+# seed-forecasts.mjs is ~19k lines with a wide local-import fan-out
+# (_forecast-dashboard, _r2-storage, _llm-json, _ema-threat-engine, etc.);
+# hand-picking files here would repeat the exact mistake
+# Dockerfile.seed-bundle-portwatch-port-activity and
+# Dockerfile.seed-bundle-resilience-validation's headers document (PRs
+# #3041/#3052/#3196 — cherry-picked COPY lists broke on every new local
+# import nobody remembered to add here). 2MB extra image size buys
+# robustness to the next import.
+#
+# Required env (Railway/Cloud Run service vars):
+#   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
+#   OPENROUTER_API_KEY, GROQ_API_KEY   (forecast LLM calls — callForecastLLM)
+# Optional:
+#   FORECAST_LLM_*_PROVIDER_ORDER / FORECAST_LLM_*_MODEL_OPENROUTER  (routing overrides)
+#   AXIOM_API_TOKEN     (usage telemetry)
+#   WM_API_BASE_URL, WORLDMONITOR_RELAY_KEY
+# =============================================================================
+
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+
+WORKDIR /app
+
+# Install scripts/ runtime dependencies (@aws-sdk/client-s3 for _r2-storage.mjs, etc.)
+COPY scripts/package.json scripts/package-lock.json ./scripts/
+RUN npm ci --prefix scripts --omit=dev
+
+# Ship the full scripts/ tree — see rationale above.
+COPY scripts/ ./scripts/
+COPY shared/ ./shared/
+
+ENV NODE_OPTIONS="--max-old-space-size=1024 --dns-result-order=ipv4first"
+
+# No --once: this is the always-on poll-loop invocation, matching how
+# Railway runs it today (per the script's own header, the bare invocation
+# is the "poll loop (default)" mode).
+CMD ["node", "scripts/process-simulation-tasks.mjs"]

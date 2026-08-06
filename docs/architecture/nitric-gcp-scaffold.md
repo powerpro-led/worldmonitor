@@ -142,7 +142,15 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
    `X-WorldMonitor-Key`/OAuth scheme; VS Code extension is read-only webview only, no
    token storage/manual sync in this pass. See operator-space.md's "Open items".
 6. A deliberate, separately-confirmed `nitric up` against a throwaway/staging stack —
-   never directly at whatever GCP calls "production" for this project.
+   never directly at whatever GCP calls "production" for this project. **Mechanism now
+   exists** (2026-08-06): `.github/workflows/nitric-deploy.yml`, `workflow_dispatch`
+   only (no push trigger — this repo's `api/`/`scripts/` trees change on nearly every
+   push during this dev phase), gated behind a typed `DEPLOY` confirmation input.
+   Modeled on `platform/backend`'s own working `nitric-deploy.yml`. **Not yet runnable**
+   — needs 3 repo secrets set first: `GCP_CREDENTIALS` (service account JSON key for
+   `apps-453107`), `PULUMI_ACCESS_TOKEN`, `PRODUCTION_ENV_FILE` (the runtime `.env`
+   contents). None of those are set as of this writing; the workflow file existing is
+   not itself authorization to run it.
 7. Only after 6: build the local sync pipeline (shared Upstash → local SQLite, via the
    now-deployed Nitric API) and the VS Code extension webview against it. Can be
    prototyped earlier against `nitric start`'s local dev gateway if useful, but a real

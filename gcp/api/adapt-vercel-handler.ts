@@ -17,6 +17,7 @@
  */
 
 import type { HttpContext } from '@nitric/sdk';
+import { appendQueryParams } from './query-params';
 
 /** Matches Vercel Edge's runtime signature — some handlers accept the optional
  * second `{ waitUntil }` context arg (background-work extension point), most don't. */
@@ -70,9 +71,7 @@ export function adaptVercelHandler(handler: VercelEdgeHandler) {
     const { req } = ctx;
 
     const url = new URL(req.path, INTERNAL_BASE_URL);
-    for (const [key, values] of Object.entries(req.query ?? {})) {
-      for (const value of values) url.searchParams.append(key, value);
-    }
+    appendQueryParams(url.searchParams, req.query);
 
     const hasBody = !['GET', 'HEAD'].includes(req.method);
     const webRequest = new Request(url, {

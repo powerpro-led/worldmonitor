@@ -22,7 +22,8 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
   Vercel Edge functions, i.e. already Fetch-API-based). Regenerate after any `api/`
   change with `node scripts/generate-nitric-routes.mjs` — the output is checked in so
   the diff is reviewable, same discipline as this repo's other generated files.
-- **`gcp/api/main.ts`** — two gateways: `api` (the 105 generated routes) and `mcp`
+- **`gcp/api/main.ts`** — two gateways: `api` (the 105 generated routes, plus 2 more
+  hand-wired — `og-story.js`/`story.js`, see below) and `mcp`
   (`api/mcp.ts` alone, kept separate per operator-space.md's call-out of the MCP
   surface as worldmonitor's most-finished, most agent-facing piece — isolated here so
   it can get its own timeout/scaling config later without this pass deciding that).
@@ -111,18 +112,49 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
   tradeoff, not decided in this pass.
 - **The 38 skipped `api/` files** — visible in `routes.generated.ts`'s header comment,
   not silently dropped:
-  - `api/[...notfound].ts` — catch-all dynamic segment, unsupported by this generator
-    (low-value 404 handler; can be hand-added later).
+  - `api/og-story.js`, `api/story.js` — **hand-wired 2026-08-06.** These are genuinely
+    different runtime (no `runtime: 'edge'` config → Vercel Node.js serverless, not
+    Edge; `(req, res)` calling convention, not Fetch API `Request`/`Response`) —
+    `adapt-vercel-handler.ts` can't wrap them. New `gcp/api/adapt-node-handler.ts`
+    fakes just the subset of Node's `req`/`res` API these two actually call
+    (`req.url`, `req.headers[...]`, `res.setHeader`, `res.status().send()`,
+    `res.writeHead()`, `res.end()`) — deliberately not a full polyfill. Registered by
+    hand in `gcp/api/main.ts` (GET only — neither handler branches on method).
+    Live-verified against `nitric start`: `/api/og-story?c=US` returned real SVG,
+    `/api/story?c=US` 302-redirected for a normal UA and served correct OG meta tags
+    for a `Twitterbot` UA.
+  - `api/[...notfound].ts` — **confirmed genuinely unsupported by Nitric itself, not
+    just this generator.** Tried 3 wildcard route syntaxes directly against a live
+    `nitric start` (`/api/:path*`, `/api/*`, `/api/*catchall`) — none matched anything
+    beyond one literal path segment; every deeper/unmatched path 500s with Nitric's own
+    "no worker registered for Api api on route" error (not even a generic 404).
+    Confirmed empirically, not assumed from docs (Nitric's reference docs say nothing
+    either way about wildcards). There's currently no way to register this handler.
+    Whether GCP's real deployed ingress behaves differently once a real `nitric up`
+    happens is unverified — check that for real, don't assume.
   - `api/data/city-coords.ts` — no edge runtime config (data file, not a route).
   - 34 files under `api/mcp/**` — implementation details of `api/mcp.ts`'s handler
     (auth, dispatch, registry, resources, prompts, telemetry, UI apps), correctly
     excluded since they don't carry their own route config.
-  - `api/og-story.js`, `api/story.js` — genuinely different runtime (no `runtime:
-    'edge'` config at all → Vercel Node.js serverless, not Edge). These need a
-    different adapter (Node `req`/`res` shape, not Fetch API) — out of scope for
-    `adapt-vercel-handler.ts` as written.
-- **Auth model, VS Code extension scope, sync cadence** — all still open per
-  operator-space.md's "Open items" section; untouched by this pass.
+- **Real bug found and fixed while wiring the above, not something to leave
+  hidden**: `req.query` on `HttpContext` is TYPED `Record<string, string[]>`
+  (`@nitric/sdk`'s own `.d.ts`) but a live `nitric start` local membrane was observed
+  actually delivering plain **strings** for single-valued query params (e.g.
+  `{ c: "US" }`, not `{ c: ["US"] }`). `adapt-vercel-handler.ts`'s original
+  `for (const value of values) url.searchParams.append(...)` — written assuming the
+  documented array type — iterated a bare string's individual **characters** when that
+  happened, silently truncating every multi-character GET query param to its first
+  character. This affected **all 105 already-wired routes**, not just the 2 new ones —
+  confirmed via `?testparam=multichar123` reconstructing as
+  `testparam=m&testparam=u&testparam=l&...`. New shared `gcp/api/query-params.ts`
+  (`appendQueryParams`) handles both shapes defensively and is now used by both
+  adapters. Re-verified after the fix: the same test param round-tripped correctly,
+  and `/api/story?c=US` correctly resolved "United States" (previously would have
+  silently resolved country code `U`). Not verified against a real deployed Cloud Run
+  instance — the local membrane's behavior isn't guaranteed to match GCP's.
+- **Auth model, VS Code extension scope** — resolved same day, see
+  [operator-space.md](operator-space.md#open-items). **Sync cadence** — still open,
+  same doc.
 
 ## Running `nitric start` locally
 
@@ -180,8 +212,13 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
 3. Decide + apply `min-instances` overrides for the now-8 long-running services.
 4. ~~Port `server/_shared/redis.ts` to `gcp/kv/resources.ts`~~ — **resolved 2026-08-06,
    not needed.** Upstash stays; see "What's explicitly stubbed / deferred" above.
-5. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a
-   different adapter shape).
+5. ~~Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js`~~ — **done
+   2026-08-06** for 2 of 3. `og-story.js`/`story.js` hand-wired via a new
+   `adapt-node-handler.ts`, live-verified. `[...notfound].ts` confirmed genuinely
+   unsupported by Nitric itself (no wildcard route syntax exists, tried 3 candidates
+   live) — not a to-do, a platform limitation to revisit only if Nitric ever adds one.
+   Also found + fixed a real query-param-corruption bug affecting all 105 pre-existing
+   routes along the way. See "What's explicitly stubbed / deferred" above.
 6. ~~Resolve operator-space.md's remaining open items (auth model, VS Code extension
    scope)~~ — **resolved 2026-08-06**: keep worldmonitor's existing
    `X-WorldMonitor-Key`/OAuth scheme; VS Code extension is read-only webview only, no

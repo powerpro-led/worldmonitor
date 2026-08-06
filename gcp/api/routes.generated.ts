@@ -12,7 +12,7 @@
  *
  * SKIPPED (visible gap, not silently dropped — see docs/architecture/
  * nitric-gcp-scaffold.md for what each of these needs):
- *   - api/[...notfound].ts (catch-all [...] segment unsupported by this generator)
+ *   - api/[...notfound].ts (catch-all [...] segment — confirmed 2026-08-06 that Nitric itself has no wildcard route syntax, not just unsupported by this generator; see docs/architecture/nitric-gcp-scaffold.md)
  *   - api/data/city-coords.ts (no edge runtime config)
  *   - api/mcp/auth.ts (no edge runtime config)
  *   - api/mcp/billing-denial.ts (no edge runtime config)

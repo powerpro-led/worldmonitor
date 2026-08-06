@@ -111,7 +111,7 @@ for (const absFile of allFiles) {
 
   const routePath = toRoutePath(absFile);
   if (routePath === null) {
-    skipped.push({ file: path.relative(REPO_ROOT, absFile), reason: 'catch-all [...] segment unsupported by this generator' });
+    skipped.push({ file: path.relative(REPO_ROOT, absFile), reason: 'catch-all [...] segment — confirmed 2026-08-06 that Nitric itself has no wildcard route syntax, not just unsupported by this generator; see docs/architecture/nitric-gcp-scaffold.md' });
     continue;
   }
 

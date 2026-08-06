@@ -62,14 +62,40 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
   `nitric.yaml` resource. See
   [operator-space.md](operator-space.md#2026-08-04-this-fork-is-not-worldmonitorapp--full-self-host-redesign)
   for the full writeup.
-- **Cloud Scheduler cadences.** Every `schedule()` in `gcp/scheduler/main.ts` uses one
-  placeholder rate (`DEFAULT_SCAFFOLD_RATE = '30 minutes'`).
-  `scripts/railway-services.json` doesn't carry per-script intervals — real cadences
-  live in each script's header docblock / Railway cron config and need filling in
-  individually before any of this runs for real.
-- **min-instances for the 5 long-running services.** `nitric.gcp.yaml`'s default
-  `min-instances: 0` (scale-to-zero) breaks a persistent websocket relay or queue
-  consumer. Needs an explicit override — cost tradeoff, not decided in this pass.
+- **Cloud Scheduler cadences — done, not deferred.** 2026-08-06:
+  `gcp/scheduler/main.ts` no longer uses `DEFAULT_SCAFFOLD_RATE`. Every one of the 28
+  genuinely periodic `nixpacks-*` entries now has a real cadence, sourced (in priority
+  order) from an exact cron expression already documented in
+  [railway-seed-consolidation-runbook.md](../railway-seed-consolidation-runbook.md) or a
+  script's own header, a script's own "`N`× the cron interval" TTL comment, or the
+  runbook's TTL-inferred table. Two entries (`seed-bundle-resilience-recovery`,
+  `seed-service-statuses`) have no cron source anywhere in the repo — flagged inline in
+  the file with an explicit comment rather than guessed, confirm against the live
+  Railway dashboard before a real deploy. Verified: `npx tsc --noEmit -p
+  tsconfig.gcp.json` still clean (same 4 pre-existing errors), a Python cross-check
+  confirmed exact 1:1 coverage between `scripts/railway-services.json`'s 31 `nixpacks-*`
+  entries and the file's `CADENCES` map + exclusion set (no typos, nothing missing), and
+  `nitric start --ci` showed `gcp-scheduler-main [Running]` with no crash (the file
+  throws at module load if any entry is unmapped — didn't fire).
+
+  **Found while doing this, not assumed away**: 3 of those 31 `nixpacks-*` entries
+  (`process-simulation-tasks.mjs`, `process-deep-forecast-tasks.mjs`,
+  `scenario-worker.mjs`) are actually **always-on Railway workers**, not periodic
+  crons — the scaffold's original assumption ("`nixpacks-*` = one-off cron,
+  `dockerfile` = long-running") was wrong for these three. All default to an infinite
+  poll/block loop (`for (;;) { ...; await sleep(...) }` or Redis `BLMOVE`) unless
+  invoked with `--once`, and the runbook's own "Long-running services" table already
+  lists two of them as always-on. Registering these via `schedule()` would spawn a
+  child process that never exits, hanging that scheduled invocation permanently. They're
+  now explicitly excluded from `gcp/scheduler/main.ts`'s loop (`ALWAYS_ON_NOT_SCHEDULED`)
+  rather than mis-scheduled. **New next-step**: these three need real long-running
+  Cloud Run service wiring in root `nitric.yaml` (new Dockerfiles, same treatment as the
+  existing 5 `dockerfile`-mode services) — not attempted in this pass, added to "Next
+  steps" below.
+- **min-instances for the 5 (soon likely 8) long-running services.** `nitric.gcp.yaml`'s
+  default `min-instances: 0` (scale-to-zero) breaks a persistent websocket relay or queue
+  consumer. Needs an explicit override — cost tradeoff, not decided in this pass. The 3
+  newly-discovered always-on workers above will need the same treatment once wired.
 - **The 38 skipped `api/` files** — visible in `routes.generated.ts`'s header comment,
   not silently dropped:
   - `api/[...notfound].ts` — catch-all dynamic segment, unsupported by this generator
@@ -131,17 +157,24 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
 
 ## Next steps
 
-1. Fill in real Cloud Scheduler cadences per script.
-2. Decide + apply `min-instances` overrides for the 5 long-running services.
-3. ~~Port `server/_shared/redis.ts` to `gcp/kv/resources.ts`~~ — **resolved 2026-08-06,
+1. ~~Fill in real Cloud Scheduler cadences per script~~ — **done 2026-08-06**. See
+   "What's explicitly stubbed / deferred" above for what was found along the way.
+2. **New, found 2026-08-06**: wire `process-simulation-tasks.mjs`,
+   `process-deep-forecast-tasks.mjs`, `scenario-worker.mjs` as real long-running Cloud
+   Run services (root `nitric.yaml`, new Dockerfiles) — they're always-on Railway
+   workers, not periodic crons, and are currently excluded from
+   `gcp/scheduler/main.ts` rather than mis-scheduled. Not attempted yet.
+3. Decide + apply `min-instances` overrides for the 5 (soon 8, pending item 2)
+   long-running services.
+4. ~~Port `server/_shared/redis.ts` to `gcp/kv/resources.ts`~~ — **resolved 2026-08-06,
    not needed.** Upstash stays; see "What's explicitly stubbed / deferred" above.
-4. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a
+5. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a
    different adapter shape).
-5. ~~Resolve operator-space.md's remaining open items (auth model, VS Code extension
+6. ~~Resolve operator-space.md's remaining open items (auth model, VS Code extension
    scope)~~ — **resolved 2026-08-06**: keep worldmonitor's existing
    `X-WorldMonitor-Key`/OAuth scheme; VS Code extension is read-only webview only, no
    token storage/manual sync in this pass. See operator-space.md's "Open items".
-6. A deliberate, separately-confirmed `nitric up` against a throwaway/staging stack —
+7. A deliberate, separately-confirmed `nitric up` against a throwaway/staging stack —
    never directly at whatever GCP calls "production" for this project. **Mechanism now
    exists** (2026-08-06): `.github/workflows/nitric-deploy.yml`, `workflow_dispatch`
    only (no push trigger — this repo's `api/`/`scripts/` trees change on nearly every
@@ -151,7 +184,7 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
    `apps-453107`), `PULUMI_ACCESS_TOKEN`, `PRODUCTION_ENV_FILE` (the runtime `.env`
    contents). None of those are set as of this writing; the workflow file existing is
    not itself authorization to run it.
-7. Only after 6: build the local sync pipeline (shared Upstash → local SQLite, via the
+8. Only after 7: build the local sync pipeline (shared Upstash → local SQLite, via the
    now-deployed Nitric API) and the VS Code extension webview against it. Can be
    prototyped earlier against `nitric start`'s local dev gateway if useful, but a real
    end-to-end test needs a live Cloud Run endpoint.

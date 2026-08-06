@@ -274,13 +274,14 @@ None of this depends on the separate Nitric/GCP migration thread
   webview over the local SQLite-backed read API only. No auth-token storage or manual
   "sync now" control in the extension itself for this pass — background periodic sync is
   the only data path. Revisit if that proves too unresponsive for the persona once built.
-- **New, 2026-08-06**: since the sync path talks directly to Upstash (not through the
-  API layer), the operator's local machine ends up holding a real Upstash REST
-  credential. Should the sync script use a separate **read-only-scoped** Upstash token
-  (Upstash's console supports issuing read-only tokens) rather than reusing the seed
-  scripts' full read/write token, to limit blast radius if an operator's laptop is
-  compromised? Not decided — worth resolving before writing the sync script's
-  credential-loading code, not after.
+- ~~Read-only-scoped Upstash token vs. reusing the seed scripts' full read/write
+  token~~ — **decided 2026-08-06**: read-only-scoped. Limits blast radius if an
+  operator's laptop is compromised — the sync script never needs write access.
+  **Manual prerequisite, not yet done**: issue a read-only token in the Upstash
+  dashboard for the `up-dragon-42947` instance, add it to `.env.local` as
+  `UPSTASH_REDIS_REST_READONLY_TOKEN` (name not yet finalized in code). The sync
+  script should fail loudly if this var is absent rather than silently falling back to
+  the full read/write token.
 - The sketch this doc is derived from also has a "CCAM" section — daily agent loop items
   (OKR check-in, effort, collaboration/spawn-task, pickup, implementation) — not yet tied to
   any concrete repo or doc. Needs a follow-up conversation before it becomes actionable here.

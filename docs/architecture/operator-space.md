@@ -57,26 +57,39 @@ without a concrete reason. See
 [nitric-gcp-scaffold.md](nitric-gcp-scaffold.md#whats-explicitly-stubbed--deferred)
 for the scaffold-side record of this decision.
 
+**2026-08-06 correction**: this diagram previously routed the sync path through "Nitric
+API + MCP server (Cloud Run)" as an intermediate hop. That contradicted the "Sync, not
+replication" section below, which always described the pull as going straight from
+Upstash — "shaped exactly like the seed scripts themselves (pull from a source, write to
+a local store)". The agreed flow is, and was always meant to be: **seed scripts → shared
+Upstash store → operator's local SQLite store → local Agent / VS Code extension webview**.
+Fixed here — the sync path does not depend on the Nitric/GCP API layer at all. Practical
+consequence: since Upstash is already a live, always-on managed service (reachable today
+with the credentials already in `.env.local`, no deploy of anything required), **the
+local data layer's sync path isn't blocked on the GCP/Nitric migration being finished, or
+on anything being deployed anywhere.** The Nitric API + MCP server (Cloud Run) is a
+*separate* consumer of the same Upstash store — for interactive web-app reads and agent
+`tools/call` MCP requests — not part of the sync path.
+
 ```
-seed scripts (Cloud Scheduler, GCP us-central1)
+seed scripts (Cloud Scheduler, GCP us-central1 — or wherever they end up running)
         │  ~156 scripts/seed-*.mjs pulling FRED/EIA/NASA FIRMS/ACLED/Finnhub/INFOWAY/AISSTREAM/…
         ▼
-shared Upstash Redis (unchanged) — same instance, same REST API, called from GCP Cloud Run
-instead of Vercel Edge; still the single source of truth
+shared Upstash Redis — single source of truth, already live today, reachable directly
+(same REST API the seed scripts and server/_shared/redis.ts already use)
         │
-        ▼
-Nitric API + MCP server (Cloud Run, GCP us-central1)
-        │  wraps KV reads into REST + the existing /mcp tool surface (ports api/*.ts + api/mcp.ts
-        │  off Vercel Edge, same lift platform/backend/data already did — see its
-        │  docs/architecture/cicd-deployment-handover.md for the Prisma/tsx/ESM lessons learned)
+        ├──────────────► Nitric API + MCP server (Cloud Run) — interactive web-app reads
+        │                 and agent tools/call MCP requests. A separate consumer of Upstash,
+        │                 NOT part of the sync path below.
         │
-        │  one-way, periodic pull — NOT a live stream (see "Sync, not replication" below)
-        ▼
-local SQLite cache (each operator's machine)
-        │  served locally by src-tauri/sidecar/local-api-server.mjs, repointed at the local
-        │  SQLite cache instead of proxying to remote Redis/Upstash
-        ├──────────────► VS Code extension (webview, thin client — new, not started)
-        └──────────────► local Agent (MCP over localhost)
+        └──────────────► one-way, periodic pull, DIRECT from Upstash — NOT a live stream,
+                          NOT through any API layer (see "Sync, not replication" below)
+                          ▼
+                  local SQLite cache (each operator's machine)
+                          │  served locally by src-tauri/sidecar/local-api-server.mjs, repointed at the local
+                          │  SQLite cache instead of proxying to remote Redis/Upstash
+                          ├──────────────► VS Code extension (webview, thin client — new, not started)
+                          └──────────────► local Agent (MCP over localhost)
 ```
 
 ### Component mapping — what moves, what's reused as-is
@@ -211,13 +224,17 @@ default.
 ## Open items
 
 - ~~Auth model for the shared backend~~ — **decided 2026-08-06**: keep worldmonitor's
-  existing `X-WorldMonitor-Key`/OAuth scheme as-is. Its billing-tier/quota logic was
+  existing `X-WorldMonitor-Key`/OAuth scheme as-is for the **Nitric API + MCP server**
+  (interactive web-app reads, agent `tools/call`). Its billing-tier/quota logic was
   already dead weight, not live complexity — Stage 1 (see
   [[supabase-migration-stage1]]) had already collapsed entitlements to "signed in = full
   access," so this scheme costs zero new code and is already shipped/tested. Switching to
   `platform`'s dual-token model would mean writing new auth code for no functional
-  difference now that neither fork enforces per-tier quota. The local sync pipeline
-  authenticates against this scheme.
+  difference now that neither fork enforces per-tier quota. **This is unrelated to the
+  local sync pipeline** (corrected 2026-08-06, see "Full picture" above) — the sync
+  pulls directly from Upstash using Upstash's own REST credentials
+  (`UPSTASH_REDIS_REST_URL`/`TOKEN`), the same ones the seed scripts already use, not
+  the API's key scheme.
 - ~~Confirm Convex/Clerk get cut, not ported~~ — done, see [[supabase-migration-stage1]]
   Stages 1–3 (Convex fully retired for all app-data tables as of 2026-08-06; Convex still
   hosts unrelated Dodo billing/broadcast email, out of scope here).
@@ -228,6 +245,13 @@ default.
   webview over the local SQLite-backed read API only. No auth-token storage or manual
   "sync now" control in the extension itself for this pass — background periodic sync is
   the only data path. Revisit if that proves too unresponsive for the persona once built.
+- **New, 2026-08-06**: since the sync path talks directly to Upstash (not through the
+  API layer), the operator's local machine ends up holding a real Upstash REST
+  credential. Should the sync script use a separate **read-only-scoped** Upstash token
+  (Upstash's console supports issuing read-only tokens) rather than reusing the seed
+  scripts' full read/write token, to limit blast radius if an operator's laptop is
+  compromised? Not decided — worth resolving before writing the sync script's
+  credential-loading code, not after.
 - The sketch this doc is derived from also has a "CCAM" section — daily agent loop items
   (OKR check-in, effort, collaboration/spawn-task, pickup, implementation) — not yet tied to
   any concrete repo or doc. Needs a follow-up conversation before it becomes actionable here.

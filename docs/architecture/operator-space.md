@@ -255,9 +255,39 @@ None of this depends on the separate Nitric/GCP migration thread
      does a full rebuild (`DELETE FROM kv_cache` then fresh insert), not incremental
      upsert — no stale-row state to reason about between runs.
    - `npm run local-sync` added as the entry point.
-   **Manual prerequisite still outstanding**: the read-only Upstash token this script
-   requires (`UPSTASH_REDIS_REST_READONLY_TOKEN`) hasn't been issued yet — tested using
-   the seed scripts' full token as a one-off, not-persisted override.
+   **Read-only token issued and persisted, same day**: `UPSTASH_REDIS_REST_READONLY_TOKEN`
+   for `up-dragon-42947` is in `.env.local` (gitignored) — no longer a one-off override.
+   **Rewritten on the official `@upstash/redis` SDK** (already a repo dependency, used
+   elsewhere via `Redis.fromEnv()`) in place of the original hand-rolled REST/`fetch`
+   version, once real runs against the real token surfaced problems the mocked/curl
+   testing above hadn't: `scan(cursor, {withType: true})` gets key+type in one call
+   (drops the separate `TYPE` pass entirely); `.pipeline().exec({keepErrors: true})`
+   isolates one failed command instead of failing the whole chunk. Three real SDK
+   quirks found and fixed live, all in `src-tauri/sidecar/local-sync.mjs`'s own comments
+   in detail:
+   - The SDK's automatic JSON-deserialization (on by default) breaks scan's key/type
+     pairing if turned off client-wide, but silently hands a parsed object instead of
+     raw text to a `string`-typed `get` if left on — fixed by keeping deserialization on
+     everywhere and switching the storage rule from "trust the Redis type" to "trust
+     `typeof raw`" (re-stringify anything that isn't already a string).
+   - The SDK's own `retry`/`signal` client options are both broken for this workstation
+     use case: a function `signal` (fresh deadline per retry) skips the retry loop
+     entirely on abort; a plain `signal` fakes a 200 response with the abort reason as
+     the result instead of erroring; no signal at all means a stuck request hangs
+     `fetch` forever with no error for the retry loop to catch. Fixed by disabling the
+     SDK's retry (`retry: false`) and implementing timeout+retry entirely outside it
+     (`withTimeoutRetry`, races each call against a plain `setTimeout` and re-issues a
+     fresh request on timeout), plus a 15-minute whole-run watchdog as an absolute
+     backstop.
+   - **VPN-link jitter, not an Upstash-specific throttle**: identically-sized 100-key
+     chunks swung ~3s–36s+ run to run, confirmed via `route get` that traffic went
+     through a VPN tunnel (`utunN`), and an unrelated control host (Cloudflare's
+     speed-test endpoint) was independently unstable on the same link at the same
+     time — see [[nitric-local-data-layer-lessons]]. `intelligence:*`'s larger
+     ~3KB-average payloads also genuinely need more budget than `resilience:*`'s tiny
+     rows independent of jitter (measured 55s via raw curl for one 100-key chunk, no
+     SDK involved) — `REQUEST_TIMEOUT_MS` raised 45s → 90s on that evidence.
+   Live-verified multiple clean 514/514 runs after all three fixes landed.
    **Next**: expand domain scope beyond resilience/intelligence once this first slice is
    confirmed useful, per the "First slice" decision above.
 4. **`src-tauri/sidecar/local-api-server.mjs` repoint.** NOT STARTED. Currently proxies
@@ -293,11 +323,9 @@ None of this depends on the separate Nitric/GCP migration thread
 - ~~Read-only-scoped Upstash token vs. reusing the seed scripts' full read/write
   token~~ — **decided 2026-08-06**: read-only-scoped. Limits blast radius if an
   operator's laptop is compromised — the sync script never needs write access.
-  **Manual prerequisite, not yet done**: issue a read-only token in the Upstash
-  dashboard for the `up-dragon-42947` instance, add it to `.env.local` as
-  `UPSTASH_REDIS_REST_READONLY_TOKEN` (name not yet finalized in code). The sync
-  script should fail loudly if this var is absent rather than silently falling back to
-  the full read/write token.
+  **Done, same day**: issued in the Upstash dashboard for `up-dragon-42947`, in
+  `.env.local` as `UPSTASH_REDIS_REST_READONLY_TOKEN`. The sync script fails loudly if
+  this var is absent rather than silently falling back to the full read/write token.
 - The sketch this doc is derived from also has a "CCAM" section — daily agent loop items
   (OKR check-in, effort, collaboration/spawn-task, pickup, implementation) — not yet tied to
   any concrete repo or doc. Needs a follow-up conversation before it becomes actionable here.

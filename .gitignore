@@ -90,6 +90,9 @@ skills-lock.json
 tmp/
 .context/
 
+# Local data layer's synced SQLite cache (src-tauri/sidecar/local-sync.mjs output)
+src-tauri/sidecar/local-cache.db
+
 # Local planning documents (not for public repo)
 docs/plans/
 docs/brainstorms/

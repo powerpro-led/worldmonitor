@@ -33,6 +33,7 @@
     "docs:stats": "node scripts/docs-stats.mjs",
     "docs:check": "node scripts/docs-stats.mjs --check",
     "nitric:clean-history": "node scripts/clean-nitric-history.mjs",
+    "local-sync": "node src-tauri/sidecar/local-sync.mjs",
     "dev": "vite",
     "dev:tech": "cross-env VITE_VARIANT=tech vite",
     "dev:finance": "cross-env VITE_VARIANT=finance vite",

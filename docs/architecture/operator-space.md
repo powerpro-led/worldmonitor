@@ -237,13 +237,29 @@ None of this depends on the separate Nitric/GCP migration thread
    stage — none of those were chosen, just deferred.
 2. **Shared Upstash store.** DONE — already exists, already the single source of truth,
    nothing further needed here.
-3. **Operator's local SQLite store.** NOT STARTED. Schema design + the sync script
-   itself (direct Upstash REST pull → SQLite write, same shape as the seed scripts).
-   Buildable and testable today regardless of stage 1's outcome — the sync script's
-   *code* doesn't care whether Upstash is being kept fresh by a real pipeline or by an
-   operator's ad-hoc test run, only that it can read from Upstash right now, which it
-   can. Open sub-question: read-only-scoped Upstash token vs. reusing the seed scripts'
-   full read/write token — see "Open items" below.
+3. **Operator's local SQLite store.** FIRST SLICE DONE 2026-08-06 —
+   `src-tauri/sidecar/local-sync.mjs`. Generic key-value mirror table
+   (`kv_cache(key, value, synced_at)`), scoped to `resilience:*` + `intelligence:*`
+   (514 keys). Uses `node:sqlite` (built into Node 22.5+, no native driver — matters
+   for cross-platform Tauri sidecar packaging). Live-verified against real Upstash data
+   (not mocked): 514/514 keys synced. Two real things found and fixed while building it:
+   - **Pipeline timeout too tight for workstation calls** — a 100-key value pipeline
+     measured ~29s live; bumped from a naive 10s to 45s (matches
+     `server/_shared/redis.ts`'s own documented guidance for local runs).
+   - **Non-string Redis types silently dropped by plain `GET`** —
+     `resilience:history:v20:<ISO2>` (196 of the 402 `resilience:*` keys) turned out to
+     be sorted sets, confirmed live via `TYPE`. Fixed by resolving every key's real type
+     up front (`TYPE`, pipelined) and reading it with the one command that's actually
+     correct for that type (`ZRANGE ... WITHSCORES` for zsets, `HGETALL` for hashes,
+     etc.) — no GET-first-then-fallback branching, per explicit direction. Each sync run
+     does a full rebuild (`DELETE FROM kv_cache` then fresh insert), not incremental
+     upsert — no stale-row state to reason about between runs.
+   - `npm run local-sync` added as the entry point.
+   **Manual prerequisite still outstanding**: the read-only Upstash token this script
+   requires (`UPSTASH_REDIS_REST_READONLY_TOKEN`) hasn't been issued yet — tested using
+   the seed scripts' full token as a one-off, not-persisted override.
+   **Next**: expand domain scope beyond resilience/intelligence once this first slice is
+   confirmed useful, per the "First slice" decision above.
 4. **`src-tauri/sidecar/local-api-server.mjs` repoint.** NOT STARTED. Currently proxies
    to live Redis; needs to read from the local SQLite cache instead. First non-additive
    edit to existing non-`gcp/` code in this whole design thread.

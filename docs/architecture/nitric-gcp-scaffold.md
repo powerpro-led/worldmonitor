@@ -78,6 +78,16 @@ modified or moved; the live Vercel/Railway deployment is unaffected by any of th
 - **Auth model, VS Code extension scope, sync cadence** — all still open per
   operator-space.md's "Open items" section; untouched by this pass.
 
+## Running `nitric start` locally
+
+Run `npm run nitric:clean-history` (or `node scripts/clean-nitric-history.mjs &`)
+alongside `nitric start` — ported directly from `platform/backend`'s script of the same
+name. Nitric's local dashboard rewrites `.nitric/history-<type>.json` in full,
+synchronously, on every single API request; left unbounded it reached 343MB in that
+sibling repo and cost ~4.8s of added latency per request. The script truncates those
+files to zero every 5 minutes (never deletes — a missing or partial-JSON history file
+makes the CLI `log.Fatal` and take `nitric start` down with it).
+
 ## Verification performed
 
 - `npx tsc --noEmit -p tsconfig.gcp.json` — clean modulo the 4 known pre-existing

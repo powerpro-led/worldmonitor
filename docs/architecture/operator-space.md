@@ -210,18 +210,24 @@ default.
 
 ## Open items
 
-- **Auth model for the shared backend.** Keep worldmonitor's existing `X-WorldMonitor-Key`/
-  OAuth scheme minus the billing-tier logic, or switch to `platform`'s simpler dual-token
-  model (`serviceToken` + optional `X-User-Token`, no per-tier quota) since this fork has no
-  Pro-tier concept to enforce?
-- **Confirm Convex/Clerk get cut, not ported** — nothing in this design needs per-user
-  entitlements or billing.
-- **Sync cadence and delta vs. full-snapshot** for the shared-KV → local-SQLite pull — start
-  with periodic full snapshot (simplest) and only move to delta sync if snapshot size/cost
-  becomes a real problem.
-- Confirm scope of the VS Code extension itself: read-only dashboard webview over the local
-  SQLite-backed read API, or does it need anything beyond that (auth token storage, manual
-  "sync now")?
+- ~~Auth model for the shared backend~~ — **decided 2026-08-06**: keep worldmonitor's
+  existing `X-WorldMonitor-Key`/OAuth scheme as-is. Its billing-tier/quota logic was
+  already dead weight, not live complexity — Stage 1 (see
+  [[supabase-migration-stage1]]) had already collapsed entitlements to "signed in = full
+  access," so this scheme costs zero new code and is already shipped/tested. Switching to
+  `platform`'s dual-token model would mean writing new auth code for no functional
+  difference now that neither fork enforces per-tier quota. The local sync pipeline
+  authenticates against this scheme.
+- ~~Confirm Convex/Clerk get cut, not ported~~ — done, see [[supabase-migration-stage1]]
+  Stages 1–3 (Convex fully retired for all app-data tables as of 2026-08-06; Convex still
+  hosts unrelated Dodo billing/broadcast email, out of scope here).
+- **Sync cadence and delta vs. full-snapshot** for the shared-Upstash → local-SQLite pull —
+  still open. Start with periodic full snapshot (simplest) and only move to delta sync if
+  snapshot size/cost becomes a real problem.
+- ~~Confirm scope of the VS Code extension~~ — **decided 2026-08-06**: read-only dashboard
+  webview over the local SQLite-backed read API only. No auth-token storage or manual
+  "sync now" control in the extension itself for this pass — background periodic sync is
+  the only data path. Revisit if that proves too unresponsive for the persona once built.
 - The sketch this doc is derived from also has a "CCAM" section — daily agent loop items
   (OKR check-in, effort, collaboration/spawn-task, pickup, implementation) — not yet tied to
   any concrete repo or doc. Needs a follow-up conversation before it becomes actionable here.

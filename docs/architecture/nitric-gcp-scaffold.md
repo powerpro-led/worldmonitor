@@ -137,8 +137,13 @@ makes the CLI `log.Fatal` and take `nitric start` down with it).
    not needed.** Upstash stays; see "What's explicitly stubbed / deferred" above.
 4. Hand-wire `api/[...notfound].ts`, `api/og-story.js`, `api/story.js` (need a
    different adapter shape).
-5. Resolve operator-space.md's remaining open items (auth model, VS Code extension
-   scope) before any real deploy.
-6. Only after the above: a deliberate, separately-confirmed `nitric up` against a
-   throwaway/staging stack — never directly at whatever GCP calls "production" for
-   this project.
+5. ~~Resolve operator-space.md's remaining open items (auth model, VS Code extension
+   scope)~~ — **resolved 2026-08-06**: keep worldmonitor's existing
+   `X-WorldMonitor-Key`/OAuth scheme; VS Code extension is read-only webview only, no
+   token storage/manual sync in this pass. See operator-space.md's "Open items".
+6. A deliberate, separately-confirmed `nitric up` against a throwaway/staging stack —
+   never directly at whatever GCP calls "production" for this project.
+7. Only after 6: build the local sync pipeline (shared Upstash → local SQLite, via the
+   now-deployed Nitric API) and the VS Code extension webview against it. Can be
+   prototyped earlier against `nitric start`'s local dev gateway if useful, but a real
+   end-to-end test needs a live Cloud Run endpoint.

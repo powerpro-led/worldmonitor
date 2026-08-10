@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       if (!sidecar) sidecar = new SidecarProcess(repoRoot, context);
-      await DashboardPanel.createOrShow(context, repoRoot, sidecar);
+      await DashboardPanel.createOrShow(context, sidecar);
     }),
   );
 

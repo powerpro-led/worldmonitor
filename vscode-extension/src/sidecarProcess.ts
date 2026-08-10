@@ -2,38 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readDotenvValue } from './dotenv';
 
 /** Matches local-api-server.mjs's own LOCAL_API_TRANSPORT_HEADER constant. */
 export const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
-
-/**
- * Separate from LOCAL_API_TOKEN above: api/_api-key.js's own app-level
- * entitlement gate (server/gateway.ts's validateApiKey) requires ITS OWN
- * credential on every RPC handler — an operator-issued "enterprise key"
- * checked against WORLDMONITOR_VALID_KEYS, sent as this header. Confirmed
- * live: neither the anonymous-session-cookie path (HttpOnly + SameSite=Lax
- * — can't be read or resent by a foreign-origin webview's fetch) nor the
- * desktop-origin fast path (Origin is a forbidden header a webview can't
- * spoof to look like tauri://localhost) are reachable from here; the
- * enterprise-key branch is the only one that's origin-independent.
- */
-export const APP_API_KEY_HEADER = 'X-WorldMonitor-Key';
-
-/**
- * Reads WORLDMONITOR_VALID_KEYS out of the repo's own .env.local — VS
- * Code's extension host process does not source it automatically (that's
- * an app-level dotenv convention, not an OS environment variable), so
- * without this the spawned sidecar would see an empty allowlist and
- * legitimately reject every request regardless of what we send. Minimal
- * hand-rolled KEY=VALUE parser (matches the pattern already used
- * elsewhere in this repo's own scripts) — no need for a dotenv dependency
- * for one line.
- */
-function readEnterpriseKeyFromDotenv(repoRoot: string): string | undefined {
-  const raw = readDotenvValue(repoRoot, 'WORLDMONITOR_VALID_KEYS');
-  return raw?.split(',')[0]?.trim() || undefined;
-}
 
 /** Matches src/services/runtime.ts's own DEFAULT_LOCAL_API_PORT — the real
  * built app already knows to call this port when VITE_DESKTOP_RUNTIME=1 was
@@ -65,21 +36,11 @@ export class SidecarProcess {
    * plain TypeScript instead.
    */
   readonly token = randomBytes(24).toString('hex');
-  /** See readEnterpriseKeyFromDotenv() — undefined if the operator hasn't
-   * configured WORLDMONITOR_VALID_KEYS in .env.local. */
-  readonly enterpriseKey: string | undefined;
 
   constructor(private readonly repoRoot: string, context: vscode.ExtensionContext) {
     this.outputChannel = vscode.window.createOutputChannel('WorldMonitor Sidecar');
     context.subscriptions.push(this.outputChannel);
     context.subscriptions.push({ dispose: () => this.dispose() });
-    this.enterpriseKey = readEnterpriseKeyFromDotenv(repoRoot);
-    if (!this.enterpriseKey) {
-      this.outputChannel.appendLine(
-        '[sidecar] WORLDMONITOR_VALID_KEYS not found in .env.local — RPC endpoints will return ' +
-          '"API key required" until one is set (see the extension README).',
-      );
-    }
   }
 
   get baseUrl(): string {
@@ -159,11 +120,10 @@ export class SidecarProcess {
           LOCAL_API_RESOURCE_DIR: this.repoRoot,
           LOCAL_SQLITE_PATH: sqlitePath,
           LOCAL_API_TOKEN: this.token,
-          // Explicit, not just inherited from process.env — the extension
-          // host doesn't source .env.local itself (see
-          // readEnterpriseKeyFromDotenv), so without this the child would
-          // see an empty allowlist regardless of what's on disk.
-          ...(this.enterpriseKey ? { WORLDMONITOR_VALID_KEYS: this.enterpriseKey } : {}),
+          // No WORLDMONITOR_VALID_KEYS wiring needed — api/_api-key.js's
+          // app-level entitlement gate is unconditionally bypassed for
+          // LOCAL_API_MODE=tauri-sidecar requests (see server/gateway.ts's
+          // isLocalSidecarMode), same as the real Tauri desktop app.
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       },

@@ -39,9 +39,6 @@
     "typecheck": "tsc --noEmit",
     "package": "npm run build && npx @vscode/vsce package --no-dependencies"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.112.0"
-  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",

@@ -1,0 +1,52 @@
+{
+  "name": "worldmonitor-local-dashboard",
+  "displayName": "WorldMonitor Local Dashboard",
+  "description": "The real WorldMonitor dashboard, unmodified, backed only by a locally synced data cache — no live network dependency.",
+  "version": "0.1.0",
+  "publisher": "worldmonitor-internal",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "worldmonitorLocal.openDashboard",
+        "title": "WorldMonitor: Open Local Dashboard"
+      },
+      {
+        "command": "worldmonitorLocal.signInWithGithub",
+        "title": "WorldMonitor: Sign In with GitHub"
+      }
+    ],
+    "configuration": {
+      "title": "WorldMonitor",
+      "properties": {
+        "worldmonitorLocal.repoRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the worldmonitor repo (dist/, src-tauri/sidecar/, api/). Defaults to the first open workspace folder."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}

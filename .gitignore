@@ -58,6 +58,9 @@ api/*/v1/\[rpc\].js
 api/mcp.js
 .claudedocs/
 
+# Packaged VS Code extension artifact (built by `vsce package`)
+vscode-extension/*.vsix
+
 # Large generated data files (reproduced by scripts/)
 scripts/data/pizzint-processed.json
 scripts/data/osm-military-processed.json

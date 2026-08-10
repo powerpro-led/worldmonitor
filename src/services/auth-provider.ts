@@ -73,7 +73,7 @@ export function scheduleAuthProviderLoad(): void {
   if (initPromise) return;
   const start = (): void => {
     void initAuthProvider();
-    void checkForVsCodeGithubTokenHandoff();
+    installVsCodeGithubTokenListener();
   };
   const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
   if (typeof ric === 'function') {
@@ -99,7 +99,7 @@ export async function signInWithGithub(): Promise<void> {
   // off to vscode-extension/src/panel.ts, which reuses the GitHub session
   // VS Code already holds (vscode.authentication.getSession) instead of
   // making the user click through a manual GitHub consent screen — see
-  // checkForVsCodeGithubTokenHandoff() below for how that token comes back
+  // installVsCodeGithubTokenListener() below for how that token comes back
   // and completes a real Supabase session. Every other runtime (web,
   // packaged Tauri, a plain non-embedded load) falls through to the normal
   // flow below unchanged.
@@ -120,10 +120,12 @@ export async function signInWithGithub(): Promise<void> {
 /** Issuer for this fork's own already-deployed github-identity-bridge
  * Supabase Edge Function — a minimal custom OIDC provider that bridges a
  * GitHub access token into a real Supabase session (see
- * checkForVsCodeGithubTokenHandoff() below for the full contract). Already
+ * installVsCodeGithubTokenListener() below for the full contract). Already
  * live and registered as the `custom:github-bridge` provider on this
  * fork's own Supabase project (VITE_SUPABASE_URL) — nothing new to deploy. */
 const GITHUB_IDENTITY_BRIDGE_ISSUER = 'https://ixuezudybhjptisexgxx.supabase.co/functions/v1/github-identity-bridge';
+
+let vsCodeGithubTokenListenerInstalled = false;
 
 /**
  * VS-Code-extension-only entry point for GitHub sign-in. Mirrors the
@@ -131,29 +133,22 @@ const GITHUB_IDENTITY_BRIDGE_ISSUER = 'https://ixuezudybhjptisexgxx.supabase.co/
  * `/auth/vscode-bridge` route
  * (platform/docs/plans/2026-07-31-github-identity-bridge.md) — reusing a
  * pattern that's already been tested end-to-end elsewhere, not inventing a
- * new one.
+ * new one. One deliberate difference from that route: platform's version
+ * reads the token off `location.hash` on a fresh top-level page load: a
+ * genuine first navigation. This document is instead an already-loaded
+ * iframe that the VS Code extension hands a token to WITHOUT reloading it
+ * (see panel.ts's render()) — a URL differing only by its fragment from
+ * the one already loaded is a same-document, no-reload navigation, so a
+ * hash-scanning approach here would silently never fire (found the hard
+ * way during live testing: VS Code's own GitHub consent completed fine,
+ * but no Supabase session ever followed). A postMessage listener sidesteps
+ * that entirely — no navigation/reload semantics involved.
  *
- * vscode-extension/src/panel.ts's handleGithubSignIn() gets a GitHub token
- * from VS Code's own native auth provider and re-navigates this SAME iframe
- * to `dashboard.html?embed=vscode#vscode_github_token=<token>` — fragment
- * only, never sent to any server as a query param. On the next boot (called
- * once from scheduleAuthProviderLoad()'s deferred start(), below), this
- * function reads that token straight off location.hash, exchanges it for a
- * short-lived ticket, then hands the ticket to signInWithOAuth() for a REAL
- * navigation through the OAuth redirect chain (Supabase -> bridge ->
- * Supabase -> back here). Safe to let it navigate: this document is an
- * ordinary nested <iframe>, not the VS Code webview's own top-level
- * document, so the [LegacyUnforgeable] restriction that blocks
- * window.location.assign() in a bare webview (confirmed the hard way in a
- * prior, superseded attempt) doesn't apply here — independently
- * corroborated by platform's own shipped, tested implementation of this
- * exact contract.
- *
- * No isDesktopRuntime() gate needed (unlike the code this replaces) — this
- * is self-gating by construction: the hash fragment it looks for only ever
- * exists because panel.ts put it there, so this is a silent no-op on every
- * other runtime (web, packaged Tauri, or a plain VS Code load before the
- * user has signed in).
+ * Installed once from scheduleAuthProviderLoad()'s deferred start(),
+ * below. No isDesktopRuntime() gate needed (unlike the code this
+ * replaces) — self-gating by construction: nothing ever posts this
+ * message type except panel.ts's own relay script, which only exists
+ * inside the VS Code webview's wrapper document.
  *
  * Supersedes and replaces applyExternalSession() /
  * installExternalSessionListener() / the wm-external-session postMessage
@@ -162,21 +157,30 @@ const GITHUB_IDENTITY_BRIDGE_ISSUER = 'https://ixuezudybhjptisexgxx.supabase.co/
  * build the sidecar serves (see the VS Code extension plan's architecture
  * notes).
  */
-async function checkForVsCodeGithubTokenHandoff(): Promise<void> {
+function installVsCodeGithubTokenListener(): void {
+  if (vsCodeGithubTokenListenerInstalled) return;
+  vsCodeGithubTokenListenerInstalled = true;
   if (typeof window === 'undefined') return;
-  const match = /(?:^#|[&#])vscode_github_token=([^&]+)/.exec(window.location.hash);
-  if (!match?.[1]) return;
-  const token = decodeURIComponent(match[1]);
+  window.addEventListener('message', (event) => {
+    const data = event.data as { type?: string; token?: string } | undefined;
+    if (data?.type !== 'wm-vscode-github-token' || !data.token) return;
+    void completeVsCodeGithubSignIn(data.token);
+  });
+}
 
-  // Strip it immediately — avoid reprocessing on reload, and don't leave a
-  // live GitHub token sitting in browser history.
-  const remainingHash = window.location.hash.replace(/(?:^#|[&#])vscode_github_token=[^&]+/, '');
-  window.history.replaceState(
-    null,
-    '',
-    window.location.pathname + window.location.search + (remainingHash && remainingHash !== '#' ? remainingHash : ''),
-  );
-
+/**
+ * Mints a short-lived ticket against the already-deployed
+ * github-identity-bridge Supabase Edge Function, then hands it to
+ * signInWithOAuth() for a REAL navigation through the OAuth redirect chain
+ * (Supabase -> bridge -> Supabase -> back here). Safe to let it navigate:
+ * this document is an ordinary nested <iframe>, not the VS Code webview's
+ * own top-level document, so the [LegacyUnforgeable] restriction that
+ * blocks window.location.assign() in a bare webview (confirmed the hard
+ * way in a prior, superseded attempt) doesn't apply here — independently
+ * corroborated by platform's own shipped, tested implementation of this
+ * exact contract.
+ */
+async function completeVsCodeGithubSignIn(token: string): Promise<void> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.warn('[auth-provider] Supabase not configured, cannot complete VS Code GitHub sign-in');

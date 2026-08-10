@@ -115,23 +115,27 @@ export class DashboardPanel {
   /**
    * Gets a GitHub token VS Code already holds (its own native auth
    * provider — no custom consent UI needed here; a popup appears only if no
-   * session exists yet, silently reused otherwise) and hands it to the
-   * webview, which re-navigates the SAME iframe so the token rides in on
-   * the URL fragment (never sent to any server as a query param, browser-
-   * local by construction).
+   * session exists yet, silently reused otherwise) and posts it into the
+   * dashboard iframe's OWN existing window (relayed by render()'s inline
+   * script, straight into frame.contentWindow — NOT via re-navigating
+   * frame.src with a new URL fragment: a URL differing only in its
+   * fragment from the one already loaded is a same-document, no-reload
+   * navigation, so the page's own boot code would never see it — confirmed
+   * the hard way).
    *
-   * From there, src/services/auth-provider.ts's
-   * checkForVsCodeGithubTokenHandoff() takes over entirely in-browser:
+   * From there, src/services/auth-provider.ts's message listener
+   * (installVsCodeGithubTokenListener) takes over entirely in-browser:
    * mints a ticket against the already-deployed github-identity-bridge
    * Supabase Edge Function, then lets supabase-js do a REAL navigation
    * through the OAuth redirect chain (Supabase -> bridge -> Supabase ->
-   * back). This works under this architecture specifically because the
-   * dashboard runs in an ordinary nested <iframe>, not the webview's own
-   * top-level document — window.location.assign()'s [LegacyUnforgeable]
-   * restriction (confirmed the hard way in the prior, superseded
-   * webview-injection attempt) only blocks that top-level document, not a
-   * nested frame; independently corroborated by the platform repo's own
-   * shipped, tested implementation of this same client contract.
+   * back to this same iframe). This works under this architecture
+   * specifically because the dashboard runs in an ordinary nested
+   * <iframe>, not the webview's own top-level document —
+   * window.location.assign()'s [LegacyUnforgeable] restriction (confirmed
+   * the hard way in a prior, superseded webview-injection attempt) only
+   * blocks that top-level document, not a nested frame; independently
+   * corroborated by the platform repo's own shipped, tested implementation
+   * of this same client contract.
    */
   private async handleGithubSignIn(): Promise<void> {
     try {
@@ -180,7 +184,7 @@ export class DashboardPanel {
         (function () {
           var vscodeApi = acquireVsCodeApi();
           var frame = document.getElementById('wm-frame');
-          var baseSrc = ${JSON.stringify(src)};
+          var frameOrigin = new URL(${JSON.stringify(src)}).origin;
           window.addEventListener('message', function (event) {
             var msg = event.data;
             if (!msg || typeof msg !== 'object') return;
@@ -188,8 +192,16 @@ export class DashboardPanel {
               vscodeApi.postMessage(msg);
               return;
             }
-            if (msg.type === 'wm-vscode-github-token' && msg.token) {
-              frame.src = baseSrc + '#vscode_github_token=' + encodeURIComponent(msg.token);
+            if (msg.type === 'wm-vscode-github-token' && msg.token && frame.contentWindow) {
+              // Posted straight into the iframe's OWN existing window,
+              // deliberately NOT via re-navigating frame.src with a new
+              // fragment: a URL differing only in its fragment from the
+              // one already loaded is treated as a same-document
+              // in-page navigation by the browser (no reload), so the
+              // page's own boot code never re-runs and never sees the
+              // new token — confirmed the hard way, see auth-provider.ts's
+              // message listener for the receiving side.
+              frame.contentWindow.postMessage(msg, frameOrigin);
             }
           });
         })();

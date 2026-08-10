@@ -5,6 +5,8 @@ public/blog/
 public/countries/
 public/chokepoints/
 public/reference/
+public/crises/
+public/tools/
 public/crawlable-corpus.json
 .DS_Store
 *.log

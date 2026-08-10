@@ -4,7 +4,7 @@ import https from 'node:https';
 import { createHmac } from 'node:crypto';
 import dns from 'node:dns/promises';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { promisify } from 'node:util';
 import { brotliCompress, gzipSync } from 'node:zlib';
@@ -844,6 +844,20 @@ function resolveConfig(options = {}) {
       path.join(resourceDir, 'api'),
       path.join(resourceDir, '_up_', 'api'),
     ].find((candidate) => existsSync(candidate)) ?? path.join(resourceDir, 'api');
+  // The plain web build's output — same mechanism as apiDir above. For local
+  // dev, resourceDir is the repo root (sidecarProcess.ts sets
+  // LOCAL_API_RESOURCE_DIR: this.repoRoot), and `dist/` is exactly where a
+  // plain `npm run build` already puts it. NOT bundled into the Tauri
+  // desktop app's own resources (frontendDist is served via Tauri's own
+  // protocol handler there) — this only matters for standalone/VS-Code-
+  // extension sidecar invocations that need to serve the dashboard over
+  // real HTTP themselves.
+  const staticDir = options.staticDir
+    ? String(options.staticDir)
+    : [
+      path.join(resourceDir, 'dist'),
+      path.join(resourceDir, '_up_', 'dist'),
+    ].find((candidate) => existsSync(candidate)) ?? path.join(resourceDir, 'dist');
   const dataDir = String(options.dataDir ?? process.env.LOCAL_API_DATA_DIR ?? resourceDir);
   const mode = String(options.mode ?? process.env.LOCAL_API_MODE ?? 'desktop-sidecar');
   const requestedFallback = String(options.cloudFallback ?? process.env.LOCAL_API_CLOUD_FALLBACK ?? '') === 'true';
@@ -874,6 +888,7 @@ function resolveConfig(options = {}) {
     resourceDir,
     dataDir,
     apiDir,
+    staticDir,
     mode,
     cloudFallback,
     allowPrivateRemoteBase,
@@ -1383,6 +1398,112 @@ async function validateSecretAgainstProvider(key, rawValue, context = {}) {
   }
 }
 
+const STATIC_CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+  '.map': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+  '.xml': 'application/xml; charset=utf-8',
+};
+
+/**
+ * Resolves a request pathname to an absolute file path under staticDir, with
+ * path-traversal guards. Returns null (not a throw) for anything that isn't
+ * a plain in-bounds file request — the caller treats null as "not a static
+ * asset, fall through to the normal 404".
+ */
+function resolveStaticFilePath(staticDir, pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  if (decoded.includes('\0') || decoded.split('/').includes('..')) return null;
+  // NOT index.html: vite.config.ts's wm-dashboard-html-output plugin renames
+  // the built entry from index.html to dashboard.html (the app's real
+  // production entry, e.g. https://www.worldmonitor.app/dashboard) — a
+  // plain `npm run build` output has no index.html at all. Confirmed by
+  // reading the plugin, not assumed.
+  const relative = decoded === '/' ? 'dashboard.html' : decoded.replace(/^\/+/, '');
+  if (!relative) return null;
+  const resolvedStaticDir = path.resolve(staticDir);
+  const resolved = path.resolve(resolvedStaticDir, relative);
+  if (resolved !== resolvedStaticDir && !resolved.startsWith(resolvedStaticDir + path.sep)) return null;
+  return resolved;
+}
+
+/**
+ * Injected into dashboard.html only when `?embed=vscode` is present on the
+ * request — never for a plain top-level browser tab (e.g. the login flow's
+ * own real-browser-navigation leg, which must NOT get __wmVsCodeApi set, so
+ * it falls through to the normal signInWithOAuth() redirect path instead of
+ * looping back through postMessage). Placed right after the opening <head>
+ * tag, ahead of any type="module" script — module scripts are deferred by
+ * spec, so this always runs first regardless of exact insertion point, but
+ * putting it first is clearest. Sets window.__wmVsCodeApi (consumed by
+ * src/services/auth-provider.ts's signInWithGithub()) and attaches this
+ * sidecar's own LOCAL_API_TOKEN to same-origin /api/* fetches — the global
+ * auth gate below applies to every /api/* request regardless of caller,
+ * including this iframe's own JS.
+ */
+function buildVsCodeEmbedShim(localToken) {
+  return `<script>(function(){window.__wmVsCodeApi={postMessage:function(msg){window.parent.postMessage(msg,'*')}};var LOCAL_TOKEN=${JSON.stringify(localToken || '')};var originalFetch=window.fetch.bind(window);window.fetch=function(input,init){var url=typeof input==='string'?input:(input&&input.url)||'';if(url.indexOf('/api/')===0||url.indexOf(window.location.origin+'/api/')===0){init=init||{};var headers=new Headers((init&&init.headers)||(input instanceof Request?input.headers:undefined));headers.set('x-worldmonitor-local-token',LOCAL_TOKEN);init=Object.assign({},init,{headers:headers});}return originalFetch(input,init);};})();</script>`;
+}
+
+/**
+ * Serves the plain web build's dist/ over real HTTP — what lets the VS Code
+ * extension's <iframe> (and any plain browser tab, e.g. the login flow's
+ * real-navigation leg) load the dashboard without going through Tauri's own
+ * protocol handler. Auth-exempt by design (see the call site's comment) —
+ * matches the existing precedent for /api/hls-proxy and /api/youtube-embed:
+ * a bare `<iframe src>`/browser GET can't carry custom headers, and static
+ * assets carry no secrets.
+ */
+async function tryServeStaticAsset(requestUrl, req, context) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null;
+  const filePath = resolveStaticFilePath(context.staticDir, requestUrl.pathname);
+  if (!filePath) return null;
+  let body;
+  try {
+    body = await readFile(filePath);
+  } catch {
+    return null;
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  const isHtml = ext === '.html';
+  let contentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
+  if (isHtml && requestUrl.searchParams.get('embed') === 'vscode') {
+    const shim = buildVsCodeEmbedShim(process.env.LOCAL_API_TOKEN);
+    const html = body.toString('utf-8').replace(/<head>/i, `<head>${shim}`);
+    body = Buffer.from(html, 'utf-8');
+  }
+  return new Response(req.method === 'HEAD' ? null : body, {
+    status: 200,
+    headers: {
+      'content-type': contentType,
+      // Local dev iteration correctness over caching — this is a sidecar
+      // serving its own bundled build, not a CDN-fronted production asset.
+      'cache-control': isHtml ? 'no-store' : 'no-cache',
+    },
+  });
+}
+
 async function dispatch(requestUrl, req, routes, context) {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: makeCorsHeaders(req) });
@@ -1876,6 +1997,13 @@ export async function createLocalApiServer(options = {}) {
     const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${context.port}`);
 
     if (!requestUrl.pathname.startsWith('/api/')) {
+      const staticResponse = await tryServeStaticAsset(requestUrl, req, context);
+      if (staticResponse) {
+        const body = Buffer.from(await staticResponse.arrayBuffer());
+        res.writeHead(staticResponse.status, Object.fromEntries(staticResponse.headers.entries()));
+        res.end(req.method === 'HEAD' ? undefined : body);
+        return;
+      }
       res.writeHead(404, { 'content-type': 'application/json', ...makeCorsHeaders(req) });
       res.end(JSON.stringify({ error: 'Not found' }));
       return;

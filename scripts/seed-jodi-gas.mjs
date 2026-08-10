@@ -28,7 +28,31 @@ export const KEY_PREFIX = 'energy:jodi-gas:v1:';
 export const LNG_VULNERABILITY_KEY = 'energy:lng-vulnerability:v1';
 export const GAS_TTL = 3_024_000;
 
-const ZIP_URL = 'https://www.jodidata.org/jodi-publisher/gas/17/GAS_world_NewFormat.zip';
+/**
+ * The `/gas/<n>/` path segment is a release counter, NOT a stable "latest"
+ * pointer — JODI mints a new id per gas publication (~monthly, sometimes twice
+ * when a release is re-cut: ids 21/22/23 all landed 22-24 Jun 2026). Pinning it
+ * silently freezes the dataset: id 17 (16 Mar 2026) tops out at TIME_PERIOD
+ * 2026-01 with China data ending 2025-11, which blows the 6-month China
+ * content-age gate and blocks publishes entirely.
+ *
+ * The downloads page injects its links via JS, so there is nothing to scrape.
+ * Instead probe upward from a known-good floor and take the highest id that
+ * still resolves.
+ */
+const GAS_ZIP_BASE = 'https://www.jodidata.org/jodi-publisher/gas';
+/** Highest id verified to exist (2026-07-19 release). Only ever raise this. */
+export const KNOWN_GAS_RELEASE_ID = 24;
+/** Consecutive misses that end the upward scan — tolerates a single skipped id. */
+const RELEASE_PROBE_GAP = 2;
+/** Bound on forward probes so a served-200-for-everything origin can't loop. */
+const MAX_FORWARD_PROBES = 36;
+/** How far below the floor to search if the floor itself stops resolving. */
+const MAX_BACKWARD_PROBES = 24;
+
+export function gasZipUrl(releaseId) {
+  return `${GAS_ZIP_BASE}/${releaseId}/GAS_world_NewFormat.zip`;
+}
 const CSV_FILENAME = 'STAGING_world_NewFormat.csv';
 const UNIT_FILTER = 'TJ';
 export const MIN_COUNTRIES = 50;
@@ -220,13 +244,63 @@ function findZipEntry(buf, filename) {
   return null;
 }
 
+async function releaseExists(releaseId) {
+  try {
+    const resp = await fetch(gasZipUrl(releaseId), {
+      method: 'HEAD',
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(15_000),
+    });
+    return resp.ok;
+  } catch {
+    // Network error is not evidence of absence — treat as "unknown", which the
+    // caller handles by stopping the scan rather than by skipping past the id.
+    return false;
+  }
+}
+
+/**
+ * Resolve the newest gas release id. Scans up from KNOWN_GAS_RELEASE_ID; if the
+ * floor itself no longer resolves (JODI pruning old releases), walks back down.
+ * Returns the floor unchanged when probing is inconclusive, so a transient
+ * network failure degrades to today's behaviour instead of failing the seed.
+ */
+export async function resolveLatestGasRelease(exists = releaseExists) {
+  if (!(await exists(KNOWN_GAS_RELEASE_ID))) {
+    for (let id = KNOWN_GAS_RELEASE_ID - 1; id >= KNOWN_GAS_RELEASE_ID - MAX_BACKWARD_PROBES && id > 0; id--) {
+      if (await exists(id)) return id;
+    }
+    return KNOWN_GAS_RELEASE_ID;
+  }
+
+  let newest = KNOWN_GAS_RELEASE_ID;
+  let misses = 0;
+  for (let probe = 1; probe <= MAX_FORWARD_PROBES && misses < RELEASE_PROBE_GAP; probe++) {
+    const id = KNOWN_GAS_RELEASE_ID + probe;
+    if (await exists(id)) {
+      newest = id;
+      misses = 0;
+    } else {
+      misses++;
+    }
+  }
+  return newest;
+}
+
 async function fetchAndParseCsv() {
-  console.log(`  Fetching JODI Gas ZIP from ${ZIP_URL}`);
-  const resp = await fetch(ZIP_URL, {
+  const releaseId = await resolveLatestGasRelease();
+  const zipUrl = gasZipUrl(releaseId);
+  if (releaseId > KNOWN_GAS_RELEASE_ID) {
+    console.log(`  Resolved gas release ${releaseId} (${releaseId - KNOWN_GAS_RELEASE_ID} newer than pinned floor ${KNOWN_GAS_RELEASE_ID})`);
+  } else if (releaseId < KNOWN_GAS_RELEASE_ID) {
+    console.warn(`  WARNING: gas release floor ${KNOWN_GAS_RELEASE_ID} no longer resolves — fell back to ${releaseId}`);
+  }
+  console.log(`  Fetching JODI Gas ZIP from ${zipUrl}`);
+  const resp = await fetch(zipUrl, {
     headers: { 'User-Agent': CHROME_UA, 'Accept-Encoding': 'identity' },
     signal: AbortSignal.timeout(120_000),
   });
-  if (!resp.ok) throw new Error(`JODI Gas ZIP fetch failed: HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`JODI Gas ZIP fetch failed: HTTP ${resp.status} for ${zipUrl}`);
 
   const arrayBuf = await resp.arrayBuffer();
   const zipBuf = Buffer.from(arrayBuf);

@@ -209,6 +209,35 @@ async function fetchCsv(url) {
   return resp.text();
 }
 
+/**
+ * JODI names the CURRENT year's annual CSV differently from closed years:
+ *   closed year   → annual-csv/primary/2025.csv
+ *   current year  → annual-csv/primary/primaryyear2026.csv   (`primary/2026.csv` 404s)
+ * The file is renamed to the plain `<year>.csv` form at year rollover, which is
+ * why fetching only `<year>.csv` appears to work each January and then silently
+ * degrades to prior-year-only data for the rest of the year — until the 6-month
+ * China content-age gate finally blocks publishes (see assessChinaOilCoverage).
+ *
+ * Order matters: try the shape the year is most likely to be in first, but keep
+ * the other as a fallback so the rollover window works from either side.
+ */
+export function jodiCsvCandidates(dataset, year, isCurrentYear) {
+  const plain = `${JODI_BASE}${dataset}/${year}.csv`;
+  const currentForm = `${JODI_BASE}${dataset}/${dataset}year${year}.csv`;
+  return isCurrentYear ? [currentForm, plain] : [plain, currentForm];
+}
+
+async function fetchFirstAvailable(urls, label) {
+  for (const url of urls) {
+    try {
+      return await withRetry(() => fetchCsv(url), 2, 2000);
+    } catch (e) {
+      console.warn(`  ${label}: ${url} failed — ${e.message}`);
+    }
+  }
+  return '';
+}
+
 export function mergeSourceRows(primaryCurrent, primaryPrior, secondaryCurrent, secondaryPrior) {
   if (!secondaryCurrent && !secondaryPrior) {
     throw new Error('Both secondary JODI CSV files failed to download; product-level data unavailable');
@@ -228,15 +257,18 @@ async function fetchAllRows() {
   const priorYear = currentYear - 1;
 
   const [primaryCurrent, primaryPrior, secondaryCurrent, secondaryPrior] = await Promise.all([
-    withRetry(() => fetchCsv(`${JODI_BASE}primary/${currentYear}.csv`), 2, 2000)
-      .catch(e => { console.warn(`  primary/${currentYear}.csv failed: ${e.message}`); return ''; }),
-    withRetry(() => fetchCsv(`${JODI_BASE}primary/${priorYear}.csv`), 2, 2000)
-      .catch(e => { console.warn(`  primary/${priorYear}.csv failed: ${e.message}`); return ''; }),
-    withRetry(() => fetchCsv(`${JODI_BASE}secondary/${currentYear}.csv`), 2, 2000)
-      .catch(e => { console.warn(`  secondary/${currentYear}.csv failed: ${e.message}`); return ''; }),
-    withRetry(() => fetchCsv(`${JODI_BASE}secondary/${priorYear}.csv`), 2, 2000)
-      .catch(e => { console.warn(`  secondary/${priorYear}.csv failed: ${e.message}`); return ''; }),
+    fetchFirstAvailable(jodiCsvCandidates('primary', currentYear, true), `primary/${currentYear}`),
+    fetchFirstAvailable(jodiCsvCandidates('primary', priorYear, false), `primary/${priorYear}`),
+    fetchFirstAvailable(jodiCsvCandidates('secondary', currentYear, true), `secondary/${currentYear}`),
+    fetchFirstAvailable(jodiCsvCandidates('secondary', priorYear, false), `secondary/${priorYear}`),
   ]);
+
+  // Prior-year-only data satisfies mergeSourceRows but cannot clear the 6-month
+  // content-age gate past ~June, so surface it as its own signal rather than
+  // letting it surface later as an opaque `china-stale`.
+  if (!primaryCurrent && !secondaryCurrent) {
+    console.warn(`  WARNING: no ${currentYear} JODI oil files resolved — falling back to ${priorYear} only`);
+  }
 
   return mergeSourceRows(primaryCurrent, primaryPrior, secondaryCurrent, secondaryPrior);
 }

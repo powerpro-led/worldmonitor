@@ -170,6 +170,15 @@ contract needs to be made fully uniform beyond shared `runSeed` users.
 
 ## Services to DELETE (46 total)
 
+> **The "Original Cron" column below is history, not live cadence.** It records
+> what each standalone Railway service was scheduled at *before* it was retired.
+> Live cadence is the bundle's own cron (see "Bundle configurations") gated by
+> each member's `intervalMs` in the bundle script. A row reading `monthly` means
+> "this used to be its own monthly service", not "this still runs monthly" — the
+> bundle typically checks daily and the interval gate decides whether the member
+> actually executes. Do not use this column to reason about data freshness; read
+> the bundle script and `api/health.js`'s `maxStaleMin` instead.
+
 ### Standalone service retired before bundle restoration
 
 | # | Service Name | Service ID | Reason |

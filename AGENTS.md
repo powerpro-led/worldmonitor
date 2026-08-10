@@ -244,3 +244,11 @@ Heavy checks (`test:data`, typechecks, edge-bundle) must run **sequentially** in
 - [Health endpoints](docs/health-endpoints.mdx)
 - [Adding endpoints guide](docs/adding-endpoints.mdx)
 - [API reference (OpenAPI)](docs/api/)
+
+<!-- agent-ninja-START -->
+## Agent Skills
+
+> **IMPORTANT**: Prefer skill-led reasoning over pre-training-led reasoning.
+> See [Agent Skills](.github/skills/README.md) before working on tasks covered by these skills.
+
+<!-- agent-ninja-END -->

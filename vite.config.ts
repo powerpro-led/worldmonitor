@@ -868,6 +868,18 @@ export default defineConfig(({ mode }) => {
   const activeMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
 
   return {
+    // Default '/' resolves every root-absolute asset reference (both the
+    // HTML's own tags and Vite's runtime module-preload helper, which emits
+    // '/assets/X.js' regardless of the HTML) against the document's origin.
+    // For a desktop build loaded inside a VS Code webview, that origin is
+    // vscode-resource.vscode-cdn.net, not the dist/ folder — every preload
+    // 404s (harmless for already-executing modules, since dynamic import()
+    // is import.meta.url-relative, but real for CSS preloads, whose
+    // rejection fails that chunk's import). './' makes every reference
+    // resolve relative to wherever index.html itself was actually loaded
+    // from. Gated to desktop builds only — the web deploy relies on '/' for
+    // its own non-root routes.
+    base: isDesktopBuild ? './' : '/',
     html: {
       cspNonce: STATIC_SCRIPT_NONCE,
     },

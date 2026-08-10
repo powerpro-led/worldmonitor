@@ -28,12 +28,17 @@
  *     picking `node:sqlite` over `better-sqlite3` below for the same
  *     reason.
  *
- * First-slice domain scope, deliberately narrow (expand once this proves out
- * end to end, not before): `resilience:*` (Country Resilience Index) and
- * `intelligence:*` (regional briefs / narrative cache) — the two highest
- * "dashboard-ready" domains. Everything else (76% of all keys is
- * `story:alias:v1:*`, an internal news-dedup hashmap with no display value —
- * confirmed via a live scan 2026-08-06) is out of scope for now.
+ * Domain scope, verified live against the real store (SCAN + TYPE + value
+ * sampling, 2026-08-07) rather than guessed: every prefix in SYNC_PREFIXES
+ * below was hand-checked to hold real, structured, display-worthy JSON.
+ * Deliberately excluded (confirmed internal bookkeeping, zero display
+ * value): `story:*` (alias/peak/sources/track — pure news-dedup tracking,
+ * no article content, ~69% of all keys), `classify:*` (ML/log metadata),
+ * `seed-meta:*`/`seed-routes:*`/`seed-activated:*` (sync-job bookkeeping),
+ * `baseline:*` (internal statistical accumulator state), `digest:*`
+ * (internal notification accumulator), `cache:*`/`health:*`/`temporal:*`/
+ * `wm-smoke-test:*`/`wm:*` (tiny, internal/test), `news:*` (only
+ * ingestion-ledger metadata — counts/drops — not article content).
  *
  * Every key is read with the one command that's actually correct for its
  * real Redis type (`ZRANGE ... WITHSCORES` for zsets, `HGETALL` for
@@ -53,7 +58,11 @@
  * repoint (roadmap stage 4) is a near-trivial swap rather than a rewrite.
  * Non-string values (zset/hash/list/set) are JSON-encoded into the same
  * TEXT `value` column; string values are stored as-is (most are themselves
- * already-JSON application payloads — don't double-encode them).
+ * already-JSON application payloads — don't double-encode them). A `type`
+ * column carries each key's real Redis type through so a reader can decode
+ * it correctly (a JSON-encoded zset's flat member/score array is otherwise
+ * indistinguishable from a string-typed key whose own payload happens to be
+ * a JSON array) — without it, round-tripping is ambiguous, not just messy.
  *
  * Uses `node:sqlite` (built into Node 22.5+, this repo's baseline already —
  * see e.g. Dockerfile.* `FROM node:24-alpine`) instead of a native driver
@@ -134,8 +143,20 @@ const WATCHDOG_MS = 15 * 60_000;
 
 const SCAN_COUNT = 1_000;
 
-/** First-slice domain scope — see header comment. */
-const SYNC_PREFIXES = ['resilience:', 'intelligence:'];
+/** Domain scope — see header comment for how this list was chosen. */
+const SYNC_PREFIXES = [
+  'resilience:',
+  'intelligence:',
+  'energy:',
+  'supply_chain:',
+  'market:',
+  'economic:',
+  'climate:',
+  'portwatch:',
+  'risk:',
+  'rss:',
+  'forecast:',
+];
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */
 const PIPELINE_CHUNK = 100;
@@ -274,10 +295,10 @@ async function readValues(redis, entries) {
     }, `pipeline chunk ${i}-${i + chunk.length}`);
 
     for (let j = 0; j < chunk.length; j++) {
-      const { key } = chunk[j];
+      const { key, type } = chunk[j];
       const { result: raw, error } = results[j] ?? {};
       if (error || raw == null) continue;
-      result.set(key, typeof raw === 'string' ? raw : JSON.stringify(raw));
+      result.set(key, { value: typeof raw === 'string' ? raw : JSON.stringify(raw), type });
     }
   }
   return result;
@@ -285,10 +306,14 @@ async function readValues(redis, entries) {
 
 function openDatabase() {
   const db = new DatabaseSync(SQLITE_PATH);
+  // Full rebuild every run (see main()), so a schema change here is
+  // non-breaking — old DB files just get dropped and recreated fresh next
+  // run, no migration needed.
   db.exec(`
     CREATE TABLE IF NOT EXISTS kv_cache (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
+      type TEXT NOT NULL,
       synced_at INTEGER NOT NULL
     )
   `);
@@ -301,7 +326,7 @@ async function main() {
   console.log(`[local-sync] pulling prefixes: ${SYNC_PREFIXES.join(', ')}`);
 
   const db = openDatabase();
-  const insert = db.prepare('INSERT INTO kv_cache (key, value, synced_at) VALUES (?, ?, ?)');
+  const insert = db.prepare('INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?)');
   const syncedAt = Date.now();
 
   let totalFound = 0;
@@ -330,8 +355,8 @@ async function main() {
       const values = await readValues(redis, entries);
 
       db.exec('BEGIN');
-      for (const [key, value] of values) {
-        insert.run(key, value, syncedAt);
+      for (const [key, { value, type }] of values) {
+        insert.run(key, value, type, syncedAt);
         totalWritten++;
       }
       db.exec('COMMIT');

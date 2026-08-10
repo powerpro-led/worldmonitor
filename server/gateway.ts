@@ -1098,6 +1098,15 @@ export function createDomainGateway(
       internalMcpVerified = true;
     }
 
+    // Local sidecar (Tauri desktop's local-api-server.mjs, LOCAL_API_MODE=
+    // tauri-sidecar): tier/entitlement gating exists to protect the *shared*
+    // production billing model — meaningless for a private single-operator
+    // instance with no other tenants. Same precedent as validateApiKey's
+    // own local-sidecar bypass above and rate-limit.ts's isLocalSidecarMode().
+    // Only ever true when actually running as the spawned sidecar process —
+    // never set in the Vercel production environment.
+    const isLocalSidecarMode = process.env.LOCAL_API_MODE === 'tauri-sidecar';
+
     // Tier gate check first — JWT resolution is expensive (JWKS + RS256) and only needed
     // for tier-gated endpoints. Non-tier-gated endpoints never use sessionUserId.
     //
@@ -1116,8 +1125,8 @@ export function createDomainGateway(
     const seedRefreshVerified = await isResilienceRankingSeedRefreshRequest(request, pathname);
     const relayWarmPingVerified = await isRelayWarmPingRequest(request, pathname);
     const requiresDirectLlmQuota = !internalMcpVerified && await shouldReserveGatewayDirectLlmQuota(request, pathname);
-    const isTierGated = !internalMcpVerified && !isPublicNoAuthRpc && !seedRefreshVerified && !relayWarmPingVerified && getRequiredTier(pathname) !== null;
-    const needsLegacyProBearerGate = !internalMcpVerified && !isPublicNoAuthRpc && PREMIUM_RPC_PATHS.has(pathname) && !isTierGated;
+    const isTierGated = !internalMcpVerified && !isLocalSidecarMode && !isPublicNoAuthRpc && !seedRefreshVerified && !relayWarmPingVerified && getRequiredTier(pathname) !== null;
+    const needsLegacyProBearerGate = !internalMcpVerified && !isLocalSidecarMode && !isPublicNoAuthRpc && PREMIUM_RPC_PATHS.has(pathname) && !isTierGated;
     const isProFreshCacheRpc = PRO_FRESH_CACHE_RPC_PATHS.has(pathname);
     const needsProFreshnessResolution =
       !internalMcpVerified &&
@@ -1417,7 +1426,7 @@ export function createDomainGateway(
     // routes require tier 2, but Pro MCP callers only reach the gateway
     // through the MCP edge's whitelisted tool set.
     const isEnterpriseAuth = keyCheck.valid && wmKey && !isUserApiKey && keyCheck.kind === 'enterprise';
-    if (!isEnterpriseAuth && !internalMcpVerified && !seedRefreshVerified && !relayWarmPingVerified) {
+    if (!isEnterpriseAuth && !internalMcpVerified && !isLocalSidecarMode && !seedRefreshVerified && !relayWarmPingVerified) {
       const entitlementCheck = await checkEntitlementDetailed(sessionUserId, pathname, corsHeaders, {
         clerkRole: sessionRole,
       });

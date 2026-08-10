@@ -19,6 +19,7 @@
  * once signed in (and thus already org-gated) — see src/services/entitlements.ts.
  */
 import { getSupabaseClient } from './supabase-client';
+import { isDesktopRuntime } from './runtime';
 import type { Session } from '@supabase/supabase-js';
 
 export interface AuthProviderUser {
@@ -71,7 +72,10 @@ export async function initAuthProvider(): Promise<void> {
  */
 export function scheduleAuthProviderLoad(): void {
   if (initPromise) return;
-  const start = (): void => { void initAuthProvider(); };
+  const start = (): void => {
+    void initAuthProvider();
+    installExternalSessionListener();
+  };
   const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
   if (typeof ric === 'function') {
     ric(start, { timeout: 4000 });
@@ -84,6 +88,25 @@ export function scheduleAuthProviderLoad(): void {
 
 /** Trigger GitHub OAuth sign-in. Real browser redirect, not a modal. */
 export async function signInWithGithub(): Promise<void> {
+  // A VS Code webview cannot navigate to an external URL at all —
+  // confirmed the hard way: Location.prototype.assign/replace are
+  // [LegacyUnforgeable] in Chromium (a spec-level restriction, not an
+  // implementation gap), so intercepting the navigation AFTER calling
+  // signInWithOAuth() below silently fails and the app still blanks the
+  // page. The only reliable fix is to never attempt the real
+  // browser-redirect flow at all when that global is present — hand off
+  // to the VS Code extension host instead, which runs the actual
+  // github-identity-bridge redirect chain itself and posts the resulting
+  // session back in (see installExternalSessionListener() above and
+  // vscode-extension/src/githubAuthBridge.ts). window.__wmVsCodeApi is
+  // set by the extension's injected shim before the app bundle runs, and
+  // only exists there — every other runtime (web, packaged Tauri) falls
+  // through to the normal flow below unchanged.
+  const vsCodeApi = (window as unknown as { __wmVsCodeApi?: { postMessage: (msg: unknown) => void } }).__wmVsCodeApi;
+  if (vsCodeApi) {
+    vsCodeApi.postMessage({ type: 'wm-github-signin' });
+    return;
+  }
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.warn('[auth-provider] Supabase not configured, cannot sign in');
@@ -91,6 +114,53 @@ export async function signInWithGithub(): Promise<void> {
   }
   const { error } = await supabase.auth.signInWithOAuth({ provider: 'github' });
   if (error) console.error('[auth-provider] signInWithGithub failed:', error);
+}
+
+/**
+ * Applies a session obtained OUTSIDE this client's own OAuth flow — the VS
+ * Code extension host runs the actual github-identity-bridge redirect chain
+ * itself (a webview can't navigate to external URLs at all, which is
+ * exactly why the normal signInWithGithub() above blanks the page there —
+ * see vscode-extension/src/githubAuthBridge.ts) and posts the resulting
+ * tokens back in. supabase-js's own setSession() handles establishing the
+ * session/refresh cycle from a raw token pair — this is not a bespoke
+ * session mechanism, just a different entry point into the same client.
+ */
+export async function applyExternalSession(accessToken: string, refreshToken: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    console.warn('[auth-provider] Supabase not configured, cannot apply external session');
+    return;
+  }
+  const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+  if (error) console.error('[auth-provider] applyExternalSession failed:', error);
+}
+
+let externalSessionListenerInstalled = false;
+
+/**
+ * Desktop-runtime-only: listens for the VS Code extension host handing back
+ * a session from the github-identity-bridge flow. A no-op everywhere else
+ * (web, packaged Tauri without this message ever being sent) — nothing
+ * posts this message type outside the VS Code webview's own injected shim.
+ * Called from scheduleAuthProviderLoad()'s deferred start(), NOT at module
+ * top-level — a real bug hit doing it eagerly: isDesktopRuntime() (imported
+ * from ./runtime) got referenced before that module's own top-level
+ * evaluation had finished in some load orders, a circular-import TDZ
+ * ReferenceError ("Cannot access 'X' before initialization") that broke
+ * the whole bundle's boot, not just this feature. Deferring past initial
+ * module evaluation (same reasoning scheduleAuthProviderLoad already
+ * applies to initAuthProvider itself) avoids it entirely.
+ */
+function installExternalSessionListener(): void {
+  if (externalSessionListenerInstalled) return;
+  externalSessionListenerInstalled = true;
+  if (typeof window === 'undefined' || !isDesktopRuntime()) return;
+  window.addEventListener('message', (event) => {
+    const data = event.data as { type?: string; accessToken?: string; refreshToken?: string } | undefined;
+    if (data?.type !== 'wm-external-session' || !data.accessToken || !data.refreshToken) return;
+    void applyExternalSession(data.accessToken, data.refreshToken);
+  });
 }
 
 /** Sign out the current user. */

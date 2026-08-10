@@ -60,6 +60,19 @@ function getCookie(req, name) {
 // Async because session validation uses Web Crypto (crypto.subtle.sign).
 // All call sites await this — see grep for migration history.
 export async function validateApiKey(req, options = {}) {
+  // Local sidecar (Tauri desktop's own local-api-server.mjs, spawned with
+  // LOCAL_API_MODE=tauri-sidecar): this gate exists to protect a *shared*
+  // production service from abuse/billing bypass. A local sidecar has no
+  // other tenants and no billing to bypass — same precedent as
+  // rate-limit.ts's isLocalSidecarMode() bypass and redis.ts's unconditional
+  // sidecar-mode branch. Checked before anything header/origin-derived
+  // (client-controlled) because this is a trusted server-side env value the
+  // sidecar process itself was launched with, not something a request can
+  // forge.
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    return { valid: true, required: false, kind: 'enterprise' };
+  }
+
   const forceKey = options.forceKey === true;
   const headerKey = getHeaderApiKey(req);
   const sessionCookie = getCookie(req, 'wm-session');

@@ -1,8 +1,23 @@
 /**
- * In-memory TTL + LRU cache for the Tauri sidecar.
- * Activated only when LOCAL_API_MODE === 'tauri-sidecar'.
- * No top-level side effects; sweep timer starts lazily on first write.
+ * In-memory TTL + LRU cache for the Tauri sidecar, backed on a miss by a
+ * read-only mirror of the local SQLite sync cache
+ * (src-tauri/sidecar/local-cache.db's `kv_cache` table, populated by
+ * `npm run local-sync` pulling directly from Upstash — see that script's
+ * header comment for the full pipeline). Activated only when
+ * LOCAL_API_MODE === 'tauri-sidecar'. No top-level side effects; the
+ * in-memory sweep timer starts lazily on first write, and the mirror is
+ * loaded lazily on first read miss, not at module load.
+ *
+ * `node:sqlite` is loaded via `process.getBuiltinModule` rather than a
+ * static `import`/`require('node:sqlite')` — this file is transitively
+ * reachable from `api/*.ts` Vercel Edge handlers (via redis.ts's dynamic
+ * `import('./sidecar-cache')`), and a static reference to a Node-only
+ * built-in would risk edge-bundler resolution failures even though this
+ * code path only ever actually runs inside the plain Node process running
+ * `local-api-server.mjs` in tauri-sidecar mode.
  */
+
+import { unwrapEnvelope } from './seed-envelope';
 
 const MAX_ENTRIES = 500;
 const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
@@ -55,23 +70,133 @@ function evictLRU(incomingSize = 0): void {
   for (const k of keysToEvict) store.delete(k);
 }
 
+type MirrorRow = { key: string; value: string; type: string };
+type MirrorEntry = { value: string; type: string };
+
+/**
+ * scripts/build-sidecar-handlers.mjs esbuild-bundles this module SEPARATELY
+ * into each of the ~34 api/{domain}/v1/[rpc].js domain handlers (each is
+ * its own entry point) — a plain module-level `let mirror` would give every
+ * bundle its own private copy, so local-api-server.mjs's single Node
+ * process ends up loading and holding the full mirror once per domain
+ * actually hit, not once total (confirmed live: "[sidecar-cache] loaded
+ * 1109 keys" repeated ~11x for a handful of RPC calls). globalThis is the
+ * one thing genuinely shared across those separately-bundled copies within
+ * one process.
+ */
+const MIRROR_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirror');
+type GlobalWithMirror = typeof globalThis & { [MIRROR_GLOBAL_KEY]?: Map<string, MirrorEntry> };
+
+/**
+ * Lazily loads the entire local-cache.db `kv_cache` table into memory on
+ * first use. A full-table read-once (not a per-key SQLite query per miss)
+ * because the mirror is small (low thousands of rows at most, per
+ * local-sync.mjs's own domain scope) and static for the process's
+ * lifetime — `npm run local-sync` always does a full rebuild, so there is
+ * no "stale row" to invalidate mid-process, only a whole-file resync that
+ * requires a process restart to pick up (matches how the packaged Tauri
+ * sidecar already behaves — same tradeoff, not a new one).
+ */
+function loadMirror(): Map<string, MirrorEntry> {
+  const g = globalThis as GlobalWithMirror;
+  const existing = g[MIRROR_GLOBAL_KEY];
+  if (existing) return existing;
+  const mirror = new Map<string, MirrorEntry>();
+  g[MIRROR_GLOBAL_KEY] = mirror;
+  const dbPath = process.env.LOCAL_SQLITE_PATH;
+  if (!dbPath) return mirror;
+  try {
+    const sqlite = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
+      | { DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => { prepare(sql: string): { all(): unknown[] }; close(): void } }
+      | undefined;
+    if (!sqlite) {
+      console.warn('[sidecar-cache] node:sqlite unavailable in this runtime — mirror disabled');
+      return mirror;
+    }
+    const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const rows = db.prepare('SELECT key, value, type FROM kv_cache').all() as MirrorRow[];
+      for (const row of rows) mirror.set(row.key, { value: row.value, type: row.type });
+    } finally {
+      db.close();
+    }
+    console.warn(`[sidecar-cache] loaded ${mirror.size} keys from local mirror at ${dbPath}`);
+  } catch (err) {
+    console.warn('[sidecar-cache] failed to load local SQLite mirror:', err instanceof Error ? err.message : String(err));
+  }
+  return mirror;
+}
+
+/**
+ * Test-only: force the next sidecarCacheGet() mirror miss to reload from
+ * disk instead of reusing the cached Map — lets a test point
+ * LOCAL_SQLITE_PATH at a fresh fixture DB per case. No production caller
+ * should ever invoke this.
+ */
+export function __resetMirrorForTests(): void {
+  delete (globalThis as GlobalWithMirror)[MIRROR_GLOBAL_KEY];
+}
+
+/**
+ * Decodes a mirror row into the same shape a live Redis read would
+ * produce. `string`-typed rows get the same envelope-unwrap treatment the
+ * live-Upstash path applies (readCachedJson in redis.ts) so callers see
+ * identical shapes regardless of data source. Non-string types
+ * (zset/list/hash/set) were JSON-encoded by local-sync.mjs — parse back to
+ * their native structure (e.g. a zset's flat [member, score, ...] array,
+ * exactly what a live `ZRANGE ... WITHSCORES` pipeline result looks like).
+ */
+function decodeMirrorEntry(entry: MirrorEntry): unknown {
+  if (entry.type === 'string') {
+    try {
+      return unwrapEnvelope(JSON.parse(entry.value)).data;
+    } catch {
+      return entry.value;
+    }
+  }
+  try {
+    return JSON.parse(entry.value);
+  } catch {
+    return null;
+  }
+}
+
 export function sidecarCacheGet(key: string): unknown | null {
   const entry = store.get(key);
-  if (!entry) {
-    missCount++;
-    return null;
+  if (entry) {
+    if (entry.expiresAt <= Date.now()) {
+      totalBytes -= entry.size;
+      store.delete(key);
+    } else {
+      // Move to end for LRU (re-insert)
+      store.delete(key);
+      store.set(key, entry);
+      hitCount++;
+      return JSON.parse(entry.value);
+    }
   }
-  if (entry.expiresAt <= Date.now()) {
-    totalBytes -= entry.size;
-    store.delete(key);
-    missCount++;
-    return null;
+
+  const mirrorEntry = loadMirror().get(key);
+  if (mirrorEntry) {
+    hitCount++;
+    return decodeMirrorEntry(mirrorEntry);
   }
-  // Move to end for LRU (re-insert)
-  store.delete(key);
-  store.set(key, entry);
-  hitCount++;
-  return JSON.parse(entry.value);
+
+  missCount++;
+  return null;
+}
+
+/**
+ * Mirror-only read returning the raw decoded value plus its Redis type —
+ * used by runRedisPipeline's ZRANGE/LRANGE mirror path, which needs to
+ * know the type to validate the caller actually asked for a zset/list
+ * before serving mirror data for it (an all-or-nothing pipeline shape
+ * check, not a best-effort guess).
+ */
+export function sidecarMirrorGetTyped(key: string): { value: unknown; type: string } | null {
+  const mirrorEntry = loadMirror().get(key);
+  if (!mirrorEntry) return null;
+  return { value: decodeMirrorEntry(mirrorEntry), type: mirrorEntry.type };
 }
 
 export function sidecarCacheSet(key: string, value: unknown, ttlSeconds: number): void {
@@ -108,6 +233,7 @@ export function sidecarCacheSet(key: string, value: unknown, ttlSeconds: number)
   startSweepIfNeeded();
 }
 
-export function sidecarCacheStats(): { entries: number; bytes: number; hits: number; misses: number } {
-  return { entries: store.size, bytes: totalBytes, hits: hitCount, misses: missCount };
+export function sidecarCacheStats(): { entries: number; bytes: number; hits: number; misses: number; mirrorEntries: number } {
+  const mirror = (globalThis as GlobalWithMirror)[MIRROR_GLOBAL_KEY];
+  return { entries: store.size, bytes: totalBytes, hits: hitCount, misses: missCount, mirrorEntries: mirror?.size ?? 0 };
 }

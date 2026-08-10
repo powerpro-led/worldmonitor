@@ -54,6 +54,7 @@
     "resources": [
       "../api",
       "sidecar/local-api-server.mjs",
+      "sidecar/local-cache.db",
       "sidecar/package.json",
       "sidecar/node",
       "../data",

@@ -1383,16 +1383,37 @@ fn start_local_api(app: &AppHandle) -> Result<(), String> {
     let data_dir = logs_dir_path(app)
         .map(|p| sanitize_path_for_node(&p))
         .unwrap_or_else(|_| resource_for_node.clone());
+    // local-cache.db lives alongside local-api-server.mjs (script.parent()) in both
+    // debug (src-tauri/sidecar/) and release (resource_dir/sidecar/, once bundled —
+    // see tauri.conf.json's `bundle.resources`) layouts. Without this,
+    // sidecar-cache.ts's loadMirror() never finds LOCAL_SQLITE_PATH and the SQLite
+    // mirror silently stays empty forever — the gap that let the desktop app run for
+    // months falling through to cloudFallback instead of local data (see
+    // docs/architecture — local sidecar should be single source of truth).
+    let sqlite_path = script
+        .parent()
+        .map(|dir| dir.join("local-cache.db"))
+        .map(|p| sanitize_path_for_node(&p));
+    if let Some(path) = &sqlite_path {
+        append_desktop_log(app, "INFO", &format!("sidecar SQLite mirror path={path}"));
+    }
     cmd.arg(&script_for_node)
         .env("LOCAL_API_PORT", DEFAULT_LOCAL_API_PORT.to_string())
         .env("LOCAL_API_PORT_FILE", &port_file)
         .env("LOCAL_API_RESOURCE_DIR", &resource_for_node)
         .env("LOCAL_API_DATA_DIR", &data_dir)
         .env("LOCAL_API_MODE", "tauri-sidecar")
-        .env("LOCAL_API_CLOUD_FALLBACK", "true")
+        // Local sidecar is the single source of truth for desktop: no live fallback
+        // to the hosted production API. A route with no local/mirrored data returns
+        // empty/degraded rather than silently phoning home (previously defaulted to
+        // "true", which meant most RPCs never actually exercised the local pipeline).
+        .env("LOCAL_API_CLOUD_FALLBACK", "false")
         .env("LOCAL_API_TOKEN", &local_api_token)
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_err));
+    if let Some(path) = &sqlite_path {
+        cmd.env("LOCAL_SQLITE_PATH", path);
+    }
     if let Some(parent) = script.parent() {
         cmd.current_dir(parent);
     }

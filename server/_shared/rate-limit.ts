@@ -156,7 +156,24 @@ export interface EndpointRateLimitOptions extends RateLimitOptions {
   principalUserId?: string;
 }
 
+/**
+ * Rate limiting exists to protect the shared production service from abuse
+ * — meaningless for a single operator's own local sidecar talking only to
+ * itself (server/_shared/redis.ts already treats this mode as "no live
+ * Upstash at all" throughout; this file was the one exception, discovered
+ * live: LOCAL_API_MODE=tauri-sidecar reads fine but every rate-limited RPC
+ * 503'd with "Rate-limit service temporarily unavailable" since Upstash
+ * genuinely isn't configured in that mode and every check here defaults to
+ * fail-closed on missing config). Matches the entitlements-collapse
+ * precedent for this fork: a private single-user sidecar has no abuse
+ * surface to defend.
+ */
+function isLocalSidecarMode(): boolean {
+  return process.env.LOCAL_API_MODE === 'tauri-sidecar';
+}
+
 export async function checkRateLimit(request: Request, corsHeaders: Record<string, string>, opts: RateLimitOptions = {}): Promise<Response | null> {
+  if (isLocalSidecarMode()) return null;
   const rl = getRatelimit();
   if (!rl) {
     if (opts.failClosed) {
@@ -385,6 +402,7 @@ export function hasEndpointRatePolicy(pathname: string): boolean {
 }
 
 export async function checkEndpointRateLimit(request: Request, pathname: string, corsHeaders: Record<string, string>, opts: EndpointRateLimitOptions = {}): Promise<Response | null> {
+  if (isLocalSidecarMode()) return null;
   if (!hasEndpointRatePolicy(pathname)) return null;
 
   const rl = getEndpointRatelimit(pathname);
@@ -477,6 +495,7 @@ export interface ScopedRateLimitResult {
  * windows are visible in logs / Sentry.
  */
 export async function checkScopedRateLimit(scope: string, limit: number, window: Duration, identifier: string): Promise<ScopedRateLimitResult> {
+  if (isLocalSidecarMode()) return { allowed: true, limit, reset: 0, degraded: false };
   const rl = getScopedRatelimit(scope, limit, window);
   if (!rl) {
     logScopedRateLimitMissingConfig(scope);

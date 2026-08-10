@@ -1,6 +1,27 @@
 import { unwrapEnvelope } from './_seed-envelope.js';
 
 export async function readJsonFromUpstash(key, timeoutMs = 3_000) {
+  // Local sidecar (Tauri desktop / local MCP endpoint, LOCAL_API_MODE=
+  // tauri-sidecar): this module is otherwise raw-Upstash-only with zero
+  // sidecar awareness — the one gap server/_shared/redis.ts already closed
+  // for the RPC/gateway path (readCachedJson) but this MCP-only cache-read
+  // path (api/mcp/dispatch.ts's executeTool, api/mcp/resources/index.ts,
+  // api/mcp/registry/rpc-tools.ts's hybrid cache reads — all three import
+  // THIS function directly) never got. Without this branch every MCP
+  // cache-tool silently returns null/empty in sidecar mode (no Upstash
+  // creds reach this process) instead of serving the local SQLite mirror.
+  // Mirrors readCachedJson's sidecar branch exactly, including the
+  // envelope-unwrap-on-hit contract.
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    // No extension — matches server/_shared/redis.ts's own working dynamic
+    // import of this exact module (`await import('./sidecar-cache')`), the
+    // convention this repo's bundler (moduleResolution: "bundler") resolves
+    // against a .ts source file.
+    const { sidecarCacheGet } = await import('../server/_shared/sidecar-cache');
+    const value = sidecarCacheGet(key);
+    return value == null ? null : value;
+  }
+
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;

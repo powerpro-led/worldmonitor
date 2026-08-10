@@ -360,8 +360,46 @@ function normalizePipelineCommand(command: RedisPipelineCommand, raw: boolean): 
   return [verb, prefixKey(key), ...rest];
 }
 
+/**
+ * Matches a pipeline command against one of the two shapes the local
+ * SQLite mirror can actually serve: `ZRANGE key 0 -1 WITHSCORES` (the
+ * shape resilience history reads use) or `LRANGE key 0 -1` (the shape
+ * forecast-history reads use). Returns the key on a match, null otherwise
+ * — deliberately narrow, no partial/best-effort emulation of arbitrary
+ * ZRANGE/LRANGE argument combinations.
+ */
+function matchMirrorablePipelineCommand(command: RedisPipelineCommand): { key: string; verb: 'zrange' | 'lrange' } | null {
+  const [verb, key, start, stop, withscores] = command;
+  if (typeof key !== 'string') return null;
+  if (String(start) !== '0' || String(stop) !== '-1') return null;
+  if (typeof verb === 'string' && verb.toUpperCase() === 'ZRANGE' && typeof withscores === 'string' && withscores.toUpperCase() === 'WITHSCORES') {
+    return { key, verb: 'zrange' };
+  }
+  if (typeof verb === 'string' && verb.toUpperCase() === 'LRANGE' && withscores === undefined) {
+    return { key, verb: 'lrange' };
+  }
+  return null;
+}
+
 export async function runRedisPipeline(commands: RedisPipelineCommand[], raw = false): Promise<Array<{ result?: unknown }>> {
-  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') return [];
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    if (commands.length === 0) return [];
+    // All-or-nothing: serve from the mirror only when EVERY command in the
+    // pipeline is one of the two known-mirrorable shapes — a mixed
+    // pipeline or any other verb falls through to [], preserving every
+    // caller's existing "empty → unavailable, fail open/closed" behavior
+    // instead of a partial best-effort emulation.
+    const matches = commands.map(matchMirrorablePipelineCommand);
+    if (matches.some((m) => m === null)) return [];
+    const { sidecarMirrorGetTyped } = await import('./sidecar-cache');
+    return matches.map((match) => {
+      const entry = sidecarMirrorGetTyped(match!.key);
+      if (!entry) return {};
+      const expectedType = match!.verb === 'zrange' ? 'zset' : 'list';
+      if (entry.type !== expectedType) return {};
+      return { result: entry.value };
+    });
+  }
   if (commands.length === 0) return [];
 
   const url = process.env.UPSTASH_REDIS_REST_URL;

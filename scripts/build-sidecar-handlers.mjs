@@ -29,6 +29,17 @@ for (const d of dirs) {
   }
 }
 
+// api/mcp.ts: the production MCP server entry (re-exports mcpHandler from
+// ./mcp/handler alongside the PRODUCTION_DEPS-wired default). Bundled here
+// (not discovered by the {domain}/v1/[rpc].ts glob above) so the sidecar's
+// local-only MCP route (local-api-server.mjs) can dynamic-import the raw
+// `mcpHandler` export and call it with local-only deps, instead of the
+// billing/OAuth-gated `PRODUCTION_DEPS` the default export carries.
+const mcpEntry = path.join(apiDir, 'mcp.ts');
+if (existsSync(mcpEntry)) {
+  entries.push(mcpEntry);
+}
+
 if (entries.length === 0) {
   console.log('build:sidecar-handlers  no domain handlers found, skipping');
   process.exit(0);

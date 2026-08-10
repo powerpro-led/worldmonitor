@@ -726,6 +726,105 @@ async function importHandler(modulePath) {
   }
 }
 
+// ── Local-only MCP endpoint ─────────────────────────────────────────────
+// See the /api/mcp dispatch branch above for the routing rationale.
+let mcpModulePromise = null;
+let mcpEnvPrepared = false;
+
+// Registers the sidecar's own per-session LOCAL_API_TOKEN as a valid
+// WORLDMONITOR_VALID_KEYS enterprise key, so resolveAuthContext's existing,
+// unmodified production auth logic (api/mcp/auth.ts) resolves the local
+// request to a real `{kind: 'env_key'}` context with zero changes to that
+// shared file. Additive — appends onto any keys already present rather than
+// clobbering an operator's own test config. Runs once per process, lazily
+// (only if /api/mcp is ever actually hit).
+function ensureLocalMcpEnv(localToken) {
+  if (mcpEnvPrepared) return;
+  mcpEnvPrepared = true;
+  const existing = (process.env.WORLDMONITOR_VALID_KEYS || '').split(',').filter(Boolean);
+  if (!existing.includes(localToken)) {
+    process.env.WORLDMONITOR_VALID_KEYS = [...existing, localToken].join(',');
+  }
+}
+
+function importLocalMcpModule(apiDir) {
+  if (!mcpModulePromise) {
+    const modulePath = path.join(apiDir, 'mcp.js');
+    mcpModulePromise = import(pathToFileURL(modulePath).href);
+  }
+  return mcpModulePromise;
+}
+
+// Local-only api/mcp/types.ts McpHandlerDeps. The local route always
+// authenticates via X-WorldMonitor-Key (env_key kind — see
+// ensureLocalMcpEnv), which resolveAuthContext resolves WITHOUT calling any
+// of resolveBearerToContext/validateProMcpToken/getEntitlements/
+// validateUserApiKey/guardUserApiKeyValidation (those only fire for a
+// caller-supplied Bearer token or wm_-prefixed key — neither is how this
+// endpoint authenticates). Implemented as safe no-ops rather than left
+// unreachable, in case a caller sends its own Bearer/wm_ credential anyway:
+// that correctly falls through to "not accepted here" (401) instead of
+// throwing. redisPipeline IS wired to the real sidecar-aware pipeline
+// (server/_shared/redis.ts, already SQLite-mirror-aware) for correctness,
+// even though env_key contexts never reach the Pro-quota code path that
+// calls it.
+const LOCAL_MCP_DEPS = {
+  async resolveBearerToContext() {
+    return null;
+  },
+  async validateProMcpToken() {
+    return null;
+  },
+  async getEntitlements() {
+    return null;
+  },
+  async validateUserApiKey() {
+    return null;
+  },
+  async guardUserApiKeyValidation() {
+    return null;
+  },
+  async redisPipeline(commands) {
+    // No extension — same bundler-resolution convention as the sidecar-cache
+    // dynamic import in api/_upstash-json.js.
+    const { runRedisPipeline } = await import('../../server/_shared/redis');
+    return runRedisPipeline(commands);
+  },
+};
+
+async function handleLocalMcp(requestUrl, req, context, localToken) {
+  ensureLocalMcpEnv(localToken);
+  try {
+    const mod = await importLocalMcpModule(context.apiDir);
+    const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await readBody(req);
+    const hdrs = toHeaders(req.headers, { stripOrigin: true });
+    hdrs.set('Origin', `http://127.0.0.1:${context.port}`);
+    hdrs.delete(LOCAL_API_TRANSPORT_HEADER);
+    if (hdrs.get('Authorization') === `Bearer ${localToken}`) {
+      hdrs.delete('Authorization');
+    }
+    // Auto-attach the local operator credential when the caller presented
+    // no auth of its own — a bare `curl -H 'x-worldmonitor-local-token: ...'
+    // http://127.0.0.1:<port>/api/mcp` then "just works" without a second
+    // header. A caller that DOES send its own X-WorldMonitor-Key or
+    // Authorization Bearer keeps it untouched — resolveAuthContext validates
+    // whatever is actually present, same as the production endpoint.
+    if (!hdrs.get('X-WorldMonitor-Key') && !hdrs.get('Authorization')) {
+      hdrs.set('X-WorldMonitor-Key', localToken);
+    }
+    const request = new Request(requestUrl.toString(), {
+      method: req.method,
+      headers: hdrs,
+      body,
+    });
+    const bgTasks = { waitUntil: (p) => { Promise.resolve(p).catch(() => {}); } };
+    return await mod.mcpHandler(request, LOCAL_MCP_DEPS, bgTasks);
+  } catch (error) {
+    context.logger.error('[local-api] /api/mcp error:', error);
+    return json({ error: 'Local MCP handler error', reason: error.message }, 502);
+  }
+}
+
 function remoteBaseLooksPrivate(remoteBase) {
   let parsed;
   try { parsed = new URL(remoteBase); } catch { return false; }
@@ -1410,11 +1509,36 @@ async function dispatch(requestUrl, req, routes, context) {
   }
   const authHeader = req.headers.authorization || '';
   const transportToken = req.headers[LOCAL_API_TRANSPORT_HEADER] || '';
+  const worldMonitorKeyHeader = req.headers['x-worldmonitor-key'] || '';
   const hasTransportAuth = transportToken === expectedToken;
   const hasLegacyAuth = authHeader === `Bearer ${expectedToken}`;
-  if (!hasTransportAuth && !hasLegacyAuth) {
+  // /api/mcp tools that proxy to an internal RPC endpoint (rpc-tools.ts's
+  // `_execute`) self-fetch this SAME sidecar process via buildAuthHeaders'
+  // env_key branch, which only ever attaches `X-WorldMonitor-Key` (the
+  // shared production contract — it has no notion of this sidecar's own
+  // transport token). ensureLocalMcpEnv registers LOCAL_API_TOKEN itself as
+  // the local WORLDMONITOR_VALID_KEYS enterprise key, so in local mode that
+  // header carries the EXACT SAME secret as the transport token — accepting
+  // it here is not a new trust boundary, just a second header name for the
+  // one already-trusted value.
+  const hasMcpSelfFetchAuth = worldMonitorKeyHeader === expectedToken;
+  if (!hasTransportAuth && !hasLegacyAuth && !hasMcpSelfFetchAuth) {
     context.logger.warn(`[local-api] unauthorized request to ${requestUrl.pathname}`);
     return json({ error: 'Unauthorized' }, 401);
+  }
+
+  // ── Local-only MCP endpoint ─────────────────────────────────────────────
+  // Lets a local agent (Claude Code, another MCP client) point at this
+  // sidecar instead of the hosted, billing/OAuth-gated production MCP
+  // server (api/mcp.ts). Reuses the REAL, spec-audited MCP protocol
+  // handler (api/mcp/handler.ts's `mcpHandler`, bundled to api/mcp.js by
+  // build-sidecar-handlers.mjs) with a local-only `deps` object instead of
+  // PRODUCTION_DEPS — no Convex, no Upstash ratelimit, no Pro quota. Gated
+  // by the SAME transport-level LOCAL_API_TOKEN check every other sidecar
+  // route already required above (a caller that can't pass that gate never
+  // reaches this branch at all).
+  if (requestUrl.pathname === '/api/mcp') {
+    return handleLocalMcp(requestUrl, req, context, expectedToken);
   }
 
   if (requestUrl.pathname === '/api/local-status') {

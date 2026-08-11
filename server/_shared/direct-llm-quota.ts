@@ -1,5 +1,5 @@
 import { getKeyPrefix } from './redis';
-import { PRO_DAILY_QUOTA_TTL_SECONDS, secondsUntilUtcMidnight } from './pro-mcp-token';
+import { DAILY_COUNTER_TTL_SECONDS, secondsUntilUtcMidnight } from './utc-midnight';
 
 export const DIRECT_LLM_DAILY_QUOTA_LIMIT = 50;
 export const DIRECT_LLM_REDIS_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
@@ -62,7 +62,7 @@ export async function reserveDirectLlmQuota(opts: {
   try {
     pipeResult = await opts.pipeline([
       ['INCR', key],
-      ['EXPIRE', key, PRO_DAILY_QUOTA_TTL_SECONDS],
+      ['EXPIRE', key, DAILY_COUNTER_TTL_SECONDS],
     ]);
   } catch {
     pipeResult = null;

@@ -64,19 +64,6 @@ describe('agent-mode view (/?mode=agent)', () => {
     }
   });
 
-  it('the marketing homepage points at the agent view via link rel=alternate', () => {
-    // Hand-synced pair: the pro-test source and the committed build artifact
-    // must both carry the pointer (the pre-push gate rebuilds and compares).
-    const linkTag =
-      '<link rel="alternate" type="application/json" href="https://www.worldmonitor.app/?mode=agent"';
-    for (const path of ['pro-test/welcome.html', 'public/pro/welcome.html']) {
-      assert.ok(
-        readFileSync(join(ROOT, path), 'utf-8').includes(linkTag),
-        `${path} must advertise the agent-mode view via <link rel="alternate">`,
-      );
-    }
-  });
-
   it('advertises the schemamap and every section llms.txt', () => {
     assert.equal(view.discovery.schemamap, 'https://www.worldmonitor.app/schemamap.xml');
     assert.doesNotThrow(() => readFileSync(join(ROOT, 'public/schemamap.xml')));
@@ -104,7 +91,7 @@ describe('agent-mode view (/?mode=agent)', () => {
     assert.equal(view.endpoints.nlweb.url, 'https://www.worldmonitor.app/ask');
   });
 
-  it('vercel.json serves it for /?mode=agent ahead of the welcome rewrite', () => {
+  it('vercel.json serves it for /?mode=agent ahead of the dashboard catch-all', () => {
     const rewrites = vercelConfig.rewrites;
     const agentIdx = rewrites.findIndex(
       (r) =>
@@ -113,12 +100,12 @@ describe('agent-mode view (/?mode=agent)', () => {
         r.has.some((h) => h.type === 'query' && h.key === 'mode' && h.value === 'agent') &&
         r.destination === '/agent-view.json',
     );
-    const welcomeIdx = rewrites.findIndex(
-      (r) => r.source === '/' && r.destination === '/pro/welcome.html',
+    const catchAllIdx = rewrites.findIndex(
+      (r) => r.destination === '/dashboard.html' && r.source.startsWith('/((?!'),
     );
     assert.ok(agentIdx >= 0, 'missing /?mode=agent rewrite to /agent-view.json');
-    assert.ok(welcomeIdx >= 0, 'welcome rewrite missing');
-    assert.ok(agentIdx < welcomeIdx, '?mode=agent rewrite must precede the welcome rewrite (first match wins)');
+    assert.ok(catchAllIdx >= 0, 'dashboard catch-all rewrite missing');
+    assert.ok(agentIdx < catchAllIdx, '?mode=agent rewrite must precede the dashboard catch-all (first match wins)');
   });
 
   it('every discovery URL it advertises resolves to a tracked file or a live rewrite', () => {

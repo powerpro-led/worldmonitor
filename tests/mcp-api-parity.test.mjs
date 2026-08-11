@@ -111,10 +111,6 @@ const EXCLUDED_FROM_MCP_PARITY = new Map([
   // is the highest-blast-radius surface (any Pro Claude Desktop user).
   ["POST /api/forecast/v1/trigger-simulation",
     "mutating: writes to forecast simulation queue (PRO-gated, see #3734 + #3809 follow-up)"],
-  ["POST /api/leads/v1/register-interest",
-    "mutating: writes to Convex (not server/_shared/redis) — lead registration write"],
-  ["POST /api/leads/v1/submit-contact",
-    "mutating: writes to Convex (not server/_shared/redis) — contact form write"],
   ["POST /api/v2/shipping/webhooks",
     "mutating: webhook/registration write — POSTs persistent record"],
 

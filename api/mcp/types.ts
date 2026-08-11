@@ -2,25 +2,14 @@
 // Pure types only — no runtime exports — so this module is safe to import
 // from anywhere without creating evaluation-order surprises or cycles.
 
-import type { BillingVerificationStatus } from '../../server/_shared/entitlement-check';
-
 // ---------------------------------------------------------------------------
-// Auth-context shape passed into tool _execute. U7 widened the previous
-// `apiKey: string` to a discriminated union so per-tool fetches can branch
-// header construction (`X-WorldMonitor-Key` for env_key, internal-HMAC for
-// Pro) from a single point.
+// Auth-context shape passed into tool _execute. Operator env-keys
+// (WORLDMONITOR_VALID_KEYS) are the sole credential class — MCP "Pro" (OAuth
+// Clerk-grant tokens) and customer-issued dashboard keys were retired along
+// with billing.
 // ---------------------------------------------------------------------------
 
-export type McpAuthContext =
-  | { kind: 'env_key'; apiKey: string }
-  | { kind: 'pro'; userId: string; mcpTokenId: string }
-  // Customer-issued dashboard key (Convex userApiKeys, #4859). Carries BOTH
-  // the raw key (downstream _execute fetches authenticate as the owner via
-  // X-WorldMonitor-Key, so REST metering/limits attribute to them) AND the
-  // resolved owner userId (per-user rate limit + daily quota + the mcpAccess
-  // entitlement pre-check — a user_key context must NEVER skip that gate the
-  // way env_key does).
-  | { kind: 'user_key'; apiKey: string; userId: string };
+export type McpAuthContext = { kind: 'env_key'; apiKey: string };
 
 export type McpInboundHostClass =
   | 'canonical_api'
@@ -235,47 +224,10 @@ export interface PublicToolShape {
 }
 
 // ---------------------------------------------------------------------------
-// Daily-quota pipeline types
-// ---------------------------------------------------------------------------
-export type PipelineFn = (commands: Array<Array<string | number>>, timeoutMs?: number) => Promise<Array<{ result: unknown }> | null>;
-
-export interface QuotaReserved {
-  ok: true;
-  newCount: number;
-  /** Roll back the INCR (best-effort). Idempotent — safe to call multiple times. */
-  rollback: () => Promise<void>;
-}
-export interface QuotaRejected {
-  ok: false;
-  reason: 'cap-exceeded' | 'redis-unavailable';
-  /** When cap-exceeded: count after the rejected reservation was rolled back (i.e. the floor). */
-  floor?: number;
-}
-
-// ---------------------------------------------------------------------------
 // Auth resolution + handler deps
 // ---------------------------------------------------------------------------
 export interface McpHandlerDeps {
   resolveBearerToContext: (token: string) => Promise<McpAuthContext | null>;
-  validateProMcpToken: (tokenId: string) => Promise<{ userId: string } | null>;
-  getEntitlements: (userId: string) => Promise<{
-    planKey?: string;
-    features: { tier: number; mcpAccess?: boolean };
-    validUntil: number;
-    billingStatus?: BillingVerificationStatus;
-    retryAfterSeconds?: number;
-    verificationUnavailable?: boolean;
-  } | null>;
-  // #4859: Convex userApiKeys hash lookup (same shared helper as the REST
-  // gateway). Returns the key owner, or null for unknown/revoked keys. The
-  // production impl fail-softs to null internally; a THROW from a dep is
-  // treated as auth-backend-transient (503), mirroring resolveBearerToContext.
-  validateUserApiKey: (key: string) => Promise<{ userId: string } | null>;
-  // Fail-closed per-IP guard that runs before the unattributed Convex lookup.
-  // Kept injectable so auth ordering and backpressure are testable without
-  // contacting Redis.
-  guardUserApiKeyValidation: (request: Request, corsHeaders: Record<string, string>) => Promise<Response | null>;
-  redisPipeline: PipelineFn;
 }
 
 export interface AuthResolution {

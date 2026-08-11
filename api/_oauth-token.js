@@ -6,35 +6,25 @@ import { getRedisCredentials } from './_upstash-json.js';
 /**
  * Bearer-to-context resolver for the OAuth + MCP edge.
  *
- * U6 of plan 2026-05-10-001 (`feat-pro-mcp-clerk-auth-quota-plan`) introduced
- * the discriminated `McpAuthContext` union — the same `oauth:token:<uuid>`
- * Redis namespace now stores TWO disjoint shapes:
- *
- *   Legacy (env-key issued, written by `storeNewTokens` / `storeLegacyToken`
- *   in `api/oauth/token.js`): a bare JSON-string holding either a 64-hex
- *   SHA-256 of a `wm_*` key (authorization_code / refresh) or a 16-char
- *   key-fingerprint (client_credentials).
+ * The Clerk-grant "Pro" MCP flow (`/oauth/authorize-pro`, the
+ * `{kind:'pro', userId, mcpTokenId}` Redis shape) was retired along with
+ * billing — `oauth:token:<uuid>` now stores exactly one shape: a bare
+ * JSON-string holding either a 64-hex SHA-256 of a `wm_*` key
+ * (authorization_code / refresh) or a 16-char key-fingerprint
+ * (client_credentials).
  *     stored = "abc123..."           // typeof === 'string'
  *
- *   Pro (Clerk-grant issued, written by `storeProTokens` in
- *   `api/oauth/token.js` after U5's `/oauth/authorize-pro` flow): a JSON
- *   object carrying the Convex `mcpProTokens` row id and the user id.
- *     stored = { kind: 'pro', userId: 'user_abc', mcpTokenId: 'k57...' }
- *
- * Both shapes coexist forever — there is no migration. Resolver dispatches
- * on `typeof raw` then on `raw.kind`. Authorization-code / refresh-token
- * issued access tokens also get `oauth:tokenfam:<uuid>`; when
- * `oauth:famrev:<family_id>` exists, the resolver rejects that bearer so
- * refresh-token reuse containment applies to already-issued access tokens too.
+ * Authorization-code / refresh-token issued access tokens also get
+ * `oauth:tokenfam:<uuid>`; when `oauth:famrev:<family_id>` exists, the
+ * resolver rejects that bearer so refresh-token reuse containment applies
+ * to already-issued access tokens too.
  *
  * Public surface:
- *   - `resolveBearerToContext(token)` — preferred. Returns the discriminated
- *     `McpAuthContext` union, or null on miss / malformed / unknown shape.
- *   - `resolveApiKeyFromBearer(token)` — legacy thin wrapper retained for
- *     callers that only know how to handle the env-key path. Returns the
- *     cleartext `wm_*` key for `kind:'env_key'`, null for `kind:'pro'`
- *     (callers expecting a key string have no contract for the Pro shape).
- *     U7's MCP edge will switch to `resolveBearerToContext` directly.
+ *   - `resolveBearerToContext(token)` — preferred. Returns the
+ *     `McpAuthContext` (`{kind:'env_key', apiKey}`), or null on miss /
+ *     malformed / unknown shape.
+ *   - `resolveApiKeyFromBearer(token)` — thin wrapper returning the
+ *     cleartext `wm_*` key directly.
  */
 
 async function fetchOAuthValue(key) {
@@ -86,25 +76,15 @@ export async function resolveApiKeyFromHash(fullHash) {
 }
 
 /**
- * Resolve a bearer token to the `McpAuthContext` discriminated union.
- *
- *   { kind: 'env_key', apiKey: string }
- *   | { kind: 'pro',   userId: string, mcpTokenId: string }
- *   | null
+ * Resolve a bearer token to the `McpAuthContext` (`{kind:'env_key', apiKey}`
+ * or null).
  *
  * Branch logic:
- *   - typeof raw === 'string' → legacy bare-string. Length-dispatches to
+ *   - typeof raw === 'string' → bare-string. Length-dispatches to
  *     `resolveApiKeyFromHash` (64) or `resolveApiKeyFromFingerprint` (16).
- *   - raw.kind === 'pro' (with valid string `userId` + `mcpTokenId`) →
- *     `kind:'pro'` context. NOTE: this resolver does NOT call Convex
- *     `validateProMcpToken` — that revocation check belongs at the
- *     dispatcher (U7 / MCP edge / per-tool gate). Resolver only proves
- *     the bearer DECODES to a Pro identity; downstream proves the row
- *     is still active.
- *   - Anything else (bare-string with bad length, object with unknown
- *     `kind`, missing fields, unknown shape) → null. Defensive: future
- *     additions to the union must explicitly opt-in here, not implicitly
- *     leak through as a falsy / undefined branch.
+ *   - Anything else (bad length, object shape, missing fields, unknown
+ *     shape) → null. Defensive: a future shape must explicitly opt in
+ *     here, not implicitly leak through as a falsy/undefined branch.
  *
  * Throws on Redis HTTP failure (mirrors `fetchOAuthToken`) — callers map
  * that to 503. Returns null on Redis miss + JSON-parse failure (existing
@@ -120,41 +100,15 @@ export async function resolveBearerToContext(token) {
     return null;
   }
 
-  // Legacy bare-string: env-key path.
-  if (typeof raw === 'string') {
-    if (!raw) return null;
-    let apiKey = null;
-    if (raw.length === 64) apiKey = await resolveApiKeyFromHash(raw);
-    else if (raw.length === 16) apiKey = await resolveApiKeyFromFingerprint(raw);
-    return apiKey ? { kind: 'env_key', apiKey } : null;
-  }
-
-  // New Pro object shape — defensive shape-check before trusting.
-  if (raw && typeof raw === 'object' && raw.kind === 'pro') {
-    const userId = typeof raw.userId === 'string' ? raw.userId : '';
-    const mcpTokenId = typeof raw.mcpTokenId === 'string' ? raw.mcpTokenId : '';
-    if (!userId || !mcpTokenId) return null;
-    return { kind: 'pro', userId, mcpTokenId };
-  }
-
-  // Unknown / future / malformed shape → null (no implicit pass-through).
-  return null;
+  if (typeof raw !== 'string' || !raw) return null;
+  let apiKey = null;
+  if (raw.length === 64) apiKey = await resolveApiKeyFromHash(raw);
+  else if (raw.length === 16) apiKey = await resolveApiKeyFromFingerprint(raw);
+  return apiKey ? { kind: 'env_key', apiKey } : null;
 }
 
-/**
- * Backward-compat wrapper. Returns the cleartext `wm_*` API key for the
- * legacy env-key path; null for the Pro path (legacy callers have no
- * contract for `{userId, mcpTokenId}` and would mis-handle a Pro bearer).
- *
- * U7's MCP edge will call `resolveBearerToContext` directly. Until then,
- * the only caller (`api/mcp.ts`) keeps the env-key-only contract — Pro
- * bearers correctly resolve to "no API key" and 401 at that layer, which
- * is a safe interim posture (Pro flow can't reach the MCP server until
- * U7 ships the union-aware path).
- */
+/** Returns the cleartext `wm_*` API key, or null. */
 export async function resolveApiKeyFromBearer(token) {
   const ctx = await resolveBearerToContext(token);
-  if (!ctx) return null;
-  if (ctx.kind === 'env_key') return ctx.apiKey;
-  return null;
+  return ctx ? ctx.apiKey : null;
 }

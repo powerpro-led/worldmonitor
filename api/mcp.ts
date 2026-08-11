@@ -10,7 +10,6 @@ export {
   buildAuthHeaders,
   PRODUCTION_DEPS,
   resolveAuthContext,
-  runProPreChecks,
   wwwAuthHeader,
 } from './mcp/auth';
 export {
@@ -42,7 +41,6 @@ export const MCP_PROTOCOL_VERSION: string = MCP_PROTOCOL_FLOOR_2025_06_18_DISABL
 export { dispatchToolsCall, executeTool } from './mcp/dispatch';
 export { evaluateFreshness } from './mcp/freshness';
 export { applyJmespath, JMESPATH_SCHEMA } from './mcp/jmespath';
-export { reserveQuota } from './mcp/quota';
 export {
   buildPublicTool,
   SUMMARY_SCHEMA,

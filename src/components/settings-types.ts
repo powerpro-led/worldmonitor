@@ -8,6 +8,4 @@ export type UnifiedSettingsTabId =
   | 'settings'
   | 'panels'
   | 'sources'
-  | 'notifications'
-  | 'api-keys'
-  | 'mcp-clients';
+  | 'notifications';

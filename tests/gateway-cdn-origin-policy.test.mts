@@ -269,37 +269,4 @@ describe('gateway CDN origin policy', () => {
     assert.equal(withKey.headers.get('CDN-Cache-Control'), null, 'premium endpoints must NOT have CDN caching');
   });
 
-  it('fails closed before unknown wm_ validation when the pre-auth limiter is unavailable', async () => {
-    const handler = createHandler();
-    const res = await handler(new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
-      headers: {
-        Origin: 'https://worldmonitor.app',
-        'X-WorldMonitor-Key': 'wm_revoked_or_unknown_key',
-      },
-    }));
-    const body = await res.json();
-
-    assert.equal(res.status, 503);
-    assert.equal(res.headers.get('X-RateLimit-Mode'), 'degraded');
-    assertNoSharedCacheHeaders(res);
-    assert.equal(body.error, 'Rate-limit service temporarily unavailable');
-    assert.doesNotMatch(JSON.stringify(body), /gateway validation|Convex|keyHash/i);
-  });
-
-  it('fails closed before unknown wm_ validation on premium RPCs when the limiter is unavailable', async () => {
-    const handler = createHandler();
-    const res = await handler(new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
-      headers: {
-        Origin: 'https://worldmonitor.app',
-        'X-WorldMonitor-Key': 'wm_revoked_or_unknown_key',
-      },
-    }));
-    const body = await res.json();
-
-    assert.equal(res.status, 503);
-    assert.equal(res.headers.get('X-RateLimit-Mode'), 'degraded');
-    assertNoSharedCacheHeaders(res);
-    assert.equal(body.error, 'Rate-limit service temporarily unavailable');
-    assert.doesNotMatch(JSON.stringify(body), /gateway validation|Convex|keyHash/i);
-  });
 });

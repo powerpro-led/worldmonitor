@@ -33,7 +33,7 @@ const DEFERRED_NPM_LIB_CHUNKS = ['satellite.es', 'confetti.module'];
 // Checkout catalog and widget HTML sanitization are needed only after an
 // upgrade/custom-widget action. Keep them out of the dashboard's static graph;
 // otherwise their shared dependencies rejoin the post-hydration long-task wave.
-const DEFERRED_CHECKOUT_CHUNKS = ['products', 'widget-sanitizer'];
+const DEFERRED_CHECKOUT_CHUNKS = ['widget-sanitizer'];
 // Enrichment SERVICE tail deferred off the eager boot graph (#4486 — service-graph
 // split, Phase A). Each runs only AFTER first paint — correlation-engine.run() is
 // post-loadAllData fire-and-forget; story-renderer fires on story-modal open — so its

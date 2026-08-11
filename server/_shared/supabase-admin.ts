@@ -1,13 +1,12 @@
 /**
  * Lazily-initialized service-role Supabase client singleton.
  *
- * Stage 1 of the Convex/Clerk -> Supabase migration: `worldmonitor.api_keys`
- * and `worldmonitor.mcp_pro_tokens` (server/_shared/user-api-key.ts,
- * server/_shared/pro-mcp-token.ts) live in Postgres now, not Convex. This
- * module is the single place that constructs the service-role client both
- * of those call — service_role bypasses RLS by default in Supabase, which
- * is required here: these are cross-user lookups (key-hash / token-id ->
- * owning userId), not a request scoped to the querying user's own row.
+ * Single place that constructs the service-role client used by every
+ * already-migrated Postgres-backed domain (user preferences, followed
+ * countries, notification channels, alert rules, telegram pairing) —
+ * service_role bypasses RLS by default in Supabase, which is required here
+ * since several of these are cross-user lookups, not requests scoped to the
+ * querying user's own row.
  *
  * Edge-runtime safe: `@supabase/supabase-js` is fetch-based (no Node-only
  * APIs), so this is safe to import from Vercel edge functions the same way

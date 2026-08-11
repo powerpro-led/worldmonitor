@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  HMAC_SECRET,
-  callBody,
-  makeProDeps,
-  proReq,
-} from './helpers/mcp-pro-deps.mjs';
+import { BASE_URL, callBody } from './helpers/mcp-pro-deps.mjs';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
+const VALID_KEY = 'wm_test_key_123';
+
+function envKeyReq(method, body) {
+  return new Request(BASE_URL, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
 
 const canonicalResponse = {
   tenders: [{
@@ -32,7 +36,9 @@ describe('get_procurement_opportunities MCP tool', () => {
   let requests;
 
   beforeEach(async () => {
-    process.env.MCP_INTERNAL_HMAC_SECRET = HMAC_SECRET;
+    process.env.WORLDMONITOR_VALID_KEYS = VALID_KEY;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
     process.env.MCP_TELEMETRY = 'false';
     requests = [];
     globalThis.fetch = async (input, init = {}) => {
@@ -53,9 +59,8 @@ describe('get_procurement_opportunities MCP tool', () => {
     Object.assign(process.env, originalEnv);
   });
 
-  async function callTool(args = {}, depsOverrides = {}) {
-    const { deps } = makeProDeps(depsOverrides);
-    const response = await mcpHandler(proReq('POST', callBody('get_procurement_opportunities', args)), deps);
+  async function callTool(args = {}) {
+    const response = await mcpHandler(envKeyReq('POST', callBody('get_procurement_opportunities', args)));
     return { response, body: await response.json() };
   }
 
@@ -90,7 +95,7 @@ describe('get_procurement_opportunities MCP tool', () => {
     assert.equal(requestUrl.searchParams.get('min_automation_score'), '101');
     assert.equal(requestUrl.searchParams.get('page_size'), '25');
     assert.equal(requestUrl.searchParams.get('cursor'), '10');
-    assert.ok(requests[0].init.headers['X-WM-MCP-Internal'], 'Pro route call must retain internal entitlement identity');
+    assert.equal(requests[0].init.headers['X-WorldMonitor-Key'], VALID_KEY, 'env_key call must forward the API key to the canonical route');
 
     const result = JSON.parse(body.result.content[0].text);
     assert.equal(result.nextCursor, '10');
@@ -121,14 +126,5 @@ describe('get_procurement_opportunities MCP tool', () => {
     requestUrl = new URL(requests[0].url);
     assert.equal(requestUrl.searchParams.get('page_size'), '25');
     assert.equal(requestUrl.searchParams.get('min_automation_score'), '1');
-  });
-
-  it('uses the same Pro entitlement gate as the canonical route before fetching data', async () => {
-    const { response, body } = await callTool({}, {
-      getEntitlements: async () => ({ planKey: 'free', features: { tier: 0, mcpAccess: false }, validUntil: Date.now() + 86_400_000 }),
-    });
-    assert.equal(response.status, 401);
-    assert.equal(body.error.code, -32001);
-    assert.equal(requests.length, 0, 'failed entitlement must not reach the canonical route');
   });
 });

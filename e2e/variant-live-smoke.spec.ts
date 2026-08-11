@@ -27,15 +27,10 @@ const EXPECTED_BOOT_PANELS: Record<VariantName, string[]> = {
 };
 
 const AUTH_OR_PREMIUM_401_PREFIXES = [
-  '/api/create-checkout',
-  '/api/customer-portal',
   '/api/latest-brief',
   '/api/local-',
-  '/api/me/',
   '/api/notification-channels',
   '/api/oauth/',
-  '/api/referral/',
-  '/api/user/',
   '/api/wm-session',
 ];
 

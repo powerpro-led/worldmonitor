@@ -128,53 +128,18 @@ function mockBoundary(bodyByEndpoint, headersByEndpoint = {}) {
   };
 }
 
-test('checkPublicBoundary: product-catalog served from cache + bootstrap no leak → pass', async () => {
-  mockBoundary(
-    {
-      '/api/product-catalog': JSON.stringify({ tiers: [{ id: 'pro' }], fetchedAt: 1 }),
-      '/api/bootstrap':       JSON.stringify({ market: { quotes: [] } }),
-    },
-    { '/api/product-catalog': { 'x-product-catalog-source': 'cache' } },
-  );
+test('checkPublicBoundary: bootstrap no leak → pass', async () => {
+  mockBoundary({
+    '/api/bootstrap': JSON.stringify({ market: { quotes: [] } }),
+  });
   const res = await checkPublicBoundary('https://example.test', 0);
   assert.equal(res.every(r => r.pass), true, JSON.stringify(res));
 });
 
-test('checkPublicBoundary: product-catalog served from fallback fails source-header assert', async () => {
-  // This is the regression case — response has no _seed leak, but the cached
-  // reader path silently failed and we fell through to static fallback.
-  mockBoundary(
-    {
-      '/api/product-catalog': JSON.stringify({ tiers: [], priceSource: 'fallback' }),
-      '/api/bootstrap':       JSON.stringify({}),
-    },
-    { '/api/product-catalog': { 'x-product-catalog-source': 'fallback' } },
-  );
-  const res = await checkPublicBoundary('https://example.test', 0);
-  const pc = res.find(r => r.endpoint === '/api/product-catalog');
-  assert.equal(pc.pass, false);
-  assert.match(pc.reason, /source:fallback!=cache/);
-});
-
-test('checkPublicBoundary: product-catalog missing source header fails', async () => {
-  mockBoundary({
-    '/api/product-catalog': JSON.stringify({ tiers: [] }),
-    '/api/bootstrap':       JSON.stringify({}),
-  });
-  const res = await checkPublicBoundary('https://example.test', 0);
-  const pc = res.find(r => r.endpoint === '/api/product-catalog');
-  assert.equal(pc.pass, false);
-  assert.match(pc.reason, /source:missing!=cache/);
-});
-
 test('checkPublicBoundary: response leaking _seed fails before source check', async () => {
-  mockBoundary(
-    {
-      '/api/product-catalog': JSON.stringify({ _seed: { fetchedAt: 1 }, data: { tiers: [] } }),
-      '/api/bootstrap':       JSON.stringify({}),
-    },
-    { '/api/product-catalog': { 'x-product-catalog-source': 'cache' } },
-  );
+  mockBoundary({
+    '/api/bootstrap': JSON.stringify({ _seed: { fetchedAt: 1 }, data: {} }),
+  });
   const res = await checkPublicBoundary('https://example.test', 0);
   assert.ok(res.some(r => !r.pass && r.reason === 'seed-leak'));
 });

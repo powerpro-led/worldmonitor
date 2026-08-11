@@ -325,17 +325,6 @@ function queryRequiredContradictions(spec, label) {
   return failures;
 }
 
-function assertSchemaRequires(spec, schemaName, fields, label) {
-  const schema = spec.components?.schemas?.[schemaName];
-  assert.ok(schema, `${label}: missing ${schemaName}`);
-  for (const field of fields) {
-    assert.ok(
-      Array.isArray(schema.required) && schema.required.includes(field),
-      `${label}: ${schemaName}.required must include ${field}`,
-    );
-  }
-}
-
 // Full auth contract, format-agnostic (works on JSON specs or YAML-loaded
 // specs): securitySchemes (2 or 3 by bearer-path presence), root API-key
 // security, UnauthorizedError schema, and per-operation 401 / public opt-out /
@@ -421,8 +410,6 @@ describe('OpenAPI security contract', () => {
     assert.equal(ENDPOINT_ENTITLEMENTS.get('/api/market/v1/analyze-stock'), 1, 'expected tier-gated market path');
     assert.equal(ENDPOINT_ENTITLEMENTS.get('/api/sanctions/v1/list-sanctions-pressure'), 1, 'expected sanctions pressure path');
     assert.equal(ENDPOINT_ENTITLEMENTS.get('/api/trade/v1/list-comtrade-flows'), 1, 'expected Comtrade path');
-    assert.ok(PUBLIC_FORBIDDEN_GATES.has('/api/leads/v1/submit-contact'), 'expected Leads Turnstile 403 path');
-    assert.ok(PUBLIC_FORBIDDEN_GATES.has('/api/leads/v1/register-interest'), 'expected Leads register-interest 403 gate');
     assert.ok(BEARER_AUTH_PATHS.has('/api/intelligence/v1/get-regional-brief'), 'expected legacy premium path');
     assert.ok(PREMIUM_ONLY_PATHS.has('/api/intelligence/v1/get-regional-brief'), 'expected legacy premium-only path (not entitlement-gated)');
     assert.ok(!PREMIUM_ONLY_PATHS.has('/api/market/v1/analyze-stock'), 'entitlement-gated path must not be treated as premium-only');
@@ -633,22 +620,11 @@ describe('OpenAPI security contract', () => {
     assert.deepEqual(failures, []);
   });
 
-  it('keeps OpenAPI-only required fields represented in schemas', () => {
-    const fields = ['turnstileToken'];
-    const jsonSpec = JSON.parse(readFileSync(resolve(apiDir, 'LeadsService.openapi.json'), 'utf8'));
-    assertSchemaRequires(jsonSpec, 'RegisterInterestRequest', fields, 'LeadsService.openapi.json');
-
-    const yamlSpec = loadYaml(readFileSync(resolve(apiDir, 'LeadsService.openapi.yaml'), 'utf8'));
-    assertSchemaRequires(yamlSpec, 'RegisterInterestRequest', fields, 'LeadsService.openapi.yaml');
-
-    const bundle = loadYaml(readFileSync(resolve(apiDir, 'worldmonitor.openapi.yaml'), 'utf8'));
-    const matches = matchingRequestSchemas(bundle, 'RegisterInterestRequest');
-    assert.equal(matches.length, 1, 'worldmonitor.openapi.yaml: expected one RegisterInterestRequest schema');
-    const [[schemaName, schema]] = matches;
-    assert.ok(
-      Array.isArray(schema.required) && schema.required.includes('turnstileToken'),
-      `worldmonitor.openapi.yaml: ${schemaName}.required must include turnstileToken`,
-    );
-  });
+  // The 'keeps OpenAPI-only required fields represented in schemas' test
+  // (RegisterInterestRequest.turnstileToken) was removed here — the leads
+  // domain (LeadsService.openapi.{json,yaml}, RegisterInterestRequest) was
+  // deleted along with the waitlist/referral SaaS surface. No OpenAPI-only
+  // required field exists to guard in its place; restore a test here if a
+  // future spec introduces one.
 
 });

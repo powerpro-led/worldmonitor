@@ -95,15 +95,12 @@ export const MCP_DOWNSTREAM_TELEMETRY_KEYS = Object.freeze([
   'response_marker',
 ] as const);
 
-// Log-safe principal id derived from the resolved auth context:
-//   - Pro / user_key: raw Clerk `userId` (internal ID, not a secret; matches
-//              the REST gateway's `customer_id` convention — user_key carries
-//              the resolved key OWNER, #4859).
-//   - env_key: FNV-64 hash of the API key (secret — never log raw key
-//              material; mirrors `principal_id` in
-//              server/_shared/usage-identity.ts).
+// Log-safe principal id derived from the resolved auth context: env_key is
+// the sole credential class — FNV-64 hash of the API key (secret — never
+// log raw key material; mirrors `principal_id` in
+// server/_shared/usage-identity.ts).
 export function principalIdForLog(context: McpAuthContext): string {
-  return context.kind === 'env_key' ? hashKeySync(context.apiKey) : context.userId;
+  return hashKeySync(context.apiKey);
 }
 
 export function emitMcpRateLimitHit(
@@ -112,7 +109,7 @@ export function emitMcpRateLimitHit(
 ): void {
   emitTelemetry('mcp.rate_limit_hit', {
     auth_kind: context.kind,
-    user_id: context.kind === 'pro' ? context.userId : null,
+    user_id: null,
     principal_id: principalIdForLog(context),
     dimension: payload.dimension,
     limit: payload.limit,

@@ -11,12 +11,6 @@ import {
   validateApiKey,
 } from './_api-key.js';
 import { jsonResponse } from './_json-response.js';
-import {
-  checkBootstrapUserApiKeyRateLimit,
-  isCanonicalUserApiKey,
-  validateBootstrapUserApiAccess,
-  validateBootstrapUserApiKey,
-} from './_user-api-key.js';
 // @ts-expect-error — JS module, no declaration file
 import { redisPipeline } from './_upstash-json.js';
 import { unwrapEnvelope } from './_seed-envelope.js';
@@ -277,68 +271,6 @@ async function validateBootstrapAuth(req, cors) {
   const apiKeyResult = await validateApiKey(req);
   if (!apiKeyResult.required || apiKeyResult.valid) {
     return { ok: true, kind: apiKeyResult.kind || 'unknown' };
-  }
-
-  if (apiKeyResult.error === USER_API_KEY_GATEWAY_VALIDATION_ERROR && headerKey.startsWith('wm_')) {
-    if (!isCanonicalUserApiKey(headerKey)) {
-      return {
-        ok: false,
-        response: authFailure({ error: 'Invalid API key' }, 401, cors),
-      };
-    }
-
-    const rateLimitResult = await checkBootstrapUserApiKeyRateLimit(req);
-    if (!rateLimitResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          { error: rateLimitResult.error },
-          rateLimitResult.status,
-          cors,
-          rateLimitResult.headers,
-        ),
-      };
-    }
-
-    // Propagate the validation result's status/error/headers (all generic,
-    // leak-free strings) rather than hardcoding 401/403: a Convex outage surfaces
-    // as a retryable 503 + Retry-After (status 503, unavailable:true) instead of
-    // a misleading "Invalid API key" 401, mirroring the rate-limit path above.
-    const userKeyResult = await validateBootstrapUserApiKey(headerKey);
-    if (!userKeyResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          { error: userKeyResult.error },
-          userKeyResult.status,
-          cors,
-          userKeyResult.headers,
-        ),
-      };
-    }
-
-    const entitlementResult = await validateBootstrapUserApiAccess(userKeyResult.userId);
-    if (!entitlementResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          {
-            error: entitlementResult.error,
-            // Billing-verification denials (#4770) expose their machine-readable
-            // code in the body, matching the {error, code} shape the REST
-            // gateway emits for the same statuses.
-            ...(entitlementResult.headers?.['X-Billing-Verification']
-              ? { code: entitlementResult.reason }
-              : {}),
-          },
-          entitlementResult.status,
-          cors,
-          entitlementResult.headers,
-        ),
-      };
-    }
-
-    return { ok: true, kind: 'user' };
   }
 
   const error = apiKeyResult.error === USER_API_KEY_GATEWAY_VALIDATION_ERROR

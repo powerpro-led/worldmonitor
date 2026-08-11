@@ -78,37 +78,9 @@ export function readPremiumRpcPaths() {
 
 // ── Public 403 gates ─────────────────────────────────────────────────────────
 // Public RPCs (security: []) that nonetheless document a 403 the handler throws.
-// Lead capture opts out of API-key auth at the gateway, then fails closed in the
-// handler on a Turnstile / desktop-auth failure. Single-sourced here so the
-// contract test asserts specs against the SAME map the injector stamps from.
-export const PUBLIC_FORBIDDEN_GATES = new Map([
-  ['/api/leads/v1/submit-contact', {
-    note: 'Turnstile-gated. Missing or invalid Cloudflare Turnstile token returns 403 Bot verification failed.',
-    response: {
-      description: 'Bot verification failed.',
-      content: {
-        'application/json': {
-          schema: { $ref: '#/components/schemas/Error' },
-        },
-      },
-    },
-  }],
-  ['/api/leads/v1/register-interest', {
-    // The handler (server/worldmonitor/leads/v1/register-interest.ts) fails
-    // closed with two distinct 403s: browser callers that fail the Cloudflare
-    // Turnstile check get 403 Bot verification failed; desktop-source callers
-    // whose shared-secret HMAC bypass is missing/invalid get 403 Desktop
-    // authentication failed. Both are thrown as the sebuf ApiError, so the body
-    // is the generated Error schema (a `message` string) — same shape the
-    // submit-contact gate documents.
-    note: 'Turnstile-gated (desktop sources authenticate a bypass with a shared-secret HMAC instead). A failed Cloudflare Turnstile check returns 403 Bot verification failed; a desktop-source request with a missing or invalid HMAC signature returns 403 Desktop authentication failed.',
-    response: {
-      description: 'Bot verification or desktop authentication failed.',
-      content: {
-        'application/json': {
-          schema: { $ref: '#/components/schemas/Error' },
-        },
-      },
-    },
-  }],
-]);
+// Single-sourced here so the contract test asserts specs against the SAME map
+// the injector stamps from. Empty now that the leads domain (submit-contact /
+// register-interest — the only public-forbidden-gated RPCs) has been deleted;
+// kept as a live Map (not removed) so a future public-but-403-capable RPC has
+// an established place to register its gate.
+export const PUBLIC_FORBIDDEN_GATES = new Map([]);

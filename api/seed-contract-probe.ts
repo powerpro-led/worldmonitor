@@ -109,9 +109,6 @@ export const DEFAULT_PROBES: ProbeSpec[] = [
   { key: 'market:ai-tokens:v1',        shape: 'envelope', dataHas: ['tokens'], minRecords: 1 },
   { key: 'market:other-tokens:v1',     shape: 'envelope', dataHas: ['tokens'], minRecords: 1 },
 
-  // Direct writers (ais-relay.cjs) — regression guard for envelope wrap.
-  { key: 'product-catalog:v2',         shape: 'envelope', dataHas: ['tiers'] },
-
   // Invariant: seed-meta:* keys must NEVER envelope (shouldEnvelopeKey guard).
   { key: 'seed-meta:energy:oil-stocks-analysis', shape: 'bare', dataHas: ['fetchedAt'] },
   { key: 'seed-meta:economic:fsi-eu',            shape: 'bare', dataHas: ['fetchedAt'] },
@@ -203,13 +200,12 @@ export async function checkProbe(spec: ProbeSpec): Promise<ProbeResult> {
 interface BoundaryCheck {
   endpoint: string;
   /** Optional: require a specific `X-*-Source` header value to prove the
-   *  intended code-path served the response (e.g. `'cache'` for product-catalog
-   *  so we know the enveloped-read path actually ran, not fallback). */
+   *  intended code-path served the response (e.g. the enveloped-read path
+   *  actually ran, not fallback). */
   requireSourceHeader?: { name: string; value: string };
 }
 
 const BOUNDARY_CHECKS: BoundaryCheck[] = [
-  { endpoint: '/api/product-catalog', requireSourceHeader: { name: 'x-product-catalog-source', value: 'cache' } },
   { endpoint: '/api/bootstrap' },
 ];
 

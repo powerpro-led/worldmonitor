@@ -102,55 +102,6 @@ describe('api/mcp — usage telemetry (#4866)', () => {
     assert.equal(events[0].auth_kind, 'anon');
   });
 
-  it('pro bearer with lapsed entitlement emits tier_403 attributed to the userId', async () => {
-    const { deps } = makeProDeps({
-      getEntitlements: async () => ({ planKey: 'free', features: { tier: 0, mcpAccess: false }, validUntil: 0 }),
-    });
-    const events = captureAxiom();
-    const { ctx, settle } = makeCtx();
-    const res = await mcpHandler(proReq('POST', callBody('describe_tool', { tool_name: 'get_market_data' })), deps, ctx);
-    assert.equal(res.status, 401);
-    await settle();
-    assert.equal(events.length, 1);
-    const ev = events[0];
-    assert.equal(ev.reason, 'tier_403');
-    assert.equal(ev.auth_kind, 'mcp_oauth');
-    assert.equal(ev.customer_id, 'user_pro_xyz');
-  });
-
-  it('user_key describe_tool success attributes the key owner', async () => {
-    const { deps } = makeProDeps({
-      validateUserApiKey: async (k) => (k === USER_KEY ? { userId: USER_KEY_USER_ID } : null),
-      getEntitlements: async () => ({ planKey: 'api_starter', features: { tier: 2, mcpAccess: true }, validUntil: Date.now() + 86_400_000 }),
-    });
-    const events = captureAxiom();
-    const { ctx, settle } = makeCtx();
-    const res = await mcpHandler(
-      new Request(BASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': USER_KEY }, body: JSON.stringify(callBody('describe_tool', { tool_name: 'get_market_data' })) }),
-      deps,
-      ctx,
-    );
-    assert.equal(res.status, 200);
-    await settle();
-    assert.equal(events.length, 1);
-    const ev = events[0];
-    assert.equal(ev.reason, 'ok');
-    assert.equal(ev.auth_kind, 'user_api_key');
-    assert.equal(ev.customer_id, USER_KEY_USER_ID);
-  });
-
-  it('pro bearer quota cap emits rate_limit_429', async () => {
-    const { deps } = makeProDeps({ pipelineOpts: { initialCount: 50 } });
-    const events = captureAxiom();
-    const { ctx, settle } = makeCtx();
-    const res = await mcpHandler(proReq('POST', callBody('get_market_data')), deps, ctx);
-    assert.equal(res.status, 429);
-    await settle();
-    assert.equal(events.length, 1);
-    assert.equal(events[0].reason, 'rate_limit_429');
-    assert.equal(events[0].status, 429);
-  });
-
   it('OPTIONS preflight emits nothing', async () => {
     const { deps } = makeProDeps();
     const events = captureAxiom();

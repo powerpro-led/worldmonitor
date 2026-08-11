@@ -239,11 +239,6 @@ export const ENDPOINT_RATE_POLICIES: Record<string, EndpointRatePolicy> = {
   // Legacy /api/sanctions-entity-search rate limit was 30/min per IP. Preserve
   // that budget now that LookupSanctionEntity proxies OpenSanctions live.
   '/api/sanctions/v1/lookup-sanction-entity': { limit: 30, window: '60 s' },
-  // Lead capture: preserve the 3/hr and 5/hr budgets from legacy api/contact.js
-  // and api/register-interest.js. Lower limits than normal IP rate limit since
-  // these hit Convex + Resend per request.
-  '/api/leads/v1/submit-contact': { limit: 3, window: '1 h' },
-  '/api/leads/v1/register-interest': { limit: 5, window: '1 h' },
   // Scenario engine: legacy /api/scenario/v1/run capped at 10 jobs/min/IP via
   // inline Upstash INCR. Gateway now enforces the same budget with per-IP
   // keying in checkEndpointRateLimit.
@@ -319,12 +314,6 @@ export const FAIL_CLOSED_ENDPOINT_RATE_POLICY_REQUIRED: Record<string, RateLimit
   },
   '/api/sanctions/v1/lookup-sanction-entity': {
     reason: 'Live sanctions lookup proxies an external provider.',
-  },
-  '/api/leads/v1/submit-contact': {
-    reason: 'Lead capture writes to Convex and sends email.',
-  },
-  '/api/leads/v1/register-interest': {
-    reason: 'Lead capture writes to Convex and sends email.',
   },
   '/api/scenario/v1/run-scenario': {
     reason: 'Scenario runs are mutation-like jobs with a historical 10/min cap.',

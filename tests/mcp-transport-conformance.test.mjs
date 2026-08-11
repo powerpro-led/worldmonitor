@@ -8,13 +8,12 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 
-import {
-  HMAC_SECRET,
-  PRO_BEARER,
-  makeProDeps,
-} from './helpers/mcp-pro-deps.mjs';
+import { HMAC_SECRET } from './helpers/mcp-pro-deps.mjs';
 
 const originalEnv = { ...process.env };
+const ENV_KEY = 'test_env_key_transport_conformance';
+// env_key is the sole MCP credential class now — no bearer resolution needed.
+const NO_BEARER_DEPS = { resolveBearerToContext: async () => null };
 
 function initBody(id = 1) {
   return {
@@ -37,7 +36,7 @@ function mcpHeaders(extra = {}) {
   return {
     Accept: 'application/json, text/event-stream',
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${PRO_BEARER}`,
+    'X-WorldMonitor-Key': ENV_KEY,
     ...extra,
   };
 }
@@ -129,12 +128,13 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
   beforeEach(async () => {
     process.env.MCP_INTERNAL_HMAC_SECRET = HMAC_SECRET;
     process.env.MCP_TELEMETRY = 'false';
+    process.env.WORLDMONITOR_VALID_KEYS = ENV_KEY;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     const mod = await import(`../api/mcp.ts?t=${Date.now()}-${Math.random()}`);
     mcpHandler = mod.mcpHandler;
-    deps = makeProDeps().deps;
+    deps = NO_BEARER_DEPS;
     server = await startMcpServer(mcpHandler, deps);
   });
 
@@ -182,7 +182,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       method: 'GET',
       headers: {
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': sessionId,
         'Last-Event-ID': resultEvent.id,
       },
@@ -198,7 +198,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       method: 'GET',
       headers: {
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': crypto.randomUUID(),
         'Last-Event-ID': resultEvent.id,
       },
@@ -210,17 +210,17 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       '404 replay miss must hint at cross-instance in-memory buffer misses',
     );
 
-    deps.validateProMcpToken = async () => null;
+    process.env.WORLDMONITOR_VALID_KEYS = 'a-different-key-entirely';
     const revoked = await fetch(server.url, {
       method: 'GET',
       headers: {
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': sessionId,
         'Last-Event-ID': resultEvent.id,
       },
     });
-    assert.equal(revoked.status, 401, 'GET replay must revalidate the Pro token before serving buffered events');
+    assert.equal(revoked.status, 401, 'GET replay must revalidate the key before serving buffered events');
     assert.equal((await revoked.json()).error?.code, -32001);
   });
 
@@ -255,7 +255,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
     const missingAccept = await fetch(server.url, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': crypto.randomUUID(),
         'Last-Event-ID': 'stream:0',
       },
@@ -275,7 +275,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       method: 'GET',
       headers: {
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': crypto.randomUUID(),
       },
     });
@@ -332,7 +332,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       method: 'GET',
       headers: {
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': sessionId,
         'Last-Event-ID': pingEvents[0].id,
       },
@@ -402,7 +402,7 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
       method: 'GET',
       headers: {
         Origin: 'https://chatgpt.com',
-        Authorization: `Bearer ${PRO_BEARER}`,
+        'X-WorldMonitor-Key': ENV_KEY,
         'Mcp-Session-Id': crypto.randomUUID(),
         'Last-Event-ID': 'stream:0',
       },
@@ -468,12 +468,13 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
   beforeEach(async () => {
     process.env.MCP_INTERNAL_HMAC_SECRET = HMAC_SECRET;
     process.env.MCP_TELEMETRY = 'false';
+    process.env.WORLDMONITOR_VALID_KEYS = ENV_KEY;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     const mod = await import(`../api/mcp.ts?t=${Date.now()}-${Math.random()}-wk`);
     mcpHandler = mod.mcpHandler;
-    deps = makeProDeps().deps;
+    deps = NO_BEARER_DEPS;
     server = await startMcpServer(mcpHandler, deps);
     aliasUrl = server.url.replace('/mcp', '/.well-known/mcp');
     staticFetchCalls = [];

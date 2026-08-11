@@ -146,6 +146,9 @@ export default async function handler(
     session.userId,
   );
   if (scoped.degraded) {
+    // Redis-degraded scoped limits intentionally fail open for prefs writes:
+    // followed-country toggles are low-stakes, so degradation should not
+    // block a legitimate settings sync.
     console.warn('[followed-countries] POST write rate limit unavailable; failing open');
   } else if (!scoped.allowed) {
     const retryAfter = Math.max(1, Math.ceil((scoped.reset - Date.now()) / 1000));

@@ -1,22 +1,19 @@
-// MCP resources wire-contract + stability + auth-symmetry.
+// MCP resources wire-contract + stability.
 //
-// Three load-bearing concerns:
+// Two load-bearing concerns:
 //   1. **Stability** — the chokepoint slug table is a publicly-bookmarkable
 //      contract. The byte-for-byte snapshot test fails on ANY slug-table
 //      change so a casual rename forces a deliberate snapshot update.
-//   2. **Auth symmetry** — resources/read MUST consume Pro daily quota
-//      IDENTICALLY to a tools/call against the equivalent tool. This is
-//      the test that catches a "resources are quota-exempt" regression:
-//      the dispatcher counter increment is asserted equal between
-//      resources/read and tools/call against the same backing tool, with
-//      identical pre-seeded counter state. Asymmetric auth is a known MCP
-//      data-leak vector — a Pro user at the daily cap could otherwise
-//      keep reading data through resources for free.
-//   3. **Freshness envelope** — every successful resources/read response
+//   2. **Freshness envelope** — every successful resources/read response
 //      carries `cached_at` and `stale` in the content payload. Cache-tool-
 //      backed resources inherit the envelope from cacheEnvelope; RPC-tool-
 //      backed resources (just country risk in v1) wrap explicitly via
 //      evaluateFreshness against the underlying seed-meta key.
+//
+// (A former "auth symmetry" concern asserted resources/read consumed the
+// Pro daily-quota counter identically to tools/call. That quota-reservation
+// mechanism was deleted along with the Convex-backed Pro/MCP tier — see
+// tests/mcp-quota-no-refund.test.mjs's removal for the same reason.)
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -25,13 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import vm from 'node:vm';
 
-import {
-  BASE_URL,
-  HMAC_SECRET,
-  callBody,
-  makeProDeps,
-  proReq,
-} from './helpers/mcp-pro-deps.mjs';
+import { BASE_URL, HMAC_SECRET } from './helpers/mcp-pro-deps.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const originalFetch = globalThis.fetch;
@@ -1063,208 +1054,6 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
     for (const slug of Object.keys(CHOKEPOINT_SLUGS)) {
       assert.ok(src.includes(`'${slug}'`),
         `slugs.ts must contain a literal entry for slug "${slug}"`);
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // Auth symmetry — the load-bearing assertion.
-  // -------------------------------------------------------------------------
-  it('LOAD-BEARING: Pro resources/read on countries/de/risk decrements the daily-quota counter by exactly 1 (identical to tools/call(get_country_risk))', async () => {
-    const { deps: depsR, pipe: pipeR } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const resR = await mcpHandler(
-      proReq('POST', readBody('worldmonitor://countries/de/risk')),
-      depsR,
-    );
-    const bodyR = await resR.json();
-    assert.equal(bodyR.error, undefined, `resources/read should succeed, got error: ${JSON.stringify(bodyR.error)}`);
-    assert.equal(pipeR.count, 1,
-      `Pro resources/read MUST increment quota counter by EXACTLY 1 (got ${pipeR.count}). If resources are quota-exempt, this is the data-leak vector the test exists to catch.`);
-
-    // PARITY — tools/call against the same backing tool from an identical
-    // initial state must produce the SAME counter delta. The two paths
-    // share the dispatcher, so divergence here means resources/read
-    // skipped the dispatcher.
-    const { deps: depsT, pipe: pipeT } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const resT = await mcpHandler(
-      proReq('POST', callBody('get_country_risk', { country_code: 'DE' })),
-      depsT,
-    );
-    const bodyT = await resT.json();
-    assert.equal(bodyT.error, undefined, `tools/call should succeed, got error: ${JSON.stringify(bodyT.error)}`);
-    assert.equal(pipeT.count, pipeR.count,
-      `auth symmetry: tools/call counter delta (${pipeT.count}) must equal resources/read counter delta (${pipeR.count})`);
-  });
-
-  it('Pro resources/read on data-bearing template URIs (markets, chokepoints) increments counter by 1 each', async () => {
-    const uris = [
-      'worldmonitor://markets/AAPL/quote',
-      'worldmonitor://chokepoints/suez/status',
-    ];
-    for (const uri of uris) {
-      const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-      const res = await mcpHandler(proReq('POST', readBody(uri)), deps);
-      const body = await res.json();
-      assert.equal(body.error, undefined,
-        `resources/read ${uri} should succeed, got error: ${JSON.stringify(body.error)}`);
-      assert.equal(pipe.count, 1,
-        `${uri} MUST increment Pro counter by exactly 1, got ${pipe.count}`);
-    }
-  });
-
-  it('PUBLIC seed-meta/freshness resources/read is quota-exempt (metadata-class, mirrors resources/list) even for Pro', async () => {
-    const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const res = await mcpHandler(proReq('POST', readBody('worldmonitor://seed-meta/freshness')), deps);
-    const body = await res.json();
-    assert.equal(body.error, undefined, `should succeed, got error: ${JSON.stringify(body.error)}`);
-    assert.equal(pipe.count, 0,
-      'seed-meta/freshness is a metadata-only freshness probe — it must NOT consume the Pro daily quota');
-    // Envelope-only content survives the public direct-read path.
-    const payload = JSON.parse(body.result.contents[0].text);
-    assert.equal(Object.keys(payload).sort().join(','), 'cached_at,stale',
-      'public freshness read must return exactly {cached_at, stale}');
-  });
-
-  it('ANON seed-meta/freshness resources/read succeeds (no credentials, no quota)', async () => {
-    const res = await handler(anonReq(readBody('worldmonitor://seed-meta/freshness')));
-    assert.equal(res.status, 200, 'anonymous public-resource read must return 200');
-    const body = await res.json();
-    assert.equal(body.error, undefined, `anonymous read must not error: ${JSON.stringify(body.error)}`);
-    const payload = JSON.parse(body.result.contents[0].text);
-    assert.equal(typeof payload.stale, 'boolean');
-    assert.equal(typeof payload.cached_at === 'string' || payload.cached_at === null, true);
-  });
-
-  it('ANON resources/read of a data-bearing TEMPLATE instantiation stays gated (401 — no quota bypass)', async () => {
-    // The data-leak / quota-bypass protection: only concrete PUBLIC resources
-    // are anon-readable. A template instantiation (country risk) requires auth.
-    const res = await handler(anonReq(readBody('worldmonitor://countries/de/risk')));
-    assert.equal(res.status, 401, 'anonymous read of a data-bearing template must be 401');
-    assert.ok(
-      res.headers.get('WWW-Authenticate')?.includes('Bearer'),
-      'gated resource read must advertise WWW-Authenticate: Bearer',
-    );
-  });
-
-  it('a PUBLIC resource whose read() throws surfaces a clean -32603 (contract enforced at the dispatcher boundary)', async () => {
-    // The PublicResourceDef `read` "MUST be robust" contract is documentation;
-    // the dispatcher enforces it so a future non-robust reader returns -32603
-    // rather than bubbling an unhandled rejection through mcpHandler to the edge.
-    const def = PUBLIC_RESOURCE_REGISTRY[0];
-    const originalRead = def.read;
-    def.read = async () => { throw new Error('simulated reader failure'); };
-    try {
-      const res = await handler(anonReq(readBody(def.uri)));
-      assert.equal(res.status, 200, 'JSON-RPC errors ride inside HTTP 200');
-      const body = await res.json();
-      assert.equal(body.error?.code, -32603,
-        'a throwing public reader must surface -32603, not an unhandled rejection');
-    } finally {
-      def.read = originalRead;
-    }
-  });
-
-  it('env-key resources/read on countries/de/risk does NOT touch the Pro quota path (env-key tier is its own quota)', async () => {
-    // env-key auth path uses X-WorldMonitor-Key. The dispatcher's INCR
-    // reservation only fires for context.kind === 'pro'. This test asserts
-    // the response succeeds AND no Pro pipeline activity was attempted.
-    const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const res = await mcpHandler(envKeyReq(readBody('worldmonitor://countries/de/risk')), deps);
-    const body = await res.json();
-    assert.equal(body.error, undefined, `env-key resources/read should succeed, got error: ${JSON.stringify(body.error)}`);
-    assert.equal(pipe.count, 0, 'env-key auth must NOT touch the Pro daily-quota counter');
-  });
-
-  it('resources/list does NOT increment the Pro quota counter (metadata-class, mirrors prompts/list)', async () => {
-    const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const res = await mcpHandler(
-      proReq('POST', { jsonrpc: '2.0', id: 1, method: 'resources/list', params: {} }),
-      deps,
-    );
-    const body = await res.json();
-    assert.equal(body.error, undefined);
-    assert.equal(pipe.count, 0, 'resources/list is metadata-class — must NOT count toward daily quota');
-  });
-
-  it('Pro resources/read of the ui:// shell does NOT increment the daily-quota counter (static template, quota-exempt)', async () => {
-    // Unlike a DATA resources/read (which reserves against the 50/day Pro cap
-    // symmetrically with tools/call), a ui:// read returns a static, data-free
-    // app shell and spends no quota — the load-bearing distinction that lets
-    // an unauthenticated host fetch the shell to render it.
-    const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 0 } });
-    const res = await mcpHandler(
-      proReq('POST', readBody('ui://worldmonitor/country-risk.html')),
-      deps,
-    );
-    const body = await res.json();
-    assert.equal(body.error, undefined, `ui:// read should succeed, got: ${JSON.stringify(body.error)}`);
-    assert.equal(body.result.contents[0].mimeType, 'text/html;profile=mcp-app');
-    assert.equal(pipe.count, 0, 'ui:// resources/read is quota-exempt — must NOT count toward the Pro daily cap');
-  });
-
-  it('Pro resources/read returns -32029 when the daily quota is exhausted (identical to tools/call)', async () => {
-    // Pre-seed the counter at the cap so the next INCR rejects.
-    const { deps, pipe } = makeProDeps({ pipelineOpts: { initialCount: 50 } });
-    const res = await mcpHandler(
-      proReq('POST', readBody('worldmonitor://countries/de/risk')),
-      deps,
-    );
-    assert.equal(res.status, 429, 'cap-exceeded must surface as HTTP 429');
-    const body = await res.json();
-    assert.equal(body.error?.code, -32029, 'cap-exceeded must use the -32029 quota code');
-    assert.equal(pipe.count, 50,
-      'counter must return to the cap after the rejected reservation rolls back (initialCount=50, no net change)');
-  });
-
-  it('cap-exhausted resources/read forwards Retry-After header (parity with tools/call)', async () => {
-    // Greptile P1 regression guard. A correctly-implemented MCP client
-    // backing off on 429 will retry immediately if Retry-After is absent.
-    // tools/call attaches Retry-After (seconds until UTC midnight on quota
-    // cap, "5" on reservation failure); resources/read must forward it
-    // verbatim or the auth-symmetry contract is broken on the error path.
-    const RealDate = globalThis.Date;
-    const fixedNowMs = RealDate.parse('2026-05-29T12:00:00.000Z');
-    globalThis.Date = class FixedDate extends RealDate {
-      constructor(...args) {
-        super(...(args.length === 0 ? [fixedNowMs] : args));
-      }
-
-      static now() {
-        return fixedNowMs;
-      }
-
-      static parse(value) {
-        return RealDate.parse(value);
-      }
-
-      static UTC(...args) {
-        return RealDate.UTC(...args);
-      }
-    };
-
-    try {
-      const { deps: depsR } = makeProDeps({ pipelineOpts: { initialCount: 50 } });
-      const resR = await mcpHandler(
-        proReq('POST', readBody('worldmonitor://countries/de/risk')),
-        depsR,
-      );
-      assert.equal(resR.status, 429);
-      const retryAfterR = resR.headers.get('Retry-After');
-      assert.ok(retryAfterR, 'resources/read 429 MUST attach a Retry-After header (Greptile P1)');
-      // Cross-check: tools/call against the same backing tool from the same
-      // pre-seeded state must attach the SAME header. Date is pinned for this
-      // assertion so CI scheduling cannot create a one-second midnight-delta
-      // drift between the two sequential requests.
-      const { deps: depsT } = makeProDeps({ pipelineOpts: { initialCount: 50 } });
-      const resT = await mcpHandler(
-        proReq('POST', callBody('get_country_risk', { country_code: 'DE' })),
-        depsT,
-      );
-      assert.equal(resT.status, 429);
-      const retryAfterT = resT.headers.get('Retry-After');
-      assert.equal(retryAfterR, retryAfterT,
-        `Retry-After symmetry: resources/read="${retryAfterR}" must match tools/call="${retryAfterT}"`);
-    } finally {
-      globalThis.Date = RealDate;
     }
   });
 

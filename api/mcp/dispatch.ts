@@ -2,10 +2,6 @@
 import { readJsonFromUpstash } from '../_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from '../_sentry-edge.js';
-import {
-  PRO_DAILY_QUOTA_LIMIT,
-  secondsUntilUtcMidnight,
-} from '../../server/_shared/pro-mcp-token';
 import { getMcpBillingVerificationDenial } from './auth';
 import { BillingDenialError } from './billing-denial';
 import {
@@ -16,9 +12,8 @@ import { mcpErrorFingerprint } from './error-fingerprint';
 import { argBool, summarizeData } from './filters';
 import { evaluateFreshness } from './freshness';
 import { applyJmespath } from './jmespath';
-import { reserveQuota } from './quota';
 import { TOOL_REGISTRY } from './registry/index';
-import { rpcError, rpcOk, withMcpNoStore } from './rpc';
+import { rpcError, rpcOk } from './rpc';
 import {
   emitTelemetry,
   principalIdForLog,
@@ -121,7 +116,7 @@ export async function executeTool(
 export async function dispatchToolsCall(
   req: Request,
   context: McpAuthContext,
-  deps: McpHandlerDeps,
+  _deps: McpHandlerDeps,
   body: { id?: unknown; params?: unknown },
   corsHeaders: Record<string, string>,
   ctx?: { waitUntil: (p: Promise<unknown>) => void },
@@ -136,47 +131,8 @@ export async function dispatchToolsCall(
     return rpcError(id, -32602, `Unknown tool: ${p.name}`, corsHeaders);
   }
 
-  // Pro-only INCR-first reservation. Both cache-only AND RPC tools count
-  // toward the daily 50/day cap — EXCEPT `describe_tool` (v1.5.0), which
-  // is metadata-only and is actively encouraged by SERVER_INSTRUCTIONS
-  // when the compressed tools/list entry is ambiguous. Charging quota for
-  // schema lookups would (a) discourage the LLM from using it, defeating
-  // the v1.5.0 compression's UX hedge, and (b) lock out Pro users at the
-  // 50/day cap from even seeing tool definitions. Exempt by name; rate-
-  // limiter (60/min) still applies as the abuse guard.
-  const isMetadataTool = p.name === 'describe_tool';
-  // user_key (#4859) consumes the same per-user daily quota as pro: cache
-  // tools read Upstash directly (no downstream gateway metering), so an
-  // unquota'd user_key would be an unmetered data loophole bounded only by
-  // the 60/min limiter. Raising API-plan MCP allowances above the Pro cap is
-  // a deliberate follow-up, not a default.
-  if ((context.kind === 'pro' || context.kind === 'user_key') && !isMetadataTool) {
-    const reservation = await reserveQuota(context.userId, deps.redisPipeline);
-    if (!reservation.ok) {
-      if (reservation.reason === 'cap-exceeded') {
-        return new Response(
-          JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32029, message: `Daily MCP quota exceeded (${PRO_DAILY_QUOTA_LIMIT}/day). Resets at next UTC midnight.` } }),
-          { status: 429, headers: withMcpNoStore({ 'Content-Type': 'application/json', 'Retry-After': String(secondsUntilUtcMidnight()), ...corsHeaders }) },
-        );
-      }
-      // Hard-cap correctness: NEVER dispatch on reservation failure.
-      return new Response(
-        JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: 'Service temporarily unavailable, retry in a moment.' } }),
-        { status: 503, headers: withMcpNoStore({ 'Content-Type': 'application/json', 'Retry-After': '5', ...corsHeaders }) },
-      );
-    }
-    // No caller-side rollback of the reservation: once we pass this point the
-    // tool runs and the daily slot is charged for good (GHSA-hcq5). The only
-    // rollback is INSIDE reserveQuota, for the pre-dispatch cap-exceeded case.
-  }
-
   const jmespathArg = p.arguments?.jmespath;
   const jmespathUsed = typeof jmespathArg === 'string' && jmespathArg.length > 0;
-  // tStart is captured AFTER the Pro reservation round-trip — `latency_ms`
-  // reports time-in-tool, not time-in-tool-plus-time-in-quota-reservation.
-  // TODO(v1.6.x): include `mcpTokenId` in the telemetry payload for Pro
-  // contexts so downstream per-tenant aggregation can join on it. Out of
-  // scope for v1 since the dashboards we ship next only need `auth_kind`.
   const tStart = Date.now();
   let execution: McpToolExecutionContext | undefined;
   try {
@@ -192,9 +148,6 @@ export async function dispatchToolsCall(
     } else {
       result = await executeTool(tool, p.arguments ?? {});
     }
-    // Convex `internal-validate-pro-mcp-token` schedules touchProMcpTokenLastUsed
-    // itself (convex/http.ts:1035-1040), so no waitUntil needed here.
-    //
     // Universal JMESPath projection (v1.4.0). `applyJmespath` never throws
     // — soft-failure modes return a `_jmespath_error` envelope as `text`
     // inside the normal response, so a bad expression is a *user* error after

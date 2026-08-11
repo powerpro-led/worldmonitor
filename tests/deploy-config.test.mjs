@@ -23,37 +23,28 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
 const vercelConfig = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
 const viteConfigSource = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf-8');
-const proViteConfigSource = readFileSync(resolve(__dirname, '../pro-test/vite.config.ts'), 'utf-8');
 const sitemapSource = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
 const robotsSource = readFileSync(resolve(__dirname, '../public/robots.txt'), 'utf-8');
 const mainSource = readFileSync(resolve(__dirname, '../src/main.ts'), 'utf-8');
 const zodCspSource = readFileSync(resolve(__dirname, '../src/bootstrap/zod-csp.ts'), 'utf-8');
-const proIndexCssSource = readFileSync(resolve(__dirname, '../pro-test/src/index.css'), 'utf-8');
 const middlewareSource = readFileSync(resolve(__dirname, '../middleware.ts'), 'utf-8');
 const dockerfileSource = readFileSync(resolve(__dirname, '../Dockerfile'), 'utf-8');
 const dockerNginxSource = readFileSync(resolve(__dirname, '../docker/nginx.conf'), 'utf-8');
 const frontendDockerfileSource = readFileSync(resolve(__dirname, '../docker/Dockerfile'), 'utf-8');
 const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 'utf-8');
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
-const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|pro|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|auth\\.md|pricing\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html|mcp-grant\\.html|mcp-grant).*)';
+const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|auth\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
 const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs|embed|embed\\.html).*)';
-const APP_ROOT_HOST_PATTERN = '^(?:(?:www|tech|finance|commodity|happy|energy)\\.)?worldmonitor\\.app$';
 const GLOBAL_CSP_INLINE_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
   'live-channels.html',
-  'mcp-grant.html',
   'public/offline.html',
-  'public/pro/index.html',
-  'public/pro/welcome.html',
 ];
 const GLOBAL_CSP_EXTERNAL_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
   'live-channels.html',
-  'mcp-grant.html',
-  'public/pro/index.html',
-  'public/pro/welcome.html',
 ];
 const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
 
@@ -385,45 +376,11 @@ describe('deploy/cache configuration guardrails', () => {
     assert.ok(!spaNoCache.includes('no-store'), 'HTML must not set no-store — it disables bfcache');
   });
 
-  it('disables caching for the apex /mcp-grant Pro-MCP consent page (both URL forms)', () => {
-    // The Pro-MCP consent page is its own HTML entry. Both /mcp-grant (the
-    // pretty URL, rewritten to /mcp-grant.html by vercel.json:12) and
-    // /mcp-grant.html (the bundle path) must carry no-store. Vercel needs
-    // explicit per-source rules — `(?:\\.html)?` quantifiers aren't supported.
-    assert.equal(
-      getCacheHeaderValue('/mcp-grant'),
-      'no-cache, no-store, must-revalidate'
-    );
-    assert.equal(
-      getCacheHeaderValue('/mcp-grant.html'),
-      'no-cache, no-store, must-revalidate'
-    );
-  });
-
   it('keeps immutable caching for hashed static assets', () => {
     assert.equal(
       getCacheHeaderValue('/assets/(.*)'),
       'public, max-age=31536000, immutable'
     );
-  });
-
-  it('serves /pro hashed assets immutable — broader /pro rules must not override', () => {
-    // /pro/:path* also matches /pro/assets/*; because the last matching rule
-    // wins per header key, the immutable /pro/assets rule has to be ordered
-    // AFTER the /pro catch-alls or every hashed chunk (including the ~3MB
-    // Clerk bundle) is re-downloaded on each repeat visit.
-    assert.equal(
-      effectiveCacheControl('/pro/assets/clerk-abc123.js'),
-      'public, max-age=31536000, immutable'
-    );
-    assert.equal(
-      effectiveCacheControl('/pro/assets/worldmonitor-7-mar-2026-abc.jpg'),
-      'public, max-age=31536000, immutable'
-    );
-    // HTML entries under /pro keep revalidating.
-    assert.equal(effectiveCacheControl('/pro'), 'private, no-cache, must-revalidate');
-    assert.equal(effectiveCacheControl('/pro/welcome.html'), 'private, no-cache, must-revalidate');
-    // Main-app hashed assets stay immutable end-to-end too.
     assert.equal(
       effectiveCacheControl('/assets/index-abc.js'),
       'public, max-age=31536000, immutable'
@@ -509,328 +466,6 @@ const DASHBOARD_HTML_DESTINATION = '/dashboard.html';
 // its output to dashboard.html so Vercel's filesystem cannot shadow the /
 // rewrite. /welcome and /index.html redirect to root so crawlers and humans do
 // not see duplicate landing URLs.
-describe('welcome landing page routing', () => {
-  // A `/` rewrite gated on a query condition (e.g. /?mode=agent →
-  // /agent-view.json) never matches a plain navigation, so the app-root
-  // welcome rewrite is the first `/` rule WITHOUT a query condition.
-  const getRootRewrite = () =>
-    vercelConfig.rewrites.find(
-      (r) => r.source === '/' && !(r.has ?? []).some((condition) => condition.type === 'query')
-    );
-  const getSpaCatchAllRewrite = () => vercelConfig.rewrites.find((r) =>
-    r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-  );
-  const rootDestinationForHost = (host) => {
-    const rewrite = getRootRewrite();
-    assert.ok(rewrite, 'expected a rewrite for /');
-    const hostCondition = rewrite.has?.find((condition) => condition.type === 'host');
-    if (!hostCondition || new RegExp(hostCondition.value).test(host)) return rewrite.destination;
-    return getSpaCatchAllRewrite()?.destination ?? null;
-  };
-
-  it('declares / as the app-root welcome rewrite after moving dashboard HTML off root index', () => {
-    const rewrite = getRootRewrite();
-    assert.ok(rewrite, 'expected a rewrite for /');
-    assert.equal(rewrite.destination, '/pro/welcome.html');
-    assert.deepEqual(rewrite.has, [
-      { type: 'host', value: APP_ROOT_HOST_PATTERN },
-    ]);
-  });
-
-  // #4825: public/index.md became Vercel's DIRECTORY INDEX for `/` — filesystem
-  // resolution beats the `/` → /pro/welcome.html rewrite, so the apex homepage
-  // served raw text/markdown to browsers. No `index.*` file may exist in public/;
-  // the markdown homepage twin lives at public/home.md and keeps its scored URL
-  // through the /index.md rewrite below.
-  it('keeps public/ free of index.* files so filesystem resolution cannot hijack the / rewrite', () => {
-    const publicDir = resolve(__dirname, '../public');
-    const offenders = readdirSync(publicDir).filter((f) => /^index\./i.test(f));
-    assert.deepEqual(offenders, [], `public/${offenders[0] ?? ''} would shadow the / welcome rewrite as a directory index`);
-  });
-
-  it('serves the markdown homepage twin at /index.md via rewrite to the non-index home.md', () => {
-    assert.ok(existsSync(resolve(__dirname, '../public/home.md')), 'expected public/home.md (markdown homepage twin)');
-    const rewrite = vercelConfig.rewrites.find((r) => r.source === '/index.md');
-    assert.ok(rewrite, 'expected a rewrite for /index.md');
-    assert.equal(rewrite.destination, '/home.md');
-    const catchAll = getSpaCatchAllRewrite();
-    assert.ok(
-      vercelConfig.rewrites.indexOf(rewrite) < vercelConfig.rewrites.indexOf(catchAll),
-      '/index.md rewrite must precede the SPA catch-all'
-    );
-  });
-
-  it('routes app roots to welcome and leaves non-app roots on the dashboard catch-all', () => {
-    assert.equal(rootDestinationForHost('worldmonitor.app'), '/pro/welcome.html');
-    assert.equal(rootDestinationForHost('www.worldmonitor.app'), '/pro/welcome.html');
-    assert.equal(rootDestinationForHost('worldmonitor.app.evil.example'), DASHBOARD_HTML_DESTINATION);
-
-    const variantHosts = getVariantHosts().filter((host) => host !== 'www.worldmonitor.app');
-    for (const host of variantHosts) {
-      assert.equal(
-        rootDestinationForHost(host),
-        '/pro/welcome.html',
-        `${host}/ must serve the welcome page; the variant dashboard route is /dashboard`
-      );
-    }
-  });
-
-  it('keeps variant canonicals aligned with the /dashboard routing strategy', () => {
-    const variantUrls = getVariantUrls();
-    assert.equal(variantUrls.full, 'https://www.worldmonitor.app/dashboard');
-
-    const nonFullUrls = Object.entries(variantUrls).filter(([variant]) => variant !== 'full');
-    assert.ok(nonFullUrls.length >= 5, 'expected non-full variant metadata entries');
-    for (const [variant, url] of nonFullUrls) {
-      assert.equal(
-        new URL(url).pathname,
-        '/dashboard',
-        `${variant} canonical must point at /dashboard while the root serves welcome`
-      );
-    }
-  });
-
-  it('keeps variant crawler-stub canonicals aligned with variant metadata', () => {
-    const variantUrls = getVariantUrls();
-    const nonFullUrls = Object.entries(variantUrls).filter(([variant]) => variant !== 'full');
-
-    for (const [variant, url] of nonFullUrls) {
-      assert.match(
-        middlewareSource,
-        new RegExp(`\\b${variant}:\\s*\\{[\\s\\S]*?url:\\s*'${escapeRegExp(url)}'`),
-        `${variant} crawler-stub OG/canonical URL must match variant-meta.ts`
-      );
-    }
-
-    for (const variant of ['full', 'tech', 'finance', 'commodity', 'happy']) {
-      assert.ok(
-        middlewareSource.includes(`href="${variantUrls[variant]}"`),
-        `AI crawler body must link ${variant} to its dashboard canonical`
-      );
-    }
-  });
-
-  it('redirects legacy root map-state deep links to /dashboard before welcome routing', () => {
-    assert.match(
-      middlewareSource,
-      /LEGACY_DASHBOARD_ROOT_QUERY_KEYS = \['lat', 'lon', 'zoom', 'view', 'timeRange', 'layers'\]/,
-      'middleware must list dashboard URL-state params that bypass the root welcome page',
-    );
-    assert.match(
-      middlewareSource,
-      /path === '\/' && hasLegacyDashboardRootState\(url\.searchParams\)/,
-      'middleware must detect legacy dashboard state on root requests',
-    );
-    assert.match(
-      middlewareSource,
-      /dashboardUrl\.pathname = '\/dashboard'/,
-      'middleware must move legacy dashboard-state root links to /dashboard',
-    );
-    assert.match(
-      middlewareSource,
-      /Response\.redirect\(dashboardUrl\.toString\(\), 308\)/,
-      'middleware must redirect, preserving the original query string',
-    );
-  });
-
-  it('rewrites /dashboard to the existing SPA shell', () => {
-    // Host-conditioned variant rules (#4996) sit in front; the fallback for
-    // every other host is the un-conditioned rule.
-    const rewrite = vercelConfig.rewrites.find((r) => r.source === '/dashboard' && !r.has);
-    assert.ok(rewrite, 'expected an un-conditioned rewrite for /dashboard');
-    assert.equal(rewrite.destination, DASHBOARD_HTML_DESTINATION);
-  });
-
-  it('does not point any rewrite at root index.html', () => {
-    const indexRewrites = vercelConfig.rewrites.filter((r) => r.destination === '/index.html');
-    assert.deepEqual(
-      indexRewrites,
-      [],
-      'dashboard rewrites must target dashboard.html so Vercel filesystem precedence cannot serve a root index.html at /'
-    );
-  });
-
-  it('renames the web dashboard HTML output away from root index.html', () => {
-    assert.match(viteConfigSource, /function dashboardHtmlOutputPlugin\(\)/);
-    assert.match(viteConfigSource, /enforce:\s*'post'/);
-    assert.match(viteConfigSource, /Object\.entries\(bundle\)\.find/);
-    assert.match(viteConfigSource, /output\.fileName === 'index\.html'/);
-    assert.match(viteConfigSource, /delete bundle\[bundleKey\]/);
-    assert.match(viteConfigSource, /dashboardHtml\.fileName = 'dashboard\.html'/);
-    assert.match(viteConfigSource, /!isDesktopBuild && dashboardHtmlOutputPlugin\(\)/);
-  });
-
-  it('does not keep stale welcome exclusions in the SPA catch-all rewrite', () => {
-    const catchAll = vercelConfig.rewrites.find((r) =>
-      r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-    );
-    assert.ok(catchAll, 'expected the SPA catch-all rewrite');
-    assert.ok(
-      !catchAll.source.includes('|welcome|'),
-      'legacy /welcome redirect must not leave welcome excluded from the SPA catch-all rewrite'
-    );
-  });
-
-  it('redirects legacy /welcome to / permanently', () => {
-    const redirect = vercelConfig.redirects.find((r) => r.source === '/welcome');
-    assert.ok(redirect, 'expected a redirect for /welcome');
-    assert.equal(redirect.destination, '/');
-    assert.equal(redirect.permanent, true);
-  });
-
-  it('redirects direct /index.html requests to / permanently', () => {
-    const redirect = vercelConfig.redirects.find((r) => r.source === '/index.html');
-    assert.ok(redirect, 'expected a redirect for /index.html');
-    assert.equal(redirect.destination, '/');
-    assert.equal(redirect.permanent, true);
-  });
-
-  it('redirects the human pricing route to the canonical pricing section before SPA routing', () => {
-    const redirect = vercelConfig.redirects.find((r) => r.source === '/pricing');
-    assert.ok(redirect, 'expected a redirect for /pricing');
-    assert.equal(redirect.destination, '/pro#pricing');
-    assert.equal(redirect.permanent, true);
-
-    assert.equal(
-      vercelConfig.redirects.some((r) => r.source === '/pricing.md'),
-      false,
-      'the machine-readable pricing contract must remain a static asset',
-    );
-    assert.equal(
-      vercelConfig.redirects.some((r) => r.source === '/api/product-catalog'),
-      false,
-      'the live product catalog endpoint must remain unchanged',
-    );
-    assert.equal(
-      vercelConfig.rewrites.some((r) => r.source === '/pricing'),
-      false,
-      '/pricing must be handled in the redirects phase before the SPA rewrites phase',
-    );
-  });
-
-  it('redirects bare corpus roots to canonical generated pages', () => {
-    const changelog = vercelConfig.redirects.find((r) => r.source === '/changelog');
-    assert.ok(changelog, 'expected a redirect for /changelog');
-    assert.equal(changelog.destination, '/reference/changelog/');
-    assert.equal(changelog.permanent, true);
-
-    const reference = vercelConfig.redirects.find((r) => r.source === '/reference');
-    assert.ok(reference, 'expected a redirect for /reference');
-    assert.equal(reference.destination, '/reference/changelog/');
-    assert.equal(reference.permanent, false);
-  });
-
-  it('requires revalidation for /dashboard HTML without disabling bfcache', () => {
-    const dashboardCache = getCacheHeaderValue('/dashboard');
-    assert.equal(dashboardCache, 'private, no-cache, must-revalidate');
-    assert.ok(!dashboardCache.includes('no-store'), 'HTML must not set no-store — it disables bfcache');
-  });
-
-  it('requires revalidation for root welcome HTML without disabling bfcache', () => {
-    const welcomeCache = getCacheHeaderValue('/');
-    assert.equal(welcomeCache, 'private, no-cache, must-revalidate');
-    assert.ok(!welcomeCache.includes('no-store'), 'HTML must not set no-store — it disables bfcache');
-  });
-
-  it('requires revalidation for direct dashboard.html without disabling bfcache', () => {
-    const dashboardCache = getCacheHeaderValue('/dashboard.html');
-    assert.equal(dashboardCache, 'private, no-cache, must-revalidate');
-    assert.ok(!dashboardCache.includes('no-store'), 'HTML must not set no-store — it disables bfcache');
-  });
-
-  it('starts installed PWAs on /dashboard, not the public welcome page', () => {
-    assert.match(viteConfigSource, /start_url:\s*'\/dashboard'/);
-  });
-
-  it('sitemap lists dashboard routes and does not list legacy /welcome', () => {
-    const sitemap = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
-    assert.ok(
-      sitemap.includes('<loc>https://www.worldmonitor.app/dashboard</loc>'),
-      'public/sitemap.xml must list https://www.worldmonitor.app/dashboard'
-    );
-    for (const host of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
-      assert.ok(
-        sitemap.includes(`<loc>https://${host}.worldmonitor.app/dashboard</loc>`),
-        `public/sitemap.xml must list https://${host}.worldmonitor.app/dashboard`
-      );
-    }
-    assert.ok(
-      !sitemap.includes('<loc>https://www.worldmonitor.app/welcome</loc>'),
-      'public/sitemap.xml must not list legacy https://www.worldmonitor.app/welcome'
-    );
-  });
-
-  it('pins welcome and dashboard SEO canonicals to their new routes', () => {
-    const welcomeHtml = readFileSync(resolve(__dirname, '../pro-test/welcome.html'), 'utf-8');
-    const generatedWelcomeHtml = readFileSync(resolve(__dirname, '../public/pro/welcome.html'), 'utf-8');
-    const dashboardHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
-    assert.ok(
-      welcomeHtml.includes('<link rel="canonical" href="https://www.worldmonitor.app/" />'),
-      'welcome source must canonicalize to root'
-    );
-    assert.ok(
-      !welcomeHtml.includes('https://www.worldmonitor.app/welcome'),
-      'welcome source must not emit legacy /welcome SEO URLs'
-    );
-    assert.ok(
-      generatedWelcomeHtml.includes('<link rel="canonical" href="https://www.worldmonitor.app/" />'),
-      'generated welcome HTML must canonicalize to root'
-    );
-    assert.ok(
-      !generatedWelcomeHtml.includes('https://www.worldmonitor.app/welcome'),
-      'generated welcome HTML must not emit legacy /welcome SEO URLs'
-    );
-    assert.ok(
-      generatedWelcomeHtml.includes('https://www.worldmonitor.app/dashboard'),
-      'generated welcome HTML must launch the dashboard at /dashboard'
-    );
-    assert.ok(
-      dashboardHtml.includes('<link rel="canonical" href="https://www.worldmonitor.app/dashboard" />'),
-      'dashboard shell must canonicalize to /dashboard'
-    );
-  });
-
-  it('keeps welcome dashboard launch CTAs off the root welcome route', () => {
-    const welcomeMomentsSource = readFileSync(resolve(__dirname, '../pro-test/src/welcome/Moments.tsx'), 'utf-8');
-    const generatedWelcomeHtml = readFileSync(resolve(__dirname, '../public/pro/welcome.html'), 'utf-8');
-    const welcomeAssetPath = generatedWelcomeHtml.match(/src="\/pro\/(assets\/welcome-[^"]+\.js)"/)?.[1];
-    assert.ok(welcomeAssetPath, 'generated welcome HTML must reference a hashed welcome JS entry');
-
-    const generatedWelcomeAsset = readFileSync(resolve(__dirname, '../public/pro', welcomeAssetPath), 'utf-8');
-    const rootWelcomeLaunchLink = /href\s*[:=]\s*["'`]\/\?ref=welcome-/;
-    const variantRootWelcomeLaunchLink = /https:\/\/(?:tech|finance|commodity|happy|energy)\.worldmonitor\.app\/\?ref=welcome-/;
-    assert.doesNotMatch(
-      welcomeMomentsSource,
-      rootWelcomeLaunchLink,
-      'welcome source must not route launch CTAs back to the root welcome page'
-    );
-    assert.doesNotMatch(
-      welcomeMomentsSource,
-      variantRootWelcomeLaunchLink,
-      'welcome source must not route variant launch CTAs back to variant root welcome pages'
-    );
-    assert.doesNotMatch(
-      generatedWelcomeAsset,
-      rootWelcomeLaunchLink,
-      'generated welcome JS must not route launch CTAs back to the root welcome page'
-    );
-    assert.doesNotMatch(
-      generatedWelcomeAsset,
-      variantRootWelcomeLaunchLink,
-      'generated welcome JS must not route variant launch CTAs back to variant root welcome pages'
-    );
-  });
-
-  it('redirects signed-in welcome visitors to /dashboard client-side without loading the Clerk SDK', () => {
-    const welcomeApp = readFileSync(resolve(__dirname, '../pro-test/src/WelcomeApp.tsx'), 'utf-8');
-    // The 3MB Clerk SDK must NOT be on the welcome critical path (issue #4428):
-    // the redirect is decided from the live __session JWT alone.
-    assert.ok(!welcomeApp.includes("import('./services/clerk')"));
-    assert.ok(!welcomeApp.includes("import('./services/checkout')"));
-    assert.ok(welcomeApp.includes('maybeRedirectWelcomeVisitor(document.cookie, window.location)'));
-  });
-});
-
 describe('deploy/API CORS guardrails', () => {
   it('does not define static CORS headers for /api routes in vercel.json', () => {
     const corsHeaderKeys = new Set([
@@ -868,7 +503,6 @@ describe('docker runtime dependency guardrails', () => {
     assert.deepEqual(Object.keys(runtimePackage.dependencies).sort(), [
       '@upstash/ratelimit',
       '@upstash/redis',
-      'convex',
     ]);
     assert.deepEqual(
       Object.keys(runtimeLock.packages[''].dependencies).sort(),
@@ -1107,14 +741,6 @@ describe('security header guardrails', () => {
     );
   });
 
-  it('Pro landing CSS stays first-party under the global CSP', () => {
-    assert.doesNotMatch(
-      proIndexCssSource,
-      /@import\s+url\(['"]?https:|fonts\.googleapis\.com|fonts\.gstatic\.com/,
-      'Pro CSS must not import remote fonts blocked by the global CSP'
-    );
-  });
-
   it('CSP script-src uses strict-dynamic with nonce/hash trust, not script host allowlists', () => {
     const csp = getHeaderValue('Content-Security-Policy');
     const tokens = getCspDirectiveTokens(csp, 'script-src');
@@ -1213,11 +839,6 @@ describe('security header guardrails', () => {
       viteConfigSource,
       new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
       'Vite must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
-    );
-    assert.match(
-      proViteConfigSource,
-      new RegExp(`cspNonce:\\s*STATIC_SCRIPT_NONCE`),
-      'Pro Vite builds must stamp emitted HTML entry scripts with the nonce trusted by the header CSP'
     );
 
     for (const file of GLOBAL_CSP_EXTERNAL_SCRIPT_HTML_FILES) {
@@ -1979,16 +1600,16 @@ describe('agent readiness: auth.md walkthrough', () => {
     assert.ok(SPA_HTML_CACHE_SOURCE.includes('|auth\\.md|'), 'HTML cache catch-all must exclude /auth.md');
   });
 
-  // pricing.md and support.md are advertised in api-catalog service-meta and
-  // llms.txt (#4854/#4857), agents.md is the agent-discovery entry point
-  // (#4952), so they get the same three-way pinning as auth.md:
-  // explicit markdown Content-Type + CORS, catch-all exclusion (deleting or
-  // renaming the static file must 404, not silently serve the dashboard HTML
+  // support.md is advertised in api-catalog service-meta and llms.txt
+  // (#4857), agents.md is the agent-discovery entry point (#4952), so they
+  // get the same three-way pinning as auth.md: explicit markdown
+  // Content-Type + CORS, catch-all exclusion (deleting or renaming the
+  // static file must 404, not silently serve the dashboard HTML
   // misleading-200 the journey runs flagged), and this guard. /ai-search.md
   // joined the set with its canonical Link header (#4999): it is
   // sitemap-listed, and without the catch-all exclusion the SPA cache-header
   // catch-all (later in the headers array) overrides its max-age rule.
-  for (const mdPath of ['/pricing.md', '/support.md', '/agents.md', '/ai-search.md']) {
+  for (const mdPath of ['/support.md', '/agents.md', '/ai-search.md']) {
     it(`serves ${mdPath} as markdown and keeps it off the SPA catch-all`, () => {
       assert.equal(getHeaderValueForSource(mdPath, 'Content-Type'), 'text/markdown; charset=utf-8');
       assert.equal(getHeaderValueForSource(mdPath, 'Access-Control-Allow-Origin'), '*');
@@ -2579,7 +2200,7 @@ describe('markdown canonical Link headers (#4999)', () => {
   // agents, so they cannot carry a <link rel="canonical">. RFC 6596 allows the
   // HTTP Link header form; without it these are the only indexable URLs with
   // no canonical signal at all.
-  const MD_PAGES = ['/pricing.md', '/support.md', '/ai-search.md', '/developers.md', '/mcp-server.md', '/openapi.md', '/sdks.md'];
+  const MD_PAGES = ['/support.md', '/ai-search.md', '/developers.md', '/mcp-server.md', '/openapi.md', '/sdks.md'];
 
   for (const page of MD_PAGES) {
     it(`${page} declares a self-referencing canonical Link header`, () => {
@@ -2708,7 +2329,9 @@ describe('NLWeb schemamap (/schemamap.xml)', () => {
     assert.ok(locs.length >= 3, 'schemamap must index at least the homepage, blog, and RSS feed');
     const resolvable = {
       'https://www.worldmonitor.app/': () =>
-        vercelConfig.rewrites.some((r) => r.source === '/' && r.destination === '/pro/welcome.html'),
+        vercelConfig.rewrites.some((r) =>
+          r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
+        ),
       'https://www.worldmonitor.app/blog/': () =>
         existsSync(resolve(__dirname, '../blog-site/src/pages/index.astro')),
       'https://www.worldmonitor.app/blog/rss.xml': () =>

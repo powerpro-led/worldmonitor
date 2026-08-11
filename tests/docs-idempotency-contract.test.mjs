@@ -8,27 +8,19 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 const usageErrors = read('docs/usage-errors.mdx');
-const commerceDocs = read('docs/api-commerce.mdx');
 const notificationsDocs = read('docs/api-notifications.mdx');
 const platformDocs = read('docs/api-platform.mdx');
 const routeExceptions = JSON.parse(read('api/api-route-exceptions.json'));
 const scenarioOpenApi = JSON.parse(read('docs/api/ScenarioService.openapi.json'));
-const createCheckoutSource = read('api/create-checkout.ts');
 const notifySource = read('api/notify.ts');
 
+// api/create-checkout.ts and api/customer-portal.ts (and their standaloneWrites
+// entries + dedicated checkout-replay-window test below) were removed here —
+// both were thin Convex/Dodo Payments relay proxies, deleted along with the
+// billing surface (retire-convex-saas). docs/api-commerce.mdx may still carry
+// stale prose for them; not exhaustively scrubbed (see the deletion plan's
+// docs section).
 const standaloneWrites = [
-  {
-    doc: commerceDocs,
-    heading: 'POST /api/create-checkout',
-    path: '/api/create-checkout',
-    file: 'api/create-checkout.ts',
-  },
-  {
-    doc: commerceDocs,
-    heading: 'POST /api/customer-portal',
-    path: '/api/customer-portal',
-    file: 'api/customer-portal.ts',
-  },
   {
     doc: notificationsDocs,
     heading: 'POST /api/notification-channels',
@@ -98,21 +90,11 @@ describe('docs Idempotency-Key prose contract', () => {
     );
   });
 
-  it('usage-errors documents persistence limits for retryable statuses and checkout', () => {
+  it('usage-errors documents persistence limits for retryable statuses', () => {
     assert.match(
       usageErrors,
       /5xx responses are not cached/i,
       'usage-errors.mdx must state that keyed 5xx responses are not persisted for replay',
-    );
-    assert.match(
-      createCheckoutSource,
-      /completedTtlSeconds:\s*10\s*\*\s*60/,
-      'create-checkout must continue to declare its short checkout replay window',
-    );
-    assert.match(
-      sectionForEndpoint(commerceDocs, 'POST /api/create-checkout'),
-      /10 minutes/i,
-      'create-checkout docs must disclose its 10-minute replay window',
     );
   });
 

@@ -158,7 +158,7 @@ describe('deferred Umami loader', () => {
     try {
       const analytics = await import('../src/services/analytics.ts');
       analytics.track('search-open', { source: 'desktop' });
-      analytics.identifyUser('user_1', 'free', null, null);
+      analytics.identifyUser('user_1', 'free');
       await analytics.initAnalytics();
 
       assert.equal(appendedScripts.length, 1);

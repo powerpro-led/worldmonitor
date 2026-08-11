@@ -297,10 +297,9 @@ function isLocalOnlyApiTarget(target: string): boolean {
 }
 
 function isKeyFreeApiTarget(target: string): boolean {
-  return target.startsWith('/api/register-interest')
-    || target.startsWith('/api/leads/v1/register-interest')
-    || target.startsWith('/api/leads/v1/submit-contact')
-    || target.startsWith('/api/version');
+  // The former /api/register-interest and /api/leads/v1/* exemptions were
+  // removed along with the leads/waitlist domain (retire-convex-saas).
+  return target.startsWith('/api/version');
 }
 
 async function fetchLocalWithStartupRetry(

@@ -106,7 +106,6 @@ import { DataLoaderManager } from '@/app/data-loader';
 import { EventHandlerManager } from '@/app/event-handlers';
 import { replaceRawI18nKeyPlaceholders } from '@/app/i18n-raw-key-healer';
 import { resolveUserRegion, resolvePreciseUserCoordinates, type PreciseCoordinates } from '@/utils/user-location';
-import { showProBanner } from '@/components/ProBanner';
 import { initAuthState, subscribeAuthState } from '@/services/auth-state';
 import {
   CLOUD_PREFS_APPLIED_EVENT,
@@ -115,17 +114,8 @@ import {
   onSignOut as cloudPrefsSignOut,
   type CloudPrefsAppliedDetail,
 } from '@/utils/cloud-prefs-sync';
-import { getConvexClient, getConvexApi, waitForConvexAuth } from '@/services/convex-client';
-import type { Id } from '../convex/_generated/dataModel';
 import { initEntitlementSubscription, destroyEntitlementSubscription, resetEntitlementState, onEntitlementChange } from '@/services/entitlements';
-import { initSubscriptionWatch, destroySubscriptionWatch } from '@/services/billing';
 import { installFollowedCountriesAuthListener } from '@/services/followed-countries';
-import {
-  clearStoredAnonIdentity,
-  getFreshStoredAnonClaimToken,
-  getStoredAnonId,
-} from '@/services/anonymous-identity-storage';
-import { captureReferralFromUrl } from '@/services/referral-capture';
 // CorrelationEngine + its 4 adapters are dynamic-imported at the post-loadAllData
 // run site (#4486) so the engine bytes stay off the eager boot graph. The TYPE is
 // referenced via the inline `import(...)` type in app-context.ts (erased at build).
@@ -1376,18 +1366,15 @@ export class App {
 
     let _prevUserId: string | null = null;
     // Track the last-seen PRO entitlement so we can re-fire PRO-gated loaders
-    // ONCE on a false→true transition (user signs in / purchase lands mid-session).
-    // Without this, loaders gated behind hasPremiumAccess() at init time (e.g.
+    // ONCE on a false→true transition (user signs in mid-session). Without
+    // this, loaders gated behind hasPremiumAccess() at init time (e.g.
     // loadTradePolicy) would sit empty until the next scheduled refresh — for
     // trade-policy that's a 10-minute wait post-sign-in. See PR #3295 review.
     let _prevHadPremium = hasPremiumAccess();
-    // Pro-loader fan-out runs on EITHER Clerk auth changes OR Convex
-    // entitlement changes — Pro can come from either signal (Clerk
-    // user.role === 'pro' OR Convex tier >= 1 via Dodo). User-reported
-    // on commodity.worldmonitor.app: Trade Policy panel stuck at "Loading…"
-    // for a Pro Monthly subscriber because the original listener only
-    // watched subscribeAuthState (Clerk-only); Convex Free→Pro transitions
-    // never re-fired loadTradePolicy. Same root cause as PR #3409 layer-unlock.
+    // Pro-loader fan-out runs on both the auth-state listener and the
+    // entitlement listener — both derive from the same signed-in check today,
+    // but keeping both listeners means a future entitlement-only signal still
+    // re-fires these loaders without another regression hunt (see PR #3409).
     const firePremiumLoaders = (): void => {
       this.enforceFreeTierLimits();
       const hadPremium = _prevHadPremium;
@@ -1427,92 +1414,12 @@ export class App {
       if (userId !== null && userId !== _prevUserId) {
         void cloudPrefsSignIn(userId, SITE_VARIANT);
 
-        // Rebind Convex watches to the real Clerk userId (was bound to anon UUID at init)
+        // Rebind the entitlement subscription to the real userId (was bound
+        // to no one at init).
         destroyEntitlementSubscription();
-        destroySubscriptionWatch();
         void initEntitlementSubscription(userId);
-        void initSubscriptionWatch(userId);
-
-        // Claim any anonymous purchase made before sign-in (anon → real user migration)
-        const anonId = getStoredAnonId();
-        if (anonId) {
-          void (async () => {
-            const [client, api] = await Promise.all([getConvexClient(), getConvexApi()]);
-            if (!client || !api) return;
-            // Wait for ConvexClient WebSocket auth handshake to complete.
-            // Without this, mutations arrive at Convex before the server
-            // has the JWT → "Authentication required" errors.
-            const ready = await waitForConvexAuth(10_000);
-            if (!ready) {
-              console.warn('[billing] claimSubscription skipped — Convex auth not ready');
-              return;
-            }
-            const claimToken = getFreshStoredAnonClaimToken() ?? undefined;
-            const result = await client.mutation(api.payments.billing.claimSubscription, {
-              anonId,
-              ...(claimToken ? { claimToken } : {}),
-            });
-            const claimed = result.claimed;
-            const totalClaimed = claimed.subscriptions + claimed.entitlements +
-                                 claimed.customers + claimed.payments;
-            if (totalClaimed > 0) {
-              console.log('[billing] Claimed anon subscription on sign-in:', claimed);
-            }
-            // Always remove after non-throwing completion — mutation is idempotent.
-            // Prevents cold Convex init + mutation on every sign-in for non-purchasers.
-            clearStoredAnonIdentity();
-          })().catch((err: unknown) => {
-            console.warn('[billing] claimSubscription failed:', err);
-            // Non-fatal — anon ID preserved for retry on next page load
-          });
-        }
-
-        // Accept a Business Pro seat invite carried in the URL (mirror of the
-        // anon-claim hook). The invite link is /settings?accept-business-invite=<id>&token=<t>.
-        // Runs after sign-in so the invitee's Clerk email is available server-side.
-        const businessInviteGrantId = new URLSearchParams(window.location.search).get('accept-business-invite');
-        const businessInviteToken = new URLSearchParams(window.location.search).get('token');
-        if (businessInviteGrantId && businessInviteToken) {
-          void (async () => {
-            const [client, api] = await Promise.all([getConvexClient(), getConvexApi()]);
-            if (!client || !api) return;
-            const ready = await waitForConvexAuth(10_000);
-            if (!ready) {
-              console.warn('[business-seats] acceptBusinessInvite skipped — Convex auth not ready');
-              return;
-            }
-            try {
-              await client.mutation(api.payments.businessSeats.acceptBusinessInvite, {
-                grantId: businessInviteGrantId as Id<'businessProGrants'>,
-                token: businessInviteToken,
-              });
-              showToast('Pro seat activated');
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : 'Failed to accept invite';
-              if (msg.includes('INVITE_EMAIL_MISMATCH')) {
-                showToast('This invite is for a different email address');
-              } else if (msg.includes('INVITE_EXPIRED')) {
-                showToast('This invite has expired');
-              } else if (msg.includes('BUSINESS_NOT_ACTIVE')) {
-                showToast('The Business plan that sent this invite is no longer active');
-              } else if (msg.includes('INVITE_ALREADY_USED')) {
-                showToast('This invite has already been used');
-              } else {
-                showToast('Could not accept invite');
-              }
-              console.warn('[business-seats] acceptBusinessInvite failed:', err);
-            } finally {
-              // Clear the invite params from the URL so a refresh does not retry.
-              const url = new URL(window.location.href);
-              url.searchParams.delete('accept-business-invite');
-              url.searchParams.delete('token');
-              window.history.replaceState({}, '', url.toString());
-            }
-          })();
-        }
       } else if (userId === null && _prevUserId !== null) {
         destroyEntitlementSubscription();
-        destroySubscriptionWatch();
         cloudPrefsSignOut();
         resetEntitlementState();
       }
@@ -1535,7 +1442,6 @@ export class App {
     await this.panelLayout.init();
     markLcpDebug('wm:layout:init-complete');
     this.eventHandlers.setupSearchControls();
-    showProBanner(this.state.container);
     this.updateConnectivityUi();
     window.addEventListener('online', this.handleConnectivityChange);
     window.addEventListener('offline', this.handleConnectivityChange);
@@ -1571,10 +1477,6 @@ export class App {
     // (Phase 6 below) so its bytes + adapters stay off the eager boot graph (#4486).
     this.eventHandlers.setupUnifiedSettings();
     this.eventHandlers.setupAuthWidget();
-    // Capture any ?ref= / ?wm_referral= from the URL into localStorage
-    // and strip from the visible URL. Pure read of current URL — no-op
-    // when the param is not present.
-    captureReferralFromUrl();
 
     // Phase 4: MapLayerHandlers, CountryIntel. SearchManager is lazy-loaded
     // on first CMD+K/search-button open so its modal catalog stays off startup.

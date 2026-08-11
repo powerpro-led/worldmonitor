@@ -225,8 +225,8 @@ export class ResilienceWidget {
   private async showAuthUnavailable(): Promise<void> {
     const message = 'Sign-in is temporarily unavailable. Please try again.';
     try {
-      const { showCheckoutErrorToast } = await import('@/services/checkout-error-toast');
-      showCheckoutErrorToast(message);
+      const { showErrorToast } = await import('@/services/error-toast');
+      showErrorToast(message);
       return;
     } catch {
       window.alert(message);

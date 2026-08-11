@@ -26,7 +26,6 @@ const workflowText = readdirSync(workflowsDir)
 const REQUIRED_PR_SCRIPTS = [
   'test:data',
   'test:sidecar',
-  'test:convex',
   'test:e2e:variant-smoke:full',
   'test:resilience-validation-smoke',
 ] as const;
@@ -34,7 +33,6 @@ const REQUIRED_PR_SCRIPTS = [
 const REQUIRED_TEST_JOBS = [
   'unit',
   'sidecar',
-  'convex-tests',
   'variant-smoke-full',
   'resilience-validation-smoke',
 ] as const;
@@ -42,7 +40,6 @@ const REQUIRED_TEST_JOBS = [
 const TIMEOUT_CAPPED_TEST_JOBS = [
   'consumer-prices',
   'sidecar',
-  'convex-tests',
   'variant-smoke-full',
   'resilience-validation-smoke',
 ] as const;

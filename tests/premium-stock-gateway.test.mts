@@ -271,32 +271,6 @@ describe('premium gateway API key enforcement', () => {
   // entitlements" below now covers the only reachable outcome: any valid key
   // unlocks these routes.
 
-  it('allows issue #4609 Pro RPCs for tier-1 entitlements', async () => {
-    const handler = createDomainGateway(ISSUE_4609_GATED_ROUTES.map(({ method, path }) => ({
-      method,
-      path,
-      handler: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    })));
-
-    const restoreFetch = await installSupabaseApiKeyFetch({ [PRO_USER_KEY]: 'pro_api_user' });
-
-    try {
-      for (const { method, path } of ISSUE_4609_GATED_ROUTES) {
-        const res = await handler(new Request(`https://worldmonitor.app${path}`, {
-          method,
-          headers: {
-            Origin: 'https://worldmonitor.app',
-            'X-Api-Key': PRO_USER_KEY,
-          },
-        }));
-        assert.equal(res.status, 200, `${method} ${path} should allow a valid wm_ key`);
-        assert.deepEqual(await res.json(), { ok: true });
-      }
-    } finally {
-      restoreFetch();
-    }
-  });
-
   it('PR #3557 review: anonymous wms_ session token does NOT unlock premium endpoints', async () => {
     // Regression: an earlier revision returned valid:true for wms_ tokens and
     // the gateway treated any non-wm_ valid key as enterprise → entitlement
@@ -346,44 +320,6 @@ describe('premium gateway API key enforcement', () => {
     assert.deepEqual(await res.json(), { userId: null });
   });
 
-  it('rewrites client-supplied x-user-id on wm_ user-API-key auth (#3548)', async () => {
-    // Third injection site (sibling of the Supabase-session + legacy-bearer
-    // paths). Mocks the Postgres-backed lookup the wm_ branch now hits
-    // (server/_shared/user-api-key.ts -> worldmonitor.api_keys via Supabase
-    // REST, replacing the deleted Convex /api/internal-validate-api-key +
-    // /api/internal-entitlements mocks). Every valid key resolves to the
-    // same fixed pro entitlement post-Stage-1, so only key -> owner
-    // resolution needs mocking here.
-    const handler = createDomainGateway([
-      {
-        method: 'GET',
-        path: '/api/market/v1/analyze-stock',
-        handler: async (req) =>
-          new Response(JSON.stringify({ userId: req.headers.get('x-user-id') }), { status: 200 }),
-      },
-    ]);
-
-    process.env.WORLDMONITOR_VALID_KEYS = 'real-key-123';
-    const restoreFetch = await installSupabaseApiKeyFetch({ [OWNER_PRO_USER_KEY]: 'owner_pro' });
-
-    try {
-      const res = await handler(
-        new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
-          headers: {
-            Origin: 'https://worldmonitor.app',
-            'X-WorldMonitor-Key': OWNER_PRO_USER_KEY,
-            'x-user-id': 'victim-user',
-          },
-        }),
-      );
-
-      assert.equal(res.status, 200);
-      const body = (await res.json()) as { userId: string | null };
-      assert.equal(body.userId, 'owner_pro');
-    } finally {
-      restoreFetch();
-    }
-  });
 });
 
 describe('POST-to-GET compatibility hardening', () => {
@@ -531,44 +467,6 @@ describe('premium gateway bearer token auth', () => {
     }));
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true });
-  });
-
-  it('a wm_ key paired with an unrelated bearer token resolves identity to the key owner, not the bearer subject', async () => {
-    // NOTE(stage1-supabase-migration): replaces "does not apply a Pro bearer
-    // role to a different wm_ key owner", which asserted 403 for a "free"
-    // (tier 0) wm_ key owner paired with a Pro bearer token. Post-Stage-1
-    // every valid wm_ key resolves to the same fixed pro entitlement (see
-    // the "issue #4609" NOTE in the 'premium gateway API key enforcement'
-    // describe above), so a 403 can no longer be constructed this way. The
-    // security property that test actually protected -- the wm_ key's OWN
-    // owner governs identity/entitlement, not whatever the paired bearer
-    // token claims -- is still real and still tested here via x-user-id
-    // attribution instead of a denial status.
-    const token = await signSupabaseToken('user_pro_bearer');
-    const identityEchoHandler = createDomainGateway([
-      {
-        method: 'GET',
-        path: '/api/market/v1/analyze-stock',
-        handler: async (req) =>
-          new Response(JSON.stringify({ userId: req.headers.get('x-user-id') }), { status: 200 }),
-      },
-    ]);
-    const restoreFetch = await installSupabaseApiKeyFetch({ [FREE_USER_KEY]: 'wm_key_owner' });
-
-    try {
-      const res = await identityEchoHandler(new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
-        headers: {
-          Origin: 'https://worldmonitor.app',
-          Authorization: `Bearer ${token}`,
-          'X-Api-Key': FREE_USER_KEY,
-        },
-      }));
-      assert.equal(res.status, 200);
-      const body = await res.json() as { userId: string | null };
-      assert.equal(body.userId, 'wm_key_owner', 'the wm_ key owner must govern identity, not the bearer subject');
-    } finally {
-      restoreFetch();
-    }
   });
 
   it('rejects invalid/expired bearer token on premium endpoint → 401', async () => {

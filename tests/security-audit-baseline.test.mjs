@@ -102,8 +102,14 @@ describe('security audit baseline', () => {
     const vite = lockfile.packages['node_modules/vite'];
     const viteEsbuild = lockfile.packages['node_modules/vite/node_modules/esbuild'];
 
+    // The original fix scoped the patched esbuild under an `overrides.convex`
+    // entry (convex's own dependency tree pulled a vulnerable esbuild).
+    // Now that convex is deleted, the same patched version is pinned via a
+    // direct devDependency instead — no scoped override needed since there's
+    // no longer a convex-owned esbuild resolution to target.
     assert.equal(packageJson.overrides?.esbuild, undefined);
-    assert.equal(packageJson.overrides?.convex?.esbuild, '0.28.1');
+    assert.equal(packageJson.overrides?.convex, undefined);
+    assert.equal(packageJson.devDependencies?.esbuild, '0.28.1');
     assert.equal(rootEsbuild?.version, '0.28.1');
     assert.equal(vite?.dependencies?.esbuild, '^0.25.0');
     assert.ok(viteEsbuild, 'Vite must keep its own esbuild when root uses the audit-patched version');

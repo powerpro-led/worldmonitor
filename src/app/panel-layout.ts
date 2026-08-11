@@ -40,14 +40,11 @@ import { resolveNewsCategories, enabledNewsCategoryKeys } from '@/config/feed-re
 import { BETA_MODE } from '@/config/beta';
 import { t } from '@/services/i18n';
 import { getCurrentTheme } from '@/utils';
-import { trackCriticalBannerAction, replayPendingProFunnelEvents } from '@/services/analytics';
+import { trackCriticalBannerAction } from '@/services/analytics';
 import { getStoredMapModePreference } from '@/services/map-mode-preference';
 import { loadWidgets, saveWidget, isProUser } from '@/services/widget-store';
 import type { CustomWidgetSpec } from '@/services/widget-store';
 import { initEntitlementSubscription, destroyEntitlementSubscription, isEntitled, onEntitlementChange, shouldReloadOnEntitlementChange } from '@/services/entitlements';
-import { initSubscriptionWatch, destroySubscriptionWatch, onSubscriptionChange } from '@/services/billing';
-import { initPaymentFailureBanner } from '@/components/payment-failure-banner';
-import { ProActivationController } from '@/app/pro-activation-controller';
 import { PanelTabBar } from '@/components/PanelTabBar';
 import {
   loadTabsState,
@@ -328,12 +325,9 @@ export class PanelLayoutManager implements AppModule {
   private proBlockEntitlementUnsubscribe: (() => void) | null = null;
   private boundWidgetCreatorHandler: ((e: Event) => void) | null = null;
   private unsubscribeEntitlementChange: (() => void) | null = null;
-  private unsubscribeSubscriptionChange: (() => void) | null = null;
-  private unsubscribePaymentFailureBanner: (() => void) | null = null;
   private scheduledLoadAllRaf: number | null = null;
   private scheduledLoadAllIdle: number | null = null;
   private responsiveZoneListener: ResponsiveZoneListener | null = null;
-  private readonly proActivationController: ProActivationController;
 
   constructor(ctx: AppContext, callbacks: PanelLayoutManagerCallbacks) {
     this.ctx = ctx;
@@ -342,55 +336,14 @@ export class PanelLayoutManager implements AppModule {
       this.applyTimeRangeFilterToNewsPanels();
     }, 120);
 
-    // Entitlement subscription + billing watch for ALL users. Checkout is
-    // gone post-billing-cut (Stage 1 Supabase migration) — every signed-in
-    // user already has full access, so there is no post-checkout boot state
-    // to detect or reload for.
-    this.proActivationController = new ProActivationController(ctx, {
-      reloadPending: false,
-      openAiAnalyst: () => this.revealAnalystPanel(),
-    });
-    // /pro funnel-start events mirrored in sessionStorage before an
-    // unrelated navigation; replay is unconditional (no-op when nothing is
-    // pending).
-    replayPendingProFunnelEvents();
-
-    // Always register the payment-failure-banner listener — onSubscriptionChange
-    // is an in-memory listener registry, doesn't open any network connection,
-    // and survives the destroy/reinit cycle on auth transitions (see
-    // billing.ts:124-126). Registering once here means the banner reacts when
-    // a user signs in mid-session and the App.ts auth-state subscription
-    // (App.ts:995-1006) starts the Convex subscription watch.
-    this.unsubscribePaymentFailureBanner = initPaymentFailureBanner();
-
-    // Defer Convex subscriptions until a real Clerk identity exists.
-    //
-    // `getUserId()` (user-identity.ts) always returns truthy for browser
-    // users — it falls back to an auto-generated `wm-anon-id` UUID — so the
-    // previous `if (userId)` gate never short-circuited. That meant every
-    // anonymous visitor opened a Convex WebSocket via getConvexClient()
-    // with `setAuth(getClerkToken)` returning null, which the Convex SDK
-    // could not authenticate, producing a constant
-    //   `WebSocket connection to wss://…/api/1.34.0/sync failed`
-    // reconnect loop in DevTools (todo #257 item 4). The subscriptions
-    // themselves never delivered useful state for anon users either:
-    //   - getEntitlementsForUser returns FREE_TIER_DEFAULTS without auth
-    //   - getSubscriptionForUser returns null without auth
-    // — so the loop was pure noise.
-    //
-    // For users who sign in mid-session, App.ts:1003-1006 destroys and
-    // re-initializes both subscriptions against the real Clerk userId, so
-    // skipping here is a no-op for the signed-in path.
-    //
     // Note: PanelLayoutManager is constructed before initAuthState() awaits
-    // Clerk, so getAuthState().user is null even for users who will silently
-    // restore a Clerk session on this page load. Those users are picked up
-    // by subscribeAuthState a few hundred ms later via the same App.ts
+    // the auth provider, so getAuthState().user is null even for users who
+    // will silently restore a session on this page load. Those users are
+    // picked up by subscribeAuthState a few hundred ms later via the App.ts
     // rebind path. Constructor-time anon is the common case.
     if (getAuthState().user) {
       const userId = getAuthState().user!.id;
       initEntitlementSubscription(userId).catch(() => {});
-      initSubscriptionWatch(userId).catch(() => {});
     }
 
     // Reload only on a free→pro (sign-in) transition. A user whose first
@@ -421,14 +374,6 @@ export class PanelLayoutManager implements AppModule {
       // snapshot synchronously rather than waiting for the next auth event.
       this.updatePanelGating(getAuthState());
     });
-
-    // #4771: billing-state transitions can arrive on the SUBSCRIPTION row
-    // alone (webhook flips to on_hold, renewal verification records a
-    // verdict) with no entitlement snapshot change. Re-run gating so the
-    // billing-aware CTA copy tracks the current state, not just the banner.
-    this.unsubscribeSubscriptionChange = onSubscriptionChange(() => {
-      this.updatePanelGating(getAuthState());
-    });
   }
 
   async init(): Promise<void> {
@@ -455,32 +400,6 @@ export class PanelLayoutManager implements AppModule {
       })).catch((err) => console.error('[widget-chat] failed to lazy-load WidgetChatModal', err));
     }) as EventListener;
     this.ctx.container.addEventListener('wm:open-widget-creator', this.boundWidgetCreatorHandler);
-
-    // Pro Activation Onboarding: after the dashboard settles, evaluate whether
-    // a pending-onboarding marker should open the interstitial (or surface the
-    // finish-setup chip). Deferred off the boot critical path like the panel
-    // hydration scheduler above.
-    this.proActivationController.init();
-  }
-
-  /**
-   * Open + scroll the WM Analyst (chat-analyst) panel into view. The panel is a
-   * lazy/deferred premium panel, so it may not be in `ctx.panels` yet at click
-   * time; scrolling to its reserved grid slot trips the mount observer, and we
-   * retry briefly until the element appears (mirrors search-manager's
-   * scrollToPanelWhenReady contract).
-   */
-  private revealAnalystPanel(attemptsLeft = 12): void {
-    if (this.ctx.isDestroyed || typeof document === 'undefined') return;
-    const key = 'chat-analyst';
-    this.ctx.panels[key]?.show();
-    const el = document.querySelector(`[data-panel="${key}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    if (attemptsLeft <= 0) return;
-    window.setTimeout(() => this.revealAnalystPanel(attemptsLeft - 1), 80);
   }
 
   destroy(): void {
@@ -574,23 +493,12 @@ export class PanelLayoutManager implements AppModule {
       delete this.ctx.newsPanels[key];
     }
 
-    // Clean up billing subscription watch + entitlement subscription
-    destroySubscriptionWatch();
+    // Clean up entitlement subscription
     destroyEntitlementSubscription();
 
     // Clean up entitlement change listener
     this.unsubscribeEntitlementChange?.();
     this.unsubscribeEntitlementChange = null;
-
-    // Clean up subscription-change gating listener (#4771)
-    this.unsubscribeSubscriptionChange?.();
-    this.unsubscribeSubscriptionChange = null;
-
-    // Clean up payment failure banner subscription
-    this.unsubscribePaymentFailureBanner?.();
-    this.unsubscribePaymentFailureBanner = null;
-
-    this.proActivationController.destroy();
 
     removeResponsiveZoneListener(this.responsiveZoneListener);
     this.responsiveZoneListener = null;
@@ -648,7 +556,6 @@ export class PanelLayoutManager implements AppModule {
     setTrustedHtml(this.ctx.container, trustedHtml(`
       ${this.ctx.isDesktopApp ? '<div class="tauri-titlebar" data-tauri-drag-region></div>' : ''}
       <a href="#main" class="skip-link">Skip to main content</a>
-      <div id="proBannerSlot" class="pro-banner-slot" aria-live="polite"></div>
       <div class="header">
         <div class="header-left">
           <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menu">

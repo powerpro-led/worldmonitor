@@ -461,7 +461,6 @@ function sebufApiPlugin(): Plugin {
       supplyChainServerMod, supplyChainHandlerMod,
       naturalServerMod, naturalHandlerMod,
       resilienceServerMod, resilienceHandlerMod,
-      leadsServerMod, leadsHandlerMod,
       scenarioServerMod, scenarioHandlerMod,
       shippingV2ServerMod, shippingV2HandlerMod,
     ] = await Promise.all([
@@ -514,8 +513,6 @@ function sebufApiPlugin(): Plugin {
         import('./server/worldmonitor/natural/v1/handler'),
         import('./src/generated/server/worldmonitor/resilience/v1/service_server'),
         import('./server/worldmonitor/resilience/v1/handler'),
-        import('./src/generated/server/worldmonitor/leads/v1/service_server'),
-        import('./server/worldmonitor/leads/v1/handler'),
         import('./src/generated/server/worldmonitor/scenario/v1/service_server'),
         import('./server/worldmonitor/scenario/v1/handler'),
         import('./src/generated/server/worldmonitor/shipping/v2/service_server'),
@@ -547,7 +544,6 @@ function sebufApiPlugin(): Plugin {
       ...supplyChainServerMod.createSupplyChainServiceRoutes(supplyChainHandlerMod.supplyChainHandler, serverOptions),
       ...naturalServerMod.createNaturalServiceRoutes(naturalHandlerMod.naturalHandler, serverOptions),
       ...resilienceServerMod.createResilienceServiceRoutes(resilienceHandlerMod.resilienceHandler, serverOptions),
-      ...leadsServerMod.createLeadsServiceRoutes(leadsHandlerMod.leadsHandler, serverOptions),
       ...scenarioServerMod.createScenarioServiceRoutes(scenarioHandlerMod.scenarioHandler, serverOptions),
       ...shippingV2ServerMod.createShippingV2ServiceRoutes(shippingV2HandlerMod.shippingV2Handler, serverOptions),
     ];
@@ -1112,7 +1108,6 @@ export default defineConfig(({ mode }) => {
           embed: resolve(__dirname, 'embed.html'),
           settings: resolve(__dirname, 'settings.html'),
           liveChannels: resolve(__dirname, 'live-channels.html'),
-          mcpGrant: resolve(__dirname, 'mcp-grant.html'),
         },
         output: {
           // onlyExplicitManualChunks keeps the panel clusters from forming
@@ -1218,13 +1213,6 @@ export default defineConfig(({ mode }) => {
             // Post-paint service tail split (#4487). These files are dynamic-imported
             // from data-loader/country-intel/SignalModal; stable names let the
             // dist guard prove they stay out of main rather than merely grepping src.
-            // Keep the product catalog independent from its shared cache and
-            // entitlement dependencies. Before this split, Rollup named the shared
-            // cache group `products`, making the post-hydration product task parse
-            // unrelated IndexedDB code alongside the tiny checkout catalog. (#5165)
-            if (id.endsWith('/src/config/products.ts') || id.endsWith('/src/config/products.generated.ts')) {
-              return 'products';
-            }
             if (id.endsWith('/src/services/persistent-cache.ts')) {
               return 'persistent-cache';
             }

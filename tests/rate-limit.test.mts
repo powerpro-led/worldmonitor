@@ -203,7 +203,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
     // not silently lift those budgets.
     const res = await checkEndpointRateLimit(
       makeRequest({ 'cf-connecting-ip': '203.0.113.7' }),
-      '/api/leads/v1/submit-contact',
+      '/api/scenario/v1/run-scenario',
       {},
     );
     assert.ok(res, 'expected a Response from fail-closed endpoint policy');
@@ -211,7 +211,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
     assert.equal(res.headers.get('X-RateLimit-Mode'), 'degraded');
     assert.ok(
       consoleErrors.some((line) =>
-        line.includes('stage=checkEndpointRateLimit:/api/leads/v1/submit-contact'),
+        line.includes('stage=checkEndpointRateLimit:/api/scenario/v1/run-scenario'),
       ),
       `expected per-endpoint stage in the log, got: ${consoleErrors.join('\n')}`,
     );
@@ -220,7 +220,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
   it('checkEndpointRateLimit caller can opt into fail-open via failClosed=false', async () => {
     const res = await checkEndpointRateLimit(
       makeRequest({ 'cf-connecting-ip': '203.0.113.7' }),
-      '/api/leads/v1/submit-contact',
+      '/api/scenario/v1/run-scenario',
       {},
       { failClosed: false },
     );
@@ -234,7 +234,7 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
 
     const res = await mod.checkEndpointRateLimit(
       makeRequest({ 'cf-connecting-ip': '203.0.113.7' }),
-      '/api/leads/v1/submit-contact',
+      '/api/scenario/v1/run-scenario',
       {},
     );
 
@@ -420,11 +420,6 @@ describe('rate-limit fail-closed call-site policy (#3531)', () => {
 describe('scoped rate-limit degraded call-site policy (#3531)', () => {
   const SCOPED_RATE_LIMIT_CALLERS = [
     {
-      path: 'server/worldmonitor/leads/v1/register-interest.ts',
-      expected: /if\s*\(\s*scoped\.degraded\s*\)\s*\{/,
-      reason: 'desktop lead capture bypasses Turnstile, so Redis degradation must fail closed locally',
-    },
-    {
       path: 'api/a2a.ts',
       expected: /Redis-degraded scoped limits intentionally stay availability-first/,
       reason: 'A2A concierge serves only anonymous, quota-free, cheap catalog matching — degradation is logged and stays availability-first',
@@ -443,6 +438,11 @@ describe('scoped rate-limit degraded call-site policy (#3531)', () => {
       path: 'api/mcp-proxy.ts',
       expected: /Redis-degraded scoped limits intentionally stay availability-first/,
       reason: 'MCP proxy is already premium-auth gated; scoped limit degradation is logged and remains availability-first',
+    },
+    {
+      path: 'api/followed-countries.ts',
+      expected: /Redis-degraded scoped limits intentionally fail open for prefs writes/,
+      reason: 'followed-country toggles are low-stakes, so Redis degradation should not block legitimate settings sync',
     },
     {
       path: 'api/user-prefs.ts',
@@ -574,16 +574,16 @@ describe('EVALSHA-unsupported fallback (#7c — self-hosted redis-rest proxy blo
 
     const mod = await importFreshRateLimitModule();
     const req = makeRequest({ 'x-real-ip': '203.0.113.10' });
-    const pathname = '/api/leads/v1/submit-contact';
+    const pathname = '/api/scenario/v1/run-scenario';
 
-    assert.equal(await mod.checkEndpointRateLimit(req, pathname, {}), null);
-    assert.equal(await mod.checkEndpointRateLimit(req, pathname, {}), null);
-    assert.equal(await mod.checkEndpointRateLimit(req, pathname, {}), null);
+    for (let i = 0; i < 10; i++) {
+      assert.equal(await mod.checkEndpointRateLimit(req, pathname, {}), null);
+    }
     const blocked = await mod.checkEndpointRateLimit(req, pathname, {});
 
-    assert.ok(blocked, 'expected endpoint policy to return a 429 on the fourth request');
+    assert.ok(blocked, 'expected endpoint policy to return a 429 on the eleventh request');
     assert.equal(blocked.status, 429);
-    assert.equal(blocked.headers.get('X-RateLimit-Limit'), '3');
+    assert.equal(blocked.headers.get('X-RateLimit-Limit'), '10');
     assert.equal(blocked.headers.get('X-RateLimit-Remaining'), '0');
     assert.equal(luaAttempts, 1, 'endpoint fallback must not retry Lua after it is known unsupported');
   });
@@ -639,7 +639,7 @@ describe('EVALSHA-unsupported fallback (#7c — self-hosted redis-rest proxy blo
 
     const mod = await importFreshRateLimitModule();
     const req = makeRequest({ 'x-real-ip': '203.0.113.11' });
-    const pathname = '/api/leads/v1/submit-contact';
+    const pathname = '/api/scenario/v1/run-scenario';
 
     const failOpen = await mod.checkEndpointRateLimit(req, pathname, {}, { failClosed: false });
     assert.equal(failOpen, null, 'opted-out endpoint callers should fail open when fallback cannot set a TTL');

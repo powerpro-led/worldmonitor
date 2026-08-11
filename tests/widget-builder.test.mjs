@@ -1118,15 +1118,18 @@ describe('PRO widget — store and sanitizer', () => {
     );
   });
 
-  it('user identity migrates legacy wm-pro-key instead of reading localStorage directly', () => {
-    const identity = src('src/services/user-identity.ts');
+  it('browser-key-session migrates legacy wm-pro-key instead of reading localStorage directly', () => {
+    // src/services/user-identity.ts (the original home of this migration
+    // logic) was deleted with the Convex/SaaS surface; the helper now lives
+    // in browser-key-session.ts.
+    const identity = src('src/services/browser-key-session.ts');
     assert.ok(
       identity.includes('readLegacySessionKey') && identity.includes('migrateLegacyKeysToHttpOnlySession'),
-      'user-identity must route legacy wm-pro-key through the HttpOnly migration helper',
+      'browser-key-session must route legacy wm-pro-key through the HttpOnly migration helper',
     );
     assert.ok(
       !/localStorage\.getItem\(['"]wm-pro-key['"]/.test(identity),
-      'user-identity must not read wm-pro-key directly from localStorage',
+      'browser-key-session must not read wm-pro-key directly from localStorage',
     );
   });
 

@@ -145,11 +145,6 @@ function makeDeps(overrides = {}) {
       redisGetDel: redis.redisGetDel,
       redisGet: redis.redisGet,
       redisPipeline: redis.redisPipeline,
-      // F3 (U7+U8 review pass): validateProMcpToken now returns the
-      // ProMcpValidateUnion. Tests passing `null` are normalised here to
-      // `{ok:'revoked'}` so the existing assertions remain meaningful;
-      // tests passing the new shape pass through unchanged.
-      validateProMcpToken: overrides.validateProMcpToken ?? (async () => ({ ok: 'valid', userId: USER_ID })),
       randomUuid: overrides.randomUuid ?? deterministicUuid,
     },
   };
@@ -163,149 +158,6 @@ function makeReq(grantType, params) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 }
-
-// ---------------------------------------------------------------------------
-// authorization_code — Pro path
-// ---------------------------------------------------------------------------
-
-describe('U6 tokenHandler — authorization_code (Pro)', () => {
-  it('exchanges Pro code → token; Redis records carry kind:"pro"; response scope is mcp_pro', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    redis.store.set(`oauth:code:abc`, {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
-      code_challenge: CODE_CHALLENGE,
-      scope: 'mcp_pro',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    _uuidCounter = 0;
-    const resp = await tokenHandler(
-      makeReq('authorization_code', {
-        code: 'abc',
-        code_verifier: CODE_VERIFIER,
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 200);
-    const body = await resp.json();
-    assert.equal(body.access_token, 'uuid_0001');
-    assert.equal(body.refresh_token, 'uuid_0002');
-    assert.equal(body.scope, 'mcp_pro');
-    assert.equal(body.token_type, 'Bearer');
-    assert.equal(body.expires_in, 3600);
-
-    // Access token record is the Pro object shape.
-    const accessRaw = redis.store.get('oauth:token:uuid_0001');
-    assert.deepEqual(JSON.parse(accessRaw), {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-    });
-
-    // Refresh record carries client_id, userId, mcpTokenId, scope, family_id.
-    const refreshRaw = redis.store.get('oauth:refresh:uuid_0002');
-    const refresh = JSON.parse(refreshRaw);
-    assert.equal(refresh.kind, 'pro');
-    assert.equal(refresh.client_id, CLIENT_ID);
-    assert.equal(refresh.userId, USER_ID);
-    assert.equal(refresh.mcpTokenId, MCP_TOKEN_ID);
-    assert.equal(refresh.scope, 'mcp_pro');
-    assert.equal(refresh.family_id, 'uuid_0003');
-    assertSetEx(redis.ops, 'oauth:tokenfam:uuid_0001', JSON.stringify('uuid_0003'), TOKEN_TTL_SECONDS);
-    assertSetEx(redis.ops, 'oauth:famptr:uuid_0002', JSON.stringify('uuid_0003'), REFRESH_TTL_SECONDS);
-
-    // The auth code was consumed via GETDEL.
-    assert.equal(redis.store.has('oauth:code:abc'), false);
-  });
-
-  it('rejects when code.client_id !== request client_id (binding violation)', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    redis.store.set('oauth:code:abc', {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      client_id: 'someone_else',
-      redirect_uri: REDIRECT_URI,
-      code_challenge: CODE_CHALLENGE,
-      scope: 'mcp_pro',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('authorization_code', {
-        code: 'abc',
-        code_verifier: CODE_VERIFIER,
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    assert.equal((await resp.json()).error, 'invalid_grant');
-  });
-
-  it('rejects when code.redirect_uri !== request redirect_uri', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    redis.store.set('oauth:code:abc', {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      client_id: CLIENT_ID,
-      redirect_uri: 'https://attacker.example/callback',
-      code_challenge: CODE_CHALLENGE,
-      scope: 'mcp_pro',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('authorization_code', {
-        code: 'abc',
-        code_verifier: CODE_VERIFIER,
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    assert.equal((await resp.json()).error, 'invalid_grant');
-  });
-
-  it('rejects when PKCE verifier does not match challenge', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    redis.store.set('oauth:code:abc', {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
-      code_challenge: makeChallenge('different_verifier_'.padEnd(64, 'X')),
-      scope: 'mcp_pro',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('authorization_code', {
-        code: 'abc',
-        code_verifier: CODE_VERIFIER,
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    assert.equal((await resp.json()).error, 'invalid_grant');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // authorization_code — legacy env-key path (regression guard)
@@ -362,155 +214,6 @@ describe('U6 tokenHandler — authorization_code (legacy)', () => {
 // refresh_token grant
 // ---------------------------------------------------------------------------
 
-describe('U6 tokenHandler — refresh_token (Pro)', () => {
-  it('Pro refresh preserves kind, userId, mcpTokenId, scope, family_id', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    const FAMILY = 'family_original_xxx';
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: FAMILY,
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    _uuidCounter = 200;
-    const resp = await tokenHandler(
-      makeReq('refresh_token', {
-        refresh_token: 'rt-1',
-        client_id: CLIENT_ID,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 200);
-    const body = await resp.json();
-    assert.equal(body.scope, 'mcp_pro');
-    assert.equal(body.refresh_token, 'uuid_0202');
-
-    // New access record is Pro object-shape.
-    const access = JSON.parse(redis.store.get('oauth:token:uuid_0201'));
-    assert.deepEqual(access, { kind: 'pro', userId: USER_ID, mcpTokenId: MCP_TOKEN_ID });
-
-    // New refresh record preserves family_id (load-bearing for theft-revoke).
-    const refresh = JSON.parse(redis.store.get('oauth:refresh:uuid_0202'));
-    assert.equal(refresh.kind, 'pro');
-    assert.equal(refresh.userId, USER_ID);
-    assert.equal(refresh.mcpTokenId, MCP_TOKEN_ID);
-    assert.equal(refresh.scope, 'mcp_pro');
-    assert.equal(refresh.family_id, FAMILY); // PRESERVED across rotation
-    assertSetEx(redis.ops, 'oauth:famptr:rt-1', JSON.stringify(FAMILY), REFRESH_TTL_SECONDS);
-    assertSetEx(redis.ops, 'oauth:tokenfam:uuid_0201', JSON.stringify(FAMILY), TOKEN_TTL_SECONDS);
-    assertSetEx(redis.ops, 'oauth:famptr:uuid_0202', JSON.stringify(FAMILY), REFRESH_TTL_SECONDS);
-
-    // Old refresh token consumed.
-    assert.equal(redis.store.has('oauth:refresh:rt-1'), false);
-  });
-
-  it('Pro refresh fails invalid_grant when validateProMcpToken returns revoked', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps({ validateProMcpToken: async () => ({ ok: 'revoked' }) });
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: 'fam',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    const body = await resp.json();
-    assert.equal(body.error, 'invalid_grant');
-    // Error description does NOT leak revocation specifically (avoids
-    // probing). Same copy as expired/used.
-    assert.match(body.error_description, /invalid, expired, or already used/);
-  });
-
-  it('F3: Pro refresh on Convex transient → 503 + Retry-After + refresh token preserved', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps({ validateProMcpToken: async () => ({ ok: 'transient' }) });
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: 'fam',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }),
-      deps,
-    );
-    assert.equal(resp.status, 503, 'transient Convex failure → 503');
-    const body = await resp.json();
-    assert.equal(body.error, 'server_error');
-    // F3: refresh token must be restored to Redis with the original payload.
-    const restored = redis.store.get('oauth:refresh:rt-1');
-    assert.ok(restored, 'refresh token MUST be restored on transient failure');
-    // The restored value is a JSON string written via SET; parse before comparing.
-    const restoredObj = typeof restored === 'string' ? JSON.parse(restored) : restored;
-    assert.equal(restoredObj.kind, 'pro');
-    assert.equal(restoredObj.userId, USER_ID);
-    assert.equal(restoredObj.mcpTokenId, MCP_TOKEN_ID);
-    assert.equal(restoredObj.family_id, 'fam');
-    assertSetEx(redis.ops, 'oauth:famptr:rt-1', JSON.stringify('fam'), REFRESH_TTL_SECONDS);
-  });
-
-  it('Pro refresh rejects when client_id does not match', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: 'other_client',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: 'fam',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    assert.equal((await resp.json()).error, 'invalid_grant');
-  });
-
-  it('Pro refresh rejects when validate returns a different userId (defensive cross-user guard)', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps({
-      validateProMcpToken: async () => ({ ok: 'valid', userId: 'somebody_else' }),
-    });
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: 'fam',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }),
-      deps,
-    );
-    assert.equal(resp.status, 400);
-    assert.equal((await resp.json()).error, 'invalid_grant');
-  });
-});
-
 describe('U6 tokenHandler — refresh_token (legacy)', () => {
   it('legacy refresh continues to work; access record is bare-string hash; family_id preserved', async () => {
     await ensureFixtures();
@@ -564,74 +267,6 @@ describe('U6 tokenHandler — refresh_token (legacy)', () => {
 // ---------------------------------------------------------------------------
 
 describe('U6 tokenHandler — refresh-token reuse revokes the family (GHSA-f6gj)', () => {
-  it('reuse of a rotated refresh token revokes the family, killing the attacker\'s rotated token', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    const FAMILY = 'fam_reuse_xyz';
-    // A valid refresh token + its persistent family pointer (as the writers now emit).
-    redis.store.set('oauth:refresh:rt-1', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: FAMILY,
-    });
-    redis.store.set('oauth:famptr:rt-1', JSON.stringify(FAMILY));
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    _uuidCounter = 700;
-    // (1) First redemption rotates rt-1 → a new token (attacker holds it).
-    const r1 = await tokenHandler(makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }), deps);
-    assert.equal(r1.status, 200);
-    const rotated = (await r1.json()).refresh_token;
-    assert.equal(redis.store.has('oauth:refresh:rt-1'), false, 'rt-1 consumed by GETDEL');
-    assert.ok(redis.store.has('oauth:famptr:rt-1'), 'family pointer survives rotation (enables reuse detection)');
-    assert.ok(redis.store.has(`oauth:famptr:${rotated}`), 'rotated token also gets a family pointer');
-    assert.equal(redis.store.has(`oauth:famrev:${FAMILY}`), false, 'family not revoked yet');
-
-    // (2) Victim replays the now-stale rt-1 → GETDEL-miss → REUSE → revoke family.
-    const r2 = await tokenHandler(makeReq('refresh_token', { refresh_token: 'rt-1', client_id: CLIENT_ID }), deps);
-    assert.equal(r2.status, 400);
-    assert.equal((await r2.json()).error, 'invalid_grant');
-    assert.ok(redis.store.has(`oauth:famrev:${FAMILY}`), 'reuse of a rotated token must revoke the whole family');
-
-    // (3) Attacker's rotated token is now rejected — family is revoked.
-    const r3 = await tokenHandler(makeReq('refresh_token', { refresh_token: rotated, client_id: CLIENT_ID }), deps);
-    assert.equal(r3.status, 400, 'a revoked family must not rotate — the attacker is contained');
-    assert.equal((await r3.json()).error, 'invalid_grant');
-  });
-
-  it('pre-patch Pro refresh token with no pointer still backfills pointer and revokes on replay', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps();
-    const FAMILY = 'fam_prepatch_pro';
-    redis.store.set('oauth:refresh:rt-old', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: FAMILY,
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    _uuidCounter = 800;
-    const r1 = await tokenHandler(makeReq('refresh_token', { refresh_token: 'rt-old', client_id: CLIENT_ID }), deps);
-    assert.equal(r1.status, 200);
-    const rotated = (await r1.json()).refresh_token;
-    assertSetEx(redis.ops, 'oauth:famptr:rt-old', JSON.stringify(FAMILY), REFRESH_TTL_SECONDS);
-
-    const r2 = await tokenHandler(makeReq('refresh_token', { refresh_token: 'rt-old', client_id: CLIENT_ID }), deps);
-    assert.equal(r2.status, 400);
-    assert.equal((await r2.json()).error, 'invalid_grant');
-    assert.ok(redis.store.has(`oauth:famrev:${FAMILY}`));
-
-    const r3 = await tokenHandler(makeReq('refresh_token', { refresh_token: rotated, client_id: CLIENT_ID }), deps);
-    assert.equal(r3.status, 400);
-    assert.equal((await r3.json()).error, 'invalid_grant');
-  });
-
   it('legacy refresh-token reuse revokes the family too', async () => {
     await ensureFixtures();
     const { redis, deps } = makeDeps();
@@ -690,11 +325,9 @@ describe('U6 tokenHandler — refresh-token reuse revokes the family (GHSA-f6gj)
     const { redis, deps } = makeDeps();
     const FAMILY = 'fam_read_fail';
     redis.store.set('oauth:refresh:rt-live', {
-      kind: 'pro',
       client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
+      api_key_hash: ENV_KEY_HASH,
+      scope: 'mcp',
       family_id: FAMILY,
     });
     redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
@@ -712,29 +345,6 @@ describe('U6 tokenHandler — refresh-token reuse revokes the family (GHSA-f6gj)
     assert.ok(restored, 'refresh token is restored when revocation state is unknown');
     assert.equal(redis.store.has('oauth:token:uuid_0951'), false, 'must not mint a new access token');
     assertSetEx(redis.ops, 'oauth:famptr:rt-live', JSON.stringify(FAMILY), REFRESH_TTL_SECONDS);
-  });
-
-  it('transient Pro validation restores the refresh token and its family pointer together', async () => {
-    await ensureFixtures();
-    const { redis, deps } = makeDeps({ validateProMcpToken: async () => ({ ok: 'transient' }) });
-    const FAMILY = 'fam_transient_restore';
-    redis.store.set('oauth:refresh:rt-transient', {
-      kind: 'pro',
-      client_id: CLIENT_ID,
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      scope: 'mcp_pro',
-      family_id: FAMILY,
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    const resp = await tokenHandler(
-      makeReq('refresh_token', { refresh_token: 'rt-transient', client_id: CLIENT_ID }),
-      deps,
-    );
-    assert.equal(resp.status, 503);
-    assert.ok(redis.store.has('oauth:refresh:rt-transient'));
-    assertSetEx(redis.ops, 'oauth:famptr:rt-transient', JSON.stringify(FAMILY), REFRESH_TTL_SECONDS);
   });
 
   it('a genuine expired/unknown refresh token (no family pointer) does NOT revoke anything', async () => {
@@ -824,43 +434,7 @@ describe('resolveBearerToContext (U6 resolver)', () => {
     }
   });
 
-  it('returns kind:"pro" for object shape with valid userId + mcpTokenId', async () => {
-    const restore = withRedisGet(
-      JSON.stringify({ kind: 'pro', userId: USER_ID, mcpTokenId: MCP_TOKEN_ID }),
-    );
-    try {
-      const ctx = await resolveBearerToContext('uuid-x');
-      assert.deepEqual(ctx, {
-        kind: 'pro',
-        userId: USER_ID,
-        mcpTokenId: MCP_TOKEN_ID,
-      });
-    } finally {
-      restore();
-    }
-  });
-
-  it('returns null for kind:"pro" with missing/empty userId', async () => {
-    const restore = withRedisGet(
-      JSON.stringify({ kind: 'pro', userId: '', mcpTokenId: MCP_TOKEN_ID }),
-    );
-    try {
-      assert.equal(await resolveBearerToContext('uuid-x'), null);
-    } finally {
-      restore();
-    }
-  });
-
-  it('returns null for kind:"pro" with missing mcpTokenId', async () => {
-    const restore = withRedisGet(JSON.stringify({ kind: 'pro', userId: USER_ID }));
-    try {
-      assert.equal(await resolveBearerToContext('uuid-x'), null);
-    } finally {
-      restore();
-    }
-  });
-
-  it('returns null for unknown kind:"future" (defensive against new shapes)', async () => {
+  it('returns null for any object shape (defensive against retired/future shapes)', async () => {
     const restore = withRedisGet(
       JSON.stringify({ kind: 'unknown', userId: USER_ID, mcpTokenId: MCP_TOKEN_ID }),
     );
@@ -963,74 +537,6 @@ describe('resolveApiKeyFromBearer (legacy wrapper)', () => {
 // ---------------------------------------------------------------------------
 
 describe('U6 round-trip — tokenHandler → resolveBearerToContext', () => {
-  it('a Pro authorization_code exchange yields a token resolvable to {kind:"pro"}', async () => {
-    await ensureFixtures();
-    // Unset Upstash env so the production Ratelimit init returns null
-    // (it's module-cached so this only matters on the first call).
-    const savedUrl = process.env.UPSTASH_REDIS_REST_URL;
-    const savedTok = process.env.UPSTASH_REDIS_REST_TOKEN;
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-
-    const { redis, deps } = makeDeps();
-    redis.store.set('oauth:code:abc', {
-      kind: 'pro',
-      userId: USER_ID,
-      mcpTokenId: MCP_TOKEN_ID,
-      client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
-      code_challenge: CODE_CHALLENGE,
-      scope: 'mcp_pro',
-    });
-    redis.store.set(`oauth:client:${CLIENT_ID}`, CLIENT_RECORD);
-
-    _uuidCounter = 400;
-    const resp = await tokenHandler(
-      makeReq('authorization_code', {
-        code: 'abc',
-        code_verifier: CODE_VERIFIER,
-        client_id: CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
-      }),
-      deps,
-    );
-    assert.equal(resp.status, 200);
-    const body = await resp.json();
-    const accessUuid = body.access_token;
-
-    // Stub the resolver's fetch to read directly from our test Redis store.
-    const realFetch = globalThis.fetch;
-    process.env.UPSTASH_REDIS_REST_URL = 'https://test.upstash.io';
-    process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
-    globalThis.fetch = async (url) => {
-      const u = new URL(String(url));
-      const decoded = decodeURIComponent(u.pathname);
-      const match = decoded.match(/^\/get\/(.+)$/);
-      if (match) {
-        const stored = redis.store.get(match[1]);
-        return new Response(JSON.stringify({ result: stored === undefined ? null : stored }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    };
-
-    try {
-      const ctx = await resolveBearerToContext(accessUuid);
-      assert.deepEqual(ctx, {
-        kind: 'pro',
-        userId: USER_ID,
-        mcpTokenId: MCP_TOKEN_ID,
-      });
-      const familyId = JSON.parse(redis.store.get(`oauth:tokenfam:${accessUuid}`));
-      redis.store.set(`oauth:famrev:${familyId}`, '1');
-      assert.equal(await resolveBearerToContext(accessUuid), null, 'famrev must invalidate issued Pro access token');
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-
   it('a legacy authorization_code exchange yields a token resolvable to {kind:"env_key"}', async () => {
     await ensureFixtures();
     delete process.env.UPSTASH_REDIS_REST_URL;

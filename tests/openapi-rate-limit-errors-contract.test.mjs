@@ -105,7 +105,9 @@ describe('OpenAPI gateway rate-limit and error contracts', () => {
       0,
     );
     assert.ok(total >= 192, `expected at least the audited 192 service operations, found ${total}`);
-    assert.ok(postTotal >= 11, `expected at least the audited 11 POST service operations, found ${postTotal}`);
+    // Was >= 11 before the leads domain (submit-contact / register-interest)
+    // was deleted along with the waitlist/referral SaaS surface.
+    assert.ok(postTotal >= 10, `expected at least the audited 10 POST service operations, found ${postTotal}`);
   });
 
   for (const file of serviceJson) {

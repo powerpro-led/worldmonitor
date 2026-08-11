@@ -1,20 +1,15 @@
 /**
- * Transient red toast for dashboard-origin checkout failures.
+ * Transient red toast for a dashboard-wide error banner.
  *
- * Shown when `startCheckout()` hits any non-success path and the
- * caller didn't request a /pro redirect. Mirrors the success-banner
- * styling in `src/services/checkout.ts:showCheckoutSuccess` so the
- * visual grammar stays consistent.
- *
- * Only takes typed `userMessage` from the Primitive B error taxonomy
- * — NEVER renders raw server-generated strings. Raw detail goes to
- * Sentry via the caller's `captureException`/`captureMessage`.
+ * Only takes a pre-formatted `userMessage` — NEVER renders raw
+ * server-generated strings. Raw detail goes to Sentry via the caller's
+ * `captureException`/`captureMessage`.
  */
 
-const TOAST_ID = 'checkout-error-toast';
+const TOAST_ID = 'error-toast';
 const AUTO_DISMISS_MS = 6_000;
 
-export function showCheckoutErrorToast(userMessage: string): void {
+export function showErrorToast(userMessage: string): void {
   const existing = document.getElementById(TOAST_ID);
   if (existing) existing.remove();
 

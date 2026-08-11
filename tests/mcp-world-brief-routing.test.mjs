@@ -6,20 +6,10 @@ import {
   mcpHandler,
 } from '../api/mcp.ts';
 import { createMcpToolExecutionContext } from '../api/mcp/downstream.ts';
-import { verifyInternalMcpRequest } from '../server/_shared/mcp-internal-hmac.ts';
-import {
-  HMAC_SECRET,
-  PRO_BEARER,
-  PRO_TOKEN_ID,
-  PRO_USER_ID,
-  callBody,
-  makePipelineMock,
-} from './helpers/mcp-pro-deps.mjs';
+import { callBody } from './helpers/mcp-pro-deps.mjs';
 
 const CANONICAL_API_ORIGIN = 'https://api.worldmonitor.app';
 const ENV_KEY = 'operator_test_key_world_brief';
-const USER_KEY = 'wm_test_user_key_world_brief';
-const USER_ID = 'user_key_world_brief';
 const SECRET_QUERY = 'SECRET_QUERY_SENTINEL_5514';
 const SECRET_COOKIE = 'SECRET_COOKIE_SENTINEL_5514';
 const SECRET_GEO_CONTEXT = 'SECRET_GEO_CONTEXT_SENTINEL_5514';
@@ -36,20 +26,13 @@ const HOSTS = [
   { url: 'https://energy.worldmonitor.app/mcp', hostClass: 'variant' },
 ];
 
-const AUTH_CASES = [
-  {
-    kind: 'env_key',
-    headers: { 'X-WorldMonitor-Key': ENV_KEY },
-  },
-  {
-    kind: 'user_key',
-    headers: { 'X-WorldMonitor-Key': USER_KEY },
-  },
-  {
-    kind: 'pro',
-    headers: { Authorization: `Bearer ${PRO_BEARER}` },
-  },
-];
+// env_key is the sole MCP credential class now — the historical user_key/pro
+// auth kinds (and the internal-MCP HMAC signature they drove on downstream
+// fetches) were deleted along with the Convex-backed Pro/API-key tiers.
+const AUTH_CASE = {
+  kind: 'env_key',
+  headers: { 'X-WorldMonitor-Key': ENV_KEY },
+};
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -58,26 +41,10 @@ const originalWarn = console.warn;
 const originalError = console.error;
 
 function makeDeps() {
-  const pipe = makePipelineMock();
   return {
-    resolveBearerToContext: async (token) => (
-      token === PRO_BEARER
-        ? { kind: 'pro', userId: PRO_USER_ID, mcpTokenId: PRO_TOKEN_ID }
-        : null
-    ),
-    validateProMcpToken: async (tokenId) => (
-      tokenId === PRO_TOKEN_ID ? { userId: PRO_USER_ID } : null
-    ),
-    getEntitlements: async () => ({
-      planKey: 'pro',
-      features: { tier: 1, mcpAccess: true, apiAccess: true },
-      validUntil: Date.now() + 86_400_000,
-    }),
-    validateUserApiKey: async (key) => (
-      key === USER_KEY ? { userId: USER_ID } : null
-    ),
-    guardUserApiKeyValidation: async () => null,
-    redisPipeline: pipe.pipeline,
+    // No bearer tokens exercised in this suite — env_key auth never calls
+    // resolveBearerToContext, but PRODUCTION_DEPS's shape still requires it.
+    resolveBearerToContext: async () => null,
   };
 }
 
@@ -127,7 +94,6 @@ function downstreamEvents(captured) {
 
 beforeEach(() => {
   process.env.WORLDMONITOR_VALID_KEYS = ENV_KEY;
-  process.env.MCP_INTERNAL_HMAC_SECRET = HMAC_SECRET;
   process.env.MCP_TELEMETRY = 'true';
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -172,7 +138,7 @@ describe('get_world_brief canonical sibling routing', () => {
     }
   });
 
-  it('uses the canonical API origin for every supported production host and auth kind', async () => {
+  it('uses the canonical API origin for every supported production host', async () => {
     const captured = [];
     const fetchCalls = [];
     console.log = (line) => captured.push(line);
@@ -199,68 +165,47 @@ describe('get_world_brief canonical sibling routing', () => {
     const deps = makeDeps();
     let id = 100;
     for (const host of HOSTS) {
-      for (const auth of AUTH_CASES) {
-        const beforeFetch = fetchCalls.length;
-        const beforeTelemetry = downstreamEvents(captured).length;
-        const response = await mcpHandler(requestFor(host.url, auth.headers, id++), deps);
-        assert.equal(response.status, 200, `${host.url} ${auth.kind}: transport status`);
-        const rpc = await response.json();
-        assert.equal(
-          JSON.parse(rpc.result.content[0].text).summary,
-          'Canonical world brief.',
-          `${host.url} ${auth.kind}: valid caller receives a brief`,
+      const beforeFetch = fetchCalls.length;
+      const beforeTelemetry = downstreamEvents(captured).length;
+      const response = await mcpHandler(requestFor(host.url, AUTH_CASE.headers, id++), deps);
+      assert.equal(response.status, 200, `${host.url}: transport status`);
+      const rpc = await response.json();
+      assert.equal(
+        JSON.parse(rpc.result.content[0].text).summary,
+        'Canonical world brief.',
+        `${host.url}: valid caller receives a brief`,
+      );
+
+      const calls = fetchCalls.slice(beforeFetch);
+      assert.equal(calls.length, 2, `${host.url}: digest + summarize`);
+      for (const call of calls) {
+        assert.equal(new URL(call.url).origin, CANONICAL_API_ORIGIN);
+        assert.equal(call.headers.get('x-worldmonitor-key'), ENV_KEY);
+      }
+
+      const events = downstreamEvents(captured).slice(beforeTelemetry);
+      assert.equal(events.length, 2, `${host.url}: one event per downstream call`);
+      assert.deepEqual(
+        events.map((event) => event.downstream_operation),
+        ['list-feed-digest', 'summarize-article'],
+      );
+      for (const event of events) {
+        assert.equal(event.auth_kind, AUTH_CASE.kind);
+        assert.equal(event.inbound_host_class, host.hostClass);
+        assert.equal(event.downstream_origin, CANONICAL_API_ORIGIN);
+        assert.equal(event.status, 200);
+        assert.equal(event.ok, true);
+        assert.equal(event.error_code, null);
+        assert.equal(event.response_marker, 'json');
+        const offending = Object.keys(event).filter(
+          (key) => !MCP_DOWNSTREAM_TELEMETRY_KEYS.includes(key),
         );
-
-        const calls = fetchCalls.slice(beforeFetch);
-        assert.equal(calls.length, 2, `${host.url} ${auth.kind}: digest + summarize`);
-        for (const call of calls) {
-          assert.equal(new URL(call.url).origin, CANONICAL_API_ORIGIN);
-        }
-
-        const events = downstreamEvents(captured).slice(beforeTelemetry);
-        assert.equal(events.length, 2, `${host.url} ${auth.kind}: one event per downstream call`);
-        assert.deepEqual(
-          events.map((event) => event.downstream_operation),
-          ['list-feed-digest', 'summarize-article'],
-        );
-        for (const event of events) {
-          assert.equal(event.auth_kind, auth.kind);
-          assert.equal(event.inbound_host_class, host.hostClass);
-          assert.equal(event.downstream_origin, CANONICAL_API_ORIGIN);
-          assert.equal(event.status, 200);
-          assert.equal(event.ok, true);
-          assert.equal(event.error_code, null);
-          assert.equal(event.response_marker, 'json');
-          const offending = Object.keys(event).filter(
-            (key) => !MCP_DOWNSTREAM_TELEMETRY_KEYS.includes(key),
-          );
-          assert.deepEqual(offending, [], `unauthorized mcp.downstream keys: ${offending}`);
-        }
-
-        if (auth.kind === 'pro') {
-          for (const call of calls) {
-            assert.ok(call.headers.get('x-wm-mcp-internal'), `${call.url}: Pro signature`);
-            const signedRequest = new Request(call.url, {
-              method: call.method,
-              headers: call.headers,
-              body: call.method === 'GET' ? undefined : call.body,
-            });
-            assert.ok(
-              await verifyInternalMcpRequest(signedRequest, HMAC_SECRET),
-              `${call.url}: HMAC must bind the exact canonical method/URL/body`,
-            );
-          }
-        } else {
-          for (const call of calls) {
-            const expectedKey = auth.kind === 'env_key' ? ENV_KEY : USER_KEY;
-            assert.equal(call.headers.get('x-worldmonitor-key'), expectedKey);
-          }
-        }
+        assert.deepEqual(offending, [], `unauthorized mcp.downstream keys: ${offending}`);
       }
     }
 
     const serialized = JSON.stringify(captured);
-    for (const secret of [ENV_KEY, USER_KEY, SECRET_QUERY, SECRET_COOKIE, SECRET_GEO_CONTEXT]) {
+    for (const secret of [ENV_KEY, SECRET_QUERY, SECRET_COOKIE, SECRET_GEO_CONTEXT]) {
       assert.doesNotMatch(serialized, new RegExp(secret), `telemetry must not leak ${secret}`);
     }
   });
@@ -268,19 +213,7 @@ describe('get_world_brief canonical sibling routing', () => {
   it('classifies reproduced 401/405 responses without logging response bodies', async () => {
     const scenarios = [
       {
-        name: 'invalid internal signature',
-        auth: AUTH_CASES[2],
-        response: () => new Response(JSON.stringify({
-          error: 'invalid_internal_mcp_signature',
-          detail: SECRET_RESPONSE_DETAIL,
-        }), { status: 401, headers: { 'Content-Type': 'application/json' } }),
-        errorCode: 'invalid_internal_mcp_signature',
-        marker: 'json_error',
-        status: 401,
-      },
-      {
         name: 'invalid raw API key',
-        auth: AUTH_CASES[0],
         response: () => new Response(JSON.stringify({
           error: 'Invalid API key',
           detail: SECRET_RESPONSE_DETAIL,
@@ -291,7 +224,6 @@ describe('get_world_brief canonical sibling routing', () => {
       },
       {
         name: 'other gateway entitlement outcome',
-        auth: AUTH_CASES[2],
         response: () => new Response(JSON.stringify({
           error: 'insufficient_entitlement',
           detail: SECRET_RESPONSE_DETAIL,
@@ -302,7 +234,6 @@ describe('get_world_brief canonical sibling routing', () => {
       },
       {
         name: 'method mismatch route',
-        auth: AUTH_CASES[0],
         response: () => new Response(
           `<html><body>Method not allowed ${SECRET_RESPONSE_DETAIL}</body></html>`,
           {
@@ -329,7 +260,7 @@ describe('get_world_brief canonical sibling routing', () => {
       };
 
       const response = await mcpHandler(
-        requestFor('https://tech.worldmonitor.app/mcp', scenario.auth.headers, 200 + index),
+        requestFor('https://tech.worldmonitor.app/mcp', AUTH_CASE.headers, 200 + index),
         makeDeps(),
       );
       assert.equal(response.status, 200, `${scenario.name}: JSON-RPC tool failure status`);
@@ -340,7 +271,7 @@ describe('get_world_brief canonical sibling routing', () => {
         (candidate) => candidate.downstream_operation === 'summarize-article',
       );
       assert.ok(event, `${scenario.name}: summarize telemetry`);
-      assert.equal(event.auth_kind, scenario.auth.kind);
+      assert.equal(event.auth_kind, AUTH_CASE.kind);
       assert.equal(event.inbound_host_class, 'variant');
       assert.equal(event.downstream_origin, CANONICAL_API_ORIGIN);
       assert.equal(event.status, scenario.status);

@@ -12,15 +12,15 @@
 // the burst/meter math unit-testable in isolation (inject the pipeline + date;
 // stub this module's decisions in the gateway-wiring test).
 //
-// Patterns cloned: api/mcp/quota.ts (INCR-first meter + DECR rollback),
-// api/_rate-limit.js (lazy Upstash singleton, NODE_TEST_CONTEXT retry skip,
-// X-RateLimit-* header shape), server/_shared/pro-mcp-token.ts UTC helpers.
+// Patterns cloned: api/_rate-limit.js (lazy Upstash singleton,
+// NODE_TEST_CONTEXT retry skip, X-RateLimit-* header shape),
+// server/_shared/utc-midnight.ts UTC helpers.
 
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
 import { getKeyPrefix } from './redis';
-import { secondsUntilUtcMidnight } from './pro-mcp-token';
+import { secondsUntilUtcMidnight } from './utc-midnight';
 
 /** Hardcoded per-minute burst for enterprise env keys — they carry no Convex
  *  entitlement (gateway.ts:1006-1007 skips checkEntitlement), so this cannot

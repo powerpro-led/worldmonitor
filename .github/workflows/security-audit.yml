@@ -36,10 +36,6 @@ jobs:
             path: blog-site
             package_json: blog-site/package.json
             lockfile: blog-site/package-lock.json
-          - name: pro-test
-            path: pro-test
-            package_json: pro-test/package.json
-            lockfile: pro-test/package-lock.json
           - name: docker-runtime
             path: docker
             package_json: docker/runtime-package.json

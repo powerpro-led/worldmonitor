@@ -150,17 +150,6 @@ else
   echo "API type check skipped (no api/server/scripts/src-generated changes)."
 fi
 
-if changed '^convex/'; then
-  echo "Running Convex type check..."
-  # Catches stale convex/_generated/api.d.ts (forgotten `npx convex codegen`
-  # after adding a module) and any drift between convex/schema.ts and the
-  # code that reads it. Pre-push is the right gate — these errors surface
-  # only at convex deploy time otherwise, deep into a release window.
-  npx tsc --noEmit -p convex/tsconfig.json || exit 1
-else
-  echo "Convex type check skipped (no convex/ changes)."
-fi
-
 if changed '^scripts/.*\.cjs$'; then
   echo "Running CJS syntax check..."
   for f in scripts/*.cjs; do
@@ -389,66 +378,6 @@ if git diff --name-only origin/main -- proto/ src/generated/ docs/api/ Makefile 
   fi
 else
   echo "No proto-related changes, skipping."
-fi
-
-echo "Running pro-test bundle freshness check..."
-# public/pro/ is NOT built by Vercel — the root build script only runs the
-# main app's vite build. The /pro marketing app under pro-test/ must be
-# rebuilt manually and its output committed to public/pro/. If source
-# changes ship without the rebuild, production /pro serves the old bundle
-# (see PR #3227 → #3228: source fix merged but deploy still broken because
-# public/pro/ was stale).
-#
-# Scope to the BRANCH delta ($CHANGED_FILES, computed earlier from
-# `git diff origin/main...HEAD`), not the worktree, so unstaged local
-# pro-test/ scratch edits don't trigger a slow rebuild on unrelated
-# branches. RUN_ALL forces the check when the branch delta couldn't be
-# computed (matches the safety fallback used by the test runners above).
-#
-# Trigger on pro-test/, public/pro/, or the catalog/generator that feeds
-# pro-test/src/generated/tiers.json. Catalog-only pricing-copy changes are
-# otherwise able to ship stale /pro bundles because Vercel serves public/pro/
-# as committed bytes.
-if [ "$RUN_ALL" = true ] || echo "$CHANGED_FILES" | grep -qE "^(pro-test|public/pro)/|^convex/config/productCatalog\.ts$|^scripts/generate-product-config\.mjs$"; then
-  npx tsx scripts/generate-product-config.mjs >/dev/null || {
-    echo "ERROR: product config generation failed"
-    exit 1
-  }
-  if [ ! -d pro-test/node_modules ]; then
-    echo "  Installing pro-test deps..."
-    (cd pro-test && npm ci --cache "$npm_config_cache") || exit 1
-  fi
-  (cd pro-test && npm run build >/dev/null) || {
-    echo "ERROR: pro-test build failed"
-    exit 1
-  }
-  if ! git diff --exit-code src/config/products.generated.ts api/_product-fallback-prices.js pro-test/src/generated/tiers.json pro-test/src/locales/ public/pro/; then
-    echo ""
-    echo "============================================================"
-    echo "ERROR: product catalog, generated config, pro locales, or public/pro/ is stale."
-    echo "Vercel ships whatever is committed under public/pro/ —"
-    echo "it does NOT rebuild pro-test on deploy."
-    echo "Fix:"
-    echo "  npx tsx scripts/generate-product-config.mjs"
-    echo "  cd pro-test && npm run build && cd .."
-    echo "  git add src/config/products.generated.ts api/_product-fallback-prices.js pro-test/src/generated/tiers.json pro-test/src/locales/ public/pro/"
-    echo "  git commit --amend --no-edit"
-    echo "============================================================"
-    exit 1
-  fi
-  UNTRACKED=$(git ls-files --others --exclude-standard public/pro/)
-  if [ -n "$UNTRACKED" ]; then
-    echo ""
-    echo "============================================================"
-    echo "ERROR: Untracked files in public/pro/ after rebuild:"
-    echo "$UNTRACKED"
-    echo "Run: git add public/pro/ && git commit --amend --no-edit"
-    echo "============================================================"
-    exit 1
-  fi
-  echo "  pro-test bundle is up to date."
-else
-  echo "  Skipped (no pro-test/, public/pro/, product catalog, or product-config generator changes in branch)."
 fi
 
 echo "Running version sync check..."

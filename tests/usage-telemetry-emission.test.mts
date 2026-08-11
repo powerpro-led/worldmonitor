@@ -50,21 +50,6 @@ function signSupabaseToken(userId: string): Promise<string> {
     .sign(supabaseSecretKey);
 }
 
-/** SHA-256 hex digest -- mirrors server/_shared/user-api-key.ts's hashing so
- * the Supabase REST mock below can match `key_hash=eq.<hash>` query params
- * against a raw wm_ key fixture. */
-async function sha256Hex(input: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Canonical `wm_` + 40 lowercase hex — the only shape generateKey()
-// (src/services/api-keys.ts) mints, and since #5379 validateUserApiKey rejects
-// anything else before hashing. The Supabase mock matches on the key's hash,
-// not the raw value, so the exact value is arbitrary as long as it is shaped
-// like a real key.
-const TELEMETRY_ACTIVE_USER_KEY = `wm_${'e'.repeat(40)}`;
-
 // Anonymous browser access requires a wms_ session token (issue #3541).
 process.env.WM_SESSION_SECRET = process.env.WM_SESSION_SECRET
   ?? 'test-secret-must-be-at-least-32-chars-long-xxx';
@@ -108,12 +93,6 @@ function makeRecordingCtx(): { ctx: GatewayCtx; settled: Promise<void> } {
 
 async function installAxiomFetchSpy(
   originalFetch: typeof fetch,
-  // NOTE(stage1-supabase-migration): replaces the old Convex
-  // apiKeyValidationResponse/entitlementsResponse options. getEntitlements()
-  // (server/_shared/entitlement-check.ts) is now a pure local function (no
-  // fetch, no mock needed) -- the only remaining thing to mock is the
-  // Postgres-backed wm_ key -> owner lookup (server/_shared/user-api-key.ts).
-  opts: { userApiKeys?: Record<string, string> } = {},
 ): Promise<{
   events: CapturedEvent[];
   restore: () => void;
@@ -122,10 +101,6 @@ async function installAxiomFetchSpy(
   process.env.UPSTASH_REDIS_REST_URL = 'https://redis.example';
   process.env.UPSTASH_REDIS_REST_TOKEN = 'token';
   const { fetchImpl: redisFetch } = createRedisFetch({});
-  const hashToUserId = new Map<string, string>();
-  for (const [key, userId] of Object.entries(opts.userApiKeys ?? {})) {
-    hashToUserId.set(await sha256Hex(key), userId);
-  }
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.startsWith(process.env.UPSTASH_REDIS_REST_URL || '')) {
@@ -135,23 +110,6 @@ async function installAxiomFetchSpy(
       const body = init?.body ? JSON.parse(init.body as string) as CapturedEvent[] : [];
       for (const ev of body) events.push(ev);
       return new Response('{}', { status: 200 });
-    }
-    if (url.startsWith(`${SUPABASE_URL}/rest/v1/api_keys`)) {
-      if ((init?.method ?? 'GET') !== 'GET') {
-        // Fire-and-forget last_used_at touch (PATCH) -- accept silently.
-        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      const parsed = new URL(url);
-      const keyHashParam = parsed.searchParams.get('key_hash') ?? '';
-      const hash = keyHashParam.startsWith('eq.') ? keyHashParam.slice(3) : '';
-      const userId = hashToUserId.get(hash);
-      if (!userId) {
-        return new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      return new Response(
-        JSON.stringify({ id: `key-${hash.slice(0, 8)}`, user_id: userId, name: 'test key', last_used_at: null }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
     }
     return originalFetch(input as Request | string | URL, init);
   }) as typeof fetch;
@@ -481,13 +439,12 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
   // default -- exactly the bug the original test was written to catch, now
   // reintroduced for the bearer-JWT path specifically.
   //
-  // The wm_-user-API-key path does NOT take this short-circuit (it calls
-  // getEntitlements(sessionUserId) unconditionally) and correctly emits
-  // tier=1 -- see "records plan_key on a SERVED (200) user API-key request"
-  // (#4613) below, which is the surviving coverage for "tier telemetry
-  // reflects a real resolved entitlement on success." This test now pins the
-  // CURRENT (regressed) bearer-JWT behavior so a future fix has a red test
-  // to turn green, rather than silently losing the assertion.
+  // This test now pins the CURRENT (regressed) bearer-JWT behavior so a
+  // future fix has a red test to turn green, rather than silently losing
+  // the assertion. (A wm_-user-API-key sibling test used to be cited here as
+  // the surviving "tier telemetry reflects a real resolved entitlement on
+  // success" coverage -- removed along with the deleted API-keys feature;
+  // see the NOTE(stage1-supabase-migration) block further down.)
   it('bearer-JWT entitlement-gated success currently emits tier=0 (clerkRole=pro short-circuit skips getEntitlements)', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
@@ -526,74 +483,14 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     assert.equal(ev.route, '/api/market/v1/analyze-stock');
   });
 
-  // NOTE(stage1-supabase-migration): "records plan_key for user API-key
-  // requests rejected by entitlement gate" was removed here. It pinned a
-  // 403 tier_403 rejection for a wm_ key resolving to a mocked "free" (tier
-  // 0, apiAccess:false) Convex entitlement. Post-Stage-1,
-  // getEntitlements() (server/_shared/entitlement-check.ts) synthesizes a
-  // fixed {tier:1, apiAccess:true} entitlement for ANY non-empty verified
-  // userId, and every ENDPOINT_ENTITLEMENTS route in this codebase requires
-  // at most tier 1 -- so there is no longer any reachable input that 403s a
-  // valid wm_ key at the entitlement gate (this is the intended effect of
-  // the migration's "no SaaS billing" simplification: every authenticated
-  // caller is fully entitled). The plan_key attribution this test also
-  // covered on the REJECTED path has no reachable production scenario left
-  // to pin; the SERVED-path plan_key attribution (#4613) below still holds
-  // and is rewritten to match the new fixed entitlement value.
-
-  it('records plan_key on a SERVED (200) user API-key request on a non-tier-gated route (#4613)', async () => {
-    // #4613: the served keyed path attributes plan_key via the #3199 per-account
-    // rate-limit block's recordUsageEntitlement — a DIFFERENT call site than the
-    // tier-gate rejection path (asserted above) or the clerk_jwt success path.
-    // Without this guard, a regression there emits plan_key=null on the paid API
-    // surface, silently breaking the per-plan usage / limit-abuse audit (#4572).
-    //
-    // NOTE(stage1-supabase-migration): originally pinned tier=2/plan_key=
-    // 'api_starter' via a mocked Convex /api/internal-entitlements response.
-    // getEntitlements() now synthesizes a fixed {tier:1, planKey:'pro'} for
-    // any verified userId (see the "tier=1" test above) -- only the wm_ key
-    // -> owner lookup needs mocking now (Postgres, not Convex).
-    process.env.USAGE_TELEMETRY = '1';
-    process.env.AXIOM_API_TOKEN = 'test-token';
-
-    const spy = await installAxiomFetchSpy(ORIGINAL_FETCH, {
-      userApiKeys: { [TELEMETRY_ACTIVE_USER_KEY]: 'user_active_api_key' },
-    });
-
-    // list-cyber-threats: a plain keyed RPC — not tier-gated, not premium, not
-    // public-no-auth — so the served path runs through the per-account block
-    // where user-key plan_key attribution happens.
-    const handler = createDomainGateway([
-      {
-        method: 'GET',
-        path: '/api/cyber/v1/list-cyber-threats',
-        handler: async () => new Response('{"ok":true}', { status: 200 }),
-      },
-    ]);
-
-    const recorder = makeRecordingCtx();
-    const res = await handler(
-      new Request('https://worldmonitor.app/api/cyber/v1/list-cyber-threats', {
-        headers: {
-          Origin: 'https://worldmonitor.app',
-          'X-Api-Key': TELEMETRY_ACTIVE_USER_KEY,
-        },
-      }),
-      recorder.ctx,
-    );
-    assert.equal(res.status, 200, 'active user API key should be served on a non-tier-gated route');
-
-    await recorder.settled;
-    spy.restore();
-
-    assert.equal(spy.events.length, 1);
-    const ev = spy.events[0]!;
-    assert.equal(ev.auth_kind, 'user_api_key');
-    assert.equal(ev.customer_id, 'user_active_api_key');
-    assert.equal(ev.tier, 1);
-    assert.equal(ev.plan_key, 'pro', 'served user-key request must attribute plan_key (#4613)');
-    assert.equal(ev.reason, 'ok');
-  });
+  // NOTE(retire-convex-saas): "records plan_key on a SERVED (200) user
+  // API-key request on a non-tier-gated route (#4613)" was removed here,
+  // along with its already-noted-as-removed sibling above. The API-keys
+  // feature (src/services/api-keys.ts, server/_shared/user-api-key.ts, the
+  // api_keys table) was deleted entirely -- `X-Api-Key` no longer
+  // authenticates anything (server/gateway.ts's isUserApiKey is a permanent
+  // `false`) -- so there is no user_api_key auth_kind left to attribute
+  // plan_key for.
 
   it('still emits with auth_kind=anon when the bearer is invalid', async () => {
     process.env.USAGE_TELEMETRY = '1';

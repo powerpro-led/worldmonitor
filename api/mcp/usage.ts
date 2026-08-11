@@ -57,19 +57,7 @@ export function createMcpUsage(): McpUsage {
 /** Attribute the resolved principal. env_key principals are operator keys —
  *  never log raw key material; the hashed principal is already covered by the
  *  gateway's convention of leaving customer_id null for enterprise keys. */
-export function setUsageContext(usage: McpUsage, context: McpAuthContext): void {
-  if (context.kind === 'pro') {
-    usage.authKind = 'mcp_oauth';
-    usage.customerId = context.userId;
-    usage.principalId = context.userId;
-    return;
-  }
-  if (context.kind === 'user_key') {
-    usage.authKind = 'user_api_key';
-    usage.customerId = context.userId;
-    usage.principalId = context.userId;
-    return;
-  }
+export function setUsageContext(usage: McpUsage, _context: McpAuthContext): void {
   usage.authKind = 'enterprise_api_key';
 }
 

@@ -63,18 +63,19 @@ Related Claude memory entries (fuller narrative/context per item):
       Clerk is already gone per [[supabase-migration-stage1]]/[[retire-convex-saas-complete]] —
       that line is doubly stale independent of the Pro decision.
 
-- [ ] **`public/blog/` is now orphaned content** — found during the sweep below, but it's a real
-      decision, not mechanical. `blog-site/` (the Astro *source*, 231 files) was deleted in
-      `7a4308e`, but its pre-built static output at `public/blog/` (52 posts, RSS, sitemap,
-      images, `_astro/` assets) was NOT deleted and is still served live — `index.html`,
-      `public/sitemap.xml`, and `public/robots.txt` all still link/point into it, correctly, since
-      it still works. The catch: there is no source left to ever edit, regenerate, or rebuild it —
-      it's now permanently frozen content with no build pipeline. Decision needed: leave it frozen
-      indefinitely (fine, just know that's the state), or delete `public/blog/` too for
-      consistency with "no public product surface" (in which case *then* the links into it in
-      `index.html`/`sitemap.xml`/`robots.txt` become real dead links to fix). Don't delete
-      `public/blog/` without asking — unlike `blog-site/`, deleting it is a live-content removal,
-      not cleanup of an already-dead thing.
+- [x] **`public/blog/` orphaned content — RESOLVED 2026-08-12, operator said delete it.**
+      `blog-site/` (the Astro *source*, 231 files) was deleted in `7a4308e`, but its pre-built
+      static output at `public/blog/` (52 posts, RSS, sitemap, images, `_astro/` assets) survived
+      on disk with no source left to ever rebuild it. Turned out to be moot either way:
+      `public/blog/` was **gitignored and never committed** (`.gitignore:4`, alongside
+      `public/countries/`, `public/chokepoints/`, `public/reference/`, `public/crises/` — all
+      externally-generated content dirs that don't live in git), so a fresh clone or real
+      deployment never had it in the first place; my local copy was just leftover from an Astro
+      build run before `blog-site/` was deleted. `rm -rf public/blog` (no git diff — it was never
+      tracked). Fixed what pointed at it, since those files ARE tracked: `index.html` (5 links:
+      the "Blog" nav item, 3 post links, the glossary link, the noscript-block "Read more"
+      paragraph's 3 post links), `public/sitemap.xml` (~15 `<url>` blocks), `public/robots.txt`
+      (the `blog/sitemap-index.xml` `Sitemap:` line). Commit `dd63ae6`.
 
 - [x] **Broader "assumes a public audience" sweep — DONE 2026-08-12.** Re-grepped for deleted
       docs/blog-site/sdk/mcp-registry surfaces plus Convex/Clerk (both retired separately, see
@@ -105,18 +106,21 @@ Related Claude memory entries (fuller narrative/context per item):
         Pro-gate SKILL.md item above — those 4 files already correctly say "operator-issued, no
         self-service signup," they just *also* have the stale Clerk mention. **Not
         decision-blocked** — Clerk is unambiguously gone, this is a mechanical find/replace.
-      - `ARCHITECTURE.md` was not updated when Convex/Mintlify-docs were retired and needs an
-        editing pass — confirmed stale in at least 5 places: the tech-stack table's `Convex` row
-        (line 65, "Contact form submissions, waitlist registrations") and `Documentation |
-        Mintlify` row (line 66); the "Source files" list citing `convex/schema.ts` (line 70,
-        `convex/` dir is deleted); the CI-workflow table's `convex-deploy.yml` row (line 376 —
-        **the workflow file itself is already deleted**, confirmed via `ls`, so this table row is
-        pure fiction now); the directory-reference tree's `convex/` entry (line 395); and one
-        pointer comment (line 3) citing `docs/generated/stats.json` as the stats source of truth
-        — the actual path is now `scripts/generated/stats.json` (confirmed the script already
-        writes there; only the doc comment wasn't updated to match). None of this is ambiguous —
-        every referenced thing is already confirmed gone, so it's a straight accuracy pass, not a
-        decision.
+      - `ARCHITECTURE.md` was not updated when Convex/Mintlify-docs were retired — stale in **7**
+        places, not 5 (2 more found while fixing): the tech-stack table's `Convex` and
+        `Documentation | Mintlify` rows; the "Source files" citation of `convex/schema.ts`; the
+        CI-workflow table's `convex-deploy.yml` row (that workflow file is already deleted); the
+        directory-tree's `convex/` **and `pro-test/`** entries (`pro-test/` confirmed gone too,
+        same SaaS-retirement sweep); the `docs/generated/stats.json` path comment (real path moved
+        to `scripts/generated/stats.json`); the sebuf-codegen directory diagram still showing
+        `docs/api/` as an output (removed from `proto/buf.gen.yaml` when docs/ was retired, per
+        that file's own comment); and the pre-push-hook step list still naming a "MDX lint
+        (Mintlify compatibility)" step. **That last one uncovered a live bug, not just a doc
+        staleness**: `.husky/pre-push` still had that MDX-lint block for real, calling
+        `node --test tests/mdx-lint.test.mjs` — a file that no longer exists — gated behind
+        `RUN_ALL`, so a full/forced pre-push run would have crashed. Also dropped `docs/api/` from
+        the proto-freshness-check's `git diff`/`git ls-files` paths in the same hook for the same
+        reason.
       - Confirmed clean, no action needed: `sdk/` package (zero leftover source references),
         `mcp-registry-auth` / `server.json` public-registry-publication surface (zero leftover
         references outside the one comment above), `.well-known/agent-skills/*` key-acquisition
@@ -127,60 +131,94 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ## 🟡 Mechanical / low-risk — pick up anytime, no decision blocking
 
-- [ ] **`'checkout'` build-chunk bug.** `vite.config.ts`'s `LAZY_HTML_PRELOAD_CHUNKS` list and
-      `tests/panel-cluster-chunks.test.mjs` still expect a `checkout-*.js` chunk. Root cause:
-      `src/services/checkout.ts` was deleted in commit `3aed889` ("refactor: remove
-      entitlement-check tests and add Supabase integration") — predates the Convex/SaaS
-      retirement entirely. Silent in a bare `npm test` (the test no-ops when `dist/` doesn't
-      exist) — only surfaces after a real `npm run build` / `vite build`. Confirmed pre-existing
-      via `git stash` A/B. Fix = pick one: strip `'checkout'` from the exclusion list + test, or
-      restore real code-splitting for it (probably nothing left to split, so likely just strip).
+**All items below RESOLVED 2026-08-12, commit `dd63ae6`.** Verified via `npm run typecheck:all`
+(clean), `node scripts/enforce-sebuf-api-contract.mjs` (clean), `npm run test:data` (failure set
+byte-identical to the pre-existing `main` baseline, confirmed both directions via `git stash`
+A/B), and `npm run test:sidecar` (its one failure confirmed pre-existing the same way). The
+checkout-chunk fix was additionally verified against a real `npx vite build` — the exact
+condition that used to trigger it — not just the no-op `npm test` path.
 
-- [ ] **2 pre-existing typecheck errors** (`npm run typecheck:all`):
-      - `api/user-prefs.ts:74` — `rateLimitHeaders` declared but never called (dead function;
-        rest of file unrelated to any recent work)
-      - `server/_shared/supabase-admin.ts:46` — `SupabaseClient<..., "worldmonitor", ...>` not
-        assignable to `SupabaseClient<..., "public", "public", ...>` (generic mismatch)
+- [x] **`'checkout'` build-chunk bug.** Stripped `'checkout'` from `vite.config.ts`'s
+      `LAZY_HTML_PRELOAD_CHUNKS` and the matching helpers/assertions in
+      `tests/panel-cluster-chunks.test.mjs` (including the now-pointless
+      `checkoutSdkValueImportOffenders` helper, which only existed to vacuously pass against a
+      file that's been gone since `3aed889`).
 
-- [ ] **2 pre-existing sebuf-contract violations** (`enforce-sebuf-api-contract.mjs`):
-      `api/followed-countries.ts` and `api/telegram/pair-callback.ts` are missing entries in
-      `api/api-route-exceptions.json` (or need to become real sebuf RPCs).
+- [x] **2 pre-existing typecheck errors.** `api/user-prefs.ts`: rather than deleting the dead
+      `rateLimitHeaders` helper, wired it into the 429 response that was duplicating its exact
+      header logic inline — DRYs up real behavior instead of throwing away a working helper.
+      `server/_shared/supabase-admin.ts`: gave the memoized client the type
+      `SupabaseClient<any, 'worldmonitor'>` instead of the default `'public'`-schema type, matching
+      what `createClient(..., { db: { schema: 'worldmonitor' } })` actually returns.
 
-- [ ] **`robots.txt` + `sitemap.xml` dead-pointer cleanup** (found 2026-08-12 sweep, detail above).
-      Remove the `Sitemap: .../docs/sitemap.xml` line from `public/robots.txt` and update the
-      test asserting it (`tests/deploy-config.test.mjs:262`) in the same change; strip the 9 dead
-      `<loc>` entries from `public/sitemap.xml` (6 `*.md` pages + 3 `llms*.txt` variants — exact
-      list above). Do NOT touch the `/blog/...` entries in either file — those still resolve, see
-      the orphaned-blog decision item above.
+- [x] **2 pre-existing sebuf-contract violations.** Added both to `api/api-route-exceptions.json`:
+      `api/followed-countries.ts` as `deferred` (same bucket/reasoning as sibling
+      `api/user-prefs.ts` and `api/notification-channels.ts` — plain JSON API, not yet ported to
+      sebuf); `api/telegram/pair-callback.ts` as `external-protocol` (permanent — its shape and
+      always-200 contract are dictated by the Telegram Bot API, not something to redefine as
+      proto, same category as the existing MCP/A2A/NLWeb entries).
 
-- [ ] **25 `SKILL.md` files still mention "Clerk JWTs"** in their auth boilerplate under
-      `public/.well-known/agent-skills/*/SKILL.md` (full list above). Clerk is fully gone —
-      find/replace the stale mention. Not the same as, and much bigger than, the 4-file
-      Pro-gate SKILL.md item above.
+- [x] **`robots.txt` + `sitemap.xml` dead-pointer cleanup.** Removed the `Sitemap:
+      .../docs/sitemap.xml` line and updated `tests/deploy-config.test.mjs`'s matching assertion;
+      stripped the 9 dead `<loc>` entries. Combined with the `public/blog/` cascade fix above,
+      since it touched the same two files.
 
-- [ ] **`ARCHITECTURE.md` accuracy pass** — 5 confirmed-stale spots from the 2026-08-12 sweep
-      (exact lines/content above): the tech-stack table's `Convex` and `Documentation | Mintlify`
-      rows, the `convex/schema.ts` source-files citation, the `convex-deploy.yml` CI-workflow
-      table row (that workflow file is already deleted), the `convex/` directory-tree entry, and
-      the `docs/generated/stats.json` path comment (real path is `scripts/generated/stats.json`).
+- [x] **25 `SKILL.md` files' stale "Clerk JWTs" mentions.** Stripped via scripted find/replace
+      across all 25, then regenerated `public/.well-known/agent-skills/index.json` (its
+      per-file content digests went stale the moment the 25 `SKILL.md` bodies changed — caught
+      by `tests/agent-skills-index.test.mjs`, which briefly regressed until the regen). The 4
+      Pro-gated files' entitlement language was left untouched (verified via `git diff --stat`
+      showing exactly 1 line changed per file) — that part is still in the 🔴 decision-blocked
+      bucket above.
 
-- [ ] **Stale comment in `api/http-message-signatures-directory.ts:19,36`** — describes
-      `/.well-known/mcp-registry-auth` as still published; that endpoint no longer exists. Just
-      fix the wording, no behavior change.
+- [x] **`ARCHITECTURE.md` accuracy pass.** All 7 confirmed-stale spots fixed (see the sweep
+      writeup above for the extra 2 found mid-fix), plus the `.husky/pre-push` dead MDX-lint step
+      and `docs/api/` freshness-check paths that fixing #6 (the pre-push step list) surfaced.
+
+- [x] **Stale comment in `api/http-message-signatures-directory.ts`.** Fixed both occurrences
+      (docblock + inline comment) to stop describing `/.well-known/mcp-registry-auth` as live.
+
+---
+
+## 🆕 New findings from the 2026-08-12 fix pass (not yet actioned)
+
+- [ ] **`npm run docs:check` already fails with 11 pre-existing errors** — confirmed via `git
+      stash` A/B unrelated to anything in this session. 2 are CI-workflow-table gaps
+      (`nitric-deploy.yml` and `publish-cli.yml` exist but aren't listed in `ARCHITECTURE.md`'s
+      table — the opposite direction of the `convex-deploy.yml` staleness fixed above, i.e. this
+      checker only catches *missing* entries, not *stale/removed* ones, which is how
+      `convex-deploy.yml` survived undetected for as long as it did). The other 9 are numeric
+      capability-count drift across `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`
+      (protos, services, component files, service modules — doc says one number, code says a
+      lower one in every case, consistent with recent deletions shrinking real counts). Fix is
+      mechanical: add the 2 workflow rows, then run `npm run docs:stats` to resync the numbers —
+      not done here, this is new scope beyond the original TASKS.md list.
+
+- [ ] **2 more `api-route-exceptions.json` entries carry the same stale "pending Clerk migration"
+      reason text** as the one originally flagged in `fetch-resilience-score/SKILL.md`:
+      `api/user-prefs.ts` ("part of user/v1 service work pending Clerk migration") and
+      `api/notification-channels.ts` ("Deferred until Clerk migration settles"). Clerk is fully
+      gone. Not touched — the new `api/followed-countries.ts` entry added above was deliberately
+      worded to avoid repeating this (references the sibling endpoints instead of Clerk).
 
 ---
 
 ## 📌 Housekeeping — also don't forget
 
-- [ ] Commit `7a4308e` (public-product-surface retirement: blog-site/docs/sdk/registry deletion)
-      is committed to `main` but **not pushed**. Confirm with operator before pushing.
+- [ ] **3 commits on `main` not yet pushed** — confirm with operator before pushing:
+      `7a4308e` (public-product-surface retirement: blog-site/docs/sdk/registry deletion),
+      `5551550` (this TASKS.md tracker), `dd63ae6` (the 2026-08-12 mechanical-backlog fix pass +
+      `public/blog/` deletion, detailed throughout this file).
 
 ---
 
 ## ⚪ Confirmed pre-existing — reference only, do NOT re-investigate as regressions
 
-Ten test failures, each individually confirmed via `git stash` A/B to predate both the
-Convex/SaaS retirement and the public-surface retirement:
+`panel cluster chunk guardrails` (was #10 here) is now **FIXED** — see the 🟡 section above —
+and dropped from this list. Two more confirmed pre-existing via the same `git stash` A/B method
+during the 2026-08-12 fix pass, added below (#11, #12); the original ten are otherwise unchanged.
+`npm run test:data`'s failure set is now byte-identical to this list, confirmed via
+`comm -13 <(git-stash-baseline) <(current)` being empty.
 
 1. `readBootstrapTierObject`
 2. `Bootstrap endpoint (api/bootstrap.js)`
@@ -195,4 +233,18 @@ Convex/SaaS retirement and the public-surface retirement:
 9. `renewable energy last-known-good recovery (#5497)` — flaky, inconsistent even in isolation
    on `main`; looks like a real timing race in the test's async persistence-flush helper, not
    date-dependent
-10. `panel cluster chunk guardrails` — same root cause as the checkout chunk bug above
+10. ~~`panel cluster chunk guardrails`~~ — **FIXED**, see 🟡 section above.
+11. `dashboard critical CSS graph` — confirmed pre-existing 2026-08-12 via `git stash` A/B; not
+    yet individually investigated beyond that.
+12. `service-status reports bound fallback port after EADDRINUSE recovery`
+    (`src-tauri/sidecar/local-api-server.test.mjs`, part of `npm run test:sidecar`) — confirmed
+    pre-existing 2026-08-12 via `git stash` A/B; a port-binding test, plausibly flaky/environment-
+    dependent rather than a real bug, but not individually investigated beyond the A/B.
+
+**Not a pre-existing failure, but worth remembering:** `agent readiness: agent-skills index`
+(`tests/agent-skills-index.test.mjs`) broke *during* the 2026-08-12 fix pass — a real,
+self-inflicted regression from the 25-file Clerk-mention edit, not a pre-existing one. Cause:
+`public/.well-known/agent-skills/index.json` stores a content digest per `SKILL.md`, which the
+edit invalidated. Fixed in the same pass by running `npm run build:agent-skills` to regenerate
+it. Documented here only as a reminder that **editing any `SKILL.md` requires that regen step**
+— easy to forget, the failure mode is silent until this specific test catches it.

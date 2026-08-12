@@ -556,7 +556,7 @@
     {
       "path": "api/latest-brief.ts",
       "category": "deferred",
-      "reason": "Returns the current user's latest brief. Auth-gated and Clerk-coupled; migrating requires modeling Brief in proto and auth context in handler. Deferred to brief/v1 service.",
+      "reason": "Returns the current user's latest brief. Auth-gated, validates a Supabase session bearer; migrating requires modeling Brief in proto and auth context in handler. Deferred to brief/v1 service.",
       "owner": "@SebastienMelki",
       "removal_issue": "TBD"
     },

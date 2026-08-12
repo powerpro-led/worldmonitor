@@ -16,7 +16,7 @@ import type { BriefEnvelope } from '../../shared/brief-envelope.js';
  * - `shareUrl`: absolute URL that the Share button will invoke via
  *   `navigator.share` / clipboard fallback. Derived server-side by
  *   the per-user magazine route so the click handler makes no
- *   network calls and does not require Clerk session context. When
+ *   network calls and does not require Supabase session context. When
  *   omitted (or empty) the Share button is suppressed entirely
  *   (graceful degrade if BRIEF_SHARE_SECRET is unconfigured). Always
  *   ignored under publicMode.

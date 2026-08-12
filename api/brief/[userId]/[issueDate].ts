@@ -8,7 +8,7 @@
  *   -> 503 if BRIEF_URL_SIGNING_SECRET is not configured
  *
  * The HMAC-signed token in `?t=` is the sole credential. The route is
- * auth-less in the Clerk sense — whoever holds a valid URL can read
+ * auth-less in the Supabase-session sense — whoever holds a valid URL can read
  * the magazine. URLs are delivered to users via already-authenticated
  * channels (push, email, dashboard panel).
  *

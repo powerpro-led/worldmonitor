@@ -258,7 +258,7 @@ async function main() {
     console.error('imported from @/services/premium-fetch.\n');
     console.error('Why: globalThis.fetch sends no auth header, so signed-in browser pros');
     console.error('without a WORLDMONITOR_API_KEY get a 401 the generated client swallows');
-    console.error('into the empty fallback. premiumFetch injects WM key / Clerk bearer when');
+    console.error('into the empty fallback. premiumFetch injects WM key / Supabase bearer when');
     console.error('available and no-ops safely otherwise — safe to use even on a client whose');
     console.error('other methods target public paths (see src/services/supply-chain/index.ts).\n');
     console.error('If a single class needs both gated and ungated calls, split into two');

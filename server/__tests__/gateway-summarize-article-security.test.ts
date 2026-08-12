@@ -168,7 +168,7 @@ describe("summarize-article gateway spend controls", () => {
       "free_user",
       SUMMARIZE_PATH,
       expect.any(Object),
-      { clerkRole: "free" },
+      { sessionRole: "free" },
     );
     expect(reserveDirectLlmQuota).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "free_user" }),

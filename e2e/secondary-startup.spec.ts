@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const SECONDARY_STARTUP_REQUEST =
-  /(?:abacus\.worldmonitor\.app\/script\.js|fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|clerk\.worldmonitor\.app|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
+  /(?:abacus\.worldmonitor\.app\/script\.js|fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
 
 test.describe('secondary startup work', () => {
   test.beforeEach(async ({ page }) => {
@@ -44,9 +44,9 @@ test.describe('secondary startup work', () => {
     );
 
     // The pre-idle assertion validates the FULL deferral contract:
-    // SECONDARY_STARTUP_REQUEST matches Umami, Google Fonts, Clerk, Sentry
-    // ingest, Cloudflare/Vercel analytics, and the YouTube iframe API — none
-    // may fire before idle startup runs.
+    // SECONDARY_STARTUP_REQUEST matches Umami, Google Fonts, Sentry ingest,
+    // Cloudflare/Vercel analytics, and the YouTube iframe API — none may
+    // fire before idle startup runs.
     expect(secondaryRequests).toEqual([]);
 
     await page.evaluate(() => {

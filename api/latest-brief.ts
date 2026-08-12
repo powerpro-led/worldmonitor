@@ -72,8 +72,8 @@ export const RETRY_ATTEMPT_MS = 3_000;
 // runners where undici's DOMException may differ from globalThis.
 //
 // Exported as a test seam (like `executeTool` in api/mcp/dispatch.ts) so
-// the retry semantics can be asserted directly without standing up Clerk
-// JWT validation + Convex entitlement reads.
+// the retry semantics can be asserted directly without standing up
+// Supabase bearer-token validation + entitlement reads.
 export async function readWithOneRetry<T>(
   attempt: (timeoutMs: number) => Promise<T>,
   label: string,
@@ -282,10 +282,10 @@ export default async function handler(
     });
   } catch (err) {
     if (err instanceof BriefUrlError && err.code === 'invalid_user_id') {
-      // Clerk userId should always match our shape, but if it does
+      // Supabase userId should always match our shape, but if it does
       // not we want to log and fail clean rather than expose the raw
       // id in a stack trace.
-      console.error('[api/latest-brief] Clerk userId failed shape check');
+      console.error('[api/latest-brief] Supabase userId failed shape check');
       return jsonResponse({ error: 'service_unavailable' }, 503, cors);
     }
     throw err;

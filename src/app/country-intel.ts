@@ -108,7 +108,7 @@ export class CountryIntelManager implements AppModule {
   private frameworkUnsubscribe: (() => void) | null = null;
   private _fwDebounce: ReturnType<typeof setTimeout> | null = null;
   // Re-fire auth-gated country sections on false→true entitlement transition.
-  // Without this, a user who opens a country brief before Clerk resolves
+  // Without this, a user who opens a country brief before Supabase resolves
   // keeps seeing empty national-debt / sanctions / comtrade / tariff cards
   // until they reselect the country or reload. Tracks the last-seen
   // entitlement so unrelated auth events (session refresh, prefs sync)
@@ -998,14 +998,14 @@ export class CountryIntelManager implements AppModule {
   }
 
   private fetchProSections(code: string): void {
-    // /pro live-preview iframe can't carry a Clerk session, so every pro
+    // /pro live-preview iframe can't carry a Supabase session, so every pro
     // section call would 401. Skip the RPCs entirely so the embedded
     // preview doesn't spam the parent /pro console with expected failures.
     if (IS_EMBEDDED_PREVIEW) return;
 
     const rpcBase = getRpcBaseUrl();
     // Pro-section endpoints (national-debt, regional briefs, comtrade flows)
-    // are premium-gated — premiumFetch injects the Clerk bearer / API key so
+    // are premium-gated — premiumFetch injects the Supabase bearer / API key so
     // signed-in pro users actually get data instead of 401.
     const economicClient = new EconomicServiceClient(rpcBase, { fetch: premiumFetch });
     const intelClientPro = new IntelligenceServiceClient(rpcBase, { fetch: premiumFetch });

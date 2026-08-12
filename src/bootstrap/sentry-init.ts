@@ -24,22 +24,13 @@ const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set([
   'basemaps.cartocdn.com',
   'tiles.openfreemap.org',
   'protomaps.github.io',
-  // Clerk Frontend API (CNAME → Clerk's auth infra). The bundled Clerk SDK
-  // fetches it for session/token refresh and retries transient failures
-  // itself (`retryImmediately`); a `Failed to fetch (clerk.worldmonitor.app)`
-  // that leaks to onunhandledrejection is a Clerk-SDK-internal network blip,
-  // not our code — same disposition as the existing `/ClerkJS: Network error/`
-  // ignoreError. NOT our `api.worldmonitor.app`, which stays off the list so
-  // genuine API regressions still surface (WORLDMONITOR-SA/SB).
-  'clerk.worldmonitor.app',
   // DebugBear RUM beacon collector. We embed the DebugBear RUM script
   // (`src/bootstrap/debugbear-rum.ts` → cdn.debugbear.com) whose collector
   // POSTs field metrics to `data.debugbear.com`; a leaked
   // `NetworkError ... (data.debugbear.com)` / `Failed to fetch (data.debugbear.com)`
   // is a dropped monitoring beacon (adblock / network blip) — invisible to the
-  // user and unactionable, same disposition as the Clerk-SDK-internal fetch
-  // above. NOT `api.worldmonitor.app` (stays off so real API regressions
-  // surface). WORLDMONITOR-RP.
+  // user and unactionable. NOT `api.worldmonitor.app` (stays off so real API
+  // regressions surface). WORLDMONITOR-RP.
   'data.debugbear.com',
   // Self-hosted Umami analytics collector (`src/services/analytics.ts` loads
   // `abacus.worldmonitor.app/script.js`, whose tracker POSTs events to
@@ -85,7 +76,7 @@ function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
       /Unable to load image/,
       /Non-Error promise rejection captured with value:/,
       /Connection to Indexed Database server lost/,
-      // Library-thrown (Convex client / Clerk persistent cache) when the user's
+      // Library-thrown (Convex client) when the user's
       // browser has IndexedDB disabled (Safari Private Browsing, hardened
       // Firefox, some WebView contexts). Our code only initializes the
       // library; the throw is environmental and unavoidable from our side.
@@ -173,7 +164,7 @@ function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
       /Attempting to change value of a readonly property/,
       /reading 'nodeType'/,
       /The node to be removed is not a child of this node/,
-      /The object can not be found here/, // Safari variant of above (Clerk SDK removeChild on detached DOM)
+      /The object can not be found here/, // Safari variant of above (removeChild on a detached DOM node)
       /feature named .\w+. was not found/,
       /a2z\.onStatusUpdate/,
       /Attempting to run\(\), but is already running/,
@@ -318,9 +309,6 @@ function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
       /onAppPageCallback is not defined/, // Android Chrome WebView injection (Huawei/Samsung browsers)
       /\.at is not a function/, // Instagram/older Android in-app browsers missing Array.at()
       /Response cannot have a body with the given status/, // Safari: Response constructor with 204/304 + body
-      /ClerkJS: Network error/, // Clerk SDK transient network failures on user devices
-      /^ClerkJS: Response: needs_(?:first|second)_factor\b/, // Clerk SDK auth-flow branch not yet supported; SDK-internal limitation, not our code — WORLDMONITOR-Q1. Narrow to the observed `needs_*_factor` family so future actionable `ClerkJS: Response: <something>` errors (e.g. misconfigured redirect URI) still surface.
-      /\[clerk\] failed to load/, // Clerk SDK failed to load its own UI chunk from clerk.worldmonitor.app — SDK-internal load failure, not our code (WORLDMONITOR-??: Yandex Browser 26.4).
       /doesn't provide an export named/, // stale cached chunk after deploy references removed export
       /Possible side-effect in debug-evaluate/, // Chrome DevTools internal EvalError
       /ConvexError: CONFLICT/, // Expected OCC rejection on concurrent preference saves

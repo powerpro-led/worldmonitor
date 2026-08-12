@@ -15,7 +15,7 @@ export type AuthKind =
   | 'widget_key'
   // #4866 — MCP OAuth bearer (the `kind: 'pro'` context on /mcp). Distinct
   // from clerk_jwt so MCP-connector traffic never conflates with dashboard
-  // JWT traffic in Axiom; customer_id carries the same Clerk userId.
+  // JWT traffic in Axiom; customer_id carries the same Supabase userId.
   | 'mcp_oauth'
   | 'anon';
 
@@ -32,7 +32,7 @@ export interface UsageIdentityInput {
   isUserApiKey: boolean;
   enterpriseApiKey: string | null;
   widgetKey: string | null;
-  clerkOrgId: string | null;
+  authOrgId: string | null;
   userApiKeyCustomerRef: string | null;
   tier: number | null;
   // #4572 — entitlement planKey (api_starter / api_business / …) when the
@@ -64,7 +64,7 @@ export function buildUsageIdentity(input: UsageIdentityInput): UsageIdentity {
     return {
       auth_kind: 'clerk_jwt',
       principal_id: input.sessionUserId,
-      customer_id: input.clerkOrgId ?? input.sessionUserId,
+      customer_id: input.authOrgId ?? input.sessionUserId,
       tier,
       plan_key: input.planKey,
     };

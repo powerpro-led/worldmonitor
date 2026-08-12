@@ -149,8 +149,8 @@ export function localHourInTz(nowMs, timezone) {
 }
 
 export function userDisplayNameFromId(userId) {
-  // Clerk IDs look like "user_2abc…". Phase 3b will hydrate real
-  // names via a Convex query; for now a generic placeholder so the
+  // Supabase user IDs are opaque UUIDs, not display names. No real-name
+  // hydration source exists yet, so use a generic placeholder so the
   // magazine's greeting reads naturally.
   void userId;
   return 'Reader';

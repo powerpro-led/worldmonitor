@@ -99,7 +99,7 @@ export class McpDataPanel extends Panel {
     }
     this.showLoading();
     try {
-      // premiumFetch attaches the Clerk Pro Bearer for normal web Pro
+      // premiumFetch attaches the Supabase Pro Bearer for normal web Pro
       // users. /api/mcp-proxy is in PREMIUM_RPC_PATHS so the path gate
       // fires; the server-side isCallerPremium check accepts Bearer,
       // wm_ user keys, and enterprise keys (PR #3768).

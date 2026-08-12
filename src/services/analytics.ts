@@ -242,7 +242,7 @@ export function initAuthAnalytics(): void {
     const nextUserId = state.user?.id ?? null;
     if (prevUserId !== nextUserId) {
       // Detect a genuine sign-UP (not a sign-in). Null→non-null id transition
-      // plus a createdAt within FRESH_SIGNUP_WINDOW_MS of now means Clerk
+      // plus a createdAt within FRESH_SIGNUP_WINDOW_MS of now means Supabase
       // just created this account. Firing trackSignUp on the button click
       // would conflate "opened the sign-up modal" with "completed the flow";
       // gating on createdAt freshness captures the successful-completion
@@ -261,7 +261,7 @@ export function initAuthAnalytics(): void {
         !hasTrackedSignupInSession(nextUserId) &&
         isLikelyFreshSignup(prevUserId, nextUserId, getAuthUserCreatedAt(), Date.now())
       ) {
-        trackSignUp('clerk');
+        trackSignUp('github');
         markSignupTrackedInSession(nextUserId);
       }
     }

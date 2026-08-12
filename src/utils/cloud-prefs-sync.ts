@@ -60,8 +60,8 @@ const CURRENT_PREFS_SCHEMA_VERSION = 2;
 
 // Migrations live in cloud-prefs-migrations.ts to keep them testable —
 // cloud-prefs-sync.ts has a transitive `import.meta.env.DEV` dep via
-// `@/services/clerk` → `proxy.ts` that breaks outside a Vite build. The
-// migrations module is dependency-light and importable from node:test.
+// `proxy.ts` that breaks outside a Vite build. The migrations module is
+// dependency-light and importable from node:test.
 //
 // Schema 2 (2026-05-01): one-shot recovery for the v1 free-tier source-cap
 // bug. The pre-PR-3521 alphabetical-slice cap auto-disabled every source
@@ -160,7 +160,7 @@ function clearSettledDirtyKeys(postedBlob: Record<string, string>): void {
 // _authGeneration increments on every onSignIn entry and onSignOut so a
 // scheduled retry callback can detect "I'm stale, abort." Without this guard,
 // a delayed retry from user A could fire after sign-out (calling onSignIn
-// with the prior userId but the now-empty Clerk token), or after user B has
+// with the prior userId but the now-empty Supabase token), or after user B has
 // signed in (using B's token but A's userId in the retry closure) — both
 // produce a misleading sync attempt and pollute Sentry with confused errors.
 

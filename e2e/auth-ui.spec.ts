@@ -29,15 +29,16 @@ test.describe('auth UI (anonymous state)', () => {
     expect(styles.color).not.toBe(styles.background);
   });
 
-  test('Sign In click triggers Clerk modal or overlay', async ({ page }) => {
+  test('Sign In click does not throw', async ({ page }) => {
     await page.goto('/');
     await page.locator('.auth-signin-btn').waitFor({ timeout: 20000 });
     await jsClick(page, '.auth-signin-btn');
 
-    // Clerk renders its modal into .cl-rootBox or an iframe.
-    // When Clerk JS is not configured (no publishable key in test env),
-    // the click simply invokes openSignIn() which is a no-op -- verify
-    // no uncaught errors instead.
+    // Supabase's signInWithGithub() is a redirect flow, not a hosted modal
+    // (unlike the retired Clerk SDK, which rendered into .cl-rootBox or an
+    // iframe) -- see src/services/auth-provider.ts's own header comment.
+    // In the test env there's no real OAuth round-trip, so just verify the
+    // click doesn't throw an uncaught error.
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
     await page.waitForTimeout(1000);

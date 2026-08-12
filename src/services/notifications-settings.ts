@@ -456,7 +456,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
       let digestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
       // Fire-and-forget settings writes MUST NOT surface as unhandled promise
-      // rejections. A debounced auto-save that 401s (expired Clerk session) or
+      // rejections. A debounced auto-save that 401s (expired Supabase session) or
       // hits a transient network error is expected and non-fatal — swallow it
       // here so it never reaches window.onunhandledrejection (WORLDMONITOR-SN).
       // Logged for local debugging only; the setting simply isn't persisted.

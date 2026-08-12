@@ -5467,12 +5467,15 @@ export class DeckGLMap {
     this.container.appendChild(toggles);
 
     // Unlock premium layers when Pro status resolves. Pro can come from EITHER:
-    //   1. Clerk role === 'pro' (subscribeAuthState fires on Clerk changes)
-    //   2. Convex entitlement tier >= 1 (onEntitlementChange fires on Convex changes)
-    // Subscribing to BOTH covers Dodo subscribers whose Pro flag arrives via
-    // Convex (NOT via Clerk role). User-reported on energy.worldmonitor.app:
-    // "Pro Monthly" in settings UI but Resilience layer still showed the lock
-    // because subscribeAuthState alone never fires on Convex transitions.
+    //   1. Supabase session role === 'pro' (subscribeAuthState fires on auth changes)
+    //   2. entitlement tier >= 1 (onEntitlementChange fires on entitlement changes)
+    // Subscribing to BOTH is legacy from the Clerk+Convex era, where a Dodo
+    // subscriber's Pro flag could arrive via Convex without a matching Clerk
+    // role change — auth and entitlement are both Supabase-derived now, but
+    // the dual subscription is kept since it's a harmless belt-and-suspenders
+    // (see the original report: "Pro Monthly" in settings UI but the
+    // Resilience layer still showed the lock because subscribeAuthState alone
+    // never fired on the entitlement-only transition).
     //
     // Whichever signal resolves Pro first does the unlock; the other becomes
     // a no-op (early-return when not Pro; no-op .remove on already-removed

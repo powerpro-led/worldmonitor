@@ -658,7 +658,7 @@ export function createDomainGateway(
       isUserApiKey: false,
       enterpriseApiKey: null,
       widgetKey: validatedWidgetKey,
-      clerkOrgId: null,
+      authOrgId: null,
       userApiKeyCustomerRef: null,
       tier: null,
       planKey: null,
@@ -806,7 +806,7 @@ export function createDomainGateway(
     // Tier gate check first — JWT resolution is expensive (JWKS + RS256) and only needed
     // for tier-gated endpoints. Non-tier-gated endpoints never use sessionUserId.
     //
-    // Internal-MCP verified path skips the tier gate / Clerk JWT resolution
+    // Internal-MCP verified path skips the tier gate / Supabase JWT resolution
     // entirely: we already resolved the userId via HMAC verify and confirmed
     // tier ≥ 1 + mcpAccess === true. Re-running the JWT path on a request
     // that has no Authorization header would just no-op anyway.
@@ -831,7 +831,7 @@ export function createDomainGateway(
       request.headers.get('Authorization')?.startsWith('Bearer ') === true;
     let endpointRateLimitPrincipalUserId: string | undefined;
 
-    // Session resolution — extract userId from bearer token (Clerk JWT) if present.
+    // Session resolution — extract userId from bearer token (Supabase JWT) if present.
     // Runs only for tier gates, direct-LLM quota, or the explicit Pro-fresh
     // market allowlist to avoid JWKS lookup on every request.
     let sessionUserId: string | null = null;
@@ -841,7 +841,7 @@ export function createDomainGateway(
       sessionUserId = session?.userId ?? null;
       sessionRole = session?.role ?? null;
       usage.sessionUserId = sessionUserId;
-      usage.clerkOrgId = session?.orgId ?? null;
+      usage.authOrgId = session?.orgId ?? null;
       if (sessionUserId) {
         request = withAuthenticatedUserId(request, sessionUserId);
       }
@@ -876,9 +876,9 @@ export function createDomainGateway(
       request.headers.get('X-Api-Key') ??
       '';
 
-    // Clerk session is itself proof of authentication (validated at line 410).
+    // Supabase session is itself proof of authentication (validated at line 410).
     // validateApiKey is strict-no-trust-of-headers per #3541 and would 401 every
-    // Clerk-authenticated user who hasn't also minted a wms_ session token.
+    // Supabase-authenticated user who hasn't also minted a wms_ session token.
     // Override: routes that deliberately resolved a sessionUserId pass this layer.
     if (
       (isTierGated || requiresDirectLlmQuota || needsProFreshnessResolution) &&
@@ -982,11 +982,11 @@ export function createDomainGateway(
     }
 
     // Pro freshness is an optional paid benefit, not an access gate. Resolve
-    // only identities that were already verified above (Clerk bearer or a
+    // only identities that were already verified above (Supabase bearer or a
     // user-owned API key), then fail closed to the ordinary cache policy when
     // entitlement state is absent, expired, or temporarily unavailable.
     //
-    // Do not accept the Clerk role alone here: this contract is specifically
+    // Do not accept the session role alone here: this contract is specifically
     // for active plans, while role='pro' can also represent legacy/test grants.
     let hasProFreshCacheAccess = internalMcpVerified && isProFreshCacheRpc;
     if (!hasProFreshCacheAccess && isProFreshCacheRpc && sessionUserId) {
@@ -1051,7 +1051,7 @@ export function createDomainGateway(
     const isEnterpriseAuth = keyCheck.valid && wmKey && !isUserApiKey && keyCheck.kind === 'enterprise';
     if (!isEnterpriseAuth && !internalMcpVerified && !isLocalSidecarMode && !seedRefreshVerified && !relayWarmPingVerified) {
       const entitlementCheck = await checkEntitlementDetailed(sessionUserId, pathname, corsHeaders, {
-        clerkRole: sessionRole,
+        sessionRole,
       });
       recordUsageEntitlement(entitlementCheck.entitlements);
       const entitlementResponse = entitlementCheck.response;
@@ -1271,7 +1271,7 @@ export function createDomainGateway(
           identity = wmKey ? hashKeySync(wmKey) : '';
         } else if (sessionUserId) {
           // Reuse the entitlement the #4611 gate above already resolved for this
-          // same user key (undefined ⇒ the gate didn't run, e.g. a Clerk-session
+          // same user key (undefined ⇒ the gate didn't run, e.g. a Supabase-session
           // caller with no wm_ key — resolve it now). Avoids a duplicate lookup
           // on the hot active-key path.
           const ent =
@@ -1408,7 +1408,7 @@ export function createDomainGateway(
       idempotency = await beginIdempotency({
         request,
         pathname,
-        // Tag the scope with the auth kind so value spaces (Clerk id vs hashed
+        // Tag the scope with the auth kind so value spaces (Supabase id vs hashed
         // key vs customer ref) can never collide across authentication methods.
         scope: idempotencyScope,
         idempotencyKey: request.headers.get(IDEMPOTENCY_HEADER) ?? '',

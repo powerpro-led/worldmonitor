@@ -1333,7 +1333,7 @@ export class App {
     // no longer trusts header-only signals (Origin / Referer / Sec-Fetch-Site
     // are all forgeable). Install a fetch interceptor ONCE, then mint a
     // wms_-prefixed HMAC token before the first API call. Desktop has its own
-    // API key path and doesn't need this; Clerk-authenticated users will pass
+    // API key path and doesn't need this; Supabase-authenticated users will pass
     // their JWT in a Bearer header and the interceptor steps aside.
     if (!isDesktopRuntime()) {
       window.addEventListener(WM_SESSION_DEGRADED_EVENT, this.handleWmSessionDegraded);

@@ -96,7 +96,7 @@ export class LatestBriefPanel extends Panel {
   private composingPollId: ReturnType<typeof setTimeout> | null = null;
   private unsubscribeAuth: (() => void) | null = null;
   private onVisibility: (() => void) | null = null;
-  /** Last Clerk user-id seen. Used to detect sign-in / sign-out transitions. */
+  /** Last Supabase user-id seen. Used to detect sign-in / sign-out transitions. */
   private lastUserId: string | null = null;
 
   constructor() {
@@ -131,7 +131,7 @@ export class LatestBriefPanel extends Panel {
       this.inflightAbort?.abort();
       this.inflightAbort = null;
       this.clearComposingPoll();
-      // The Clerk token cache is keyed by time, not user. On every
+      // The Supabase token cache is keyed by time, not user. On every
       // id transition we MUST drop it so the next fetch reflects
       // the new session. Without this, /api/latest-brief derives
       // userId from the stale token's sub claim and paints the
@@ -183,30 +183,29 @@ export class LatestBriefPanel extends Panel {
     // Check #1: gate before starting.
     const authState = getAuthState();
     if (this.gateLocked || !hasPremiumAccess(authState)) return;
-    // Per-user endpoint needs a Clerk userId. Desktop API key +
+    // Per-user endpoint needs a Supabase userId. Desktop API key +
     // browser tester keys satisfy hasPremiumAccess but don't bind
-    // to a Clerk user, so there's nothing to fetch.
+    // to a Supabase user, so there's nothing to fetch.
     const requestUserId = authState.user?.id ?? null;
     if (!requestUserId) {
       this.renderSignInRequired();
       return;
     }
     // Client-side entitlement is NOT authoritative. /api/latest-brief
-    // does its own server-side entitlement check against the Clerk
+    // does its own server-side entitlement check against the Supabase
     // JWT — that IS the source of truth. We only use the client
     // snapshot for AFFIRMATIVE DENIAL: skip the doomed fetch when
-    // we KNOW the user is free. If the snapshot is missing, stale,
-    // or the Convex subscription failed to establish, we fall
-    // through and let the server decide. The server's 403 response
-    // is translated to renderUpgradeRequired() in the catch block
-    // below (via BriefAccessError).
+    // we KNOW the user is free. If the snapshot is missing or stale,
+    // we fall through and let the server decide. The server's 403
+    // response is translated to renderUpgradeRequired() in the catch
+    // block below (via BriefAccessError).
     //
-    // Consequence: an API-key-only user with a free Clerk account
+    // Consequence: an API-key-only user with a free Supabase account
     // will fire one doomed fetch per refresh and see the upgrade
     // CTA a beat later than they would with a client-side gate.
     // Accepted — the alternative (trusting the client snapshot as
-    // a gate) locked legitimate Pro users out whenever the Convex
-    // entitlement subscription was skipped or failed, which is a
+    // a gate) locked legitimate Pro users out whenever the local
+    // entitlement state hadn't derived from auth yet, which is a
     // worse failure mode.
     if (getEntitlementState() !== null && !hasTier(1)) {
       this.renderUpgradeRequired();
@@ -285,13 +284,13 @@ export class LatestBriefPanel extends Panel {
   private async fetchLatest(signal: AbortSignal): Promise<LatestBriefResponse> {
     // /api/latest-brief is user-scoped and Bearer-only. premiumFetch
     // short-circuits on desktop WORLDMONITOR_API_KEY / tester keys
-    // and never sends Clerk, producing a 401 we can't recover from.
-    // Always mint a fresh Bearer here — the refresh() pre-check
-    // guaranteed authState.user exists.
+    // and never sends the Supabase Bearer, producing a 401 we can't
+    // recover from. Always mint a fresh Bearer here — the refresh()
+    // pre-check guaranteed authState.user exists.
     const token = await getAuthToken();
     if (!token) {
-      // Clerk token evicted between the pre-check and now (logout,
-      // cache expiry + Clerk session gone). Surface as sign-in.
+      // Supabase token evicted between the pre-check and now (logout,
+      // cache expiry + session gone). Surface as sign-in.
       throw new Error('Sign in to view your brief.');
     }
     const res = await fetch(LATEST_BRIEF_ENDPOINT, {
@@ -302,11 +301,11 @@ export class LatestBriefPanel extends Panel {
       throw new BriefAccessError('sign_in_required');
     }
     if (res.status === 403) {
-      // Server says the Clerk userId is not Pro. This can happen
+      // Server says the Supabase userId is not Pro. This can happen
       // when the client's authState says role=pro but the server's
-      // entitlement source (Convex) disagrees, or when the Clerk
-      // plan claim goes stale. Surface as upgrade CTA — not a
-      // retryable error, since retrying won't flip entitlement.
+      // entitlement check disagrees, or when the client's session
+      // claim goes stale. Surface as upgrade CTA — not a retryable
+      // error, since retrying won't flip entitlement.
       throw new BriefAccessError('upgrade_required');
     }
     if (!res.ok) {
@@ -330,7 +329,7 @@ export class LatestBriefPanel extends Panel {
 
   /**
    * Desktop / tester-key auth can satisfy hasPremiumAccess without a
-   * Clerk userId. /api/latest-brief is user-scoped, so there's
+   * Supabase userId. /api/latest-brief is user-scoped, so there's
    * nothing to fetch. Render a specific CTA rather than pretending
    * this is an error state.
    */
@@ -350,7 +349,7 @@ export class LatestBriefPanel extends Panel {
   }
 
   /**
-   * Free Clerk account (either via local authState or via a 403
+   * Free Supabase account (either via local authState or via a 403
    * from the server). Render an upgrade CTA instead of retrying —
    * the user needs a plan change, not a fresh fetch.
    */

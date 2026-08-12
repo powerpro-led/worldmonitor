@@ -393,7 +393,7 @@ export function openMcpConnectModal(options: McpConnectOptions): void {
       const headers = getEffectiveHeaders();
       const qs = new URLSearchParams({ serverUrl });
       if (Object.keys(headers).length) qs.set('headers', JSON.stringify(headers));
-      // premiumFetch attaches the Clerk Pro Bearer for normal web Pro
+      // premiumFetch attaches the Supabase Pro Bearer for normal web Pro
       // users. /api/mcp-proxy is in PREMIUM_RPC_PATHS so the path gate
       // fires; the server-side isCallerPremium check accepts Bearer,
       // wm_ user keys, and enterprise keys (PR #3768).

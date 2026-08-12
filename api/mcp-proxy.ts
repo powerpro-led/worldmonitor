@@ -611,12 +611,12 @@ export default async function handler(req) {
   // for normal web Pro users (no enterprise key path).
   //
   // isCallerPremium is the project's canonical premium-caller check. It
-  // accepts: enterprise key (WORLDMONITOR_VALID_KEYS), wm_ user API key
-  // (Convex-validated + entitlement check), and Clerk Pro Bearer JWT
-  // (role==='pro' or entitlement tier>=1). It rejects wms_ session tokens
-  // by requiring keyCheck.required === true (wms_ short-circuits at
-  // required:false). isDisallowedOrigin already blocked cross-origin
-  // browser callers; this closes the curl + wms_ farm paths too.
+  // accepts: enterprise key (WORLDMONITOR_VALID_KEYS) and a Supabase-
+  // authenticated Bearer JWT (role==='pro' or entitlement tier>=1). It
+  // rejects wms_ session tokens by requiring keyCheck.required === true
+  // (wms_ short-circuits at required:false). isDisallowedOrigin already
+  // blocked cross-origin browser callers; this closes the curl + wms_
+  // farm paths too.
   //
   // Pair: src/components/McpConnectModal.ts + McpDataPanel.ts must use
   // premiumFetch (not plain fetch) so the renderer attaches the Bearer

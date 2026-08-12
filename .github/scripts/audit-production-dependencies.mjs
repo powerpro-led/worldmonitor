@@ -22,12 +22,12 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   // binary never executes server-side. The clean fix (sharp 0.35.x) is
   // semver-major across both chains; baselined until the parents bump.
   // GHSA-mh99-v99m-4gvg (brace-expansion OOM from unbounded brace patterns)
-  // reaches root only through Clerk's optional Solana wallet -> react-native ->
-  // babel-jest/test-exclude tooling chain. It never executes in the Vite web
-  // bundle or API runtime. The sole patched release, brace-expansion 5.0.8,
-  // changes the CommonJS export shape and breaks this chain's minimatch 3.x;
-  // keep the advisory baselined until the upstream parents move to minimatch 10.
-  'package-lock.json': ['GHSA-f88m-g3jw-g9cj', 'GHSA-mh99-v99m-4gvg'],
+  // used to reach root only through @clerk/clerk-js's optional Solana wallet
+  // -> react-native -> babel-jest/test-exclude tooling chain. Now gone from
+  // the tree entirely — @clerk/clerk-js was removed as a dead dependency
+  // (its sole consumer, src/services/clerk.ts, was deleted when auth moved
+  // to Supabase) and `npm audit` no longer reports this advisory at all.
+  'package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
   'consumer-prices-core/package-lock.json': [],
   // GHSA-395f-4hp3-45gv (shell-quote quadratic-complexity DoS in parse()) reaches
   // pro-test only via react-native -> react-devtools-core, a mobile/dev-tooling

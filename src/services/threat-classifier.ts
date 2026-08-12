@@ -391,7 +391,7 @@ const classifyClient = new IntelligenceServiceClient(getRpcBaseUrl(), { fetch: p
 // back to keyword classification with ZERO network attempts — before this
 // gate, every incoming headline fired an RPC that 401/403'd (~570k wasted
 // requests/day). panel-gating's hasPremiumAccess is the dual-signal source
-// of truth (API key, tester keys, Clerk role, Convex entitlement).
+// of truth (API key, tester keys, Supabase session role, entitlement).
 configureClassifyGate(() => hasPremiumAccess());
 
 const classifyBreaker = createCircuitBreaker<ThreatClassification | null>({

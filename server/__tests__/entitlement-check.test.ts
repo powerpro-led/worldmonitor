@@ -68,12 +68,12 @@ describe("gateway entitlement check", () => {
     expect(await checkEntitlement("another-user", "/api/market/v1/analyze-stock", {})).toBeNull();
   });
 
-  test("checkEntitlement accepts clerkRole=pro short-circuit for tier-1 gates", async () => {
+  test("checkEntitlement accepts sessionRole=pro short-circuit for tier-1 gates", async () => {
     const result = await checkEntitlement(
       "test-user",
       "/api/market/v1/analyze-stock",
       {},
-      { clerkRole: "pro" },
+      { sessionRole: "pro" },
     );
     expect(result).toBeNull();
   });

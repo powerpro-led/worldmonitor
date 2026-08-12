@@ -40,7 +40,7 @@ export type {
 //     shareable response bodies, safe to cache across auth states.
 //
 //   - premiumClient (premiumFetch)      — ONLY used for get-tariff-trends
-//     and list-comtrade-flows. Injects the caller's Clerk bearer /
+//     and list-comtrade-flows. Injects the caller's Supabase bearer /
 //     tester-key / WORLDMONITOR_API_KEY, so pro users get real data
 //     instead of 401.
 const publicClient = new TradeServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
@@ -65,7 +65,7 @@ const comtradeBreaker = createCircuitBreaker<ListComtradeFlowsResponse>({ name: 
 //
 // ENTITLEMENT SIGNAL: hasPremiumAccess() is the repo's single source of
 // truth (src/services/panel-gating.ts). It unions API key, tester key,
-// Clerk pro role, and Convex Dodo entitlement via isProUser/isEntitled.
+// and Supabase session role ('pro') via isProUser/isEntitled.
 // The earlier version of this fingerprint used Clerk publicMetadata.plan,
 // which is NOT written by the webhook pipeline — a paying user with a
 // valid Dodo entitlement would still fingerprint as 'free', and a user
@@ -131,7 +131,7 @@ export async function fetchTradeRestrictions(countries: string[] = [], limit = 5
 
 export async function fetchTariffTrends(reportingCountry: string, partnerCountry: string, productSector = '', years = 10): Promise<GetTariffTrendsResponse> {
   if (!isFeatureAvailable('wtoTrade')) return emptyTariffs;
-  // /pro live-preview iframe: no Clerk session → guaranteed 401 → breaker
+  // /pro live-preview iframe: no Supabase session → guaranteed 401 → breaker
   // would fall through to emptyTariffs anyway. Short-circuit to silence the
   // console noise this path causes on the embedding /pro page.
   if (IS_EMBEDDED_PREVIEW) return emptyTariffs;

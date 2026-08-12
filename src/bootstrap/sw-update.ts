@@ -208,8 +208,8 @@ export function installSwUpdateHandler(options: SwUpdateHandlerOptions = {}): vo
       }
       logSw('visibility-hidden', { autoReloadAllowed, dismissed });
       if (!dismissed && autoReloadAllowed && doc.body.contains(toast)) {
-        // Don't interrupt an in-flight modal flow (Clerk email-code wait,
-        // Settings, ⌘K search, etc.). The reload stays armed — next tab-hide
+        // Don't interrupt an in-flight modal flow (Settings, ⌘K search,
+        // etc.). The reload stays armed — next tab-hide
         // after the modal closes will fire it. User can also click Reload
         // in the toast manually at any time.
         if (isModalOpen(doc)) {

@@ -143,7 +143,7 @@ describe("gateway direct LLM quota", () => {
       "user_free",
       COUNTRY_BRIEF_PATH,
       expect.any(Object),
-      { clerkRole: "free" },
+      { sessionRole: "free" },
     );
     expect(calls.country).toBe(0);
     expect(reserveDirectLlmQuota).not.toHaveBeenCalled();

@@ -4,11 +4,11 @@
  * Covers the auth injection matrix:
  *  - Passthrough when caller already sets auth header
  *  - Tester key: valid key → returns response immediately (no second fetch)
- *  - Tester key: 401 → falls through to Clerk JWT
- *  - wm-pro-key 401 → retries with wm-widget-key before Clerk
+ *  - Tester key: 401 → falls through to Supabase JWT
+ *  - wm-pro-key 401 → retries with wm-widget-key before Supabase
  *  - Tester key: non-401 returned immediately (no fallback)
  *  - Tester key: network error / AbortError propagates to caller (not swallowed)
- *  - No keys, no Clerk → unauthenticated request forwarded
+ *  - No keys, no Supabase → unauthenticated request forwarded
  *  - wm-pro-key / wm-widget-key order is deterministic and deduped
  */
 
@@ -33,7 +33,7 @@ function sentHeaders(callIndex = 0): Headers {
 
 // Real path that lives in PREMIUM_RPC_PATHS — required because Bearer
 // injection is now path-gated. Using `some-premium-rpc` (a non-existent
-// path) made every "Clerk Bearer attached" assertion silently fail under
+// path) made every "Supabase Bearer attached" assertion silently fail under
 // the new logic. See PREMIUM_RPC_PATHS in src/shared/premium-paths.ts.
 const TARGET = 'https://api.worldmonitor.app/api/sanctions/v1/list-sanctions-pressure';
 // A real PUBLIC path used to verify the path-gating bypass: hits below
@@ -60,12 +60,12 @@ describe('premiumFetch', () => {
   function setup(opts: {
     testerKey?: string;
     testerKeys?: string[];
-    clerkToken?: string | null;
+    supabaseToken?: string | null;
     fetchImpl?: () => Promise<Response>;
   } = {}) {
     _setTestProviders({
       getTesterKeys: () => opts.testerKeys ?? (opts.testerKey ? [opts.testerKey] : []),
-      getClerkToken: async () => opts.clerkToken ?? null,
+      getAuthToken: async () => opts.supabaseToken ?? null,
     });
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementation(opts.fetchImpl ?? (() => Promise.resolve(fakeRes(200))));
@@ -90,34 +90,34 @@ describe('premiumFetch', () => {
     setup({ testerKey: 'valid-gateway-key' });
     const res = await premiumFetch(TARGET);
     assert.equal(res.status, 200);
-    assert.equal(fetchMock.mock.calls.length, 1, 'No Clerk retry expected');
+    assert.equal(fetchMock.mock.calls.length, 1, 'No Supabase retry expected');
     assert.equal(sentHeaders().get('X-WorldMonitor-Key'), 'valid-gateway-key');
   });
 
-  it('tester key: 401 falls through to Clerk JWT (two fetches)', async () => {
+  it('tester key: 401 falls through to Supabase JWT (two fetches)', async () => {
     let n = 0;
     setup({
       testerKey: 'widget-only-key',
-      clerkToken: 'clerk-jwt-abc',
+      supabaseToken: 'supabase-jwt-abc',
       fetchImpl: () => Promise.resolve(fakeRes(n++ === 0 ? 401 : 200)),
     });
 
     const res = await premiumFetch(TARGET);
     assert.equal(res.status, 200);
-    assert.equal(fetchMock.mock.calls.length, 2, 'Expected tester-key attempt + Clerk retry');
+    assert.equal(fetchMock.mock.calls.length, 2, 'Expected tester-key attempt + Supabase retry');
     // First call: tester key sent
     assert.equal(sentHeaders(0).get('X-WorldMonitor-Key'), 'widget-only-key');
     assert.equal(sentHeaders(0).get('Authorization'), null);
-    // Second call: Clerk Bearer sent, no tester key
-    assert.equal(sentHeaders(1).get('Authorization'), 'Bearer clerk-jwt-abc');
+    // Second call: Supabase Bearer sent, no tester key
+    assert.equal(sentHeaders(1).get('Authorization'), 'Bearer supabase-jwt-abc');
     assert.equal(sentHeaders(1).get('X-WorldMonitor-Key'), null);
   });
 
-  it('wm-pro-key 401 retries with wm-widget-key before Clerk', async () => {
+  it('wm-pro-key 401 retries with wm-widget-key before Supabase', async () => {
     let n = 0;
     setup({
       testerKeys: ['relay-only-pro-key', 'valid-widget-key'],
-      clerkToken: 'clerk-jwt-should-not-be-used',
+      supabaseToken: 'supabase-jwt-should-not-be-used',
       fetchImpl: () => Promise.resolve(fakeRes(n++ === 0 ? 401 : 200)),
     });
 
@@ -130,8 +130,8 @@ describe('premiumFetch', () => {
     assert.equal(sentHeaders(1).get('Authorization'), null);
   });
 
-  it('tester key: 403 returned immediately, no Clerk fallback', async () => {
-    setup({ testerKey: 'widget-only-key', clerkToken: 'clerk-jwt' });
+  it('tester key: 403 returned immediately, no Supabase fallback', async () => {
+    setup({ testerKey: 'widget-only-key', supabaseToken: 'supabase-jwt' });
     fetchMock.mock.mockImplementation(() => Promise.resolve(fakeRes(403)));
 
     const res = await premiumFetch(TARGET);
@@ -156,8 +156,8 @@ describe('premiumFetch', () => {
     );
   });
 
-  it('no keys and no Clerk → unauthenticated request forwarded', async () => {
-    setup({ testerKey: '', clerkToken: null });
+  it('no keys and no Supabase → unauthenticated request forwarded', async () => {
+    setup({ testerKey: '', supabaseToken: null });
     const res = await premiumFetch(TARGET);
     assert.equal(res.status, 200);
     assert.equal(fetchMock.mock.calls.length, 1);
@@ -165,12 +165,12 @@ describe('premiumFetch', () => {
     assert.equal(sentHeaders().get('X-WorldMonitor-Key'), null);
   });
 
-  it('Clerk JWT used when no tester key', async () => {
-    setup({ testerKey: '', clerkToken: 'clerk-only-token' });
+  it('Supabase JWT used when no tester key', async () => {
+    setup({ testerKey: '', supabaseToken: 'supabase-only-token' });
     const res = await premiumFetch(TARGET);
     assert.equal(res.status, 200);
     assert.equal(fetchMock.mock.calls.length, 1);
-    assert.equal(sentHeaders().get('Authorization'), 'Bearer clerk-only-token');
+    assert.equal(sentHeaders().get('Authorization'), 'Bearer supabase-only-token');
     assert.equal(sentHeaders().get('X-WorldMonitor-Key'), null);
   });
 
@@ -179,7 +179,7 @@ describe('premiumFetch', () => {
   // ---------------------------------------------------------------------
   //
   // The same RPC client is wrapped with premiumFetch end-to-end even
-  // though only some methods target a premium path. Attaching a Clerk
+  // though only some methods target a premium path. Attaching a Supabase
   // Bearer JWT to non-premium calls suppresses the wm-session
   // interceptor's wms_ attach (premiumFetch sets Authorization → the
   // interceptor steps aside) and the gateway only resolves Bearer JWTs
@@ -191,8 +191,8 @@ describe('premiumFetch', () => {
   // Public paths fall through so the wm-session interceptor handles
   // wms_ attach.
 
-  it('non-premium path: Clerk JWT NOT attached, falls through to plain fetch', async () => {
-    setup({ testerKey: '', clerkToken: 'clerk-token-should-be-skipped' });
+  it('non-premium path: Supabase JWT NOT attached, falls through to plain fetch', async () => {
+    setup({ testerKey: '', supabaseToken: 'supabase-token-should-be-skipped' });
     const res = await premiumFetch(PUBLIC_TARGET);
     assert.equal(res.status, 200);
     assert.equal(fetchMock.mock.calls.length, 1);
@@ -204,13 +204,13 @@ describe('premiumFetch', () => {
     assert.equal(sentHeaders().get('X-WorldMonitor-Key'), null);
   });
 
-  it('forcePremium attaches Clerk JWT on a non-premium path without forwarding the option', async () => {
-    setup({ testerKey: '', clerkToken: 'forced-clerk-token' });
+  it('forcePremium attaches Supabase JWT on a non-premium path without forwarding the option', async () => {
+    setup({ testerKey: '', supabaseToken: 'forced-supabase-token' });
 
     await premiumFetch(PUBLIC_TARGET, { forcePremium: true });
 
     assert.equal(fetchMock.mock.calls.length, 1);
-    assert.equal(sentHeaders().get('Authorization'), 'Bearer forced-clerk-token');
+    assert.equal(sentHeaders().get('Authorization'), 'Bearer forced-supabase-token');
     assert.equal(
       'forcePremium' in ((fetchMock.mock.calls[0].arguments[1] as RequestInit | undefined) ?? {}),
       false,
@@ -218,11 +218,11 @@ describe('premiumFetch', () => {
     );
   });
 
-  it('Pro-fresh market adapter attaches Clerk JWT only on the shared allowlist', async () => {
-    setup({ testerKey: '', clerkToken: 'pro-fresh-clerk-token' });
+  it('Pro-fresh market adapter attaches Supabase JWT only on the shared allowlist', async () => {
+    setup({ testerKey: '', supabaseToken: 'pro-fresh-supabase-token' });
 
     await proFreshRpcFetch(PRO_FRESH_MARKET_TARGET);
-    assert.equal(sentHeaders(0).get('Authorization'), 'Bearer pro-fresh-clerk-token');
+    assert.equal(sentHeaders(0).get('Authorization'), 'Bearer pro-fresh-supabase-token');
 
     fetchMock.mock.resetCalls();
     await proFreshRpcFetch(PUBLIC_INSIDER_TRANSACTIONS_TARGET);
@@ -233,29 +233,29 @@ describe('premiumFetch', () => {
     );
   });
 
-  it('public insider transactions path: Clerk JWT NOT attached', async () => {
-    setup({ testerKey: '', clerkToken: 'clerk-token-should-be-skipped' });
+  it('public insider transactions path: Supabase JWT NOT attached', async () => {
+    setup({ testerKey: '', supabaseToken: 'supabase-token-should-be-skipped' });
     await premiumFetch(PUBLIC_INSIDER_TRANSACTIONS_TARGET);
     assert.equal(sentHeaders().get('Authorization'), null);
   });
 
   it('non-premium path: tester key still attached (works on any path)', async () => {
-    setup({ testerKey: 'valid-key', clerkToken: 'clerk-token' });
+    setup({ testerKey: 'valid-key', supabaseToken: 'supabase-token' });
     await premiumFetch(PUBLIC_TARGET);
     assert.equal(sentHeaders(0).get('X-WorldMonitor-Key'), 'valid-key');
     assert.equal(sentHeaders(0).get('Authorization'), null);
   });
 
-  it('premium path: Clerk JWT IS attached (regression guard against over-gating)', async () => {
-    setup({ testerKey: '', clerkToken: 'clerk-only-token' });
+  it('premium path: Supabase JWT IS attached (regression guard against over-gating)', async () => {
+    setup({ testerKey: '', supabaseToken: 'supabase-only-token' });
     await premiumFetch(TARGET);
-    assert.equal(sentHeaders().get('Authorization'), 'Bearer clerk-only-token');
+    assert.equal(sentHeaders().get('Authorization'), 'Bearer supabase-only-token');
   });
 
   it('non-premium path: pre-set Authorization still passes through unchanged', async () => {
     // Caller-supplied auth was always passed through; verify the
     // path-gating change didn't accidentally alter that contract.
-    setup({ testerKey: '', clerkToken: 'unused' });
+    setup({ testerKey: '', supabaseToken: 'unused' });
     await premiumFetch(PUBLIC_TARGET, { headers: { Authorization: 'Bearer caller-supplied' } });
     assert.equal(sentHeaders().get('Authorization'), 'Bearer caller-supplied');
   });
@@ -264,13 +264,12 @@ describe('premiumFetch', () => {
   // Boot-window token-generation race — regression for "Pro user 401s on
   // analyze-stock / premium paths on first paint".
   //
-  // getConvexClient() calls client.setAuth() at boot; Convex invokes the
-  // token callback (sometimes with forceRefreshToken) → clearClerkTokenCache()
-  // bumps _tokenGen. Concurrently the FINANCIAL panel fires analyzeStock per
-  // symbol → premiumFetch → getClerkToken(). A panel token fetch in-flight
-  // when the gen bumps is correctly abandoned to null (so a rotating user's
-  // stale JWT is never painted) — but premiumFetch used to treat that
-  // transient null as "no auth" and fire an unauthenticated request → 401.
+  // While auth-provider.ts bootstraps the Supabase session, an in-flight
+  // getAuthToken() call can abandon to null before the session settles
+  // (so a rotating user's stale JWT is never painted). Concurrently the
+  // FINANCIAL panel fires analyzeStock per symbol → premiumFetch →
+  // getAuthToken(). premiumFetch used to treat that transient null as
+  // "no auth" and fire an unauthenticated request → 401.
   //
   // Fix: for a signed-in user, retry the token exactly once after the
   // rotation settles. Anonymous users skip the retry entirely.
@@ -281,8 +280,8 @@ describe('premiumFetch', () => {
       getTesterKeys: () => [],
       // First acquisition loses the boot-window gen race and abandons to
       // null; the retry (after rotation settles) returns the real JWT.
-      getClerkToken: async () => (tokenCalls++ === 0 ? null : 'clerk-jwt-after-settle'),
-      isClerkUserSignedIn: () => true,
+      getAuthToken: async () => (tokenCalls++ === 0 ? null : 'supabase-jwt-after-settle'),
+      isAuthUserSignedIn: () => true,
     });
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementation(() => Promise.resolve(fakeRes(200)));
@@ -293,7 +292,7 @@ describe('premiumFetch', () => {
     assert.equal(fetchMock.mock.calls.length, 1, 'only the authenticated request is sent');
     assert.equal(
       sentHeaders().get('Authorization'),
-      'Bearer clerk-jwt-after-settle',
+      'Bearer supabase-jwt-after-settle',
       'the retried token must be attached so the request authenticates instead of 401ing',
     );
   });
@@ -302,8 +301,8 @@ describe('premiumFetch', () => {
     let tokenCalls = 0;
     _setTestProviders({
       getTesterKeys: () => [],
-      getClerkToken: async () => { tokenCalls++; return null; },
-      isClerkUserSignedIn: () => false,
+      getAuthToken: async () => { tokenCalls++; return null; },
+      isAuthUserSignedIn: () => false,
     });
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementation(() => Promise.resolve(fakeRes(200)));
@@ -322,8 +321,8 @@ describe('premiumFetch', () => {
     let tokenCalls = 0;
     _setTestProviders({
       getTesterKeys: () => [],
-      getClerkToken: async () => { tokenCalls++; return null; },
-      isClerkUserSignedIn: () => true,
+      getAuthToken: async () => { tokenCalls++; return null; },
+      isAuthUserSignedIn: () => true,
     });
     fetchMock.mock.resetCalls();
     fetchMock.mock.mockImplementation(() => Promise.resolve(fakeRes(200)));

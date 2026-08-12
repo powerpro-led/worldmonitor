@@ -2,7 +2,7 @@
  * HMAC-signed URL helpers for the WorldMonitor Brief magazine route.
  *
  * The hosted magazine at /api/brief/{userId}/{issueSlot} is auth-less
- * in the traditional sense (no Clerk session, no cookie). The signed
+ * in the traditional sense (no Supabase session, no cookie). The signed
  * token IS the credential: a recipient with the URL can read the
  * magazine; without it, no. This matches the push / email delivery
  * model where the token is delivered to the user through an already-

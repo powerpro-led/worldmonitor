@@ -207,7 +207,7 @@ export function __setWmSessionSentryEnqueueForTests(fn: typeof enqueueSentryCall
 // Install a one-shot fetch wrapper that includes HttpOnly session cookies on
 // API calls.
 // Only patches calls to our API origin (or relative /api/ paths). Other fetches
-// (Sentry, Clerk, third-party CDNs) are forwarded to native fetch unchanged.
+// (Sentry, Supabase, third-party CDNs) are forwarded to native fetch unchanged.
 //
 // Decide whether a fetch URL should go through the wms_-injection branch.
 // Exported (and named with no implementation detail in its signature) so the
@@ -277,7 +277,7 @@ function isCredentiallessPublicDataRequest(
 }
 
 // If a caller already set Authorization / X-WorldMonitor-Key / X-Api-Key, we
-// don't override — Clerk Bearer JWT and explicit user keys still take
+// don't override — Supabase Bearer JWT and explicit user keys still take
 // precedence over the anonymous session token.
 export function installWmSessionFetchInterceptor(): void {
   if (interceptorInstalled || typeof window === 'undefined') return;
@@ -323,8 +323,8 @@ export function installWmSessionFetchInterceptor(): void {
     if (isCredentiallessPublicDataRequest(input, init, url)) return original(input, init);
 
     // Premium routes have a dedicated auth-injection layer
-    // (`installWebApiRedirect`'s `enrichInitForPremium` adds Clerk Bearer JWT,
-    // WORLDMONITOR_API_KEY, or tester key based on what the user has). Stepping
+    // (`installWebApiRedirect`'s `enrichInitForPremium` adds a Supabase Bearer
+    // JWT, WORLDMONITOR_API_KEY, or tester key based on what the user has). Stepping
     // aside lets that inner layer attach the right credential — if we set
     // X-WorldMonitor-Key=wms_... here, the premium injector sees the header
     // and bails, and the server then 401s because wms_ is rejected on premium
@@ -343,7 +343,7 @@ export function installWmSessionFetchInterceptor(): void {
     );
 
     // Caller already authenticated (Bearer JWT, explicit user/widget key, etc).
-    // Don't override — Clerk and explicit-key paths take precedence.
+    // Don't override — Supabase and explicit-key paths take precedence.
     if (
       headers.has('Authorization') ||
       headers.has('X-WorldMonitor-Key') ||

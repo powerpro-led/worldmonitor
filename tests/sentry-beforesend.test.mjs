@@ -91,13 +91,6 @@ function extensionFrame(filename = 'blob:https://example.com/ext-1234', fn = 'in
 // ─── ignoreErrors message matches ────────────────────────────────────────
 
 describe('ignoreErrors filters', () => {
-  it('suppresses Clerk SDK UI chunk load failure', () => {
-    assert.ok(
-      isIgnored('[clerk] failed to load https://clerk.worldmonitor.app/npm/@clerk/ui@1/dist/ui.browser.js'),
-      'Clerk SDK load-failure message must be ignored',
-    );
-  });
-
   it('does NOT suppress a generic "failed to load" error from our code', () => {
     assert.ok(
       !isIgnored('Failed to load dashboard config'),
@@ -540,22 +533,6 @@ describe('existing beforeSend filters', () => {
       { filename: '/assets/maplibre-A8Ca0ysS.js', lineno: 4, function: 'ajaxFetch' },
     ]);
     assert.equal(beforeSend(event), null, 'Allowlisted AJAX host should be suppressed regardless of stack shape');
-  });
-
-  it('suppresses Clerk SDK "Failed to fetch (clerk.worldmonitor.app)" even with a clerk first-party frame', () => {
-    // WORLDMONITOR-SA/SB: the bundled Clerk SDK fetches its Frontend API
-    // (clerk.worldmonitor.app, a CNAME to Clerk's auth infra) for token
-    // refresh and retries transient failures itself. A leaked
-    // `Failed to fetch (clerk.worldmonitor.app)` is a Clerk-SDK-internal
-    // network blip, not our code — same disposition as `/ClerkJS: Network
-    // error/`. The clerk-*.js chunk reads as first-party (not in the vendor
-    // list), so the host allowlist — not hasFirstParty — must decide.
-    const event = makeEvent('Failed to fetch (clerk.worldmonitor.app)', 'TypeError', [
-      { filename: '/assets/clerk-DC7Q2aDh.js', lineno: 848, function: 'i' },
-      { filename: 'chrome-extension://ebeglcfoffnnadgncmppkkohfcigngkj/js/injected/hook.js', lineno: 1, function: 'Object.apply' },
-      { filename: '/assets/panels-CYSIkWVK.js', lineno: 45, function: 'window.fetch' },
-    ]);
-    assert.equal(beforeSend(event), null, 'Clerk Frontend API fetch failure should be suppressed');
   });
 
   it('does NOT suppress plain "Failed to fetch" from first-party code without maplibre frames', () => {

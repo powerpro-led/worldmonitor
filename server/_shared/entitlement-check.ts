@@ -90,7 +90,7 @@ export interface EntitlementCheckResult {
 }
 
 export interface EntitlementCheckOptions {
-  clerkRole?: 'free' | 'pro' | null;
+  sessionRole?: 'free' | 'pro' | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,12 +239,12 @@ export async function checkEntitlementDetailed(
     };
   }
 
-  // options.clerkRole is always 'pro' for a verified session post-Stage-1
+  // options.sessionRole is always 'pro' for a verified session post-Stage-1
   // (server/auth-session.ts), same conclusion getEntitlements() below
   // reaches independently. Short-circuit kept for gateway.ts call-site
   // compatibility (avoids one redundant getEntitlements call on the hot
   // path it was already skipping).
-  if (options.clerkRole === 'pro' && requiredTier <= 1) {
+  if (options.sessionRole === 'pro' && requiredTier <= 1) {
     return { response: null, entitlements: null };
   }
 

@@ -89,4 +89,4 @@ Open [http://localhost:3000](http://localhost:3000).
 ## What we deliberately skipped (and why)
 
 - **Docker Compose** — the full self-hosted container build failed on a transient Alpine package-mirror error unrelated to the app itself; cloud Upstash Redis is simpler anyway for local dev.
-- **Clerk + Convex** (sign-in, Pro entitlements, notifications) — optional, only needed for the Pro-tier features (notifications, entitlements). Skip unless you specifically want those.
+- **Supabase Auth** (sign-in) — optional for local dev; the app works fully signed-out. Sign-in is GitHub-OAuth-only and operator-issued (no self-service tier to unlock — every signed-in user gets the same full access). Skip unless you specifically want to test the signed-in path.

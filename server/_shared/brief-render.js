@@ -1176,7 +1176,7 @@ const STYLE_BLOCK = `<style>
  * No network, no auth — the per-user magazine route's HMAC token
  * check already proved this reader is authorised to share the brief
  * they are viewing. Deriving the URL at render time instead of click
- * time also means the button works in a fresh tab with no Clerk
+ * time also means the button works in a fresh tab with no Supabase
  * session context (common path: reader opened the magazine from an
  * email link in a browser they're not signed into).
  *

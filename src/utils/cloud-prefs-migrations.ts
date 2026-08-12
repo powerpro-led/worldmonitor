@@ -1,8 +1,8 @@
 /**
  * Cloud-prefs schema migrations and conflict-merge, isolated from
  * cloud-prefs-sync.ts so they stay testable without importing the full sync
- * runtime (which transitively pulls in `import.meta.env.DEV` via
- * `@/services/clerk` → proxy.ts and fails outside a Vite build).
+ * runtime (which transitively pulls in `import.meta.env.DEV` via proxy.ts
+ * and fails outside a Vite build).
  *
  * Each migration is a pure function from blob → blob. The map is keyed by
  * the TARGET schema version (so MIGRATIONS[N] runs when going from N-1 → N).

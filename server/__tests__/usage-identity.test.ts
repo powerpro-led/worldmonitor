@@ -17,7 +17,7 @@ function baseInput(overrides: Partial<UsageIdentityInput> = {}): UsageIdentityIn
     isUserApiKey: false,
     enterpriseApiKey: null,
     widgetKey: null,
-    clerkOrgId: null,
+    authOrgId: null,
     userApiKeyCustomerRef: null,
     tier: null,
     planKey: null,
@@ -75,7 +75,7 @@ describe('buildUsageIdentity — auth_kind branches', () => {
   test('clerk_jwt: customer_id prefers org over user when org is present', () => {
     const ident = buildUsageIdentity(baseInput({
       sessionUserId: 'user_123',
-      clerkOrgId: 'org_acme',
+      authOrgId: 'org_acme',
       tier: 1,
     }));
     expect(ident.auth_kind).toBe('clerk_jwt');

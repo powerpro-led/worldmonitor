@@ -90,7 +90,6 @@ const SERVER_OR_PROVIDER_SECRET_ENV_NAMES = [
 // intentionally explicit so a future VITE_* provider token must be reviewed
 // instead of quietly joining the bundle.
 const CLIENT_ENV_ALLOWLIST = new Set([
-  'VITE_CLERK_PUBLISHABLE_KEY',
   'VITE_CLOUD_PREFS_ENABLED',
   'VITE_CONVEX_URL',
   'VITE_DESKTOP_RUNTIME',

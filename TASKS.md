@@ -156,9 +156,9 @@ below), `npm run test:sidecar` (1 failure, #12, unchanged).
 - **`api/notify.ts`'s stale reason text — RESOLVED same day, fifth session**: reworded
   ("validates Clerk bearer auth" → "validates a Supabase session bearer") as part of the "PRO"
   internal-branding pass below, since it was directly adjacent to that pass's other
-  `api-route-exceptions.json` edit. **Still not done**: `api/latest-brief.ts` has 3 remaining
-  Clerk mentions in code comments (not the exceptions-file reason, the source file itself) — same
-  category, smaller, not yet touched.
+  `api-route-exceptions.json` edit. `api/latest-brief.ts`'s 3 remaining Clerk mentions — **RESOLVED
+  2026-08-12, sixth session**, see the new ✅ section below (grew into a full repo-wide Clerk
+  retirement sweep, not just those 3 comments).
 
 ---
 
@@ -287,6 +287,148 @@ locales.** 92 files changed. Scope grew substantially beyond a text rename once 
 
 ---
 
+## ✅ Resolved 2026-08-12 (sixth session, continued) — full Clerk retirement sweep
+
+**What started as "fix `api/latest-brief.ts`'s 3 remaining Clerk comments" turned into a full
+repo-wide sweep once a broad grep showed ~140 files still mentioned "Clerk" — most legitimate
+history, but a real tail of live bugs, live dead infrastructure, and stale current-behavior
+comments.** Operator explicitly signed off on each escalation (full sweep incl. `gateway.ts`, then
+removing the dead `@clerk/clerk-js` dependency). ~65 files changed. Every category verified live —
+not assumed — before touching; see the verification note at the end.
+
+- [x] **Real bug: `analytics.ts` mislabeled live signup-analytics data.** `trackSignUp('clerk')`
+      fired on every real sign-up completion even though auth is Supabase/GitHub OAuth — fixed to
+      `trackSignUp('github')`, matching `auth-provider.ts`'s own `provider: 'github'` convention.
+
+- [x] **Real bug: 4 test files' auth mock silently no-op'd.** `tests/{cii-panel-pin-to-top,
+      country-deep-dive-notify-sub-action,country-panels-followed-only-filter,followed-only-chip}
+      .test.mjs` called `_setDepsForTests({ getCurrentClerkUser: () => null, ... })`, but
+      `src/services/followed-countries.ts`'s real interface expects `getCurrentAuthUser` — the
+      stale field name silently no-op'd the override in these untyped `.mjs` files, so the tests
+      were unknowingly exercising the real (accidentally also-null in node:test) auth getter
+      instead of the intended deliberate mock. Renamed to `getCurrentAuthUser` in all 7 call
+      sites; all 62 tests across the 4 files still pass (confirms this was latent, not currently
+      user-visible — but no longer fragile).
+
+- [x] **Removed the fully-dead `@clerk/clerk-js` npm dependency and its build machinery**, orphaned
+      since its sole consumer (`src/services/clerk.ts`) was already deleted: `package.json`'s
+      dependency entry; `vite.config.ts`'s version-extraction + major-pairing build-fail guards,
+      the `__CLERK_JS_VERSION__` define, the dead `manualChunks` `'clerk'` bucket, and the
+      `**/clerk-*.js` PWA-precache glob (which had a dedicated test requiring its own presence —
+      `tests/deploy-config.test.mjs`'s "keeps the lazy Clerk SDK out of the PWA precache" — deleted,
+      not flipped, since the whole premise no longer applies); `src/vite-env.d.ts`'s orphaned type
+      declaration. `npm install` removed 431 packages (Clerk's optional Solana-wallet →
+      react-native chain). **Verified via a real `npm audit` A/B** (stash the removal, audit, pop,
+      audit again): introduces zero new advisories, only removes ones reachable solely through that
+      now-gone chain (`GHSA-mh99-v99m-4gvg`, `GHSA-rgw5-rvv9-x895`, `GHSA-5p4m-2wfm-xmqj`,
+      `GHSA-w5hq-g745-h8pq`) — updated `.github/scripts/audit-production-dependencies.mjs`'s
+      now-stale `GHSA-mh99-v99m-4gvg` baseline entry for root `package-lock.json` accordingly.
+      `tests/security-audit-baseline.test.mjs`'s own `@clerk/clerk-js` mentions are synthetic
+      fixture data unrelated to the real dependency, needed no change. Full `npm run build`
+      succeeded; confirmed the running VS Code extension sidecar still served the rebuilt
+      `dist/` correctly afterward (see the `dist/` warning at the top of this file) and reverted
+      the build's incidental `public/sitemap.xml` `<lastmod>` touch (documented side effect,
+      not an intentional content change).
+
+- [x] **Removed dead Clerk-specific Sentry noise-suppression**, unreachable now that the SDK never
+      loads: `src/bootstrap/sentry-init.ts`'s `clerk.worldmonitor.app` host-allowlist entry and 3
+      `ignoreErrors` regexes (`ClerkJS: Network error`, `ClerkJS: Response: needs_*_factor`,
+      `[clerk] failed to load`) + their 2 dedicated tests in `tests/sentry-beforesend.test.mjs`;
+      `src/bootstrap/lcp-attribution.ts`'s dead `'clerk'` branch in the LCP-attribution classifier;
+      `e2e/secondary-startup.spec.ts`'s dead `clerk.worldmonitor.app` regex alternative (confirmed
+      no `dns-prefetch` tag for it exists anywhere in `index.html` or `src/`); the live desktop
+      `src-tauri/tauri.conf.json` CSP's `https://*.clerk.accounts.dev` in `script-src` + `frame-src`
+      (missed by the earlier session's web-CSP `frame-src` Clerk/Dodo cleanup since it's a separate
+      Tauri config file, not `vercel.json`/nginx); `tests/browser-bundle-secret-guard.test.mts`'s
+      dead `VITE_CLERK_PUBLISHABLE_KEY` client-env-allowlist entry (confirmed unread anywhere in
+      `src/`).
+
+- [x] **Renamed live internal identifiers off "Clerk" naming** (functionally correct — all already
+      delegated to the real Supabase-backed `auth-provider.ts` — just misleadingly named):
+      `server/_shared/usage-identity.ts` (`clerkOrgId` → `authOrgId`), `server/_shared/
+      entitlement-check.ts` (`clerkRole` → `sessionRole`), `server/gateway.ts` (both field usages +
+      ~10 comments describing the auth mechanism as "Clerk JWT"/"Clerk bearer"), `src/services/
+      premium-fetch.ts` (`resolveClerkToken`→`resolveAuthToken`, `isClerkUserSignedIn`→
+      `isAuthUserSignedIn`, `delayBeforeClerkRetry`→`delayBeforeAuthRetry`,
+      `CLERK_TOKEN_RETRY_DELAY_MS`→`AUTH_TOKEN_RETRY_DELAY_MS`, its test-provider interface fields,
+      and its file-header docblock's auth-chain description). Updated every touched test file in
+      lockstep: `server/__tests__/{usage-identity,entitlement-check,gateway-direct-llm-quota,
+      gateway-summarize-article-security}.test.ts`, `tests/usage-telemetry-emission.test.mts`,
+      `tests/premium-fetch.test.mts` (22 tests, full rename incl. test titles/prose — all still
+      pass). **Deliberately left untouched**: the `auth_kind: 'clerk_jwt'` `AuthKind` union member
+      and every place that sets/asserts it — this is a live telemetry wire value shipped to Axiom,
+      same category as the "leave identifiers (env vars, storage keys) untouched" decision from the
+      earlier "PRO" rename session; renaming it would break continuity of existing analytics data
+      for zero benefit. Also left `server/worldmonitor/forecast/v1/trigger-simulation.ts`'s
+      `authKind = ... 'clerk_jwt'` log value and `tests/wm-session-interceptor-target.test.mts`'s
+      use of `clerk.worldmonitor.app` as one of 3 example third-party domains (a generic
+      URL-classifier test, not asserting anything Clerk-specific) — same reasoning.
+
+- [x] **Reworded ~30 more files' current-behavior comments/docblocks/log strings** off stale "Clerk"
+      vocabulary (confirmed each describes real current behavior, not history, before touching):
+      `INSTALL_GUIDE.md`, `e2e/auth-ui.spec.ts` (retitled the test itself — it was asserting on a
+      Clerk-modal premise that doesn't match Supabase's redirect-only flow), `api/mcp-proxy.ts`,
+      `api/{discord,slack}/oauth/start.ts`, `api/api-route-exceptions.json` (one reason string),
+      `api/brief/[userId]/[issueDate].ts`, `scripts/lib/brief-compose.mjs`, `scripts/
+      enforce-premium-fetch.mjs`, `server/_shared/{brief-render.d.ts,brief-render.js,brief-url.ts}`,
+      `server/worldmonitor/shipping/v2/{list-webhooks,register-webhook}.ts`, `src/App.ts`, `src/app/
+      country-intel.ts`, `src/bootstrap/sw-update.ts`, `src/components/{DeckGLMap,LatestBriefPanel,
+      McpConnectModal,McpDataPanel,RegionalIntelligenceBoard,WidgetChatModal}.ts` (`LatestBriefPanel
+      .ts` was the largest single file — 11 mentions, entirely un-migrated Clerk framing describing
+      already-correct Supabase-backed code), `src/services/{breaking-news-alerts,entitlements(one
+      line),notifications-settings,runtime,scenario/index,supply-chain/index,threat-classifier,
+      trade/index,wm-session}.ts`, `src/shared/premium-paths.ts`, `src/utils/{cloud-prefs-migrations,
+      cloud-prefs-sync,proxy}.ts`. **Left alone as legitimate history** (matches the established
+      "accurate migration-narrative comments stay" precedent): every `// Stage 2/3 of the
+      Convex/Clerk -> Supabase migration` header (api/{user-prefs,followed-countries,
+      notification-channels,telegram/pair-callback}.ts, server/_shared/{alert-rules,
+      followed-countries,notification-channels,telegram-pairing,user-preferences,iso2}.ts,
+      scripts/seed-digest-notifications.mjs), `src/services/{auth-provider,supabase-client,
+      entitlements}.ts`'s "replaces/unlike clerk.ts" comparisons, `src/components/
+      AuthHeaderWidget.ts`, `api/mcp/types.ts`, `api/_oauth-token.js` + `api/oauth/token.ts` (both
+      already correctly say the Clerk-grant flow "was retired"), `server/_shared/auth-session.ts`,
+      and `CHANGELOG.md` (a historical record, never edited).
+
+**Verification for the whole sweep**: `npm run typecheck:all` clean, `node scripts/
+enforce-sebuf-api-contract.mjs` clean, `npm run docs:check` clean, `npm run sync:locales:check`
+clean (24/24), `npm run sync:csp-hashes:check` clean, a real `npm run build` succeeded, `npm run
+test:data` re-run to the exact documented 40-failure baseline (one round briefly showed 41 — the
+dead-PWA-precache-test removal — fixed and re-verified clean), `npm run test:sidecar` unchanged (1
+pre-existing failure). `npx vitest run server/__tests__/` showed 44 failures across 6 files when run
+as a whole directory — **confirmed via `git stash` A/B to be a pre-existing cross-file
+test-isolation artifact, unrelated to this session**, since the exact same 44/6 reproduces on the
+unmodified baseline; the individual affected files all pass cleanly in isolation (the correct way
+to run them, per how earlier sessions verified too).
+
+## 🆕 New flagged items surfaced by the sweep — NOT fixed, out of scope for this pass
+
+- [ ] **`.github/scripts/audit-production-dependencies.mjs`'s `'pro-test/package-lock.json'`
+      baseline entry references a directory that no longer exists on disk** (`ls pro-test` →
+      no such file/directory) — unrelated to Clerk specifically; looks like a leftover from the
+      retired "Pro" test-build path (see `public/pro/` mentions in the same file's comments). If
+      this lockfile path is ever audited for real in CI, `readAuditReport`'s `copyFileSync` would
+      throw. Needs its own investigation of what actually calls this script with that path today.
+- [ ] **`src/utils/embedded-preview.ts`'s `IS_EMBEDDED_PREVIEW` mechanism may be entirely dead
+      code.** It exists solely to detect the `/pro` marketing page's live-preview iframe (marker:
+      `?embed=pro-preview`, embedder: `pro-test/src/App.tsx`) — but `pro-test/` doesn't exist on
+      disk (same missing directory as the item above) and the whole `/pro` marketing surface was
+      already retired. If confirmed unreachable, this touches 4 files (`embedded-preview.ts` +
+      3 consumers: `src/app/country-intel.ts`, `src/components/RegionalIntelligenceBoard.ts`,
+      `src/services/trade/index.ts`). Not investigated further — a real feature-removal decision,
+      not a Clerk-cleanup task; flagging for a future session.
+- [ ] **`src/bootstrap/sentry-init.ts` still has 4 dead Convex-specific `ignoreErrors` patterns**
+      (`ConvexError: CONFLICT`, `ConvexError: API_ACCESS_REQUIRED`, the `[CONVEX ...]` connection-
+      lost pattern, the Convex sync-protocol version-mismatch pattern) — same "unreachable now that
+      the SDK is gone" category as the Clerk patterns just removed from this same file, but Convex
+      is a separate retirement (see `retire-convex-saas-complete` memory) and out of scope here.
+- [ ] **`server/__tests__/gateway-summarize-article-security.test.ts`'s "active user API keys
+      reuse the resolved entitlement and use the principal bucket" test is a newly-confirmed
+      pre-existing failure** (expected 200, got 401) — confirmed via `git stash` A/B against the
+      unmodified baseline, unrelated to anything in this session. Add to the ⚪ reference list below
+      as #13 next time that list gets touched.
+
+---
+
 ## 🟡 Mechanical / low-risk — RESOLVED 2026-08-12, commit `dd63ae6`
 
 Verified via `npm run typecheck:all` (clean), `node scripts/enforce-sebuf-api-contract.mjs`
@@ -361,6 +503,9 @@ test` path.
 - [x] **The "PRO" internal-branding rename commit (fifth session, 92 files) pushed 2026-08-12** —
       `f233f7c` pushed to `origin/main` on operator's go-ahead at the start of the next session;
       `main`/`origin/main` confirmed in sync.
+- [ ] **The CSP-hash-tooling + settings-copy commit (`e8d59a7`) and the full Clerk-retirement-sweep
+      commit that follows it are NOT yet pushed** — confirm with operator before pushing, per
+      standing repo convention.
 
 ---
 
@@ -397,6 +542,14 @@ with zero other differences — not something to chase further, matches the same
     pre-existing 2026-08-12 via `git stash` A/B, re-confirmed again during the Pro-leftover pass;
     a port-binding test, plausibly flaky/environment-dependent rather than a real bug, but not
     individually investigated beyond the A/B.
+13. `server/__tests__/gateway-summarize-article-security.test.ts`'s "active user API keys reuse
+    the resolved entitlement and use the principal bucket" test (expects 200, gets 401) —
+    confirmed pre-existing 2026-08-12 via `git stash` A/B during the Clerk-retirement sweep; not
+    individually investigated beyond the A/B. Note: running the full `server/__tests__/` directory
+    together via `npx vitest run` also shows 44 failures across 6 files total (vs. 1 when files
+    run individually/in their normal small groups) — confirmed via the same A/B to be a
+    pre-existing cross-file test-isolation artifact unrelated to any session's changes, not
+    something to chase; run affected files individually to get the real signal.
 
 **Not pre-existing failures, but worth remembering — both were real regressions introduced and
 fixed within the same session/pass, not carried forward as open items:**

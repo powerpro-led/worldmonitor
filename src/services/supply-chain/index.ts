@@ -43,7 +43,7 @@ export type MultiSectorShock = MultiSectorCostShock;
 // premiumFetch for the whole client: 8 of 13 methods target paths in
 // PREMIUM_RPC_PATHS. The gateway runs validateApiKey with forceKey=true on
 // those paths *before* isCallerPremium; globalThis.fetch here would 401 for
-// signed-in browser pros (no Clerk bearer / no WM key injected) and the
+// signed-in browser pros (no Supabase bearer / no WM key injected) and the
 // generated client's try/catch would swallow the 401, returning the empty
 // fallbacks below. premiumFetch no-ops safely when no credentials are
 // available, so the 5 non-premium methods (shippingRates, chokepointStatus,

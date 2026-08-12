@@ -16,7 +16,7 @@ const RSS_PROXY_BASE = isDev
 // Widget agent proxy:
 //   dev       → Vite proxy /widget-agent → relay
 //   desktop   → relay directly (sidecar buffers arrayBuffer() which destroys SSE streaming)
-//   prod web  → /api/widget-agent (Vercel edge) → validates Clerk JWT or tester keys
+//   prod web  → /api/widget-agent (Vercel edge) → validates Supabase JWT or tester keys
 //               then proxies SSE to relay with real server-side keys
 const WIDGET_RELAY_BASE = 'https://proxy.worldmonitor.app';
 export function widgetAgentUrl(): string {

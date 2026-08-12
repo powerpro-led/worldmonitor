@@ -1,7 +1,7 @@
 /**
  * POST /api/slack/oauth/start
  *
- * Authenticated (Clerk JWT). Generates a one-time CSRF state token, stores
+ * Authenticated (Supabase JWT). Generates a one-time CSRF state token, stores
  * userId in Upstash keyed by state (TTL 10 min), and returns the Slack
  * OAuth authorize URL.
  *

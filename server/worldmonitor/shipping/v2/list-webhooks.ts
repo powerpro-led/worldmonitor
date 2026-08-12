@@ -21,11 +21,11 @@ export async function listWebhooks(
   ctx: ServerContext,
   _req: ListWebhooksRequest,
 ): Promise<ListWebhooksResponse> {
-  // Without forceKey, Clerk-authenticated pro callers reach this handler with
+  // Without forceKey, Supabase-authenticated pro callers reach this handler with
   // no API key, callerFingerprint() returns the 'anon' fallback, and the
   // ownerTag !== ownerHash defense-in-depth below collapses because both
   // sides equal 'anon' — exposing every 'anon'-bucket tenant's webhooks to
-  // every Clerk-session holder. See registerWebhook for full rationale.
+  // every Supabase-session holder. See registerWebhook for full rationale.
   const apiKeyResult = (await validateApiKey(ctx.request, { forceKey: true })) as {
     valid: boolean; required: boolean; error?: string;
   };

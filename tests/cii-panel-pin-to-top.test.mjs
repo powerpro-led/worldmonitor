@@ -134,7 +134,7 @@ const SCORES_5 = [
 
 function setupAnonymousFreeWithFlagOn() {
   _setDepsForTests({
-    getCurrentClerkUser: () => null,
+    getCurrentAuthUser: () => null,
     getEntitlementState: () => null,
     hasTier: () => false,
     featureFlagEnabled: true,
@@ -145,7 +145,7 @@ function setupAnonymousFreeWithFlagOn() {
 
 function setupAnonymousFreeWithFlagOff() {
   _setDepsForTests({
-    getCurrentClerkUser: () => null,
+    getCurrentAuthUser: () => null,
     getEntitlementState: () => null,
     hasTier: () => false,
     featureFlagEnabled: false,

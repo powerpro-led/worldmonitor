@@ -429,7 +429,7 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
   // Post-Stage-1 this regression is effectively BACK, via a different
   // mechanism: server/_shared/entitlement-check.ts's checkEntitlementDetailed
   // has an early-return short-circuit --
-  // `if (options.clerkRole === 'pro' && requiredTier <= 1) return { response:
+  // `if (options.sessionRole === 'pro' && requiredTier <= 1) return { response:
   // null, entitlements: null };` -- and server/auth-session.ts now gives
   // EVERY verified Supabase session `role: 'pro'` unconditionally (no more
   // plan/tier claim). Since every ENDPOINT_ENTITLEMENTS route in this
@@ -445,7 +445,7 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
   // the surviving "tier telemetry reflects a real resolved entitlement on
   // success" coverage -- removed along with the deleted API-keys feature;
   // see the NOTE(stage1-supabase-migration) block further down.)
-  it('bearer-JWT entitlement-gated success currently emits tier=0 (clerkRole=pro short-circuit skips getEntitlements)', async () => {
+  it('bearer-JWT entitlement-gated success currently emits tier=0 (sessionRole=pro short-circuit skips getEntitlements)', async () => {
     process.env.USAGE_TELEMETRY = '1';
     process.env.AXIOM_API_TOKEN = 'test-token';
     const spy = await installAxiomFetchSpy(ORIGINAL_FETCH);
@@ -476,7 +476,7 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
 
     assert.equal(spy.events.length, 1);
     const ev = spy.events[0]!;
-    assert.equal(ev.tier, 0, `expected the clerkRole=pro short-circuit to skip getEntitlements and leave tier at its default, got ${ev.tier}`);
+    assert.equal(ev.tier, 0, `expected the sessionRole=pro short-circuit to skip getEntitlements and leave tier at its default, got ${ev.tier}`);
     assert.equal(ev.customer_id, 'user_api');
     assert.equal(ev.auth_kind, 'clerk_jwt');
     assert.equal(ev.domain, 'market');

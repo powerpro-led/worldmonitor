@@ -195,7 +195,7 @@ function dispatchAlert(alert: BreakingAlert): void {
   if (!RELAY_GATES_READY) {
     void (async () => {
       const token = await getAuthToken();
-      if (!token) { console.warn('[breaking-news-alerts] no Clerk token, skipping notify'); return; }
+      if (!token) { console.warn('[breaking-news-alerts] no Supabase token, skipping notify'); return; }
       // source: rss (list-feed-digest) — RSS-origin producer; carries
       // `description` when the upstream NewsItem had a snippet so the relay
       // can render a context line without a secondary Redis lookup.

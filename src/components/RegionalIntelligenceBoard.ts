@@ -13,7 +13,7 @@ import { BOARD_REGIONS, DEFAULT_REGION_ID, buildBoardHtml, buildRegimeHistoryBlo
 import { IntelligenceServiceClient } from '@/services/generated-rpc-clients';
 
 // get-regional-snapshot + get-regime-history + get-regional-brief are
-// premium-gated. Plain globalThis.fetch skips Clerk/tester/api-key injection
+// premium-gated. Plain globalThis.fetch skips Supabase/tester/api-key injection
 // and returns 401 for pro users — premiumFetch is the correct fetcher here.
 const getIntelligenceClient = createLazyClient(() => new IntelligenceServiceClient(getRpcBaseUrl(), { fetch: premiumFetch }));
 
@@ -159,7 +159,7 @@ export class RegionalIntelligenceBoard extends Panel {
     }
 
     // Skip premium RPCs when this app instance is running inside the /pro
-    // marketing page's live-preview iframe — no Clerk session carries across
+    // marketing page's live-preview iframe — no Supabase session carries across
     // that boundary, so every call would 401. The breaker + renderEmpty path
     // already handles "no data" cases visually; short-circuiting here keeps
     // the /pro console and Sentry quiet from these expected failures.

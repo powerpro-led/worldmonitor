@@ -446,7 +446,7 @@ export function installWebApiRedirect(): void {
    *   1. Existing auth headers — left unchanged (API key users keep their flow)
    *   2. WORLDMONITOR_API_KEY from runtime config → X-WorldMonitor-Key
    *   3. Tester session (wm-pro-key / wm-widget-key HttpOnly cookie)
-   *   4. Clerk Pro session → Authorization: Bearer <token>
+   *   4. Supabase session → Authorization: Bearer <token>
    * Runs on every web deployment (with or without API base redirect).
    * Returns the original init unchanged for non-premium paths (zero overhead).
    */
@@ -473,7 +473,7 @@ export function installWebApiRedirect(): void {
       headers.set('X-WorldMonitor-Key', testerKey);
       return { ...withCredentials(init), headers };
     }
-    // Clerk Pro: inject Bearer token (fallback for users without a tester key)
+    // Supabase session: inject Bearer token (fallback for users without a tester key)
     const token = await getAuthToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);

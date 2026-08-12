@@ -15,7 +15,7 @@ export type {
 };
 
 // RunScenario + GetScenarioStatus are auth-gated — premiumFetch injects the
-// Clerk Bearer token / API key. ListScenarioTemplates is public but harmless
+// Supabase Bearer token / API key. ListScenarioTemplates is public but harmless
 // to route through the same fetch wrapper.
 const client = new ScenarioServiceClient(getRpcBaseUrl(), { fetch: premiumFetch });
 

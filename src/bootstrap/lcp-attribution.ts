@@ -215,7 +215,7 @@ function classifyCriticalResource(name: string, initiatorType: string): string {
   ) {
     return 'map-chunk';
   }
-  if (lower.includes('sentry') || lower.includes('clerk') || lower.includes('vercel') || lower.includes('analytics')) {
+  if (lower.includes('sentry') || lower.includes('vercel') || lower.includes('analytics')) {
     return 'secondary-startup';
   }
   if (initiatorType === 'script' || lower.endsWith('.js')) return 'script';

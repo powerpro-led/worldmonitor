@@ -769,26 +769,25 @@ describe('security header guardrails', () => {
     );
   });
 
-  it('CSP frame-src includes Clerk origin for auth modals', () => {
+  it('CSP frame-src excludes retired Clerk/Dodo origins', () => {
+    // Clerk and Dodo Payments are both fully retired (auth is now Supabase's
+    // in-DOM redirect flow, no hosted iframe modal; billing is gone entirely —
+    // see retire-convex-saas-complete). Guard against either leftover allowance
+    // resurfacing rather than requiring it, as this test previously did.
     const csp = getHeaderValue('Content-Security-Policy');
     const frameSrc = csp.match(/frame-src\s+([^;]+)/)?.[1] ?? '';
-    assert.ok(
-      frameSrc.includes('clerk.accounts.dev') || frameSrc.includes('clerk.worldmonitor.app'),
-      'CSP frame-src must include Clerk origin for sign-in modal'
-    );
+    assert.doesNotMatch(frameSrc, /clerk|dodopayments/, 'CSP frame-src must not allow retired Clerk/Dodo origins');
   });
 
-  it('docker/nginx CSP frame-src includes Clerk origin for auth modals', () => {
-    // Parity with the Vercel/index.html frame-src above. The sign-in modal itself
-    // renders in-DOM (no clerk-origin iframe today), so this is defense-in-depth
-    // for self-hosted deploys should Clerk reintroduce a handshake iframe — and it
-    // keeps the docker surface from silently drifting from the hosted one.
+  it('docker/nginx CSP frame-src excludes retired Clerk/Dodo origins', () => {
+    // Parity with the Vercel/index.html frame-src above.
     const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
     assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
     const frameSrc = nginxCsp.match(/frame-src\s+([^;]+)/)?.[1] ?? '';
-    assert.ok(
-      frameSrc.includes('clerk.accounts.dev') || frameSrc.includes('clerk.worldmonitor.app'),
-      'docker/nginx CSP frame-src must include Clerk origin for the self-hosted sign-in modal'
+    assert.doesNotMatch(
+      frameSrc,
+      /clerk|dodopayments/,
+      'docker/nginx CSP frame-src must not allow retired Clerk/Dodo origins'
     );
   });
 

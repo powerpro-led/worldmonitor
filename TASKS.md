@@ -115,7 +115,52 @@ regression hit and fixed mid-pass — see the 🆕 section below ("CSP hash trip
 
 ---
 
-## 🆕 New findings from the 2026-08-12 fix passes (not yet actioned)
+## ✅ Resolved 2026-08-12 (later same-day session) — 3 of the 5 🆕 items below
+
+Worked in the "ready to just do" order from the session's own triage: push blocked (see
+housekeeping note), then these 3 in sequence. Verified throughout via `npm run typecheck:all`
+(clean), `node scripts/enforce-sebuf-api-contract.mjs` (clean — 130 files/96 manifest entries),
+`npm run test:data` (40 failures, byte-identical set to the pre-existing baseline: #1-9, #11, #12
+below), `npm run test:sidecar` (1 failure, #12, unchanged).
+
+- [x] **CSP `frame-src` Clerk/Dodo cleanup**, all 3 hand-synced files (`vercel.json`,
+      `docker/nginx-security-headers.conf`, `docker/nginx.conf`): removed `*.clerk.accounts.dev`,
+      `clerk.worldmonitor.app`, `*.dodopayments.com`, `checkout.dodopayments.com`, `test.checkout.
+      dodopayments.com`, `*.hs.dodopayments.com`, `*.custom.hs.dodopayments.com`. Also found+fixed
+      2 stale test assertions in `tests/deploy-config.test.mjs` that *required* Clerk's presence in
+      frame-src "for auth modals... should Clerk reintroduce a handshake iframe" — confirmed via
+      `src/services/auth-provider.ts`'s own header comment that Supabase's redirect flow has no
+      iframe modal at all, so the defense-in-depth reasoning no longer applies; flipped both to
+      `assert.doesNotMatch(frameSrc, /clerk|dodopayments/)`, matching the existing `/embed` route's
+      same-style guard at line ~937. **Not touched, separate scope**: `vercel.json`'s
+      `Permissions-Policy` `payment=(...)` directive still lists `checkout.dodopayments.com` /
+      `test.checkout.dodopayments.com` — a different header, not flagged by the original item,
+      has its own hardcoded-list test (`tests/deploy-config.test.mjs:604`) that would need updating
+      too if this gets picked up later.
+
+- [x] **`docs:check`'s 11 pre-existing errors** — all fixed. `ARCHITECTURE.md`'s CI/CD table got
+      2 new rows (`nitric-deploy.yml`, `publish-cli.yml`, both manual-triggered per their own
+      header comments). The other 9 were numeric drift resynced by hand (no `--write`/`--fix` mode
+      exists on `scripts/docs-stats.mjs`, confirmed by reading it): `README.md` protos 281→278,
+      services 35→34; `AGENTS.md` + `CONTRIBUTING.md` component files 167→161 (3 occurrences
+      combined); `AGENTS.md` service modules 203→177; `CONTRIBUTING.md` domains 36→35, server
+      handler domains 35→34; `SECURITY.md` domain APIs 35→34. `npm run docs:check` now prints
+      "OK — 23 doc claims match code."
+
+- [x] **2 stale "pending Clerk migration" reasons in `api/api-route-exceptions.json`** —
+      `api/user-prefs.ts` and `api/notification-channels.ts` reworded to reference their sibling
+      endpoints instead of Clerk, matching `api/followed-countries.ts`'s existing phrasing (the
+      pattern that was deliberately used to avoid this exact staleness when that entry was added).
+      Verified via `node scripts/enforce-sebuf-api-contract.mjs`.
+
+- **Not done, still stale, found while touching this file**: `api/latest-brief.ts`'s reason
+  ("Auth-gated and Clerk-coupled...") and `api/notify.ts`'s reason ("validates Clerk bearer
+  auth...") still say Clerk by name — same category as the 2 fixed above but outside this item's
+  original 2-file scope; add to the next pass.
+
+---
+
+## 🆕 New findings from the 2026-08-12 fix passes (2 still open)
 
 - [ ] **"PRO" is used as a pervasive internal badge/naming convention across ~60 files** — found
       via a final repo-wide grep while closing out the item above, and **deliberately NOT
@@ -144,34 +189,8 @@ regression hit and fixed mid-pass — see the 🆕 section below ("CSP hash trip
       touches content inside a `<script>` tag, immediately run `npx tsx --test tests/deploy-
       config.test.mjs` before considering the change done — don't wait for the full suite.
 
-- [ ] **CSP `frame-src` in all 3 files above (plus `vercel.json`'s allowlist) still allows iframe
-      embeds from Clerk (`*.clerk.accounts.dev`, `clerk.worldmonitor.app`) and Dodo Payments
-      (`*.dodopayments.com`, `checkout.dodopayments.com`, `test.checkout.dodopayments.com`,
-      `*.hs.dodopayments.com`, `*.custom.hs.dodopayments.com`) domains** — both fully retired per
-      [[retire-convex-saas-complete]]. Found while fixing the CSP hash issue above; not fixed —
-      removing CSP allowances is generally safe but security-header changes deserve their own
-      focused pass with explicit verification, not a rushed addition to an unrelated fix. Same
-      3-file-sync consideration applies.
-
-- [ ] **`npm run docs:check` already fails with 11 pre-existing errors** — confirmed via `git
-      stash` A/B unrelated to anything in this session. 2 are CI-workflow-table gaps
-      (`nitric-deploy.yml` and `publish-cli.yml` exist but aren't listed in `ARCHITECTURE.md`'s
-      table — the opposite direction of the `convex-deploy.yml` staleness fixed in the mechanical
-      pass below, i.e. this checker only catches *missing* entries, not *stale/removed* ones,
-      which is how `convex-deploy.yml` survived undetected for as long as it did). The other 9 are
-      numeric capability-count drift across `README.md`, `AGENTS.md`, `CONTRIBUTING.md`,
-      `SECURITY.md` (protos, services, component files, service modules — doc says one number,
-      code says a lower one in every case, consistent with recent deletions shrinking real
-      counts). Fix is mechanical: add the 2 workflow rows, then run `npm run docs:stats` to resync
-      the numbers — not done here, new scope beyond the original TASKS.md list.
-
-- [ ] **2 more `api-route-exceptions.json` entries carry the same stale "pending Clerk migration"
-      reason text** as the one originally flagged in `fetch-resilience-score/SKILL.md` (now
-      fixed): `api/user-prefs.ts` ("part of user/v1 service work pending Clerk migration") and
-      `api/notification-channels.ts` ("Deferred until Clerk migration settles"). Clerk is fully
-      gone. Not touched — the `api/followed-countries.ts` entry added in the mechanical pass below
-      was deliberately worded to avoid repeating this (references the sibling endpoints instead
-      of Clerk).
+~~CSP `frame-src` Clerk/Dodo cleanup~~, ~~`docs:check`'s 11 errors~~, and ~~the 2
+`api-route-exceptions.json` Clerk-reason entries~~ — all **FIXED**, see the ✅ section above.
 
 - [ ] `src/settings-main.ts`'s "License / API Key" section (the one that *survived* the "register"
       section removal) still describes "API Starter and API Business subscribers create this key

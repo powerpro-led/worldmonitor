@@ -584,14 +584,14 @@
     {
       "path": "api/notification-channels.ts",
       "category": "deferred",
-      "reason": "Lists / configures user notification channels. Auth-gated; migrating requires user/v1 or notifications/v1 service. Deferred until Clerk migration settles.",
+      "reason": "Lists / configures user notification channels. Auth-gated, same shape as api/user-prefs.ts and api/followed-countries.ts; deferred until those sibling user/v1 endpoints migrate to sebuf together.",
       "owner": "@SebastienMelki",
       "removal_issue": "TBD"
     },
     {
       "path": "api/user-prefs.ts",
       "category": "deferred",
-      "reason": "Reads / writes user dashboard preferences. Auth-gated; part of user/v1 service work pending Clerk migration.",
+      "reason": "Reads / writes user dashboard preferences. Auth-gated, same shape as api/notification-channels.ts and api/followed-countries.ts; deferred until those sibling user/v1 endpoints migrate to sebuf together.",
       "owner": "@SebastienMelki",
       "removal_issue": "TBD"
     },

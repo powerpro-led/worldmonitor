@@ -371,6 +371,8 @@ Runs before every `git push`:
 | `build-desktop.yml` | Release tag, push, manual | Multi-platform Tauri build, code signing (macOS), AppImage library stripping (Linux), smoke test |
 | `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
 | `test-linux-app.yml` | Manual | Linux AppImage build + headless smoke test with screenshot verification |
+| `nitric-deploy.yml` | Manual | Deploys the backend to GCP (Nitric) — manual-only by design, so unrelated pushes to main never trigger a live infra deploy during this dev phase |
+| `publish-cli.yml` | Push (`cli-v*` tag), manual | Publishes the `worldmonitor` npm package from `cli/` via npm OIDC trusted publishing (dry-run option on manual runs) |
 
 **Source files**: `.github/workflows/`, `.husky/pre-push`. The workflow list is CI-checked against `.github/workflows/*.yml` by `npm run docs:check` — a new workflow file must be added to this table.
 

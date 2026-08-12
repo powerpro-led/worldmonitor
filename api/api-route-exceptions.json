@@ -665,6 +665,20 @@
       "reason": "Migrating to analyst/v1.ListAgentSkills in commit 9 of #3207. Blocked on sebuf#150.",
       "owner": "@SebastienMelki",
       "removal_issue": "#3207"
+    },
+    {
+      "path": "api/followed-countries.ts",
+      "category": "deferred",
+      "reason": "Reads / writes the signed-in user's country watchlist (list/follow/unfollow/merge). Auth-gated, same shape as api/user-prefs.ts and api/notification-channels.ts; deferred until those sibling user/v1 endpoints migrate to sebuf together.",
+      "owner": "@SebastienMelki",
+      "removal_issue": "TBD"
+    },
+    {
+      "path": "api/telegram/pair-callback.ts",
+      "category": "external-protocol",
+      "reason": "Telegram Bot API webhook target for the /start <token> pairing flow — request shape (Telegram's Update JSON) and the always-200 response contract (a non-200 triggers a Telegram retry storm) are dictated by the Telegram Bot API, not something we can redefine as proto.",
+      "owner": "@SebastienMelki",
+      "removal_issue": null
     }
   ]
 }

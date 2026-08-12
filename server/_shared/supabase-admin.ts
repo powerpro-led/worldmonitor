@@ -18,7 +18,13 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-let _client: SupabaseClient | null = null;
+// Pinned to the 'worldmonitor' db schema (see `db: { schema: 'worldmonitor' }`
+// below) -- the default `SupabaseClient` generic assumes 'public', which
+// createClient's return type no longer structurally matches once a non-default
+// schema is passed.
+type WorldMonitorSupabaseClient = SupabaseClient<any, 'worldmonitor'>;
+
+let _client: WorldMonitorSupabaseClient | null = null;
 let _didWarnMissingConfig = false;
 
 /**
@@ -28,7 +34,7 @@ let _didWarnMissingConfig = false;
  * fail closed/soft per their own contract -- this module does not decide
  * that policy.
  */
-export function getSupabaseAdmin(): SupabaseClient | null {
+export function getSupabaseAdmin(): WorldMonitorSupabaseClient | null {
   if (_client) return _client;
 
   const url = process.env.SUPABASE_URL;

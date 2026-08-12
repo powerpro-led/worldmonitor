@@ -1,10 +1,8 @@
 # Architecture
 
-> **Capability counts** (map layers, services, protos, locales, CI workflows, freshness sources) are derived from code and CI-verified by `npm run docs:check` (`scripts/docs-stats.mjs`, source of truth `docs/generated/stats.json`). Do not hand-edit those numbers — change the code, run `npm run docs:stats`.
+> **Capability counts** (map layers, services, protos, locales, CI workflows, freshness sources) are derived from code and CI-verified by `npm run docs:check` (`scripts/docs-stats.mjs`, source of truth `scripts/generated/stats.json`). Do not hand-edit those numbers — change the code, run `npm run docs:stats`.
 >
 > **Ownership rule**: When deployment topology, API surface, desktop runtime, or bootstrap keys change, this document must be updated in the same PR.
-
-> **Design philosophy**: For the "why" behind architectural decisions, intelligence tradecraft, and algorithmic choices, see [Design Philosophy](docs/architecture.mdx).
 
 World Monitor is a real-time global intelligence dashboard built as a TypeScript single-page application. It aggregates data from dozens of external sources covering geopolitics, military activity, financial markets, cyber threats, climate events, maritime tracking, and aviation into a unified operational picture rendered through an interactive map and a grid of specialized panels.
 
@@ -62,12 +60,10 @@ World Monitor is a real-time global intelligence dashboard built as a TypeScript
 | AIS Relay | Railway | WebSocket proxy (AIS stream), seed loops (market, aviation, GPSJAM, risk scores, UCDP, positive events), RSS proxy, OREF polling |
 | Consumer Prices | Railway | Containerized price scrapers (Playwright, per-country baskets) + Redis publisher for the consumer-prices dataset |
 | Redis | Upstash | Cache layer with stampede protection, seed-meta freshness tracking, rate limiting |
-| Convex | Convex Cloud | Contact form submissions, waitlist registrations |
-| Documentation | Mintlify | Public docs, proxied through Vercel at `/docs` |
 | Desktop App | Tauri 2.x | macOS (ARM64, x64), Windows (x64), Linux (x64, ARM64) with bundled Node.js sidecar |
 | Container Image | GHCR | Multi-arch Docker image (nginx serving built SPA, proxies API to upstream) |
 
-**Source files**: `vercel.json`, `docker/Dockerfile`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`, `workers/api-cors-preflight/wrangler.toml`, `convex/schema.ts`, `src-tauri/tauri.conf.json`
+**Source files**: `vercel.json`, `docker/Dockerfile`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`, `workers/api-cors-preflight/wrangler.toml`, `src-tauri/tauri.conf.json`
 
 **Cloudflare zone config (dashboard-managed, NOT in this repo):** the apex `worldmonitor.app` → `www` 301 is a Cloudflare Dynamic Redirect rule ("apex to www (exclude agent-discoverable paths)") whose exemption list is load-bearing: `/.well-known/*`, `/robots.txt`, `/security.txt`, `/mcp`, `/mcp/*`, and `/oauth/*` are served on the apex, never redirected. Dropping the `/mcp*` exemptions breaks every apex-URL MCP client; dropping `/oauth/*` re-breaks OAuth dynamic client registration — a redirected POST becomes a GET and dies with 405 (issue #4938). When editing the rule, mind expression precedence: `and` binds tighter than `or`, so a new exemption must be added as its own `or` term **inside** the `not (…)` group (appending `and not …` after the last term is a silent no-op). `mcp-live-smoke.yml` probes the MCP/OAuth members of this list (`/mcp`, `/.well-known/oauth-authorization-server`, and the OAuth endpoints it declares) every 6 hours and fails on the redirect fingerprint; the `robots.txt` / `security.txt` exemptions are crawler-facing and have no automated probe.
 
@@ -182,7 +178,6 @@ proto/ definitions
     ↓ buf generate
 src/generated/client/   (TypeScript RPC client stubs)
 src/generated/server/   (TypeScript server message types)
-docs/api/               (OpenAPI v3 specs)
 ```
 
 Service definitions use `(sebuf.http.config)` annotations to map RPCs to HTTP verbs and paths. GET fields require `(sebuf.http.query)` annotation. `repeated string` fields need `parseStringArray()` in the handler. `int64` maps to `string` in TypeScript.
@@ -348,8 +343,7 @@ Runs before every `git push`:
 3. Edge function esbuild bundle check
 4. Edge function import guardrail test
 5. Markdown lint
-6. MDX lint (Mintlify compatibility)
-7. Version sync check
+6. Version sync check
 
 **Source files**: `tests/`, `e2e/`, `playwright.config.ts`, `.husky/pre-push`
 
@@ -373,7 +367,6 @@ Runs before every `git push`:
 | `analytics-collector-monitor.yml` | 15-minute cron, manual | Probes the self-hosted Umami collector directly (heartbeat, tracker script, ingest route) and fails when events are being dropped — Railway reported a green deployment through the 4-day #5565 blackout, so deployment status is not trusted here |
 | `contributor-trust.yml` | PR | Gates untrusted first-time-contributor runs |
 | `deploy-gate.yml` | After Test/Typecheck/Security Audit complete | Aggregates required smoke-gate statuses onto the head SHA for branch protection |
-| `convex-deploy.yml` | Push to main, manual | Deploys Convex backend functions |
 | `deploy-worker.yml` | Push to main (worker paths), manual | Deploys the `api-cors-preflight` Cloudflare Worker |
 | `build-desktop.yml` | Release tag, push, manual | Multi-platform Tauri build, code signing (macOS), AppImage library stripping (Linux), smoke test |
 | `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
@@ -392,12 +385,10 @@ Runs before every `git push`:
 │   └── <domain>/           Domain endpoints (aviation/, climate/, conflict/, ...)
 ├── cli/                    Official `worldmonitor` npm CLI (zero-dep ESM, MCP-first; published via cli-v* tag)
 ├── consumer-prices-core/   Consumer-price collection service (Playwright scrapers, per-country baskets; Railway/Docker)
-├── convex/                 Convex backend (contact form, waitlist)
 ├── data/                   Static data (telegram channels, OREF threat translations, gamma irradiators)
 ├── deploy/                 Deployment configs (nginx)
 ├── docker/                 Dockerfile + nginx config for Railway
 ├── e2e/                    Playwright E2E specs
-├── pro-test/               Standalone Pro QA app (separate package)
 ├── proto/                  Protobuf service definitions (sebuf framework)
 ├── public/                 Static assets served as-is (favicons, textures, .well-known agent-skills/MCP)
 ├── scripts/                Seed scripts, build helpers, relay service

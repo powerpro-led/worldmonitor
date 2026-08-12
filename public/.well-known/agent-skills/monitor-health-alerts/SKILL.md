@@ -10,7 +10,7 @@ Use this skill when the user asks whether there are active disease outbreaks, pu
 
 ## Authentication
 
-Server-to-server callers (agents, scripts, SDKs) MUST present an API key in the `X-WorldMonitor-Key` header. `Authorization: Bearer ...` is for MCP/OAuth or Clerk JWTs - **not** raw API keys.
+Server-to-server callers (agents, scripts, SDKs) MUST present an API key in the `X-WorldMonitor-Key` header. `Authorization: Bearer ...` is for MCP/OAuth - **not** raw API keys.
 
 ```
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567

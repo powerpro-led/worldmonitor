@@ -257,9 +257,10 @@ describe('crawlable content corpus deployment contracts', () => {
     }
   });
 
-  it('keeps robots.txt advertising root and Mintlify docs sitemaps', () => {
+  it('keeps robots.txt advertising the root sitemap', () => {
     assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/sitemap\.xml$/m);
-    assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/docs\/sitemap\.xml$/m);
+    // blog-site and docs/ (Mintlify) were both retired for this private fork —
+    // their Sitemap: lines went with them. Nothing left to guard here beyond root.
   });
 
   it('keeps a generated-content marker in the root sitemap', () => {

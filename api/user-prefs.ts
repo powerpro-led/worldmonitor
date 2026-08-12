@@ -143,18 +143,11 @@ export default async function handler(
     if (scoped.degraded) {
       console.warn('[user-prefs] POST write rate limit unavailable; failing open');
     } else if (!scoped.allowed) {
-      const retryAfter = Math.max(1, Math.ceil((scoped.reset - Date.now()) / 1000));
       console.warn('[user-prefs] POST write rate limit exceeded');
       return jsonResponse(
         { error: 'RATE_LIMITED' },
         429,
-        {
-          ...cors,
-          'X-RateLimit-Limit': String(scoped.limit),
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': String(scoped.reset),
-          'Retry-After': String(retryAfter),
-        },
+        rateLimitHeaders(cors, scoped.limit, scoped.reset),
       );
     }
   }

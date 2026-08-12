@@ -15,9 +15,8 @@
  * key validity window of no more than 24h. `nbf`/`exp` are computed per request
  * as a rolling 24h window so the published key never reads as expired; a static
  * file would freeze a validity window that eventually lapses. The public key
- * `x` is fixed — its private half is held out-of-repo (operator vault + Vercel
- * env), mirroring the Ed25519 key already published at
- * /.well-known/mcp-registry-auth. Only the validity window rolls.
+ * `x` is fixed — its private half is held out-of-repo (operator vault +
+ * Vercel env). Only the validity window rolls.
  *
  * `kid` is derived from `x` at request time (RFC 8037 App. A.3 thumbprint) so
  * the advertised key id can never drift from the key material it names.
@@ -32,9 +31,8 @@ export const config = { runtime: 'edge' };
 
 // Ed25519 public key, base64url without padding (43 chars = 32 bytes). The
 // private half lives out-of-repo (operator vault + Vercel env
-// WEB_BOT_AUTH_ED25519_PRIVATE_KEY), exactly like the Ed25519 key published at
-// /.well-known/mcp-registry-auth. Rotating the key = regenerate the pair and
-// replace this constant; `kid` re-derives from it automatically.
+// WEB_BOT_AUTH_ED25519_PRIVATE_KEY). Rotating the key = regenerate the pair
+// and replace this constant; `kid` re-derives from it automatically.
 const ED25519_PUBLIC_KEY_X = 'haxeg7usB7Giri_2DP_UNE0LcFhrPd1IkNZs9RDI0k4';
 
 // Backdate `nbf` an hour for verifier clock skew; `exp` is `nbf` + a 24h TTL, so

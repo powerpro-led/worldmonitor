@@ -10,7 +10,7 @@ Use this skill when the user asks about protests, riots, strikes, demonstrations
 
 ## Authentication
 
-No API key is required for this public RPC. If your agent already sends a World Monitor key for quota attribution or a shared integration wrapper, use the `X-WorldMonitor-Key` header. `Authorization: Bearer ...` is for MCP/OAuth or Clerk JWTs - **not** raw API keys.
+No API key is required for this public RPC. If your agent already sends a World Monitor key for quota attribution or a shared integration wrapper, use the `X-WorldMonitor-Key` header. `Authorization: Bearer ...` is for MCP/OAuth - **not** raw API keys.
 
 ```
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567

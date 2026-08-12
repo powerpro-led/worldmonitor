@@ -10,7 +10,7 @@ Use this skill when the user asks how "resilient" a country is, or wants the num
 
 ## Authentication — required
 
-`/api/resilience/v1/get-resilience-score` is Pro-tier. Agents and other server-to-server callers MUST present an API key in the `X-WorldMonitor-Key` header. `Authorization: Bearer …` is for MCP/OAuth or Clerk JWTs — **not** raw API keys.
+`/api/resilience/v1/get-resilience-score` is Pro-tier. Agents and other server-to-server callers MUST present an API key in the `X-WorldMonitor-Key` header. `Authorization: Bearer …` is for MCP/OAuth — **not** raw API keys.
 
 ```
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567

@@ -14,6 +14,28 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## ⚠️ READ FIRST — never `rm -rf dist/` on this machine without checking who's using it
+
+**2026-08-12: a `dist/` cleanup broke the operator's live, running VS Code extension.** `dist/` is
+gitignored and looks like disposable build output, but on this dev machine the VS Code extension's
+local sidecar (`src-tauri/sidecar/local-api-server.mjs`, spawned by `vscode-extension/src/
+sidecarProcess.ts`) serves the *actual live dashboard* straight from `<repo root>/dist/` over real
+HTTP (see `local-api-server.mjs`'s `staticDir` resolution comment — this is intentional, the
+mechanism [[local-pipeline-and-vscode-dagu-plan]] documents as DONE). Deleting `dist/` after a
+diagnostic `npx vite build` (done here to verify the checkout-chunk-bug fix against a real build,
+not a no-op `npm test`) made the sidecar 404 every request, which the operator saw as `{"error":
+"Not found"}` in the extension's live panel. Fixed by running a full `npm run build` to regenerate
+`dist/` — confirmed via `curl http://127.0.0.1:<sidecar-port>/dashboard.html?embed=vscode`
+returning real HTML again; the extension self-recovers on next load/reload, no restart needed.
+**Before deleting any build output directory on this machine, check `ps aux | grep local-api-
+server` first** — if a sidecar is running, its `staticDir`/`apiDir` may point straight at what
+you're about to delete. Side effect to know about: a full `npm run build` also regenerates
+`public/sitemap.xml`'s content-corpus `<lastmod>` block (real file mtimes, auto-generated,
+"do not edit by hand") — reverted that unrelated diff before this handoff since it wasn't an
+intentional content update, but expect it to reappear if `npm run build` runs again.
+
+---
+
 ## ✅ Resolved 2026-08-12 — the "Upgrade to Pro" leftover (commit `d580d1a`)
 
 **The underlying question turned out to already be answered by the codebase itself, in writing,

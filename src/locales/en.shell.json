@@ -811,7 +811,7 @@
         "apiKey": {
           "title": "License / API Key",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
-          "description": "API Starter and API Business subscribers create this key on the web dashboard under Settings → API Keys. If a full key is lost, revoke it and create a replacement."
+          "description": "API keys are operator-issued, no self-service enrollment. Paste the key you were given here. If a full key is lost, ask the operator to revoke it and issue a replacement."
         }
       },
       "freePanelLimit": "Free plan: max {{max}} panels. Sign in for unlimited."

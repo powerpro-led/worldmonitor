@@ -244,30 +244,46 @@ locales.** 92 files changed. Scope grew substantially beyond a text rename once 
       `api/widget-agent.ts`'s "PRO-only deployments" note, which is describing the
       `PRO_WIDGET_KEY` env var by name, not the entitlement concept).
 
-- [ ] **CSP `script-src` hash allowlist is hand-maintained in 3 separate files that must stay in
-      byte-identical sync**: `vercel.json`, `docker/nginx-security-headers.conf`,
-      `docker/nginx.conf`. Editing any inline `<script>` in `index.html` (including JSON-LD
-      `<script type="application/ld+json">` blocks — not just executable scripts) changes that
-      script's SHA-256 hash, which must be updated in **all three** files or `tests/deploy-
-      config.test.mjs` fails (caught this exact regression during the Pro-leftover fix pass —
-      editing `index.html`'s JSON-LD `offers` array changed 2 hashes; found and fixed all 3
-      copies only because the test suite has 3 separate assertions, one per file-pair, that
-      caught each one in turn). **Lesson for next time**: after any `index.html` edit that
-      touches content inside a `<script>` tag, immediately run `npx tsx --test tests/deploy-
-      config.test.mjs` before considering the change done — don't wait for the full suite.
+- [x] **CSP `script-src` hash allowlist triple-maintenance — RESOLVED 2026-08-12 (new session).**
+      Was: hand-maintained in 3 separate files that must stay in byte-identical sync (`vercel.json`,
+      `docker/nginx-security-headers.conf`, `docker/nginx.conf`) — editing any inline `<script>` in
+      `index.html` (including JSON-LD blocks) changes that script's SHA-256 hash and silently
+      desyncs all 3 until `tests/deploy-config.test.mjs` catches it after the fact. Fixed by adding
+      `scripts/sync-csp-script-hashes.mjs` (+ `npm run sync:csp-hashes` / `sync:csp-hashes:check`,
+      same `--check` convention as `sync:locales`/`version:sync`): derives the hash set from the
+      same 4 HTML entry points and extraction logic `tests/deploy-config.test.mjs` uses, then writes
+      it into all 3 files, preserving each file's existing token order and only touching a file
+      whose hash *set* actually differs (true no-op — byte-identical output — when nothing
+      changed, verified live: ran `--check` against the untouched repo, got a clean pass with 0
+      files rewritten). Sanity-tested the drift-detect-and-fix path against scratch copies with one
+      hash deliberately corrupted: correctly flagged only the corrupted file, fixed it back to
+      byte-identical with the real repo's copy, left the other 2 untouched files alone. Verified via
+      `npx tsx --test tests/deploy-config.test.mjs` (99/99 pass). Doesn't remove the underlying
+      3-file requirement (still real infra, `docker/nginx.conf`'s hashes live in only one of its 3
+      `location` blocks by design) but removes the manual-edit failure mode entirely — the lesson
+      below is now "run the sync script", not "hand-edit 3 files and hope".
 
 ~~CSP `frame-src` Clerk/Dodo cleanup~~, ~~`docs:check`'s 11 errors~~, and ~~the 2
 `api-route-exceptions.json` Clerk-reason entries~~ — all **FIXED**, see the ✅ section above.
 
-- [ ] `src/settings-main.ts`'s "License / API Key" section (the one that *survived* the "register"
-      section removal) still describes "API Starter and API Business subscribers create this key
-      on the web dashboard under Settings → API Keys" — also describes a dead self-service/billing
-      flow, same category as the section that was removed, but this text is translated across 26
-      locale files and wasn't in scope of the 3 questions asked this session. Flagging, not fixing
-      — would need either a real 26-locale translation pass or an English-only fix that leaves the
-      other 25 locales inconsistent (the same tradeoff already declined for the removed
-      "register" section, resolved there by deletion instead — deletion isn't available here since
-      the manual-key-paste feature itself is real and still needed).
+- [x] **`src/settings-main.ts`'s "License / API Key" description — RESOLVED 2026-08-12 (new
+      session), English-only fix, operator explicitly chose this over a full 26-locale pass.**
+      `src/locales/en.json`'s `modals.settingsWindow.worldMonitor.apiKey.description` rewritten from
+      "API Starter and API Business subscribers create this key on the web dashboard under Settings
+      → API Keys..." (dead self-service/billing flow) to "API keys are operator-issued, no
+      self-service enrollment. Paste the key you were given here...", matching the phrasing already
+      used in `cli/README.md` and `api/a2a.ts`'s agent-facing note for the same real flow. The other
+      25 locale files' translations of the old copy are now stale (same accepted tradeoff as the
+      removed "register" section) — `npm run sync:locales:check` still passes since it only checks
+      key structure, not value freshness, so this doesn't fail CI; a real fix would need translating
+      this one string into 25 languages, not done. **Caught a real regression while verifying**:
+      this key also lives in `src/locales/en.shell.json` (the first-paint shell bundle,
+      deliberately excluded from `sync-locale-keys.mjs`'s scope per the earlier "PRO" rename
+      session's own note above) and must stay byte-identical with `en.json` per
+      `tests/i18n-english-shell.test.mjs` — editing only `en.json` broke that test; fixed by
+      applying the identical text to `en.shell.json` too. Verified via `npx tsx --test tests/i18n-
+      english-shell.test.mjs` (5/5 pass) and a full `npm run test:data` re-run (40 failures, exact
+      category match to the documented pre-existing baseline, confirmed no new regressions).
 
 ---
 
@@ -342,8 +358,9 @@ test` path.
 
 - [x] **First 7 commits (`7a4308e`..`6ea13d7`) pushed to `origin/main` 2026-08-12** — confirmed
       `main`/`origin/main` in sync after a transient HTTP/2 framing error resolved on retry.
-- [ ] **The "PRO" internal-branding rename commit (fifth session, 92 files) is NOT yet pushed** —
-      confirm with operator before pushing, per repo convention.
+- [x] **The "PRO" internal-branding rename commit (fifth session, 92 files) pushed 2026-08-12** —
+      `f233f7c` pushed to `origin/main` on operator's go-ahead at the start of the next session;
+      `main`/`origin/main` confirmed in sync.
 
 ---
 

@@ -24,7 +24,6 @@ COPY . .
 RUN node docker/build-handlers.mjs
 
 # Build the crawlable static corpus and Vite frontend (outputs to dist/)
-# Skip blog build — blog-site has its own deps not installed here
 RUN npm run build:crawlable-corpus && npm run build:content-corpus && npx tsc && npx vite build
 
 # ── Stage 2: Runtime dependencies ───────────────────────────────────────────

@@ -28,7 +28,6 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
 
 import { BASE_URL } from './helpers/mcp-pro-deps.mjs';
 
@@ -75,12 +74,18 @@ function makeReq(body) {
   });
 }
 
-function loadServerCardCapabilities() {
-  const path = new URL('../public/.well-known/mcp/server-card.json', import.meta.url);
-  const raw = readFileSync(path, 'utf8');
-  const card = JSON.parse(raw);
+// The server card used to be a hand-maintained static file
+// (public/.well-known/mcp/server-card.json); it's now generated in-process
+// on every /.well-known/mcp GET (see buildServerCardPayload in
+// api/mcp/handler.ts), so this fetches the live-generated card instead.
+async function loadServerCardCapabilities(handlerFn) {
+  const res = await handlerFn(new Request('https://worldmonitor.app/.well-known/mcp', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  }));
+  const card = JSON.parse(await res.text());
   assert.ok(card.capabilities && typeof card.capabilities === 'object',
-    'server-card.json must declare a capabilities object');
+    'generated server card must declare a capabilities object');
   return card.capabilities;
 }
 
@@ -118,7 +123,7 @@ describe('api/mcp.ts — capability parity (advertised AND non-empty)', () => {
     const mod = await import(`../api/mcp.ts?t=${Date.now()}-cap-parity`);
     handler = mod.default;
     registries = mod.__testing__;
-    cardCaps = loadServerCardCapabilities();
+    cardCaps = await loadServerCardCapabilities(handler);
   });
 
   afterEach(() => {
@@ -238,72 +243,29 @@ describe('api/mcp.ts — capability parity (advertised AND non-empty)', () => {
     );
   });
 
-  it('server-card daily-quota notes mirror metadata exemptions', () => {
-    const card = JSON.parse(
-      readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8'),
-    );
-    assert.deepEqual(
-      card.rateLimits?.dailyByPlan,
-      {
-        pro: 50,
-        apiStarter: null,
-        apiBusiness: null,
-        enterprise: null,
-      },
-      'server-card must not advertise API-tier MCP daily caps that the handler does not enforce',
-    );
-    const notes = card.rateLimits?.notes;
-    assert.equal(typeof notes, 'string', 'server-card rateLimits.notes must be a string');
-    assert.match(notes, /Pro\/OAuth contexts only/i, 'notes must scope the hard daily reservation to Pro/OAuth contexts');
-    assert.match(notes, /API-key .* do not use this MCP daily reservation path/i,
-      'notes must disclose that env_key/API-key MCP callers do not use the daily reservation path');
-    assert.doesNotMatch(notes, /1,000|1000|10,000|10000/,
-      'notes must not publish API Starter/Business MCP daily caps that are not enforced');
-    for (const method of [
-      'initialize',
-      'tools/list',
-      'prompts/list',
-      'prompts/get',
-      'resources/list',
-      'resources/templates/list',
-      'logging/setLevel',
-      'notifications/initialized',
-      'ping',
-      'describe_tool',
-    ]) {
-      assert.ok(notes.includes(method), `${method} must be named in daily-quota notes`);
-    }
-    assert.match(notes, /Per-minute .* counts ALL methods/i, 'notes must distinguish per-minute from daily exemptions');
-  });
+  // The old static card carried a hand-maintained `rateLimits` block
+  // (dailyByPlan/notes) documenting the now-defunct API Starter/Business
+  // billing tiers for external scanners. Both the billing tiers and the
+  // static card are gone — the generated card doesn't reproduce this block,
+  // and there's no public scanner traffic on this private fork to serve it
+  // to. Not worth resurrecting.
 
   // The card carries the identity fields BOTH top-level (for scanners that read
   // the flat shape, e.g. ora.ai's mcp-server-card check) AND nested under
   // serverInfo (the shape the handler + sibling tests read). Guard the two from
-  // drifting on the next version bump.
-  it('top-level server-card identity mirrors serverInfo (no drift)', () => {
-    const card = JSON.parse(
-      readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8'),
-    );
+  // drifting on the next version bump. (Now generated in-process from a single
+  // object literal, so this is a live-response sanity check rather than a
+  // hand-maintained-file drift guard — see buildServerCardPayload.)
+  it('top-level server-card identity mirrors serverInfo (no drift)', async () => {
+    const res = await handler(new Request('https://worldmonitor.app/.well-known/mcp', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }));
+    const card = JSON.parse(await res.text());
     assert.equal(card.name, card.serverInfo?.name, 'top-level name must mirror serverInfo.name');
     assert.equal(card.version, card.serverInfo?.version, 'top-level version must mirror serverInfo.version');
     assert.equal(card.description, card.serverInfo?.description, 'top-level description must mirror serverInfo.description');
     assert.equal(card.serverUrl, card.transport?.endpoint, 'top-level serverUrl must mirror transport.endpoint');
   });
 
-});
-
-describe('docs/mcp-overview.mdx — API-key quota contract', () => {
-  it('keeps API-key auth separate from the Pro/OAuth daily reservation path', () => {
-    const docs = readFileSync(new URL('../docs/mcp-overview.mdx', import.meta.url), 'utf8');
-    assert.doesNotMatch(docs, /Both modes check the same PRO entitlement/i,
-      'docs must not claim API-key requests use the OAuth/Pro entitlement pre-check path');
-    assert.match(docs, /OAuth bearer requests re-check[\s\S]*active entitlement[\s\S]*before dispatch/i,
-      'docs must describe the OAuth entitlement re-check path');
-    assert.match(docs, /Direct `X-WorldMonitor-Key` requests[\s\S]*configured API key[\s\S]*per-key (?:rate )?limiter/i,
-      'docs must describe API-key MCP auth and per-key minute limiting without implying Pro daily quota reservation');
-    assert.match(docs, /REST\/API plan allowances[\s\S]*outside[\s\S]*Pro\/OAuth MCP daily reservation path/i,
-      'docs must keep REST/API plan allowances separate from MCP daily reservation semantics');
-    assert.match(docs, /`wm_…` MCP calls[\s\S]*no MCP daily reservation/i,
-      'docs must state that wm_ API-key MCP calls have no MCP daily reservation');
-  });
 });

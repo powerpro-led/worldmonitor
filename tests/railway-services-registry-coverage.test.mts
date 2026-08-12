@@ -151,43 +151,6 @@ describe('Railway service registry coverage', () => {
     }
   });
 
-  it('every runbook Railway command references a registered script', () => {
-    const runbookPath = resolve(repoRoot, 'docs/railway-seed-consolidation-runbook.md');
-    const src = readFileSync(runbookPath, 'utf8');
-
-    const referenced = new Set<string>();
-    let m: RegExpExecArray | null;
-    RUNBOOK_START_RE.lastIndex = 0;
-    while ((m = RUNBOOK_START_RE.exec(src)) !== null) {
-      referenced.add(m[1]!);
-    }
-    RUNBOOK_SERVICE_ROW_RE.lastIndex = 0;
-    while ((m = RUNBOOK_SERVICE_ROW_RE.exec(src)) !== null) {
-      referenced.add(m[1]!);
-    }
-    assert.ok(
-      referenced.size > 0,
-      `Runbook regex matched zero entries — runbook format may have drifted. ` +
-        `Update RUNBOOK_START_RE or RUNBOOK_SERVICE_ROW_RE.`,
-    );
-
-    const missing: string[] = [];
-    for (const entry of referenced) {
-      if (!registryEntries.has(entry)) {
-        missing.push(`runbook references '${entry}' but registry has no matching entry`);
-      }
-    }
-
-    if (missing.length > 0) {
-      assert.fail(
-        `Runbook entries drift from scripts/railway-services.json:\n` +
-          missing.map((s) => `  - ${s}`).join('\n') +
-          `\n\nAdd the missing entry to the registry (deployMode: ` +
-          `"nixpacks-root-scripts" or "nixpacks-root-repo") or update the runbook.`,
-      );
-    }
-  });
-
   it('every script header-documented Railway service is registered', () => {
     const missing: string[] = [];
     const scriptFiles = readdirSync(resolve(repoRoot, 'scripts'))

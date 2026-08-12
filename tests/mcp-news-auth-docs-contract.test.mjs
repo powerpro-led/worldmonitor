@@ -159,9 +159,8 @@ describe('MCP news/auth public contract', () => {
     }
   });
 
-  it('MCP-facing docs and fixture helpers do not teach stale API-key prefixes', () => {
+  it('MCP-facing fixture helpers do not teach stale API-key prefixes', () => {
     const mcpFacingFiles = [
-      'docs/mcp-quickstart.mdx',
       'tests/fixtures/jmespath-samples/README.md',
       'scripts/capture-mcp-fixture.mjs',
     ];
@@ -170,11 +169,6 @@ describe('MCP news/auth public contract', () => {
       const text = readRepoFile(path);
       assert.doesNotMatch(text, /wm_live_|wm_pro_/, `${path} must use current wm_ API-key/OAuth-token wording`);
     }
-
-    const quickstart = readRepoFile('docs/mcp-quickstart.mdx');
-    assert.match(quickstart, /X-WorldMonitor-Key/, 'quickstart must teach API keys via X-WorldMonitor-Key');
-    assert.match(quickstart, /Authorization: Bearer \$TOKEN/, 'quickstart may teach Bearer only for OAuth tokens');
-    assert.doesNotMatch(quickstart, /Authorization:\s*Bearer\s+\$WM_KEY/, 'quickstart must not show API keys as bearer tokens');
 
     const captureScript = readRepoFile('scripts/capture-mcp-fixture.mjs');
     assert.match(captureScript, /WM_MCP_KEY/, 'fixture capture should expose an API-key env var');

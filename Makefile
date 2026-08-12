@@ -5,7 +5,6 @@
 PROTO_DIR := proto
 GEN_CLIENT_DIR := src/generated/client
 GEN_SERVER_DIR := src/generated/server
-DOCS_API_DIR := docs/api
 
 # Go install settings
 GO_PROXY := GOPROXY=direct
@@ -37,7 +36,6 @@ install-plugins: ## Install sebuf protoc plugins (requires Go)
 	@echo "Installing sebuf protoc plugins $(SEBUF_VERSION)..."
 	@$(GO_INSTALL) github.com/SebastienMelki/sebuf/cmd/protoc-gen-ts-client@$(SEBUF_VERSION)
 	@$(GO_INSTALL) github.com/SebastienMelki/sebuf/cmd/protoc-gen-ts-server@$(SEBUF_VERSION)
-	@$(GO_INSTALL) github.com/SebastienMelki/sebuf/cmd/protoc-gen-openapiv3@$(SEBUF_VERSION)
 	@echo "Plugins installed!"
 
 install-npm: ## Install npm dependencies
@@ -53,7 +51,7 @@ lint: ## Lint protobuf files
 	cd $(PROTO_DIR) && buf lint
 
 generate: clean ## Generate code from proto definitions
-	@mkdir -p $(GEN_CLIENT_DIR) $(GEN_SERVER_DIR) $(DOCS_API_DIR)
+	@mkdir -p $(GEN_CLIENT_DIR) $(GEN_SERVER_DIR)
 	@# Ensure the Makefile-declared sebuf protoc plugins ($(SEBUF_VERSION))
 	@# installed by `install-plugins` win over any stale sebuf binary that
 	@# a package manager (Homebrew, etc.) may have placed earlier on PATH.
@@ -72,8 +70,8 @@ generate: clean ## Generate code from proto definitions
 	@#
 	@#  2. Invoke the resolved `buf` via absolute path, but give it a
 	@#     PATH whose FIRST entry is the Go install dir. This affects
-	@#     only plugin lookup inside `buf generate` (protoc-gen-ts-*,
-	@#     protoc-gen-openapiv3) — not `buf` itself, which is already
+	@#     only plugin lookup inside `buf generate` (protoc-gen-ts-client,
+	@#     protoc-gen-ts-server) — not `buf` itself, which is already
 	@#     resolved. Plugins find the Makefile-pinned version first.
 	@#
 	@# Go install dir resolution mirrors `go install`'s own logic:
@@ -98,36 +96,22 @@ generate: clean ## Generate code from proto definitions
 	@# would silently become "/bin" when unset, failing to override PATH
 	@# and letting a stale sebuf on the normal PATH win — the exact
 	@# failure mode this PR is trying to prevent (Codex high-severity on
-	@# 9c0058a). The plugin-executable check covers ALL three sebuf
-	@# binaries invoked by proto/buf.gen.yaml (protoc-gen-ts-client,
-	@# protoc-gen-ts-server, protoc-gen-openapiv3) — guarding only one
-	@# would let `buf generate` fall through to a stale copy of the
-	@# others on PATH, recreating the mixed-version failure mode. Keep
-	@# this list in sync with proto/buf.gen.yaml.
+	@# 9c0058a). The plugin-executable check covers BOTH sebuf binaries
+	@# invoked by proto/buf.gen.yaml (protoc-gen-ts-client,
+	@# protoc-gen-ts-server) — guarding only one would let `buf generate`
+	@# fall through to a stale copy of the other on PATH, recreating the
+	@# mixed-version failure mode. Keep this list in sync with
+	@# proto/buf.gen.yaml. (OpenAPI generation via protoc-gen-openapiv3
+	@# was removed along with the public API docs product — see
+	@# proto/buf.gen.yaml.)
 	cd $(PROTO_DIR) && \
 		PLUGIN_DIR=$$(gobin=$$(go env GOBIN); if [ -n "$$gobin" ]; then printf '%s' "$$gobin"; else printf '%s/bin' "$$(go env GOPATH | cut -d: -f1)"; fi) && \
 		[ -n "$$PLUGIN_DIR" ] || { echo 'Could not resolve Go install dir from GOBIN/GOPATH — refusing to run buf generate without a pinned plugin location.' >&2; exit 1; } && \
-		for p in protoc-gen-ts-client protoc-gen-ts-server protoc-gen-openapiv3; do \
+		for p in protoc-gen-ts-client protoc-gen-ts-server; do \
 			[ -x "$$PLUGIN_DIR/$$p" ] || { echo "$$p not found at $$PLUGIN_DIR/. Run: make install-plugins" >&2; exit 1; }; \
 		done && \
 		BUF_BIN=$$(command -v buf) && \
 		PATH="$$PLUGIN_DIR:$$PATH" "$$BUF_BIN" generate
-	@# protoc-gen-openapiv3 still misses WorldMonitor-specific contract details:
-	@# auth/security (#4599 root cause #1), filter parameter schemas,
-	@# query parameter requiredness (#4599 root cause #3 / #4604), and
-	@# examples. Apply byte-/format-preserving injectors before deriving
-	@# examples so examples reflect the final schemas.
-	@node scripts/openapi-inject-security.mjs
-	@node scripts/apply-openapi-filter-param-schemas.mjs
-	@node scripts/openapi-inject-required.mjs
-	@node scripts/openapi-inject-examples.mjs
-	@node scripts/openapi-inject-servers.mjs
-	@node scripts/openapi-inject-deprecated.mjs
-	@node scripts/openapi-inject-jmespath.mjs
-	@node scripts/openapi-inject-webhooks.mjs
-	@node scripts/openapi-inject-idempotency.mjs
-	@node scripts/openapi-inject-rate-limit-errors.mjs
-	@node scripts/openapi-inject-async-jobs.mjs
 	@echo "Code generation complete!"
 
 breaking: ## Check for breaking changes against main
@@ -141,5 +125,4 @@ check: lint generate ## Run all checks (lint + generate)
 clean: ## Clean generated files
 	@rm -rf $(GEN_CLIENT_DIR)
 	@rm -rf $(GEN_SERVER_DIR)
-	@rm -rf $(DOCS_API_DIR)
 	@echo "Clean complete!"

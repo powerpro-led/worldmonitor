@@ -32,7 +32,10 @@ const RATE_LIMIT_WINDOW = RATE_LIMIT_POLICY.window;
 
 const NLWEB_VERSION = '0.1';
 const SITE = 'worldmonitor.app';
-const TOOLS_DOC_URL = 'https://www.worldmonitor.app/docs/mcp-tools-reference';
+// No public per-tool doc page exists on this private fork (the Mintlify docs
+// site is gone); point at the live agent-guidance file instead, which lists
+// every tool and how to call them.
+const TOOLS_DOC_URL = 'https://worldmonitor.app/agent.txt';
 const MCP_ENDPOINT = 'https://worldmonitor.app/mcp';
 const MAX_QUERY_CHARS = 2048;
 
@@ -86,8 +89,8 @@ export function buildResults(query: string): NlwebResult[] {
     // Honest fallback: point the asker at the discovery surfaces instead of
     // fabricating a match.
     results.push({
-      url: 'https://worldmonitor.app/llms.txt',
-      name: 'World Monitor agent guidance (llms.txt)',
+      url: 'https://worldmonitor.app/agent.txt',
+      name: 'World Monitor agent guidance (agent.txt)',
       site: SITE,
       score: 0,
       description:

@@ -18,7 +18,7 @@ import { pageFromIndex, renderCarouselImageResponse } from '../server/_shared/br
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const RENDERER_SOURCE_PATH = resolve(TEST_DIR, '../server/_shared/brief-carousel-render.ts');
-const LOCAL_RENDER_FONT_PATH = resolve(TEST_DIR, '../blog-site/scripts/fonts/inter-regular.ttf');
+const LOCAL_RENDER_FONT_PATH = resolve(TEST_DIR, 'fixtures/fonts/inter-regular.ttf');
 const originalFetch = globalThis.fetch;
 
 let rendererSourcePromise;

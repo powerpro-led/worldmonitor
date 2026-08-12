@@ -150,7 +150,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Some conflict evidence appears in UCDP Events, CII, or related panels rather than as a conflict-zone polygon.',
     ],
     related: ['UCDP Events', 'CII panel', 'Strategic Risk', 'Country brief'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'src/config/geo.ts'],
+    evidence: ['src/config/geo.ts'],
   },
   ucdpEvents: {
     key: 'ucdpEvents',
@@ -165,7 +165,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Fatality ranges are estimates and should be interpreted as ranges, not exact counts.',
     ],
     related: ['UCDP Events panel', 'CII conflict component', 'Country timeline'],
-    evidence: ['docs/architecture.mdx', 'src/services/conflict/index.ts', 'scripts/seed-ucdp-events.mjs'],
+    evidence: ['src/services/conflict/index.ts', 'scripts/seed-ucdp-events.mjs'],
   },
   ciiChoropleth: {
     key: 'ciiChoropleth',
@@ -180,7 +180,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Country-level color can hide subnational variation and should be checked against panels before citation.',
     ],
     related: ['CII panel', 'Strategic Risk panel', 'Data freshness status', 'Country brief'],
-    evidence: ['docs/strategic-risk.mdx', 'docs/architecture.mdx', 'src/services/cached-risk-scores.ts'],
+    evidence: ['src/services/cached-risk-scores.ts'],
   },
   natural: {
     key: 'natural',
@@ -195,7 +195,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'EONET wildfires are freshness-filtered, so older open events may not appear as active map points.',
     ],
     related: ['Natural Events layer popups', 'Weather Alerts', 'Country brief natural signals'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'server/worldmonitor/natural/v1/list-natural-events.ts'],
+    evidence: ['server/worldmonitor/natural/v1/list-natural-events.ts'],
   },
   flights: {
     key: 'flights',
@@ -210,7 +210,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Live aircraft positions can be delayed or absent where ADS-B coverage is weak or blocked.',
     ],
     related: ['Airline Intel panel', 'Aviation command bar', 'Country brief aviation signals'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'src/services/aviation/index.ts', 'scripts/seed-aviation.mjs'],
+    evidence: ['src/services/aviation/index.ts', 'scripts/seed-aviation.mjs'],
   },
   ais: {
     key: 'ais',
@@ -225,7 +225,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Dark shipping is inferred from gaps and congestion patterns, not direct proof of intent.',
     ],
     related: ['Supply Chain panel', 'Chokepoint strip', 'Military vessels', 'Country brief AIS signals'],
-    evidence: ['docs/features.mdx', 'docs/architecture.mdx', 'src/services/maritime/index.ts', 'scripts/ais-relay.cjs'],
+    evidence: ['src/services/maritime/index.ts', 'scripts/ais-relay.cjs'],
   },
   waterways: {
     key: 'waterways',
@@ -240,7 +240,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Area geofences and modeled routes can simplify complex traffic patterns.',
     ],
     related: ['Supply Chain panel', 'Trade Routes layer', 'Route Explorer', 'Scenario Engine'],
-    evidence: ['docs/architecture.mdx', 'docs/data-sources.mdx', 'src/config/geo.ts', 'server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts'],
+    evidence: ['src/config/geo.ts', 'server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts'],
   },
   tradeRoutes: {
     key: 'tradeRoutes',
@@ -255,7 +255,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Disruption overlays depend on current chokepoint and AIS health.',
     ],
     related: ['Supply Chain panel', 'Route Explorer', 'Scenario Engine', 'Waterways layer'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'src/config/trade-routes.ts', 'src/services/supply-chain/index.ts'],
+    evidence: ['src/config/trade-routes.ts', 'src/services/supply-chain/index.ts'],
   },
   cyberThreats: {
     key: 'cyberThreats',
@@ -270,7 +270,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Feed availability, API keys, and per-feed abuse reports can bias coverage.',
     ],
     related: ['Cyber Threats map popups', 'CII cyber supplemental boost', 'Data freshness status'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'scripts/seed-cyber-threats.mjs', 'server/worldmonitor/cyber/v1/list-cyber-threats.ts'],
+    evidence: ['scripts/seed-cyber-threats.mjs', 'server/worldmonitor/cyber/v1/list-cyber-threats.ts'],
   },
   hotspots: {
     key: 'hotspots',
@@ -285,7 +285,7 @@ export const LAYER_EXPLANATIONS: Partial<Record<keyof MapLayers, LayerExplanatio
       'Low-profile events may be missed when RSS/GDELT coverage is sparse or delayed.',
     ],
     related: ['Live News panel', 'Strategic Risk panel', 'Country brief', 'Hotspot popups'],
-    evidence: ['docs/data-sources.mdx', 'docs/architecture.mdx', 'src/config/geo.ts', 'src/services/hotspot-escalation.ts'],
+    evidence: ['src/config/geo.ts', 'src/services/hotspot-escalation.ts'],
   },
 };
 

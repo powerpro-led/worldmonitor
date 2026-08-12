@@ -16,7 +16,6 @@
 //     floor bump can't silently drop a tracked client.
 import { describe, it, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
 
 const VALID_KEY = 'wm_test_key_123';
 const BASE_URL = 'https://worldmonitor.app/mcp';
@@ -152,13 +151,19 @@ describe('api/mcp.ts — protocol-version floor', () => {
     }
   });
 
-  it('server-card.json advertises protocolVersion 2025-06-18 unconditionally', () => {
-    const card = JSON.parse(
-      readFileSync(
-        new URL('../public/.well-known/mcp/server-card.json', import.meta.url),
-        'utf8',
-      ),
-    );
+  it('generated server card advertises protocolVersion 2025-06-18 by default', async () => {
+    // The card used to be a hand-maintained static file; it's now generated
+    // in-process (see buildServerCardPayload in api/mcp/handler.ts) from
+    // negotiateProtocolVersion(undefined) — the same default-on contract the
+    // handshake tests above lock in. Explicitly unset the kill-switch so this
+    // doesn't depend on env state left over from a neighboring test.
+    delete process.env.MCP_PROTOCOL_FLOOR_2025_06_18;
+    const mod = await import(`../api/mcp.ts?t=${Date.now()}_card_default`);
+    const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }));
+    const card = JSON.parse(await res.text());
     assert.equal(card.protocolVersion, '2025-06-18');
   });
 

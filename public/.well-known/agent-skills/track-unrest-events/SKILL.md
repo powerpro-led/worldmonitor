@@ -16,7 +16,7 @@ No API key is required for this public RPC. If your agent already sends a World 
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567
 ```
 
-Issue a key at https://www.worldmonitor.app/pro for authenticated and Pro-gated endpoints.
+The key is operator-issued — no self-service signup on this private fork.
 
 ## Endpoint
 

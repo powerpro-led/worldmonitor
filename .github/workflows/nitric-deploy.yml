@@ -8,10 +8,12 @@ name: Deploy Backend to GCP (Nitric)
 # adapted to worldmonitor's npm/node24 toolchain and root-level nitric.yaml
 # (platform's backend/ subdir doesn't apply here).
 #
-# See docs/architecture/nitric-gcp-scaffold.md before ever running this for
-# real — "nitric up" has never been run against apps-453107 as of this
-# workflow's creation; this file exists so the deploy step is ready, not as
-# a signal that a deploy has happened or is scheduled.
+# Review nitric.yaml and this repo's GCP deploy setup before ever running
+# this for real — "nitric up" has never been run against apps-453107 as of
+# this workflow's creation; this file exists so the deploy step is ready,
+# not as a signal that a deploy has happened or is scheduled. (The former
+# docs/architecture/nitric-gcp-scaffold.md write-up this comment pointed to
+# was removed along with the rest of docs/ in the public-product retirement.)
 #
 # Required repo secrets:
 #   GCP_CREDENTIALS      — service account JSON key with deploy access to

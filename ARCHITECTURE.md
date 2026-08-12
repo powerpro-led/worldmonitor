@@ -377,10 +377,6 @@ Runs before every `git push`:
 | `deploy-worker.yml` | Push to main (worker paths), manual | Deploys the `api-cors-preflight` Cloudflare Worker |
 | `build-desktop.yml` | Release tag, push, manual | Multi-platform Tauri build, code signing (macOS), AppImage library stripping (Linux), smoke test |
 | `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
-| `publish-cli.yml` | `cli-v*` tag, manual | Tests and publishes the `worldmonitor` npm CLI (`cli/`) via OIDC trusted publishing (no token) with provenance |
-| `publish-python.yml` | `py-v*` tag, manual | Tests and publishes the `worldmonitor-sdk` PyPI package (`sdk/python/`) via OIDC trusted publishing (no token) with attestations |
-| `publish-ruby.yml` | `gem-v*` tag, manual | Tests and publishes the `worldmonitor` gem (`sdk/ruby/`) via RubyGems OIDC trusted publishing (no token) |
-| `publish-go.yml` | `sdk/go/v*` tag, manual | Vets/tests the Go SDK module (`sdk/go/`) at the tag and warms proxy.golang.org so the version is go-gettable and indexed on pkg.go.dev |
 | `test-linux-app.yml` | Manual | Linux AppImage build + headless smoke test with screenshot verification |
 
 **Source files**: `.github/workflows/`, `.husky/pre-push`. The workflow list is CI-checked against `.github/workflows/*.yml` by `npm run docs:check` — a new workflow file must be added to this table.
@@ -394,18 +390,16 @@ Runs before every `git push`:
 ├── api/                    Vercel Edge Functions (self-contained JS)
 │   ├── _*.js               Shared helpers (CORS, rate-limit, API key, relay, Sentry, session)
 │   └── <domain>/           Domain endpoints (aviation/, climate/, conflict/, ...)
-├── blog-site/              Static blog (built into public/blog/)
 ├── cli/                    Official `worldmonitor` npm CLI (zero-dep ESM, MCP-first; published via cli-v* tag)
 ├── consumer-prices-core/   Consumer-price collection service (Playwright scrapers, per-country baskets; Railway/Docker)
 ├── convex/                 Convex backend (contact form, waitlist)
 ├── data/                   Static data (telegram channels, OREF threat translations, gamma irradiators)
 ├── deploy/                 Deployment configs (nginx)
 ├── docker/                 Dockerfile + nginx config for Railway
-├── docs/                   Mintlify documentation site
 ├── e2e/                    Playwright E2E specs
 ├── pro-test/               Standalone Pro QA app (separate package)
 ├── proto/                  Protobuf service definitions (sebuf framework)
-├── public/                 Static assets served as-is (favicons, textures, .well-known agent-skills/MCP, llms.txt)
+├── public/                 Static assets served as-is (favicons, textures, .well-known agent-skills/MCP)
 ├── scripts/                Seed scripts, build helpers, relay service
 ├── server/                 Server-side code (bundled into Edge Functions)
 │   ├── _shared/            Redis, rate-limit, LLM, caching utilities

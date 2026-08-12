@@ -14,7 +14,6 @@ const EXPECTED_UCDP_WRITER_PATHS = [
 const SOURCE_SCAN_IGNORED_DIRS = new Set([
   '.git',
   '.vercel',
-  'blog-site/node_modules',
   'coverage',
   'dist',
   'node_modules',

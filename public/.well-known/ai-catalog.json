@@ -2,15 +2,14 @@
   "specVersion": "1.0",
   "host": {
     "displayName": "World Monitor",
-    "identifier": "did:web:worldmonitor.app",
-    "documentationUrl": "https://worldmonitor.app/docs/documentation"
+    "identifier": "did:web:worldmonitor.app"
   },
   "entries": [
     {
       "identifier": "urn:air:worldmonitor.app:mcp:worldmonitor",
       "displayName": "World Monitor MCP server",
       "type": "application/mcp-server-card+json",
-      "url": "https://worldmonitor.app/.well-known/mcp/server-card.json",
+      "url": "https://worldmonitor.app/.well-known/mcp",
       "description": "Live global-intelligence MCP server: real-time markets, conflict events, aviation, maritime, energy, climate, health, displacement, supply chain, and AI-generated regional briefs.",
       "tags": [
         "news-and-intelligence",
@@ -19,26 +18,6 @@
         "geopolitics",
         "global-risk",
         "mcp"
-      ],
-      "capabilities": [
-        "get_world_brief",
-        "get_country_brief",
-        "get_country_risk",
-        "get_conflict_events",
-        "get_market_data",
-        "get_energy_intelligence",
-        "get_maritime_activity",
-        "get_chokepoint_status",
-        "get_supply_chain_data",
-        "analyze_situation",
-        "generate_forecasts"
-      ],
-      "representativeQueries": [
-        "what is happening in the Red Sea right now",
-        "country risk briefing for Egypt",
-        "global markets and conflict overview this morning",
-        "which shipping chokepoints are disrupted",
-        "forecast the impact of a Strait of Hormuz closure"
       ],
       "trustManifest": {
         "identity": "did:web:worldmonitor.app",

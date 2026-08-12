@@ -43,7 +43,7 @@ Real-time global intelligence dashboard. TypeScript SPA (Vite + Preact) with 167
 │   └── worldmonitor/       # Service definitions with HTTP annotations
 ├── shared/                 # Cross-platform data (JSON configs for markets, RSS domains)
 ├── data/                   # Static data (telegram channels, OREF threat translations, gamma irradiators)
-├── public/                 # Static assets served as-is (favicons, textures, .well-known, llms.txt)
+├── public/                 # Static assets served as-is (favicons, textures, .well-known)
 ├── scripts/                # Seed scripts, build helpers, data fetchers
 ├── src-tauri/              # Tauri desktop shell (Rust + Node.js sidecar)
 │   └── sidecar/            # Node.js sidecar API server
@@ -52,18 +52,15 @@ Real-time global intelligence dashboard. TypeScript SPA (Vite + Preact) with 167
 ├── tests/                  # Unit/integration tests (node:test runner)
 ├── e2e/                    # Playwright E2E specs
 ├── pro-test/               # Standalone Pro QA app (separate package)
-├── docs/                   # Mintlify documentation site
-│   └── solutions/          # Documented solutions to past problems (bugs, patterns, practices) — YAML frontmatter (module, tags, problem_type)
 ├── docker/                 # Docker build for Railway services
 ├── deploy/                 # Deployment configs (nginx)
-├── CONCEPTS.md             # Shared domain vocabulary (entities, named processes, status concepts)
-└── blog-site/              # Static blog (built into public/blog/)
+└── CONCEPTS.md             # Shared domain vocabulary (entities, named processes, status concepts)
 ```
 
 ## How to Run
 
 ```bash
-npm ci                   # Deterministic install (also runs blog-site postinstall)
+npm ci                   # Deterministic install
 npm run dev              # Start Vite dev server (full variant)
 npm run dev:tech         # Start tech-only variant
 npm run dev:energy       # Start energy-security variant
@@ -224,7 +221,6 @@ Heavy checks (`test:data`, typechecks, edge-bundle) must run **sequentially** in
 - **Web**: Vercel (auto-deploy on push to main)
 - **Relay/Seeds**: Railway (Docker, cron services)
 - **Desktop**: Tauri builds via GitHub Actions
-- **Docs**: Mintlify (proxied through Vercel at `/docs`)
 
 ## Critical Conventions
 
@@ -238,12 +234,7 @@ Heavy checks (`test:data`, typechecks, edge-bundle) must run **sequentially** in
 ## External References
 
 - [Architecture (system reference)](ARCHITECTURE.md)
-- [Design Philosophy (why decisions were made)](docs/architecture.mdx)
 - [Contributing guide](CONTRIBUTING.md)
-- [Data sources catalog](docs/data-sources.mdx)
-- [Health endpoints](docs/health-endpoints.mdx)
-- [Adding endpoints guide](docs/adding-endpoints.mdx)
-- [API reference (OpenAPI)](docs/api/)
 
 <!-- agent-ninja-START -->
 ## Agent Skills

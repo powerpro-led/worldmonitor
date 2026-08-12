@@ -112,14 +112,6 @@ describe('seed-chokepoint-flows.mjs exports', () => {
     assert.match(src, /hazardAlertName: hazard\?\.eventName \?\? null/);
   });
 
-  it('documents hazard enrichment as metadata-only flow annotation', () => {
-    const doc = readFileSync(resolve(root, 'docs/methodology/chokepoints.mdx'), 'utf-8');
-    assert.match(doc, /portwatch:disruptions:active:v1/);
-    assert.match(doc, /GDACS `RED` or `ORANGE` alert within 500 km/);
-    assert.match(doc, /hazardAlertLevel` and `hazardAlertName/);
-    assert.match(doc, /does not change `currentMbd`, `flowRatio`, or the\s+`disrupted` calculation/);
-  });
-
   it('wraps runSeed in isMain guard', () => {
     assert.match(src, /isMain.*=.*process\.argv/s);
     assert.match(src, /if\s*\(isMain\)/);

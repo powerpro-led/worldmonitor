@@ -19,11 +19,10 @@ const __dirname = dirname(__filename);
 const DEFAULT_ROOT = resolve(__dirname, '..');
 const DEFAULT_OUT_DIR = join(DEFAULT_ROOT, 'public');
 const DEFAULT_BASE_URL = 'https://www.worldmonitor.app';
-const RESILIENCE_SNAPSHOT_PATH = 'docs/snapshots/resilience-ranking-2026-05-28.json';
+const RESILIENCE_SNAPSHOT_PATH = 'data/resilience-snapshots/resilience-ranking-2026-05-28.json';
 const COUNTRY_NAMES_PATH = 'shared/country-names.json';
 const CHOKEPOINT_REGISTRY_PATH = 'src/config/chokepoint-registry.ts';
 const TRADE_ROUTES_PATH = 'src/config/trade-routes.ts';
-const GLOSSARY_DATA_PATH = 'blog-site/src/data/glossary.ts';
 const CHANGELOG_PATH = 'CHANGELOG.md';
 const LIVE_TOOLS_SCRIPT_PATH = 'scripts/crawlable-live-tools.mjs';
 const COUNTRY_BBOXES_PATH = 'shared/country-bboxes.js';
@@ -35,25 +34,21 @@ const MAX_TOOL_LONGITUDE_SPAN = 60;
 // Hand-authored, human-readable context for each canonical chokepoint, keyed by
 // the registry `id`. `region` describes what the waterway connects (used as the
 // index card subtitle and the "Connects" tile); `blurb` is a factual 2-sentence
-// summary used as the page lede and meta description; `glossarySlug` cross-links
-// to the matching /blog/glossary/ term where one exists. Keeping this beside the
+// summary used as the page lede and meta description. Keeping this beside the
 // registry (rather than in it) keeps the app bundle free of prose it never uses.
 const CHOKEPOINT_CONTENT = {
   suez: {
     region: 'Mediterranean ↔ Red Sea',
-    glossarySlug: 'suez-canal',
     blurb:
       'The Suez Canal is the artificial waterway linking the Mediterranean and the Red Sea, giving shipping the shortest route between Europe and Asia without rounding Africa. Its southern approach runs through Bab el-Mandeb, so a blockage or a Red Sea security threat that reroutes traffic around the Cape of Good Hope adds days of transit and materially raises freight costs.',
   },
   malacca_strait: {
     region: 'Indian Ocean ↔ South China Sea',
-    glossarySlug: 'strait-of-malacca',
     blurb:
       'The Strait of Malacca runs between the Malay Peninsula and Sumatra, linking the Indian Ocean to the South China Sea and the Pacific. It is one of the busiest shipping lanes in the world and the main artery for energy and container flows into East Asia, where the alternatives are longer and lower-capacity.',
   },
   hormuz_strait: {
     region: 'Persian Gulf ↔ Gulf of Oman',
-    glossarySlug: 'strait-of-hormuz',
     blurb:
       'The Strait of Hormuz is the narrow waterway connecting the Persian Gulf to the Gulf of Oman and the open ocean. It is the single most closely watched energy chokepoint on Earth: a very large share of the world’s seaborne crude oil and LNG has no alternative route out of the Gulf.',
   },
@@ -304,18 +299,6 @@ async function importRepoModule(rootDir, relativePath) {
   return import(pathToFileURL(repoPath(rootDir, relativePath)).href);
 }
 
-function normalizeGlossaryTerms(terms) {
-  return (terms || [])
-    .map((term) => ({
-      slug: term.slug,
-      term: term.term,
-      abbr: term.abbr || undefined,
-      short: term.short,
-    }))
-    .filter((term) => term.slug && term.term)
-    .sort((a, b) => a.term.localeCompare(b.term));
-}
-
 function normalizeChokepoints(entries) {
   return (entries || [])
     .map((entry) => ({
@@ -534,12 +517,10 @@ export async function loadCorpusData({ rootDir = DEFAULT_ROOT } = {}) {
   const [
     { CHOKEPOINT_REGISTRY },
     { TRADE_ROUTES },
-    { GLOSSARY_TERMS },
     { default: countryBboxes },
   ] = await Promise.all([
     importRepoModule(rootDir, CHOKEPOINT_REGISTRY_PATH),
     importRepoModule(rootDir, TRADE_ROUTES_PATH),
-    importRepoModule(rootDir, GLOSSARY_DATA_PATH),
     importRepoModule(rootDir, COUNTRY_BBOXES_PATH),
   ]);
   const countries = normalizeCountries(resilience, reverseNames);
@@ -554,7 +535,6 @@ export async function loadCorpusData({ rootDir = DEFAULT_ROOT } = {}) {
       category: route.category,
     }]),
   );
-  const glossaryTerms = normalizeGlossaryTerms(GLOSSARY_TERMS);
   const changelog = parseChangelog(readText(rootDir, CHANGELOG_PATH));
   const changelogLastmod = gitFileLastmod(rootDir, CHANGELOG_PATH)
     || latestDatedChangelogRelease(changelog)
@@ -571,7 +551,6 @@ export async function loadCorpusData({ rootDir = DEFAULT_ROOT } = {}) {
       resilienceSnapshot: RESILIENCE_SNAPSHOT_PATH,
       countryNames: COUNTRY_NAMES_PATH,
       chokepointRegistry: CHOKEPOINT_REGISTRY_PATH,
-      glossaryData: GLOSSARY_DATA_PATH,
       changelog: CHANGELOG_PATH,
       tradeRoutes: TRADE_ROUTES_PATH,
       liveToolsScript: LIVE_TOOLS_SCRIPT_PATH,
@@ -590,7 +569,6 @@ export async function loadCorpusData({ rootDir = DEFAULT_ROOT } = {}) {
     crises,
     chokepoints,
     tradeRoutesById,
-    glossaryTerms,
     changelog,
   };
 }
@@ -697,8 +675,6 @@ function pageDocument({
       .routes { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 8px; }
       .routes li { border: 1px solid var(--line); border-radius: 8px; padding: 11px 14px; background: var(--panel); color: var(--text); font-size: 14px; }
       .routes .vol { color: var(--muted); }
-      .related { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 0 20px; }
-      .related a { display: inline-flex; align-items: center; min-height: 44px; }
       .source { margin-top: 34px; font-size: 13px; color: var(--muted); }
       footer { border-top: 1px solid var(--line); padding-top: 20px; padding-bottom: 28px; color: var(--muted); font-size: 13px; }
     </style>
@@ -712,7 +688,6 @@ function pageDocument({
         <a href="/crises/">Crises</a>
         <a href="/tools/">Live tools</a>
         <a href="/reference/changelog/">Changelog</a>
-        <a href="/blog/glossary/">Glossary</a>
       </nav>
     </header>
     <main>
@@ -858,7 +833,7 @@ ${chokepoints.map((cp) => {
   }).join('\n')}
       </div>
       <h2>Why chokepoints matter</h2>
-      <p>A <a href="/blog/glossary/maritime-chokepoint/">maritime chokepoint</a> is a narrow passage with no cheap alternative: when one closes or degrades, ships reroute onto longer, costlier paths and freight, insurance, and energy prices move within days. A small number of straits and canals carry a disproportionate share of the world's seaborne oil, LNG, grain, and container traffic, which is why traders, supply-chain teams, and analysts watch them continuously.</p>
+      <p>A maritime chokepoint is a narrow passage with no cheap alternative: when one closes or degrades, ships reroute onto longer, costlier paths and freight, insurance, and energy prices move within days. A small number of straits and canals carry a disproportionate share of the world's seaborne oil, LNG, grain, and container traffic, which is why traders, supply-chain teams, and analysts watch them continuously.</p>
       <h2>How the status badge works</h2>
       <p>Each chokepoint page combines a static reference — what the waterway connects, which modelled trade routes depend on it — with a live disruption score computed from active warnings, AIS signal disruptions, congestion, and transit counts. The score is a monitoring signal, not an operational closure declaration; the <a href="/docs/methodology/chokepoints">chokepoint methodology</a> documents the inputs and bands. Daily transit counts and baselines come from <a href="https://portwatch.imf.org/">IMF PortWatch</a> data.</p>
       <p class="source">Source: ${CHOKEPOINT_REGISTRY_PATH}. Methodology: <a href="/docs/methodology/chokepoints">chokepoint disruption scoring</a>.</p>`;
@@ -913,12 +888,6 @@ ${routes.map((route) => {
     chokepoint.shockModelSupported ? metricTile('Energy shock model', 'Yes') : null,
   ].filter(Boolean).join('\n');
 
-  const relatedItems = [];
-  if (content.glossarySlug) {
-    relatedItems.push(`<a href="/blog/glossary/${content.glossarySlug}/">${escapeHtml(chokepoint.displayName)} in the glossary</a>`);
-  }
-  relatedItems.push('<a href="/blog/glossary/maritime-chokepoint/">What is a maritime chokepoint?</a>');
-
   const body = `      <p class="eyebrow">Chokepoint</p>
       <h1>${escapeHtml(chokepoint.displayName)}</h1>
       <p class="lede">${escapeHtml(blurb)}</p>
@@ -951,10 +920,6 @@ ${tiles}
       </section>
       <h2>Major trade routes through ${escapeHtml(chokepoint.displayName)}</h2>
       ${routesSection}
-      <h2>Related</h2>
-      <ul class="related">
-${relatedItems.map((item) => `        <li>${item}</li>`).join('\n')}
-      </ul>
       <p class="source">Source: ${CHOKEPOINT_REGISTRY_PATH} and ${TRADE_ROUTES_PATH}. Methodology: <a href="/docs/methodology/chokepoints">how chokepoint disruption is scored</a>.</p>`;
   return pageDocument({
     baseUrl,
@@ -1370,7 +1335,6 @@ function buildManifest({ data, baseUrl, changelogPageCount }) {
     '/tools/airspace-disruption-checker/',
   ];
   const changelogRoutes = Array.from({ length: changelogPageCount }, (_, index) => changelogPagePath(index));
-  const glossaryRoutes = data.glossaryTerms.map((term) => `/blog/glossary/${term.slug}/`);
   return {
     schemaVersion: 1,
     baseUrl: normalizeBaseUrl(baseUrl),
@@ -1402,12 +1366,6 @@ function buildManifest({ data, baseUrl, changelogPageCount }) {
         index: '/reference/changelog/',
         routes: changelogRoutes,
         sourceLastmod: data.lastmod.changelog,
-      },
-      glossary: {
-        count: glossaryRoutes.length,
-        index: '/blog/glossary/',
-        routes: glossaryRoutes,
-        generatedBy: 'blog-site Astro build',
       },
     },
   };
@@ -1587,8 +1545,7 @@ async function main() {
     + `${manifest.sections.chokepoints.count} chokepoints, `
     + `${manifest.sections.crises.count} crisis trackers, `
     + `${manifest.sections.tools.count} live tools, `
-    + `${manifest.sections.changelog.count} changelog pages. `
-    + `Glossary manifest references ${manifest.sections.glossary.count} existing blog pages.\n`,
+    + `${manifest.sections.changelog.count} changelog pages.\n`,
   );
 }
 

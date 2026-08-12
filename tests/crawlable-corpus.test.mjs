@@ -47,7 +47,7 @@ describe('crawlable corpus generator', () => {
       assert.equal(manifest.sections.tools.count, 2);
       const liveScriptTag = `<script type="module" nonce="${productionScriptNonce()}" src="/tools/live-tools.js"></script>`;
       assert.ok(manifest.sections.changelog.count >= 2, `expected paginated changelog pages, got ${manifest.sections.changelog.count}`);
-      assert.ok(manifest.sections.glossary.count >= 15, `expected existing glossary manifest entries, got ${manifest.sections.glossary.count}`);
+      assert.ok(!('glossary' in manifest.sections), 'the blog/glossary site is gone; manifest must not advertise it');
 
       for (const path of [
         'countries/index.html',
@@ -75,7 +75,7 @@ describe('crawlable corpus generator', () => {
       assert.match(norway, /<h1>Norway country risk and resilience<\/h1>/);
       assert.match(norway, /<link rel="canonical" href="https:\/\/www\.worldmonitor\.app\/countries\/norway\/">/);
       assert.match(norway, /<meta name="lastmod" content="2026-05-28">/);
-      assert.match(norway, /Source: docs\/snapshots\/resilience-ranking-2026-05-28\.json/);
+      assert.match(norway, /Source: data\/resilience-snapshots\/resilience-ranking-2026-05-28\.json/);
       assert.doesNotMatch(norway, /id="app"/, 'country page must be raw static HTML, not the SPA shell');
       assert.match(norway, /data-live-country-risk data-country-code="NO" data-country-name="Norway"/);
       assert.match(norway, /Instability is a fast-moving composite/);
@@ -124,8 +124,8 @@ describe('crawlable corpus generator', () => {
       // Human trade-route names replace the old raw route-id dump.
       assert.match(hormuz, /Persian Gulf → Europe \(Oil\)/);
       assert.doesNotMatch(hormuz, /Canonical ID|Energy baseline|Route IDs:/, 'chokepoint page must not dump raw registry fields');
-      // Cross-link to the matching glossary term.
-      assert.match(hormuz, /href="\/blog\/glossary\/strait-of-hormuz\/"/);
+      // The blog/glossary site is gone; chokepoint pages must not link to it.
+      assert.doesNotMatch(hormuz, /href="\/blog\/glossary\/strait-of-hormuz\/"/);
       assert.match(hormuz, /data-live-chokepoint data-chokepoint-id="hormuz_strait"/);
       assert.match(hormuz, /traffic-light badge is a disruption score, not an operational closure declaration/i);
       assert.ok(hormuz.includes(liveScriptTag), 'chokepoint live script must match the production CSP nonce');
@@ -204,7 +204,7 @@ describe('crawlable corpus generator', () => {
 
   it('loads deterministic source data without network access', async () => {
     const data = await loadCorpusData({ rootDir: repoRoot });
-    assert.equal(data.sources.resilienceSnapshot, 'docs/snapshots/resilience-ranking-2026-05-28.json');
+    assert.equal(data.sources.resilienceSnapshot, 'data/resilience-snapshots/resilience-ranking-2026-05-28.json');
     assert.equal(data.sources.liveToolsScript, 'scripts/crawlable-live-tools.mjs');
     assert.equal(data.sources.countryBboxes, 'shared/country-bboxes.js');
     assert.equal(data.sources.crisisRegistry, 'shared/crawlable-crises.json');
@@ -218,7 +218,7 @@ describe('crawlable corpus generator', () => {
     )));
     assert.ok(data.countries.some((country) => country.slug === 'norway' && country.rank === 1));
     assert.ok(data.chokepoints.some((chokepoint) => chokepoint.slug === 'strait-of-hormuz' && chokepoint.id === 'hormuz_strait'));
-    assert.ok(data.glossaryTerms.some((term) => term.slug === 'country-resilience-index'));
+    assert.ok(!('glossaryTerms' in data), 'the blog/glossary site is gone; corpus data must not load glossary terms');
     assert.ok(data.changelog[0].bullets[0].includes('server scorer read non-existent'));
     assert.ok(data.changelog[0].bullets[0].includes('methodology_version is now v8'));
     assert.match(data.lastmod.chokepoints, /^\d{4}-\d{2}-\d{2}$/);

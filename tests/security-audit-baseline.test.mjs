@@ -73,7 +73,6 @@ describe('security audit baseline', () => {
 
   it('tracks a baseline entry for each audited lockfile', () => {
     assert.deepEqual(Object.keys(BASELINE_ADVISORIES_BY_LOCKFILE).sort(), [
-      'blog-site/package-lock.json',
       'consumer-prices-core/package-lock.json',
       'docker/runtime-package-lock.json',
       'package-lock.json',

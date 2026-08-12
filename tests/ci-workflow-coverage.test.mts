@@ -49,13 +49,12 @@ const REQUIRED_GATE_WORKFLOWS = ['Test', 'Typecheck', 'Lint Code', 'Security Aud
 const REQUIRED_NON_TEST_GATE_CHECKS = [
   'typecheck',
   'biome',
-  'public-docs',
   'security-audit',
 ] as const;
 
 const REQUIRED_RESILIENCE_VALIDATION_INPUTS = [
   'Dockerfile.seed-bundle-resilience-validation',
-  'docs/methodology/country-resilience-index/validation/',
+  'data/resilience-validation/',
   'scripts/benchmark-resilience-external.mjs',
   'scripts/backtest-resilience-outcomes.mjs',
   'scripts/validate-resilience-sensitivity.mjs',
@@ -145,13 +144,6 @@ function securityAuditMatrixLockfiles(): string[] {
 }
 
 describe('CI workflow coverage', () => {
-  it('runs the public documentation boundary on docs-only pull requests', () => {
-    const publicDocsJob = workflowJobBlock(lintCodeWorkflow, 'public-docs');
-
-    assert.match(publicDocsJob, /npm run lint:public-docs/);
-    assert.doesNotMatch(publicDocsJob, /needs: changes/);
-  });
-
   it('keeps required PR smoke scripts defined and wired into workflows', () => {
     for (const script of REQUIRED_PR_SCRIPTS) {
       assert.equal(typeof packageScripts[script], 'string', `package.json must define ${script}`);

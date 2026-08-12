@@ -263,18 +263,12 @@ describe('defense-patents deployment wiring', () => {
     assert.deepEqual(service?.requiredEnv, ['USPTO_API_KEY']);
   });
 
-  it('keeps the empty abstract compatibility contract explicit in generated API docs', () => {
+  it('keeps the empty abstract compatibility contract explicit in the proto', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const root = join(here, '..');
     const proto = readFileSync(join(root, 'proto/worldmonitor/military/v1/list_defense_patents.proto'), 'utf8');
-    const openapi = JSON.parse(readFileSync(join(root, 'docs/api/MilitaryService.openapi.json'), 'utf8'));
-    const abstractSchema = openapi.components.schemas.DefensePatentFiling.properties.abstract;
-    const responseExample = openapi.paths['/api/military/v1/list-defense-patents']
-      .get.responses['200'].content['application/json'].example;
 
     assert.match(proto, /Always empty because[\s\S]*string abstract = 7/);
-    assert.match(abstractSchema.description, /Always empty because/);
-    assert.equal(responseExample.patents[0].abstract, '');
   });
 
   it('does not attribute any app locale to the retired PatentsView source', () => {

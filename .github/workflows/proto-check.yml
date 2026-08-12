@@ -5,7 +5,6 @@ on:
     paths:
       - 'proto/**'
       - 'src/generated/**'
-      - 'docs/api/**'
       - 'Makefile'
       - '.github/workflows/proto-check.yml'
 
@@ -42,7 +41,7 @@ jobs:
 
       - name: Verify generated code is up to date
         run: |
-          if ! git diff --exit-code src/generated/ docs/api/; then
+          if ! git diff --exit-code src/generated/; then
             echo ""
             echo "============================================================"
             echo "ERROR: Proto-generated code is out of date."
@@ -51,7 +50,7 @@ jobs:
             exit 1
           fi
 
-          UNTRACKED=$(git ls-files --others --exclude-standard src/generated/ docs/api/)
+          UNTRACKED=$(git ls-files --others --exclude-standard src/generated/)
           if [ -n "$UNTRACKED" ]; then
             echo ""
             echo "============================================================"

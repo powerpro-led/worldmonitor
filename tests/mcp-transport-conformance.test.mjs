@@ -4,7 +4,6 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 
@@ -456,14 +455,17 @@ describe('api/mcp.ts — transport conformance over real HTTP', () => {
 // GET keeps serving the server card so manifest fetchers are unaffected, and
 // an SSE-flavored GET falls through to the endpoint's standalone-stream 405.
 describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
+  // The server card (public/.well-known/mcp/server-card.json) and guide
+  // (public/mcp-server.md) used to be static files this handler self-fetched
+  // off the live deployment. That whole public developer-portal doc surface
+  // was retired for this private fork, so both documents are now generated
+  // in-process straight from the live tools/prompts/resources registries
+  // (see buildServerCardPayload/buildMcpGuideMarkdown in api/mcp/handler.ts)
+  // — no self-fetch, no static-asset fallback, nothing to mock here anymore.
   let mcpHandler;
   let deps;
   let server;
   let aliasUrl;
-  let staticFetchCalls;
-  const realFetch = globalThis.fetch;
-  const cardText = readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8');
-  const guideText = readFileSync(new URL('../public/mcp-server.md', import.meta.url), 'utf8');
 
   beforeEach(async () => {
     process.env.MCP_INTERNAL_HMAC_SECRET = HMAC_SECRET;
@@ -477,26 +479,9 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
     deps = NO_BEARER_DEPS;
     server = await startMcpServer(mcpHandler, deps);
     aliasUrl = server.url.replace('/mcp', '/.well-known/mcp');
-    staticFetchCalls = [];
-    // The handler self-fetches the static card asset; the localhost harness
-    // has no static file server, so serve the on-disk card for that one URL
-    // and delegate everything else (including the test's own requests).
-    globalThis.fetch = (input, init) => {
-      const href = typeof input === 'string' ? input : input.url ?? String(input);
-      if (href.endsWith('/.well-known/mcp/server-card.json')) {
-        staticFetchCalls.push({ href, init });
-        return Promise.resolve(new Response(cardText, { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      }
-      if (href.endsWith('/mcp-server.md')) {
-        staticFetchCalls.push({ href, init });
-        return Promise.resolve(new Response(guideText, { status: 200, headers: { 'Content-Type': 'text/markdown' } }));
-      }
-      return realFetch(input, init);
-    };
   });
 
   afterEach(async () => {
-    globalThis.fetch = realFetch;
     if (server) await server.close();
     Object.keys(process.env).forEach((k) => {
       if (!(k in originalEnv)) delete process.env[k];
@@ -514,21 +499,15 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
     // Endpoint must be readable under EVERY manifest dialect scanners parse:
     // top-level `url` + `kind` (ora.ai /.well-known/mcp.json convention),
     // `serverUrl` (SEP-1649 server card), and registry-style `remotes`.
-    assert.equal(card.url, 'https://worldmonitor.app/mcp');
+    assert.equal(card.url, server.url);
     assert.equal(card.kind, 'product');
-    assert.equal(card.serverUrl, 'https://worldmonitor.app/mcp');
-    assert.equal(card.remotes?.[0]?.url, 'https://worldmonitor.app/mcp');
-    const cardFetch = staticFetchCalls.find(({ href }) => href.endsWith('/.well-known/mcp/server-card.json'));
-    assert.ok(cardFetch, 'server card must be loaded through the deployment self-fetch');
-    assert.equal(
-      new Headers(cardFetch.init?.headers).get('user-agent'),
-      'WorldMonitor-MCP/1.0 (+https://worldmonitor.app)',
-      'server-side fetches must identify WorldMonitor to the deployment edge',
-    );
-    // The manifest is a static, immutable-per-deploy asset — it must stay
-    // cacheable (it was `public, max-age=3600` as a static file). The MCP
-    // no-store CORS bundle must NOT clobber that on the manifest GET, or every
-    // discovery fetch (orank + every MCP client) re-hits the function.
+    assert.equal(card.serverUrl, server.url);
+    assert.equal(card.remotes?.[0]?.url, server.url);
+    // The manifest is generated fresh per request but must stay cacheable
+    // (immutable-per-deployment, derived from the same registries the deploy
+    // already froze). The MCP no-store CORS bundle must NOT clobber that on
+    // the manifest GET, or every discovery fetch (orank + every MCP client)
+    // re-runs the generation.
     assert.match(res.headers.get('cache-control') ?? '', /max-age=3600/,
       'server card GET must be cacheable, not the endpoint no-store');
     assert.doesNotMatch(res.headers.get('cache-control') ?? '', /no-store/);
@@ -538,7 +517,7 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
     const res = await fetch(`${aliasUrl}.json`, { headers: { Accept: 'application/json' } });
     assert.equal(res.status, 200);
     const card = await res.json();
-    assert.equal(card.url, 'https://worldmonitor.app/mcp');
+    assert.equal(card.url, server.url);
   });
 
   it('plain GET /mcp serves the human-readable server guide (crawler-accessible discovery)', async () => {
@@ -548,70 +527,18 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
     assert.equal(res.status, 200, 'a plain GET /mcp must not be the transport 405 (Search Console reads it as "cannot access")');
     assert.match(res.headers.get('content-type') ?? '', /text\/markdown/i);
     const body = await res.text();
-    assert.match(body, /# World Monitor MCP Server/, 'must be the mcp-server.md guide, not the JSON card');
-    assert.match(body, /https:\/\/worldmonitor\.app\/mcp/, 'guide must advertise the apex transport URL');
-    assert.match(res.headers.get('link') ?? '', /<https:\/\/worldmonitor\.app\/mcp>;\s*rel="canonical"/,
-      'discovery representation must declare the apex endpoint canonical');
+    assert.match(body, /# worldmonitor MCP server/i, 'must be the generated server guide, not the JSON card');
+    assert.ok(body.includes(server.url), 'guide must advertise the apex transport URL');
+    assert.ok(
+      (res.headers.get('link') ?? '').includes(`<${server.url}>; rel="canonical"`),
+      'discovery representation must declare the apex endpoint canonical',
+    );
   });
 
-  it('redirects discovery reads when deployment static-asset self-fetches fail', async () => {
-    // Import the implementation directly with a unique query so its module-scope
-    // document caches start empty; api/mcp.ts re-exports a shared handler module.
-    const fresh = await import(`../api/mcp/handler.ts?fallback=${Date.now()}-${Math.random()}`);
-    const fallbackServer = await startMcpServer(fresh.mcpHandler, deps);
-    const fallbackAliasUrl = fallbackServer.url.replace('/mcp', '/.well-known/mcp');
-    const successfulStaticFetch = globalThis.fetch;
-
-    globalThis.fetch = (input, init) => {
-      const href = typeof input === 'string' ? input : input.url ?? String(input);
-      if (href.endsWith('/.well-known/mcp/server-card.json')) {
-        return Promise.reject(new Error('deployment self-fetch failed'));
-      }
-      if (href.endsWith('/mcp-server.md')) {
-        return Promise.resolve(new Response(null, { status: 503 }));
-      }
-      return realFetch(input, init);
-    };
-
-    try {
-      const cardFallback = await fetch(fallbackAliasUrl, {
-        headers: { Accept: 'application/json' },
-        redirect: 'manual',
-      });
-      assert.equal(cardFallback.status, 302);
-      assert.equal(cardFallback.headers.get('location'), '/.well-known/mcp/server-card.json');
-      assert.match(cardFallback.headers.get('vary') ?? '', /\bAccept\b(?!-)/i);
-      assert.match(cardFallback.headers.get('vary') ?? '', /\bLast-Event-ID\b/i);
-
-      const guideFallback = await fetch(fallbackServer.url, {
-        headers: { Accept: 'text/html,*/*' },
-        redirect: 'manual',
-      });
-      assert.equal(guideFallback.status, 302);
-      assert.equal(guideFallback.headers.get('location'), '/mcp-server.md');
-      assert.match(guideFallback.headers.get('vary') ?? '', /\bAccept\b(?!-)/i);
-      assert.match(guideFallback.headers.get('vary') ?? '', /\bLast-Event-ID\b/i);
-
-      const cardHeadFallback = await fetch(fallbackAliasUrl, {
-        method: 'HEAD',
-        headers: { Accept: 'application/json' },
-        redirect: 'manual',
-      });
-      assert.equal(cardHeadFallback.status, cardFallback.status);
-      assert.equal(cardHeadFallback.headers.get('location'), cardFallback.headers.get('location'));
-
-      const guideHeadFallback = await fetch(fallbackServer.url, {
-        method: 'HEAD',
-        headers: { Accept: 'text/html,*/*' },
-        redirect: 'manual',
-      });
-      assert.equal(guideHeadFallback.status, guideFallback.status);
-      assert.equal(guideHeadFallback.headers.get('location'), guideFallback.headers.get('location'));
-    } finally {
-      globalThis.fetch = successfulStaticFetch;
-      await fallbackServer.close();
-    }
-  });
+  // The old "redirects discovery reads when deployment static-asset
+  // self-fetches fail" test lived here — it exercised a 302-to-static-file
+  // fallback path that no longer exists now that both documents are
+  // generated in-process (nothing to fall back FROM anymore).
 
   // ── cache-key contract ────────────────────────────────────────────────────
   // Regression net for a bug reproduced on production: /.well-known/mcp served
@@ -667,8 +594,10 @@ describe('api/mcp.ts — /.well-known/mcp dual-role alias', () => {
     assert.match(discovery.headers.get('cache-control') ?? '', /\bno-store\b/i);
     assert.match(discovery.headers.get('vary') ?? '', /\bAccept\b(?!-)/i);
     assert.match(discovery.headers.get('vary') ?? '', /\bLast-Event-ID\b/i);
-    assert.match(discovery.headers.get('link') ?? '', /<https:\/\/worldmonitor\.app\/mcp>;\s*rel="canonical"/,
-      'HEAD must retain the matching guide GET canonical link');
+    assert.ok(
+      (discovery.headers.get('link') ?? '').includes(`<${server.url}>; rel="canonical"`),
+      'HEAD must retain the matching guide GET canonical link',
+    );
 
     const manifest = await fetch(aliasUrl, { method: 'HEAD', headers: { Accept: 'application/json' } });
     assert.equal(manifest.status, 200);

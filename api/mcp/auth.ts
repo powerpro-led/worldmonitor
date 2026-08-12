@@ -160,9 +160,9 @@ export function getMcpBillingVerificationDenial(
       id: id ?? null,
       error: {
         // -32002 is the confirmed-lapse code (HTTP 403, no WWW-Authenticate).
-        // -32001 stays reserved for authentication failures at HTTP 401 per
-        // docs/mcp-error-catalog.mdx — reusing it here sent doc-following
-        // agents into a pointless OAuth re-auth loop.
+        // -32001 stays reserved for authentication failures at HTTP 401 —
+        // reusing it here sent doc-following agents into a pointless OAuth
+        // re-auth loop.
         code: retryable ? -32603 : -32002,
         message,
         data: { code: billingStatus },

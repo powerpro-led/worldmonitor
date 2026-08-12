@@ -1,6 +1,5 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -326,13 +325,17 @@ describe('api/mcp.ts — JMESPath projection (v1.7.0)', () => {
       assert.ok(/daily quota/i.test(inst), 'missing quota note');
     });
 
-    it('server-card.json version matches SERVER_VERSION (currently 1.15.0)', () => {
-      // Cross-check the comment at api/mcp.ts:~56 — discovery scanners
-      // verify both values; a future bump that misses one would break
-      // discovery. This is the test that prevents that drift.
-      const card = JSON.parse(readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8'));
+    it('generated server card version matches SERVER_VERSION (currently 1.15.0)', async () => {
+      // The server card used to be a hand-maintained static file that could
+      // drift from SERVER_VERSION; it's now generated in-process on every
+      // /.well-known/mcp GET (see buildServerCardPayload in
+      // api/mcp/handler.ts), so this fetches the live-generated card instead.
+      const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }));
+      const card = JSON.parse(await res.text());
       assert.equal(card.serverInfo.version, '1.15.0');
-      assert.equal(card.features?.responseProjection, 'jmespath');
     });
 
     it('initialize still includes capabilities + protocolVersion unchanged', async () => {

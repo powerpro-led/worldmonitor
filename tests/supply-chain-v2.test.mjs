@@ -126,28 +126,6 @@ describe('Generated types include aisDisruptions', () => {
 });
 
 // ========================================================================
-// 3. OpenAPI spec includes aisDisruptions
-// ========================================================================
-
-describe('OpenAPI spec includes aisDisruptions', () => {
-  const jsonSpec = readSrc('docs/api/SupplyChainService.openapi.json');
-  const yamlSpec = readSrc('docs/api/SupplyChainService.openapi.yaml');
-
-  it('JSON spec has aisDisruptions property on ChokepointInfo', () => {
-    const parsed = JSON.parse(jsonSpec);
-    const cpSchema = parsed.components.schemas.ChokepointInfo;
-    assert.ok(cpSchema.properties.aisDisruptions, 'aisDisruptions missing from JSON spec');
-    assert.equal(cpSchema.properties.aisDisruptions.type, 'integer');
-    assert.equal(cpSchema.properties.aisDisruptions.format, 'int32');
-  });
-
-  it('YAML spec has aisDisruptions property', () => {
-    assert.match(yamlSpec, /aisDisruptions:/, 'aisDisruptions missing from YAML spec');
-    assert.match(yamlSpec, /aisDisruptions:\s*\n\s*type:\s*integer/, 'YAML aisDisruptions should be type integer');
-  });
-});
-
-// ========================================================================
 // 4. Cache keys bumped to v2
 // ========================================================================
 

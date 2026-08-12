@@ -44,9 +44,6 @@ const EXCLUDED_PREFIXES = [
   'node_modules/',
   'src/locales/',
   'src/generated/',
-  'docs/',
-  'blog-site/',
-  'public/blog/',
   'scripts/data/',
   'scripts/node_modules/',
 ];

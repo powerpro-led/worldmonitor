@@ -15,10 +15,8 @@ const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..');
 const MANIFEST_PATH = path.join(
   REPO_ROOT,
-  'docs',
-  'methodology',
-  'country-resilience-index',
-  'reference-edition',
+  'data',
+  'resilience-reference-edition',
   '2026',
   'manifest.json',
 );

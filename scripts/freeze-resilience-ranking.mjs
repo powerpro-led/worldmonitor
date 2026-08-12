@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Freeze a live snapshot of the resilience ranking for regression-verification
-// of published figures. Writes to docs/snapshots/resilience-ranking-<YYYY-MM-DD>.json.
+// of published figures. Writes to data/resilience-snapshots/resilience-ranking-<YYYY-MM-DD>.json.
 //
 // Usage:
 //   API_BASE=https://api.worldmonitor.app node scripts/freeze-resilience-ranking.mjs
@@ -406,7 +406,7 @@ function resolveRankingSnapshotOutputPath(capturedAt, outputBasename = OUTPUT_BA
       `RESILIENCE_RANKING_OUTPUT_BASENAME date ${match[1]} must match capturedAt ${capturedAt}`,
     );
   }
-  return path.join(REPO_ROOT, 'docs', 'snapshots', basename);
+  return path.join(REPO_ROOT, 'data', 'resilience-snapshots', basename);
 }
 
 async function main() {

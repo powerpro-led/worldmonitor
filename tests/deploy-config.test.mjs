@@ -33,7 +33,7 @@ const dockerNginxSource = readFileSync(resolve(__dirname, '../docker/nginx.conf'
 const frontendDockerfileSource = readFileSync(resolve(__dirname, '../docker/Dockerfile'), 'utf-8');
 const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 'utf-8');
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
-const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|auth\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
+const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
 const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs|embed|embed\\.html).*)';
 const GLOBAL_CSP_INLINE_SCRIPT_HTML_FILES = [
   'index.html',
@@ -179,7 +179,7 @@ describe('crawlable content corpus deployment contracts', () => {
     writeFileSync(target, '<!doctype html><html><head>' + head + '</head><body>fixture</body></html>');
   };
 
-  it('runs content corpus sitemap integration after generated blog pages but before Vite builds', () => {
+  it('runs content corpus sitemap integration before Vite builds', () => {
     assert.equal(
       packageJson.scripts['build:crawlable-corpus'],
       'tsx scripts/build-crawlable-corpus.mjs'
@@ -191,13 +191,8 @@ describe('crawlable content corpus deployment contracts', () => {
 
     for (const scriptName of ['build', 'build:full']) {
       const script = packageJson.scripts[scriptName];
-      assert.ok(script.includes('npm run build:blog'), scriptName + ' must build the Astro blog first');
       assert.ok(script.includes('npm run build:crawlable-corpus'), scriptName + ' must build the static corpus');
       assert.ok(script.includes('npm run build:content-corpus'), scriptName + ' must run content corpus sitemap integration');
-      assert.ok(
-        script.indexOf('npm run build:blog') < script.indexOf('npm run build:crawlable-corpus'),
-        scriptName + ' must build /blog first so existing /blog/glossary remains delegated to the blog sitemap'
-      );
       assert.ok(
         script.indexOf('npm run build:crawlable-corpus') < script.indexOf('npm run build:content-corpus'),
         scriptName + ' must scan the corpus only after the page generator runs'
@@ -227,7 +222,7 @@ describe('crawlable content corpus deployment contracts', () => {
 
   it('builds Vercel when corpus source files change', () => {
     assert.ok(vercelIgnoreSource.includes("'CHANGELOG.md'"));
-    assert.ok(vercelIgnoreSource.includes("'docs/snapshots/'"));
+    assert.ok(vercelIgnoreSource.includes("'data/resilience-snapshots/'"));
   });
 
   it('keeps corpus inputs available in Docker build contexts', () => {
@@ -250,11 +245,6 @@ describe('crawlable content corpus deployment contracts', () => {
       );
     }
 
-    assert.equal(
-      catchAllMatcher.test('/blog/glossary/country-instability-index/'),
-      false,
-      'existing blog glossary pages stay covered by the /blog static exclusion'
-    );
     assert.equal(catchAllMatcher.test('/country-intel?iso2=UA'), true);
   });
 
@@ -267,9 +257,8 @@ describe('crawlable content corpus deployment contracts', () => {
     }
   });
 
-  it('keeps robots.txt advertising root, blog, and Mintlify docs sitemaps', () => {
+  it('keeps robots.txt advertising root and Mintlify docs sitemaps', () => {
     assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/sitemap\.xml$/m);
-    assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/blog\/sitemap-index\.xml$/m);
     assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/docs\/sitemap\.xml$/m);
   });
 
@@ -1073,17 +1062,15 @@ describe('brief magazine CSP override', () => {
   });
 });
 
-// Agent readiness: RFC 9727 API catalog at /.well-known/api-catalog and
-// the build-time copy of the OpenAPI spec from docs/api/ into public/.
+// Agent readiness: RFC 9727 API catalog at /.well-known/api-catalog.
 // These guardrails protect against:
 //   (1) the status endpoint href drifting away from /api/health (the
 //       real JSON endpoint; the apex /health serves the SPA HTML);
-//   (2) variant build scripts dropping the `npm run build:openapi`
-//       prefix and silently shipping web bundles without the spec;
-//   (3) the openapi source under docs/ being deleted without a
-//       matching removal of the build step;
-//   (4) linkset[0] losing its RFC 9727 `item` enumeration (agent
+//   (2) linkset[0] losing its RFC 9727 `item` enumeration (agent
 //       crawlers read the catalog anchor's item links to find every API).
+// Note: the OpenAPI spec build (docs/api/ → public/openapi.{yaml,json})
+// was retired along with the rest of the public API docs product (private
+// fork, no public API docs) — see the removed build:openapi script.
 describe('agent readiness: api-catalog + openapi build', () => {
   const apiCatalog = JSON.parse(
     readFileSync(resolve(__dirname, '../public/.well-known/api-catalog'), 'utf-8')
@@ -1109,56 +1096,12 @@ describe('agent readiness: api-catalog + openapi build', () => {
     const itemHrefs = catalogEntry.item.map((i) => i.href);
     assert.ok(itemHrefs.includes('https://api.worldmonitor.app/'), 'item list must enumerate the REST API host root');
     assert.ok(itemHrefs.includes('https://worldmonitor.app/mcp'), 'item list must enumerate the MCP server');
-    assert.ok(
-      itemHrefs.includes('https://www.worldmonitor.app/docs/mcp'),
-      'item list must enumerate the docs MCP server (#4958 — it ran unadvertised for weeks)'
-    );
   });
 
-  // #4958 — Mintlify serves a working docs MCP server (search/retrieval over
-  // the documentation) at /docs/mcp; it existed for weeks with zero
-  // advertisement anywhere. Every agent-facing discovery surface must name it
-  // so multi-surface MCP coverage is discoverable.
-  it('advertises the docs MCP server on every discovery surface', () => {
-    const docsMcpUrl = 'https://www.worldmonitor.app/docs/mcp';
-    for (const surface of ['llms.txt', 'agents.md', 'api/llms.txt']) {
-      const content = readFileSync(resolve(__dirname, `../public/${surface}`), 'utf-8');
-      assert.ok(content.includes(docsMcpUrl), `public/${surface} must advertise the docs MCP server`);
-    }
-  });
-
-  it('the docs MCP anchor describes itself with the first-party server-card (service-desc parity with product MCP)', () => {
-    const docsAnchor = apiCatalog.linkset.find((e) => e.anchor === 'https://www.worldmonitor.app/docs/mcp');
-    assert.ok(docsAnchor, 'api-catalog must carry a context object anchored at the docs MCP endpoint');
-    const desc = docsAnchor['service-desc'] ?? [];
-    // Must be the first-party card, NOT Mintlify's card (whose url 404s) — #4964 review.
-    assert.ok(
-      desc.some((d) => d.href === 'https://www.worldmonitor.app/.well-known/mcp/docs-server-card.json'),
-      'docs MCP anchor must advertise the first-party server-card as service-desc'
-    );
-    assert.ok(
-      !desc.some((d) => /\/docs\/\.well-known\/mcp\/server-card\.json/.test(d.href)),
-      'docs MCP anchor must NOT advertise Mintlify\'s card (its url points at a dead mintlify.dev endpoint)'
-    );
-  });
-
-  it('the first-party docs server-card advertises the working /docs/mcp endpoint, not the dead mintlify url', () => {
-    // The whole point of #4964's fix: a card-following agent must land on an
-    // endpoint that actually initializes. worldmonitor.mintlify.dev/mcp 404s;
-    // www.worldmonitor.app/docs/mcp returns 200. The committed card must carry
-    // the working facade URL and must not smuggle the mintlify.dev host.
-    const card = JSON.parse(
-      readFileSync(resolve(__dirname, '../public/.well-known/mcp/docs-server-card.json'), 'utf-8')
-    );
-    const WORKING = 'https://www.worldmonitor.app/docs/mcp';
-    assert.equal(card.url, WORKING, 'docs card url must be the working /docs/mcp facade');
-    assert.equal(card.serverUrl, WORKING, 'docs card serverUrl must be the working /docs/mcp facade');
-    assert.ok(
-      !JSON.stringify({ url: card.url, serverUrl: card.serverUrl }).includes('mintlify.dev'),
-      'docs card endpoint fields must not point at the dead mintlify.dev host'
-    );
-    assert.ok(Array.isArray(card.tools) && card.tools.length >= 1, 'docs card must list at least one tool');
-  });
+  // The old docs-MCP-server tests lived here — Mintlify's docs search/
+  // retrieval MCP server (at /docs/mcp, backed by api/docs-mcp.ts and
+  // docs-server-card.json) was retired along with docs/ (private fork, no
+  // public docs site to search). Nothing left to advertise or guard.
 
   it('the api host root has its own context object', () => {
     assert.ok(apiEntry, 'linkset must contain a context object anchored at https://api.worldmonitor.app/');
@@ -1200,30 +1143,11 @@ describe('agent readiness: api-catalog + openapi build', () => {
     }
   });
 
-  it('service-meta advertises the machine-readable pricing + support surfaces', () => {
-    // Pricing/support were previously discoverable ONLY via llms.txt; agents
-    // entering through the Link-header → api-catalog chain never saw them and
-    // fell back to slug-guessing (#4854, #4857). RFC 9727 allows arbitrary
-    // link relations on a context object; service-meta is the metadata slot.
-    const meta = apiEntry['service-meta'];
-    assert.ok(Array.isArray(meta) && meta.length > 0, 'api context must carry service-meta entries');
-    const hrefs = meta.map((entry) => entry.href);
-    assert.ok(hrefs.includes('https://worldmonitor.app/pricing.md'), 'service-meta must advertise pricing.md');
-    assert.ok(
-      hrefs.includes('https://www.worldmonitor.app/api/product-catalog'),
-      'service-meta must advertise the live product-catalog JSON endpoint'
-    );
-    assert.ok(hrefs.includes('https://worldmonitor.app/support.md'), 'service-meta must advertise support.md');
-    assert.ok(hrefs.includes('https://worldmonitor.app/agents.md'), 'service-meta must advertise agents.md (#4952)');
-    // The Commerce spec lives outside the root openapi bundle (size budget,
-    // #4853) — without this link no advertised descriptor reaches it
-    // (post-#4867 review finding); Mintlify serves the raw YAML at this URL.
-    const commerceSpec = meta.find(
-      (entry) => entry.href === 'https://www.worldmonitor.app/docs/openapi/CommerceService.openapi.yaml'
-    );
-    assert.ok(commerceSpec, 'service-meta must link the Commerce OpenAPI spec');
-    assert.equal(commerceSpec.type, 'application/vnd.oai.openapi');
-  });
+  // The old "service-meta advertises the machine-readable pricing + support
+  // surfaces" test lived here — pricing.md, the product-catalog endpoint, and
+  // the Commerce OpenAPI spec were all part of the billing/dev-portal surface
+  // retired for this private fork (no plans, no pricing, no Mintlify docs to
+  // serve the spec from). service-meta isn't populated anymore.
 
   it('service-desc points at /openapi.yaml with the OpenAPI media type', () => {
     const serviceDesc = apiEntry['service-desc'][0];
@@ -1253,36 +1177,16 @@ describe('agent readiness: api-catalog + openapi build', () => {
   });
 
   it('has a second anchor for the MCP server-card', () => {
+    // The server card is generated in-process now (no more static
+    // .../server-card.json file), served at the /.well-known/mcp alias
+    // itself — see WELL_KNOWN_MCP_PATHS in api/mcp/handler.ts.
     const mcpEntry = apiCatalog.linkset.find((entry) => entry.anchor === 'https://worldmonitor.app/mcp');
     assert.ok(mcpEntry, 'linkset must contain an anchor for https://worldmonitor.app/mcp');
     const mcpServiceDesc = mcpEntry['service-desc']?.[0];
     assert.ok(mcpServiceDesc, 'mcp anchor must have a service-desc entry');
     assert.ok(
-      mcpServiceDesc.href.endsWith('/.well-known/mcp/server-card.json'),
-      `mcp service-desc href must end with /.well-known/mcp/server-card.json, got: ${mcpServiceDesc.href}`
-    );
-  });
-
-  it('exposes a build:openapi script that copies docs/api → public/openapi.yaml AND emits public/openapi.json', () => {
-    const buildOpenapi = pkg.scripts['build:openapi'];
-    assert.ok(buildOpenapi, 'package.json must define scripts["build:openapi"]');
-    assert.ok(
-      buildOpenapi.includes('docs/api/worldmonitor.openapi.yaml'),
-      `build:openapi must reference docs/api/worldmonitor.openapi.yaml, got: ${buildOpenapi}`
-    );
-    assert.ok(
-      buildOpenapi.includes('public/openapi.yaml'),
-      `build:openapi must write to public/openapi.yaml, got: ${buildOpenapi}`
-    );
-    // The JSON mirror (served at /openapi.json for JSON-only scanners) is
-    // generated by scripts/build-openapi-json.mjs in the same step.
-    assert.ok(
-      buildOpenapi.includes('build-openapi-json.mjs'),
-      `build:openapi must run scripts/build-openapi-json.mjs to emit public/openapi.json, got: ${buildOpenapi}`
-    );
-    assert.ok(
-      existsSync(resolve(__dirname, '../scripts/build-openapi-json.mjs')),
-      'scripts/build-openapi-json.mjs must exist'
+      mcpServiceDesc.href.endsWith('/.well-known/mcp'),
+      `mcp service-desc href must end with /.well-known/mcp, got: ${mcpServiceDesc.href}`
     );
   });
 
@@ -1301,34 +1205,8 @@ describe('agent readiness: api-catalog + openapi build', () => {
     );
   });
 
-  it('every web-variant build chains npm run build:openapi', () => {
-    // build:desktop and build:pro are intentionally excluded — Tauri
-    // sidecar builds and the standalone pro-test workspace don't ship
-    // the OpenAPI spec.
-    const webVariants = ['build:full', 'build:tech', 'build:finance', 'build:happy', 'build:commodity'];
-    for (const variant of webVariants) {
-      const script = pkg.scripts[variant];
-      assert.ok(script, `package.json must define scripts["${variant}"]`);
-      assert.ok(
-        script.includes('npm run build:openapi'),
-        `scripts["${variant}"] must chain "npm run build:openapi" so the web bundle ships the spec; got: ${script}`
-      );
-    }
-  });
-
-  it('keeps a prebuild hook so the default `npm run build` path also copies the spec', () => {
+  it('keeps a prebuild hook so the default `npm run build` path also runs shared build steps', () => {
     assert.ok(pkg.scripts.prebuild, 'package.json must define scripts["prebuild"] (default build path uses it)');
-  });
-
-  it('openapi source exists at docs/api/worldmonitor.openapi.yaml', () => {
-    // Catches the class of regression where someone cleans generated
-    // artifacts and forgets to regenerate before committing — the
-    // prebuild step would then fail silently at deploy time.
-    const openapiPath = resolve(__dirname, '../docs/api/worldmonitor.openapi.yaml');
-    assert.ok(
-      existsSync(openapiPath),
-      `docs/api/worldmonitor.openapi.yaml must exist — without it, build:openapi fails at deploy time`
-    );
   });
 });
 
@@ -1366,18 +1244,6 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
       assert.deepEqual(json.bearer_methods_supported, ['header']);
       assert.deepEqual(json.scopes_supported, ['mcp']);
     }
-  });
-
-  it('MCP server card authentication.resource is a valid https URL on a known host', () => {
-    const mcpCard = JSON.parse(
-      readFileSync(resolve(__dirname, '../public/.well-known/mcp/server-card.json'), 'utf-8')
-    );
-    const u = new URL(mcpCard.authentication.resource);
-    assert.equal(u.protocol, 'https:');
-    assert.ok(
-      ['worldmonitor.app', 'www.worldmonitor.app', 'api.worldmonitor.app'].includes(u.host),
-      `unexpected host: ${u.host}`
-    );
   });
 
   it('api/mcp.ts resource_metadata is host-derived, not hardcoded', () => {
@@ -1452,8 +1318,11 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
 
       // WorkOS auth.md agent_auth discovery block (only `anonymous` is honest —
       // WM has no ID-JAG identity endpoint, so identity_assertion is not advertised).
+      // No /auth.md walkthrough is published on this private fork (see
+      // tests/agent-auth-challenge.test.mjs), so `skill` is omitted rather
+      // than pointing at a 404.
       assert.ok(json.agent_auth, `agent_auth block present for ${host}`);
-      assert.equal(json.agent_auth.skill, `https://${host}/auth.md`, `skill round-trips to /auth.md for ${host}`);
+      assert.equal(json.agent_auth.skill, undefined, `no /auth.md walkthrough is published on this fork (${host})`);
       assert.equal(json.agent_auth.register_uri, `https://${host}/oauth/register`);
       assert.deepEqual(json.agent_auth.identity_types_supported, ['anonymous']);
       // Only `access_token` — an api_key is user-minted (carries a user
@@ -1539,96 +1408,13 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
   });
 });
 
-// Agent readiness: a WorkOS-spec /auth.md walkthrough that agents can fetch to
-// learn the registration flow, cross-linked from the AS metadata agent_auth.skill.
-describe('agent readiness: auth.md walkthrough', () => {
-  const authMd = readFileSync(resolve(__dirname, '../public/auth.md'), 'utf-8');
-
-  it('publishes /auth.md with the WorkOS-prescribed sections', () => {
-    for (const heading of ['Discover', 'Pick a method', 'Register', 'Claim', 'Use the credential', 'Errors', 'Revocation']) {
-      assert.match(
-        authMd,
-        new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, 'm'),
-        `auth.md must have a "## ${heading}" section`
-      );
-    }
-  });
-
-  it('references the auth.md spec and carries the spec anchor keywords', () => {
-    assert.ok(authMd.includes('https://workos.com/auth-md'), 'auth.md must reference the WorkOS spec');
-    for (const keyword of ['agent_auth', 'register_uri', 'claim_uri', 'identity_assertion', 'id-jag', 'WWW-Authenticate']) {
-      assert.ok(authMd.includes(keyword), `auth.md must mention spec keyword: ${keyword}`);
-    }
-  });
-
-  it('keeps every section header within the scanner read budget (~5 KB truncation)', () => {
-    // isitagentready / ora.ai reads only the first ~5 KB of auth.md; any `## `
-    // section header past that byte offset is dropped and the section reported
-    // missing (regressing auth-md-structure). This has bitten us before, so
-    // guard with a conservative ceiling — an edit that bloats an earlier
-    // section fails HERE instead of silently regressing the live scan.
-    const HEADER_BUDGET = 4800;
-    let offset = 0;
-    for (const line of authMd.split('\n')) {
-      if (line.startsWith('## ')) {
-        assert.ok(
-          offset < HEADER_BUDGET,
-          `"${line.trim()}" starts at byte ${offset}; must be < ${HEADER_BUDGET} to survive the ~5 KB scanner truncation`
-        );
-      }
-      offset += Buffer.byteLength(line, 'utf8') + 1; // + the newline that split() dropped
-    }
-  });
-
-  it('advertises a register endpoint that resolves (matches the agent_auth register_uri path)', () => {
-    assert.match(
-      authMd,
-      /https:\/\/(?:api\.)?worldmonitor\.app\/oauth\/register/,
-      'auth.md must document the reachable /oauth/register endpoint so the discovery chain is not stale'
-    );
-  });
-
-  it('serves /auth.md as markdown and keeps it off the SPA catch-all', () => {
-    assert.equal(getHeaderValueForSource('/auth.md', 'Content-Type'), 'text/markdown; charset=utf-8');
-    assert.equal(getHeaderValueForSource('/auth.md', 'Access-Control-Allow-Origin'), '*');
-    // Excluded from the SPA catch-all rewrite + cache header (like openapi.json)
-    // so the real file is served instead of the dashboard HTML fallback.
-    const catchAll = vercelConfig.rewrites.find((r) =>
-      r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-    );
-    assert.ok(catchAll.source.includes('|auth\\.md|'), 'SPA catch-all rewrite must exclude /auth.md');
-    assert.ok(SPA_HTML_CACHE_SOURCE.includes('|auth\\.md|'), 'HTML cache catch-all must exclude /auth.md');
-  });
-
-  // support.md is advertised in api-catalog service-meta and llms.txt
-  // (#4857), agents.md is the agent-discovery entry point (#4952), so they
-  // get the same three-way pinning as auth.md: explicit markdown
-  // Content-Type + CORS, catch-all exclusion (deleting or renaming the
-  // static file must 404, not silently serve the dashboard HTML
-  // misleading-200 the journey runs flagged), and this guard. /ai-search.md
-  // joined the set with its canonical Link header (#4999): it is
-  // sitemap-listed, and without the catch-all exclusion the SPA cache-header
-  // catch-all (later in the headers array) overrides its max-age rule.
-  for (const mdPath of ['/support.md', '/agents.md', '/ai-search.md']) {
-    it(`serves ${mdPath} as markdown and keeps it off the SPA catch-all`, () => {
-      assert.equal(getHeaderValueForSource(mdPath, 'Content-Type'), 'text/markdown; charset=utf-8');
-      assert.equal(getHeaderValueForSource(mdPath, 'Access-Control-Allow-Origin'), '*');
-      const catchAll = vercelConfig.rewrites.find((r) =>
-        r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-      );
-      const frag = `|${mdPath.slice(1).replace('.', '\\.')}|`;
-      assert.ok(catchAll.source.includes(frag), `SPA catch-all rewrite must exclude ${mdPath}`);
-      assert.ok(SPA_HTML_CACHE_SOURCE.includes(frag), `HTML cache catch-all must exclude ${mdPath}`);
-      assert.ok(
-        existsSync(resolve(__dirname, `../public${mdPath}`)),
-        `public${mdPath} must exist — it is advertised in api-catalog service-meta and llms.txt`
-      );
-    });
-  }
-
-  // /agent.txt (#4958 follow-up): the when-to-use agent-instruction file
-  // (agent.txt convention; telnyx-parity). Same three-way pinning, but plain
-  // text rather than markdown.
+// Agent readiness: auth.md/support.md/agents.md/ai-search.md were the
+// public-product agent-discovery markdown pages (WorkOS auth walkthrough,
+// support channels, agent operations guide, AI-search landing) and were
+// deleted with the rest of the public dev-portal doc surface (private fork,
+// no public API/SDK product). /agent.txt is the one surviving plain-text
+// discovery surface (#4958 follow-up, telnyx-parity when-to-use file).
+describe('agent readiness: agent.txt', () => {
   it('serves /agent.txt as plain text and keeps it off the SPA catch-all', () => {
     assert.equal(getHeaderValueForSource('/agent.txt', 'Content-Type'), 'text/plain; charset=utf-8');
     assert.equal(getHeaderValueForSource('/agent.txt', 'Access-Control-Allow-Origin'), '*');
@@ -1688,11 +1474,12 @@ describe('agent readiness: homepage Link headers', () => {
       const linkHeader = entry.headers.find((h) => h.key === 'Link');
       assert.ok(linkHeader, `expected a Link header on ${source}`);
 
-      // Must advertise each required rel at least once
+      // Must advertise each required rel at least once. service-doc (the old
+      // /docs/documentation target) dropped off with docs/ — no Mintlify
+      // site left for it to point at (private fork).
       const requiredRels = [
         'rel="api-catalog"',
         'rel="service-desc"',
-        'rel="service-doc"',
         'rel="status"',
         'rel="http://www.iana.org/assignments/relation/oauth-protected-resource"',
         'rel="http://www.iana.org/assignments/relation/oauth-authorization-server"',
@@ -1706,28 +1493,20 @@ describe('agent readiness: homepage Link headers', () => {
         );
       }
 
-      // MCP card rel must carry anchor="/mcp" (server card describes /mcp, not homepage)
+      // MCP card rel must carry anchor="/mcp" (server card describes /mcp, not
+      // homepage). Points at the /.well-known/mcp alias now — the card is
+      // generated in-process (api/mcp/handler.ts), no more static
+      // .../server-card.json file to serve it from.
       assert.match(
         linkHeader.value,
-        /<\/\.well-known\/mcp\/server-card\.json>[^,]*anchor="\/mcp"/,
+        /<\/\.well-known\/mcp>[^,]*anchor="\/mcp"/,
         'mcp-server-card rel must carry anchor="/mcp"'
       );
 
-      // The docs MCP server (#4958) is advertised in the Link header directly —
-      // header-first crawlers should not have to follow rel="api-catalog" to
-      // discover the second MCP surface. Same rel as the product card, but
-      // anchored to /docs/mcp (the card describes the docs endpoint). We
-      // advertise a FIRST-PARTY card (/.well-known/mcp/docs-server-card.json),
-      // NOT Mintlify's /docs/.well-known/mcp/server-card.json, because that
-      // card's url points at worldmonitor.mintlify.dev/mcp which 404s on
-      // initialize — a card-following agent would land on a dead endpoint
-      // (#4964 review). The first-party card advertises the working
-      // /docs/mcp facade.
-      assert.match(
-        linkHeader.value,
-        /<\/\.well-known\/mcp\/docs-server-card\.json>[^,]*rel="mcp-server-card"[^,]*anchor="\/docs\/mcp"/,
-        'docs mcp-server-card rel must point at the first-party /.well-known/mcp/docs-server-card.json with anchor="/docs/mcp"'
-      );
+      // The old docs-MCP-server Link entry (rel="mcp-server-card"
+      // anchor="/docs/mcp") lived here — Mintlify's docs search/retrieval MCP
+      // server was retired along with docs/ (private fork). Only the one
+      // product mcp-server-card entry remains.
 
       // `service-desc` is advertised twice — the JSON spec (/openapi.json,
       // parseable by JSON-only scanners like ora.ai/orank) first, then the
@@ -1744,10 +1523,9 @@ describe('agent readiness: homepage Link headers', () => {
       );
 
       // Target URIs must be root-relative (start with /, not http://).
-      // One target per required rel, plus two rels advertised with a second
-      // target: service-desc (/openapi.json + /openapi.yaml) and
-      // mcp-server-card (product /mcp card + docs /docs/mcp card) — hence +2.
-      const EXTRA_DOUBLE_ADVERTISED_RELS = 2;
+      // One target per required rel, plus one rel advertised with a second
+      // target: service-desc (/openapi.json + /openapi.yaml) — hence +1.
+      const EXTRA_DOUBLE_ADVERTISED_RELS = 1;
       const targetMatches = [...linkHeader.value.matchAll(/<([^>]+)>/g)];
       assert.strictEqual(
         targetMatches.length,
@@ -2000,34 +1778,18 @@ describe('vercel deployment excludes api test files', () => {
 });
 
 // Registry branding + ARD catalog (ora.ai Discovery checks). The MCP
-// server-card must carry the full branding trio (name, icon, description —
-// `registry-branding`), and /.well-known/ai-catalog.json publishes the ARD
-// manifest (`ard-catalog` bonus): host identity plus domain-anchored
-// urn:air: entries, each with a media type, URL, and trust manifest —
-// mirroring ora's own /api/ard/catalog dialect, which is what their parser
-// reads.
+// server-card (public/.well-known/mcp/server-card.json) was the public MCP
+// registry-listing card — deleted with the rest of the public dev-portal
+// surface (private fork, no public MCP registry listing; the live MCP
+// JSON-RPC endpoint at api/mcp/* is untouched and still works). What
+// survives here is /.well-known/ai-catalog.json, the ARD manifest
+// (`ard-catalog` bonus): host identity plus domain-anchored urn:air:
+// entries, each with a media type, URL, and trust manifest — mirroring
+// ora's own /api/ard/catalog dialect, which is what their parser reads.
 describe('agent readiness: registry branding + ARD catalog', () => {
-  const serverCard = JSON.parse(
-    readFileSync(resolve(__dirname, '../public/.well-known/mcp/server-card.json'), 'utf-8')
-  );
   const aiCatalog = JSON.parse(
     readFileSync(resolve(__dirname, '../public/.well-known/ai-catalog.json'), 'utf-8')
   );
-
-  it('server-card carries the full branding trio and the icon asset exists', () => {
-    assert.ok(serverCard.name, 'server-card must have a name');
-    assert.ok(serverCard.description, 'server-card must have a description');
-    assert.match(
-      serverCard.icon ?? '',
-      /^https:\/\/(www\.)?worldmonitor\.app\//,
-      'server-card icon must be an absolute worldmonitor.app URL'
-    );
-    const iconPath = new URL(serverCard.icon).pathname;
-    assert.ok(
-      existsSync(resolve(__dirname, `../public${iconPath}`)),
-      `server-card icon must point at a real public asset (public${iconPath})`
-    );
-  });
 
   it('ai-catalog.json declares the World Monitor host identity', () => {
     assert.strictEqual(aiCatalog.specVersion, '1.0');
@@ -2061,10 +1823,13 @@ describe('agent readiness: registry branding + ARD catalog', () => {
   });
 
   it('the ai-catalog MCP entry points at the real server-card path', () => {
+    // The card is generated in-process now, served at the /.well-known/mcp
+    // alias itself (no more static .../server-card.json file) — see
+    // WELL_KNOWN_MCP_PATHS in api/mcp/handler.ts.
     const mcpEntry = aiCatalog.entries.find((e) => e.type === 'application/mcp-server-card+json');
     assert.ok(mcpEntry, 'ai-catalog must list the MCP server');
     assert.ok(
-      mcpEntry.url.endsWith('/.well-known/mcp/server-card.json'),
+      mcpEntry.url.endsWith('/.well-known/mcp'),
       'MCP entry URL must target the published server-card'
     );
     assert.ok(
@@ -2146,160 +1911,27 @@ describe('variant subdomain dashboard SEO (#4996)', () => {
   });
 });
 
-describe('docs host scoping — Mintlify proxy is www-only (#5345)', () => {
-  // The /docs rewrite proxies worldmonitor.mintlify.dev with no host condition,
-  // so every variant subdomain served the full docs site and Googlebot crawled
-  // the duplicates. Redirects run before rewrites on Vercel, so a host-scoped
-  // redirect entry is what keeps subdomain /docs requests from reaching the
-  // proxy. The host list is derived from the /dashboard variant rewrites so a
-  // new variant subdomain cannot ship outside the docs redirect.
-  const docsHostRedirect = vercelConfig.redirects.find(
-    (r) => r.source === '/docs/:match*' && r.has
-  );
-  const variantHosts = vercelConfig.rewrites
-    .filter((r) => r.source === '/dashboard' && r.has)
-    .map((r) => (r.has ?? []).find((h) => h.type === 'host')?.value ?? '');
+// The old "docs host scoping — Mintlify proxy is www-only (#5345)" describe
+// block lived here — it guarded the host-scoped /docs/:match* and
+// /api-reference/:match* redirects that kept variant subdomains from
+// double-serving the Mintlify docs proxy. docs/ (and the proxy itself) were
+// retired for this private fork, and both redirects were removed with it —
+// nothing left to guard.
 
-  it('redirects subdomain /docs/* to www permanently', () => {
-    assert.ok(docsHostRedirect, 'expected a host-conditioned redirect for /docs/:match*');
-    assert.equal(docsHostRedirect.destination, 'https://www.worldmonitor.app/docs/:match*');
-    assert.equal(docsHostRedirect.permanent, true);
-  });
+// markdown canonical Link headers (#4999): every one of the sitemap-listed
+// markdown pages this guarded (support.md, ai-search.md, developers.md,
+// mcp-server.md, openapi.md, sdks.md) was part of the public dev-portal doc
+// surface and is now deleted (private fork, no public API/SDK product), so
+// the whole describe block is gone with them.
 
-  it('the host condition covers every variant subdomain plus api., and never www.', () => {
-    const hostValue = (docsHostRedirect?.has ?? []).find((h) => h.type === 'host')?.value ?? '';
-    const hostRe = new RegExp(hostValue);
-    assert.ok(variantHosts.length > 0, 'variant host extraction from /dashboard rewrites found nothing');
-    for (const host of [...variantHosts, 'api.worldmonitor.app']) {
-      assert.match(host, hostRe, `${host} must be caught by the docs host redirect`);
-    }
-    assert.ok(!hostRe.test('www.worldmonitor.app'), 'www must keep serving the docs proxy');
-  });
-
-  it('redirects prefix-less /api-reference/* (Googlebot fetches Mintlify RSC route strings) into /docs on www', () => {
-    // Mintlify's RSC flight payload embeds its internal routes without the
-    // /docs base path; Googlebot speculatively fetches those strings against
-    // whatever host served the page. Without this redirect they 404 (the SPA
-    // catch-all excludes ^api), flooding GSC.
-    const redirect = vercelConfig.redirects.find((r) => r.source === '/api-reference/:match*');
-    assert.ok(redirect, 'expected a redirect for /api-reference/:match*');
-    assert.equal(redirect.destination, 'https://www.worldmonitor.app/docs/api-reference/:match*');
-    assert.equal(redirect.permanent, true);
-    assert.equal(redirect.has, undefined, 'must apply on every host, www included');
-  });
-
-  it('the www docs proxy rewrite itself is untouched', () => {
-    const proxy = vercelConfig.rewrites.find((r) => r.source === '/docs/:match*');
-    assert.ok(proxy, 'expected the /docs/:match* rewrite');
-    assert.equal(proxy.destination, 'https://worldmonitor.mintlify.dev/docs/:match*');
-  });
-});
-
-describe('markdown canonical Link headers (#4999)', () => {
-  // The sitemap-listed markdown pages are intentionally raw text/markdown for
-  // agents, so they cannot carry a <link rel="canonical">. RFC 6596 allows the
-  // HTTP Link header form; without it these are the only indexable URLs with
-  // no canonical signal at all.
-  const MD_PAGES = ['/support.md', '/ai-search.md', '/developers.md', '/mcp-server.md', '/openapi.md', '/sdks.md'];
-
-  for (const page of MD_PAGES) {
-    it(`${page} declares a self-referencing canonical Link header`, () => {
-      assert.strictEqual(
-        getHeaderValueForSource(page, 'Link'),
-        `<https://www.worldmonitor.app${page}>; rel="canonical"`,
-        `${page} must self-canonicalize on the www host via the Link header`
-      );
-      assert.strictEqual(
-        getHeaderValueForSource(page, 'Content-Type'),
-        'text/markdown; charset=utf-8'
-      );
-    });
-  }
-
-  it('every sitemap-listed .md URL has the canonical Link header rule', () => {
-    const sitemap = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
-    const mdUrls = [...sitemap.matchAll(/<loc>https:\/\/www\.worldmonitor\.app(\/[^<]+\.md)<\/loc>/g)].map((m) => m[1]);
-    assert.ok(mdUrls.length > 0, 'expected .md entries in sitemap.xml');
-    for (const path of mdUrls) {
-      assert.ok(MD_PAGES.includes(path), `${path} is in sitemap.xml but has no canonical Link header rule — add it to vercel.json and this test`);
-    }
-  });
-});
-
-// #4953 — developer-resource discoverability: an agent web-searching "World
-// Monitor MCP server", "World Monitor OpenAPI", "World Monitor developer
-// portal", or "World Monitor SDK" must land on a crawlable page whose H1 names
-// that resource type. Each named page mirrors the auth.md/ai-search.md serving
-// pattern (static public/*.md, excluded from the SPA catch-all, advertised in
-// the discovery chain).
-describe('agent readiness: named developer-resource pages (#4953)', () => {
-  const DEV_PAGES = [
-    { file: 'developers.md', path: '/developers.md', h1: '# World Monitor Developer Portal' },
-    { file: 'mcp-server.md', path: '/mcp-server.md', h1: '# World Monitor MCP Server' },
-    { file: 'openapi.md', path: '/openapi.md', h1: '# World Monitor OpenAPI Specification' },
-    { file: 'sdks.md', path: '/sdks.md', h1: '# World Monitor SDKs' },
-  ];
-
-  const spaCatchAll = () =>
-    vercelConfig.rewrites.find((r) => r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!'));
-
-  for (const page of DEV_PAGES) {
-    it(`public/${page.file} opens with the brand-named H1 "${page.h1}"`, () => {
-      const body = readFileSync(resolve(__dirname, `../public/${page.file}`), 'utf-8');
-      assert.ok(body.startsWith(`${page.h1}\n`), `public/${page.file} must open with "${page.h1}"`);
-    });
-
-    it(`${page.path} is excluded from the SPA catch-all (serves the static page, not the app shell)`, () => {
-      const catchAll = spaCatchAll();
-      assert.ok(catchAll, 'expected the SPA catch-all rewrite');
-      assert.ok(
-        !sourceToRegExp(catchAll.source).test(page.path),
-        `${page.path} must be excluded from the SPA catch-all rewrite`
-      );
-      assert.ok(
-        !sourceToRegExp(SPA_HTML_CACHE_SOURCE).test(page.path),
-        `${page.path} must be excluded from the pinned HTML-cache catch-all`
-      );
-    });
-  }
-
-  it('advertises the developer portal + resource pages across the discovery chain', () => {
-    // Mirror the #4958 "advertises...on every discovery surface" guard: a page
-    // that is supposed to be advertised everywhere silently going unadvertised
-    // on one surface was a real drift incident. Check the api-catalog plus every
-    // text discovery surface the PR wires (llms.txt, llms-full.txt, agents.md,
-    // api/llms.txt).
-    const catalog = JSON.parse(readFileSync(resolve(__dirname, '../public/.well-known/api-catalog'), 'utf-8'));
-    const catalogHrefs = catalog.linkset.flatMap((ctx) =>
-      Object.values(ctx).flatMap((v) => (Array.isArray(v) ? v.map((e) => e.href) : []))
-    );
-    const surfaces = ['llms.txt', 'llms-full.txt', 'agents.md', 'api/llms.txt'].map((f) => [
-      f,
-      readFileSync(resolve(__dirname, `../public/${f}`), 'utf-8'),
-    ]);
-    // The sitemap and the indexed "Build on World Monitor" blog post are the two
-    // web-search discovery surfaces (candidate fixes #1/#3 of the issue) — assert
-    // them directly so a dropped sitemap entry or blog cross-link is caught here,
-    // not only via the reverse #4999 sitemap->MD_PAGES sweep.
-    const sitemap = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
-    const blogPost = readFileSync(
-      resolve(__dirname, '../blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md'),
-      'utf-8'
-    );
-    for (const page of DEV_PAGES) {
-      const url = `https://worldmonitor.app${page.path}`;
-      assert.ok(catalogHrefs.includes(url), `api-catalog must advertise ${url}`);
-      for (const [name, content] of surfaces) {
-        assert.ok(content.includes(page.path), `public/${name} must link ${page.path}`);
-      }
-      assert.ok(
-        sitemap.includes(`https://www.worldmonitor.app${page.path}`),
-        `sitemap.xml must register ${page.path} on the www host`
-      );
-      assert.ok(blogPost.includes(page.path), `the developer blog post must cross-link ${page.path}`);
-    }
-  });
-});
+// #4953 — developer-resource discoverability: a crawlable page per named
+// public developer resource (developers.md, mcp-server.md, openapi.md,
+// sdks.md), each with a brand-named H1 and cross-linked from the discovery
+// chain (llms.txt, llms-full.txt, agents.md, api/llms.txt, sitemap.xml, and
+// the Astro blog). All of that — the pages themselves, the site-wide llms
+// surfaces, and blog-site — were deleted with the rest of the public
+// API/SDK/CLI product surface (private fork has no public developer
+// portal), so this whole describe block is gone with them.
 
 // NLWeb schemamap (orank "NLWeb Schema Feeds"): keep the file published and
 // discoverable without advertising it through robots.txt. Lighthouse rejects
@@ -2326,18 +1958,15 @@ describe('NLWeb schemamap (/schemamap.xml)', () => {
 
   it('every advertised <loc> resolves to a tracked file or a live route', () => {
     const locs = [...schemamapSource.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    assert.ok(locs.length >= 3, 'schemamap must index at least the homepage, blog, and RSS feed');
+    // blog-site was deleted (private fork, no public blog) and its three
+    // schemamap entries (blog index, RSS feed, glossary) went with it —
+    // only the homepage entry remains.
+    assert.ok(locs.length >= 1, 'schemamap must index at least the homepage');
     const resolvable = {
       'https://www.worldmonitor.app/': () =>
         vercelConfig.rewrites.some((r) =>
           r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
         ),
-      'https://www.worldmonitor.app/blog/': () =>
-        existsSync(resolve(__dirname, '../blog-site/src/pages/index.astro')),
-      'https://www.worldmonitor.app/blog/rss.xml': () =>
-        existsSync(resolve(__dirname, '../blog-site/src/pages/rss.xml.ts')),
-      'https://www.worldmonitor.app/blog/glossary/': () =>
-        existsSync(resolve(__dirname, '../blog-site/src/pages/glossary/index.astro')),
     };
     for (const loc of locs) {
       const probe = resolvable[loc];
@@ -2361,58 +1990,11 @@ describe('NLWeb schemamap (/schemamap.xml)', () => {
   });
 });
 
-// Docs MCP facade: /docs/mcp must hit api/docs-mcp.ts (which lifts the
-// upstream's protocol-level tool-call failures into real JSON-RPC errors)
-// BEFORE the catch-all /docs/:match* Mintlify rewrite — rewrites are
-// first-match-wins, so ordering is load-bearing.
-describe('docs MCP facade (/docs/mcp)', () => {
-  it('rewrites /docs/mcp to /api/docs-mcp ahead of the Mintlify catch-all', () => {
-    const rewrites = vercelConfig.rewrites;
-    const facadeIdx = rewrites.findIndex(
-      (r) => r.source === '/docs/mcp' && r.destination === '/api/docs-mcp'
-    );
-    const mintlifyIdx = rewrites.findIndex(
-      (r) => r.source === '/docs/:match*' && String(r.destination).includes('mintlify.dev')
-    );
-    assert.ok(facadeIdx >= 0, 'missing /docs/mcp → /api/docs-mcp rewrite');
-    assert.ok(mintlifyIdx >= 0, 'Mintlify /docs rewrite missing');
-    assert.ok(facadeIdx < mintlifyIdx, '/docs/mcp rewrite must precede the /docs/:match* Mintlify rewrite');
-    assert.ok(existsSync(resolve(__dirname, '../api/docs-mcp.ts')), 'api/docs-mcp.ts must exist');
-  });
-
-  it('the first-party docs server card still points at the facade URL', () => {
-    const card = JSON.parse(
-      readFileSync(resolve(__dirname, '../public/.well-known/mcp/docs-server-card.json'), 'utf-8')
-    );
-    assert.equal(card.url, 'https://www.worldmonitor.app/docs/mcp');
-    assert.equal(card.serverUrl, 'https://www.worldmonitor.app/docs/mcp');
-  });
-});
-
-// Modular llms.txt (orank "Modular llms.txt per product area"): section-scoped
-// files must exist and the site-wide llms.txt must cross-link every section so
-// agents can discover them without probing paths blind.
-describe('section-scoped llms.txt files', () => {
-  it('tracked section files exist', () => {
-    for (const path of ['../public/api/llms.txt', '../public/developers/llms.txt', '../blog-site/src/pages/llms.txt.ts']) {
-      assert.ok(existsSync(resolve(__dirname, path)), `${path} must exist`);
-    }
-  });
-
-  it('the site-wide llms.txt cross-links every section file and the sandbox', () => {
-    const llms = readFileSync(resolve(__dirname, '../public/llms.txt'), 'utf-8');
-    for (const url of [
-      'https://worldmonitor.app/api/llms.txt',
-      'https://www.worldmonitor.app/docs/llms.txt',
-      'https://worldmonitor.app/developers/llms.txt',
-      'https://www.worldmonitor.app/blog/llms.txt',
-      'https://www.worldmonitor.app/sandbox/index.json',
-      'https://www.worldmonitor.app/schemamap.xml',
-    ]) {
-      assert.ok(llms.includes(url), `public/llms.txt must link ${url}`);
-    }
-  });
-});
+// The old "docs MCP facade (/docs/mcp)" and "section-scoped llms.txt files"
+// describe blocks lived here — api/docs-mcp.ts, the Mintlify /docs rewrite,
+// public/.well-known/mcp/docs-server-card.json, and the whole public/llms.txt
+// family were all part of the public dev-portal doc surface retired for this
+// private fork. Nothing left to guard.
 
 describe('skeleton brand text extraction (#5541)', () => {
   const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');

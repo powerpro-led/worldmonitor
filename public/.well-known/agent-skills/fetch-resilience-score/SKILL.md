@@ -16,7 +16,7 @@ Use this skill when the user asks how "resilient" a country is, or wants the num
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567
 ```
 
-The key must be attached to a Pro subscription. Unauthenticated or free-tier requests return `401` / `403`. Issue a key at https://www.worldmonitor.app/pro.
+The key must be attached to a Pro subscription. Unauthenticated or free-tier requests return `401` / `403`. The key is operator-issued — no self-service signup on this private fork.
 
 ## Endpoint
 

@@ -96,11 +96,6 @@ describe('worldmonitor CLI run() with a mocked transport', () => {
   });
 });
 
-describe('llms.txt advertises the CLI', () => {
-  const llms = readFileSync(join(ROOT, 'public/llms.txt'), 'utf-8');
-
-  it('references the npm package so the discovery entry is not dropped', () => {
-    assert.match(llms, /worldmonitor/);
-    assert.match(llms, /npm|npx/i, 'llms.txt should mention how to install/run the CLI');
-  });
-});
+// The old "llms.txt advertises the CLI" check lived here — public/llms.txt
+// was part of the public developer-portal doc surface retired for this
+// private fork, so there's no discovery file left to guard.

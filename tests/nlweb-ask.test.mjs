@@ -55,11 +55,11 @@ describe('nlweb: /ask endpoint', () => {
     assert.equal(body.query_id, 'q-123');
   });
 
-  it('no-match queries return the honest llms.txt fallback, not a fabricated hit', async () => {
+  it('no-match queries return the honest agent.txt fallback, not a fabricated hit', async () => {
     const res = await post({ query: 'zzzqx unmatchable gibberish' });
     const body = await res.json();
     assert.equal(body.results.length, 1);
-    assert.equal(body.results[0].url, 'https://worldmonitor.app/llms.txt');
+    assert.equal(body.results[0].url, 'https://worldmonitor.app/agent.txt');
     assert.equal(body.results[0].score, 0);
   });
 

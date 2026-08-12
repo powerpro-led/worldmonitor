@@ -14,7 +14,6 @@ const service = readFileSync(resolve(import.meta.dirname, '../src/services/globa
 const premiumPaths = readFileSync(resolve(import.meta.dirname, '../src/shared/premium-paths.ts'), 'utf8');
 const entitlementCheck = readFileSync(resolve(import.meta.dirname, '../server/_shared/entitlement-check.ts'), 'utf8');
 const envExample = readFileSync(resolve(import.meta.dirname, '../.env.example'), 'utf8');
-const docs = readFileSync(resolve(import.meta.dirname, '../docs/global-procurement-intelligence.mdx'), 'utf8');
 
 test('dedicated procurement panel supports discovery controls, pagination, and safe official links', () => {
   assert.match(panel, /id: 'global-procurement'/);
@@ -69,15 +68,11 @@ test('procurement is Pro-enforced and free clients neither fetch nor retain its 
 
 test('procurement deployment documentation identifies the sole optional source credential', () => {
   assert.match(envExample, /SAM_GOV_API_KEY=/);
-  assert.match(docs, /SAM_GOV_API_KEY/);
-  assert.match(docs, /TED, Contracts Finder, CanadaBuys, GETS, and World Bank do not require API keys/);
 });
 
-test('the documented AusTender blocker stays documented and no scraper ships in its place', () => {
+test('no AusTender scraper ships in place of the blocked adapter', () => {
   const seeder = readFileSync(resolve(import.meta.dirname, '../scripts/seed-global-tenders.mjs'), 'utf8');
   const normalizer = readFileSync(resolve(import.meta.dirname, '../scripts/_global-tenders.mjs'), 'utf8');
-  assert.match(docs, /### Australia: AusTender adapter is blocked/);
-  assert.match(docs, /no close|closing date/i);
   assert.match(seeder, /austender.*BLOCKED on the provider/s);
 
   // Any AusTender identifier, host, or notice-path reference in CODE (the
@@ -112,7 +107,4 @@ test('technology-relevance control filters by evidence and never claims bidding 
   assert.match(panel, /Keyword relevance evidence only — not an indication of bidding eligibility/);
   assert.doesNotMatch(panel, /eligible to bid|bidding eligibility confirmed|qualified to bid/i);
   assert.match(service, /minAutomationScore: 0/);
-  assert.match(docs, /min_automation_score/);
-  assert.match(docs, /Technology relevant only/);
-  assert.match(docs, /never assert that an AI system, agent, or vendor is eligible to bid/);
 });

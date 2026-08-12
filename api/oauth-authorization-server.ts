@@ -17,14 +17,15 @@
  * AS metadata aligned on whichever host is scanned, while the same-origin
  * construction also satisfies isitagentready.com / mcp.cloudflare.com.
  *
- * The `agent_auth` block follows the WorkOS auth.md spec
- * (https://workos.com/auth-md). WorldMonitor supports anonymous agent
- * registration: an agent registers a public client via RFC 7591 Dynamic Client
- * Registration (`register_uri`) and completes an OAuth 2.1 authorization_code +
- * PKCE (S256) flow to obtain a bearer access token — no pre-asserted user
- * identity (identity is established interactively during authorization). WM does
- * not implement ID-JAG identity assertion endpoints, so only `anonymous` is
- * advertised. The `skill` field round-trips to the published /auth.md.
+ * The `agent_auth` block follows the WorkOS auth.md convention
+ * (https://workos.com/auth-md), minus the `skill` pointer: this private fork
+ * publishes no public /auth.md walkthrough (same call already made in
+ * api/agent-auth.ts). WorldMonitor supports anonymous agent registration: an
+ * agent registers a public client via RFC 7591 Dynamic Client Registration
+ * (`register_uri`) and completes an OAuth 2.1 authorization_code + PKCE (S256)
+ * flow to obtain a bearer access token — no pre-asserted user identity (identity
+ * is established interactively during authorization). WM does not implement
+ * ID-JAG identity assertion endpoints, so only `anonymous` is advertised.
  *
  * `claim_uri` completes the anonymous method: an anonymously-registered agent's
  * credential is *claimed* (bound to a human owner) at authorization time — the
@@ -34,7 +35,7 @@
  * / ora.ai) require a `claim_uri` for the anonymous registration method; we
  * advertise it both at the `agent_auth` top level (parallel to `register_uri`)
  * and inside the `anonymous` method object so a validator that looks in either
- * location resolves it. See public/auth.md "## Claim".
+ * location resolves it.
  *
  * The Host is client-controlled, so the origin is derived through
  * `resolveMetadataOrigin` (apex + subdomain allowlist, apex fallback) so a
@@ -62,7 +63,6 @@ export default function handler(req: Request): Response {
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: ['mcp'],
     agent_auth: {
-      skill: `${origin}/auth.md`,
       register_uri: `${origin}/oauth/register`,
       claim_uri: `${origin}/oauth/authorize`,
       identity_types_supported: ['anonymous'],

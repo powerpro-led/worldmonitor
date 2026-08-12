@@ -16,7 +16,7 @@ Server-to-server callers (agents, scripts, SDKs) MUST present an API key in the 
 X-WorldMonitor-Key: wm_0123456789abcdef0123456789abcdef01234567
 ```
 
-Issue a key at https://www.worldmonitor.app/pro.
+The key is operator-issued — no self-service signup on this private fork.
 
 ## Endpoint
 

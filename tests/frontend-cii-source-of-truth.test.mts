@@ -631,7 +631,6 @@ describe('frontend CII source of truth', () => {
     const modalPath = resolve(root, 'src/components/CountryIntelModal.ts');
     const strategicRiskSrc = readSrc('src/components/StrategicRiskPanel.ts');
     const serverRiskSrc = readSrc('server/worldmonitor/intelligence/v1/get-risk-scores.ts');
-    const methodologySrc = readSrc('docs/methodology/cii-risk-scores.mdx');
     const mainCss = readSrc('src/styles/main.css');
     const rtlCss = readSrc('src/styles/rtl-overrides.css');
 
@@ -641,7 +640,6 @@ describe('frontend CII source of truth', () => {
     assert.doesNotMatch(rtlCss, /country-intel-/);
 
     assert.match(serverRiskSrc, /overallScore >= 70[\s\S]*'SEVERITY_LEVEL_HIGH'[\s\S]*overallScore >= 40[\s\S]*'SEVERITY_LEVEL_MEDIUM'[\s\S]*'SEVERITY_LEVEL_LOW'/);
-    assert.match(methodologySrc, /`SEVERITY_LEVEL_HIGH` if `overallScore ≥ 70`[\s\S]*`SEVERITY_LEVEL_MEDIUM` if `40 ≤ overallScore < 70`[\s\S]*`SEVERITY_LEVEL_LOW` if `overallScore < 40`/);
     const strategicRiskBands = strategicRiskSrc.match(/const STRATEGIC_RISK_BANDS: readonly StrategicRiskDisplayBand\[\] = \[[\s\S]*?\] as const;/)?.[0] ?? '';
     assert.notEqual(strategicRiskBands, '', 'missing Strategic Risk display band table');
     assert.match(strategicRiskBands, /min: 81[\s\S]*levelKey: 'critical'[\s\S]*colorVar: '--semantic-critical'[\s\S]*min: 66[\s\S]*levelKey: 'high'[\s\S]*colorVar: '--semantic-high'[\s\S]*min: 51[\s\S]*levelKey: 'elevated'[\s\S]*colorVar: '--semantic-elevated'[\s\S]*min: 31[\s\S]*levelKey: 'normal'[\s\S]*colorVar: '--semantic-normal'[\s\S]*min: 0[\s\S]*levelKey: 'low'[\s\S]*colorVar: '--semantic-low'/);

@@ -8,11 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(__filename), '..');
 
 const CARD_PATH = join(ROOT, 'public/.well-known/agent-card.json');
-const SERVER_CARD_PATH = join(ROOT, 'public/.well-known/mcp/server-card.json');
 const VERCEL_JSON_PATH = join(ROOT, 'vercel.json');
 
 const card = JSON.parse(readFileSync(CARD_PATH, 'utf-8'));
-const serverCard = JSON.parse(readFileSync(SERVER_CARD_PATH, 'utf-8'));
 const vercelConfig = JSON.parse(readFileSync(VERCEL_JSON_PATH, 'utf-8'));
 
 // Guards for the A2A surface (orank Identity `a2a-agent-card`): the card at
@@ -48,9 +46,10 @@ describe('a2a: agent card contract', () => {
     }
   });
 
-  it('shares branding with the MCP server card (same icon)', () => {
-    assert.equal(card.iconUrl, serverCard.icon);
-  });
+  // The old "shares branding with the MCP server card (same icon)" test lived
+  // here — the MCP server card is now generated in-process and doesn't carry
+  // an icon field (see api/mcp/handler.ts's buildServerCardPayload), so
+  // there's nothing left to compare against.
 
   it('vercel.json routes /a2a to the endpoint and shields it from the SPA catch-all', () => {
     const rewrite = vercelConfig.rewrites.find((r) => r.source === '/a2a');

@@ -95,8 +95,10 @@ const HOW_TO_CALL = {
     base: 'https://api.worldmonitor.app',
     openapi: 'https://worldmonitor.app/openapi.json',
   },
-  docs: 'https://www.worldmonitor.app/docs/documentation',
-  agentGuidance: 'https://worldmonitor.app/llms.txt',
+  // No public docs site exists on this private fork (the Mintlify docs site
+  // is gone); point at the live agent-guidance file instead.
+  docs: 'https://worldmonitor.app/agent.txt',
+  agentGuidance: 'https://worldmonitor.app/agent.txt',
 } as const;
 
 interface MessagePart {

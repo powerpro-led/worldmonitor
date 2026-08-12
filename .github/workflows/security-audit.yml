@@ -32,10 +32,6 @@ jobs:
             path: consumer-prices-core
             package_json: consumer-prices-core/package.json
             lockfile: consumer-prices-core/package-lock.json
-          - name: blog-site
-            path: blog-site
-            package_json: blog-site/package.json
-            lockfile: blog-site/package-lock.json
           - name: docker-runtime
             path: docker
             package_json: docker/runtime-package.json

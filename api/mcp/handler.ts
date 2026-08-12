@@ -330,23 +330,24 @@ async function handleAuthenticatedSseReplay(
 // /.well-known/mcp and /mcp dual-role support
 // ---------------------------------------------------------------------------
 // vercel.json rewrites /.well-known/mcp into this handler so ONE URL is both
-// the discovery manifest (plain GET → static server card) and a live
-// Streamable HTTP endpoint (POST initialize etc.). Agent-readiness scanners
-// (orank `mcp-server`) POST `initialize` AT the well-known URL; when a static
-// file answered that with a bodyless 405 the check scored "MCP manifest found
-// at /.well-known/mcp but protocol handshake failed" (3/6) even though /mcp
-// itself handshakes cleanly.
+// the discovery manifest (plain GET → generated server card, see
+// buildServerCardPayload below) and a live Streamable HTTP endpoint (POST
+// initialize etc.). Agent-readiness scanners (orank `mcp-server`) POST
+// `initialize` AT the well-known URL; when a static file answered that with
+// a bodyless 405 the check scored "MCP manifest found at /.well-known/mcp
+// but protocol handshake failed" (3/6) even though /mcp itself handshakes
+// cleanly.
 // Two manifest aliases: bare `/.well-known/mcp` (SEP-1649 server-card style)
 // and `/.well-known/mcp.json` (the ora.ai/registry convention whose schema
 // keys the endpoint as top-level `url`). Both rewrite here via vercel.json.
 //
 // A plain GET to `/mcp` itself is NOT an MCP protocol handshake (that stays
 // POST); it is a human or a crawler opening the endpoint in a browser. They
-// get the human-readable server guide (`/mcp-server.md`) instead of the
-// spec-correct 405 that Google Search Console reports as "cannot access".
-// SSE-flavored GETs and GETs with Last-Event-ID still fall through to the
-// normal 405 / replay paths so Streamable HTTP transport semantics are
-// unchanged.
+// get the human-readable server guide (see buildMcpGuideMarkdown below)
+// instead of the spec-correct 405 that Google Search Console reports as
+// "cannot access". SSE-flavored GETs and GETs with Last-Event-ID still fall
+// through to the normal 405 / replay paths so Streamable HTTP transport
+// semantics are unchanged.
 const WELL_KNOWN_MCP_PATHS = new Set(['/.well-known/mcp', '/.well-known/mcp.json']);
 const MCP_TRANSPORT_PATH = '/mcp';
 
@@ -364,56 +365,75 @@ const MCP_TRANSPORT_PATH = '/mcp';
 // contract requires 405. Never emit a cacheable discovery 200 on these paths
 // without this Vary.
 const DISCOVERY_VARY = 'Accept, Last-Event-ID';
-const STATIC_ASSET_FETCH_TIMEOUT_MS = 5_000;
-const STATIC_ASSET_USER_AGENT = 'WorldMonitor-MCP/1.0 (+https://worldmonitor.app)';
 
-// Module-scope caches: both documents are static assets, immutable per deployment.
-let serverCardCache: string | null = null;
-let mcpGuideCache: string | null = null;
-
-// Self-fetch a static asset off our own deployment. Redirects are followed:
-// `/mcp-server.md` is NOT in the Cloudflare apex→www exemption list
-// (ARCHITECTURE.md:72), so an apex-origin self-fetch 301s to www before it
-// resolves. Returns null on any failure so the caller can fall back rather
-// than cache a failure.
-async function fetchStaticAsset(req: Request, path: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), STATIC_ASSET_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(new URL(path, req.url), {
-      headers: { 'User-Agent': STATIC_ASSET_USER_AGENT },
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+// Both discovery documents below used to be static files
+// (public/.well-known/mcp/server-card.json, public/mcp-server.md) that this
+// handler self-fetched off the live deployment. That whole public
+// developer-portal doc surface was retired for this private fork, so the
+// static files are gone — but the self-fetch was the ONLY producer of a
+// response on these paths, so simply removing it would 404/dangle the
+// discovery routes at runtime. Instead both documents are now generated
+// in-process, straight from the same live registries `initialize`,
+// `tools/list`, `prompts/list`, and `resources/list` already serve — which
+// also means they can never drift out of sync with the actual protocol
+// surface the way a hand-maintained static file could.
+function mcpOrigin(req: Request): string {
+  return new URL(req.url).origin;
 }
 
-async function serveServerCard(req: Request, corsHeaders: Record<string, string>, headOnly = false): Promise<Response> {
-  if (serverCardCache === null) {
-    const text = await fetchStaticAsset(req, '/.well-known/mcp/server-card.json');
-    if (text === null) {
-      // Self-fetch failed (deploy skew / transient) — point the fetcher at the
-      // canonical static path instead of caching a failure.
-      return new Response(null, {
-        status: 302,
-        headers: { Location: '/.well-known/mcp/server-card.json', Vary: DISCOVERY_VARY, ...corsHeaders },
-      });
-    }
-    serverCardCache = text;
-  }
-  return new Response(headOnly ? null : serverCardCache, {
+function buildServerCardPayload(req: Request): Record<string, unknown> {
+  const endpoint = `${mcpOrigin(req)}${MCP_TRANSPORT_PATH}`;
+  const description = `${SERVER_NAME} MCP server: live geopolitical, market, and infrastructure intelligence — ${TOOL_LIST_RESPONSE.length} tools, ${PROMPT_LIST_RESPONSE.length} prompt workflows, ${RESOURCE_LIST_RESPONSE.length + RESOURCE_TEMPLATE_LIST_RESPONSE.length} resources.`;
+  return {
+    name: SERVER_NAME,
+    kind: 'product',
+    description,
+    version: SERVER_VERSION,
+    url: endpoint,
+    serverUrl: endpoint,
+    serverInfo: { name: SERVER_NAME, version: SERVER_VERSION, description },
+    protocolVersion: negotiateProtocolVersion(undefined),
+    transport: { type: 'streamableHttp', endpoint },
+    remotes: [{ type: 'streamable-http', url: endpoint }],
+    capabilities: { tools: true, logging: true, resources: true, prompts: true, extensions: true },
+    tools: TOOL_LIST_RESPONSE.map((t) => ({ name: t.name, description: t.description })),
+  };
+}
+
+function buildMcpGuideMarkdown(req: Request): string {
+  const endpoint = `${mcpOrigin(req)}${MCP_TRANSPORT_PATH}`;
+  const lines = [
+    `# ${SERVER_NAME} MCP server`,
+    '',
+    `Streamable HTTP endpoint: \`${endpoint}\` — POST JSON-RPC 2.0, \`initialize\` first.`,
+    `Protocol version: ${negotiateProtocolVersion(undefined)}. Server version: ${SERVER_VERSION}.`,
+    '',
+    '## Instructions',
+    SERVER_INSTRUCTIONS,
+    '',
+    `## Tools (${TOOL_LIST_RESPONSE.length})`,
+    ...TOOL_LIST_RESPONSE.map((t) => `- \`${t.name}\` — ${t.description}`),
+    '',
+    `## Prompts (${PROMPT_LIST_RESPONSE.length})`,
+    ...PROMPT_LIST_RESPONSE.map((p) => `- \`${p.name}\` — ${p.description}`),
+    '',
+    `## Resources (${RESOURCE_LIST_RESPONSE.length} concrete, ${RESOURCE_TEMPLATE_LIST_RESPONSE.length} templated)`,
+    ...RESOURCE_LIST_RESPONSE.map((r) => `- \`${r.uri}\` — ${r.description}`),
+    ...RESOURCE_TEMPLATE_LIST_RESPONSE.map((r) => `- \`${r.uriTemplate}\` — ${r.description}`),
+  ];
+  return lines.join('\n');
+}
+
+function serveServerCard(req: Request, corsHeaders: Record<string, string>, headOnly = false): Response {
+  const body = headOnly ? null : JSON.stringify(buildServerCardPayload(req));
+  return new Response(body, {
     status: 200,
     // Cache-Control comes AFTER the ...corsHeaders spread: getMcpCorsHeaders()
     // carries MCP_CACHE_CONTROL (`no-store`) for the live JSON-RPC/SSE endpoint,
-    // but the manifest is a static, immutable-per-deploy asset that must stay
-    // cacheable (it was `public, max-age=3600` as a static file). Spreading last
-    // would clobber that back to no-store and re-hit the function on every
-    // discovery fetch. Vary is what makes that cacheable 200 SAFE — see
+    // but the manifest is immutable-per-deployment (generated from the same
+    // registries the deploy already froze) and must stay cacheable. Spreading
+    // last would clobber that back to no-store and re-run the generation on
+    // every discovery fetch. Vary is what makes that cacheable 200 SAFE — see
     // DISCOVERY_VARY.
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -429,31 +449,18 @@ async function serveServerCard(req: Request, corsHeaders: Record<string, string>
 // that exact URL is the one thing that can be replayed by a shared cache to an
 // SSE stream-open or an authenticated replay GET. Vary alone would be enough
 // if every cache in the path honored it; no-store means correctness does not
-// depend on that. The cost is one function invocation per crawler GET — the
-// cacheable copy of this document still lives at `/mcp-server.md`.
-async function serveMcpGuide(req: Request, corsHeaders: Record<string, string>, headOnly = false): Promise<Response> {
-  if (mcpGuideCache === null) {
-    const text = await fetchStaticAsset(req, '/mcp-server.md');
-    if (text === null) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: '/mcp-server.md', Vary: DISCOVERY_VARY, ...corsHeaders },
-      });
-    }
-    mcpGuideCache = text;
-  }
-  return new Response(headOnly ? null : mcpGuideCache, {
+// depend on that. The cost is one function invocation per crawler GET.
+function serveMcpGuide(req: Request, corsHeaders: Record<string, string>, headOnly = false): Response {
+  const body = headOnly ? null : buildMcpGuideMarkdown(req);
+  return new Response(body, {
     status: 200,
     // corsHeaders (getMcpCorsHeaders) already carries `no-store, no-transform`
-    // — deliberately NOT overridden here. The canonical link keeps discovery
-    // signals on the apex endpoint, which is the host the Cloudflare apex→www
-    // rule exempts for /mcp (ARCHITECTURE.md:72) and the URL the server card
-    // advertises.
+    // — deliberately NOT overridden here.
     headers: {
       'Content-Type': 'text/markdown; charset=utf-8',
       ...corsHeaders,
       Vary: DISCOVERY_VARY,
-      Link: '<https://worldmonitor.app/mcp>; rel="canonical"',
+      Link: `<${mcpOrigin(req)}${MCP_TRANSPORT_PATH}>; rel="canonical"`,
     },
   });
 }

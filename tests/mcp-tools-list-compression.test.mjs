@@ -1,8 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
 
-import { TOOL_REGISTRY } from '../api/mcp/registry/index.ts';
+import { TOOL_REGISTRY, TOOL_LIST_RESPONSE } from '../api/mcp/registry/index.ts';
 
 const originalEnv = { ...process.env };
 
@@ -429,26 +428,41 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
         'instructions should mention the TOOL_DESCRIPTION_MAX_BYTES cap');
     });
 
-    it('server-card.json version matches SERVER_VERSION (1.15.0) AND tools[] length matches (41)', () => {
-      const card = JSON.parse(readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8'));
+    // The server card used to be a hand-maintained static file
+    // (public/.well-known/mcp/server-card.json) that could drift from the
+    // live registry. That whole static-doc surface was retired for this
+    // private fork — the card is now generated in-process, straight off
+    // TOOL_LIST_RESPONSE/TOOL_REGISTRY, on every /.well-known/mcp GET. These
+    // tests now fetch that live-generated card instead of a static file.
+    async function fetchServerCard() {
+      const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      }));
+      return JSON.parse(await res.text());
+    }
+
+    it('generated server card version matches SERVER_VERSION (1.15.0) AND tools[] length matches (41)', async () => {
+      const card = await fetchServerCard();
       assert.equal(card.serverInfo.version, '1.15.0');
       // orank (ora.ai) agent-readiness scanner reads the card's `tools` as an
       // ARRAY (tools[]) for pre-connection preview — not the old {count,categories}
       // object. Keep it an array; the count now derives from the length.
       assert.ok(Array.isArray(card.tools), 'server-card tools must be an array (tools[])');
       assert.equal(card.tools.length, 41);
-      assert.equal(card.features?.toolDescriptionCompression, true);
-      assert.equal(card.features?.responseProjection, 'jmespath',
-        'v1.4.0 feature flag must still be present');
+      // The old static card carried a `features` metadata block (orank-scanner
+      // presentation only — no code read it back). The generated card doesn't
+      // reproduce it; not worth restoring for a private fork with no public
+      // scanner traffic.
     });
 
-    // orank / MCP pre-connection discovery contract. The server-card is a
-    // static file; this guard fails loudly if the registry adds/removes/renames
-    // a tool or edits a description without regenerating the card, so scanners
-    // never preview a stale tool inventory. Regenerate with:
-    //   npx tsx -e "import('./api/mcp/registry/index.ts').then(m=>console.log(JSON.stringify(m.TOOL_REGISTRY.map(t=>({name:t.name,description:t.description})),null,2)))"
-    it('server-card.json exposes the orank-required top-level fields AND tools[] mirrors the registry', () => {
-      const card = JSON.parse(readFileSync(new URL('../public/.well-known/mcp/server-card.json', import.meta.url), 'utf8'));
+    // The card is generated straight from TOOL_LIST_RESPONSE (the same
+    // compressed-description projection tools/list itself returns — see the
+    // v1.7.0 compression tests above), so this guard now catches a future
+    // refactor where the card's tools[] drifts from what tools/list actually
+    // serves, rather than from the uncompressed TOOL_REGISTRY source.
+    it('generated server card exposes the orank-required top-level fields AND tools[] mirrors the registry', async () => {
+      const card = await fetchServerCard();
 
       // Required top-level fields for full MCP-server-card credit.
       assert.equal(typeof card.name, 'string');
@@ -465,14 +479,13 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
       assert.equal(card.serverUrl, card.transport.endpoint, 'serverUrl must mirror transport.endpoint');
       assert.equal(card.name, card.serverInfo.name, 'top-level name must mirror serverInfo.name');
 
-      // tools[] must be a name+description projection of the live registry,
-      // in the same order.
-      const expected = TOOL_REGISTRY.map((t) => ({ name: t.name, description: t.description }));
+      // tools[] must be a name+description projection of TOOL_LIST_RESPONSE
+      // (the same source tools/list itself serves), in the same order.
+      const expected = TOOL_LIST_RESPONSE.map((t) => ({ name: t.name, description: t.description }));
       assert.deepEqual(
         card.tools,
         expected,
-        'server-card tools[] drifted from api/mcp/registry — regenerate the tools array in ' +
-          'public/.well-known/mcp/server-card.json from TOOL_REGISTRY (see comment above this test)',
+        'server-card tools[] drifted from the tools/list projection it is generated from',
       );
     });
 

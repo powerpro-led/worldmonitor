@@ -9,8 +9,8 @@
 //     node --import tsx/esm scripts/capture-resilience-energy-v2-acceptance.mjs
 //
 // Optional:
-//   BASELINE_RANKING_SNAPSHOT=docs/snapshots/resilience-ranking-live-pre-repair-2026-04-22.json
-//   POST_FLIP_RANKING_SNAPSHOT=docs/snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json
+//   BASELINE_RANKING_SNAPSHOT=data/resilience-snapshots/resilience-ranking-live-pre-repair-2026-04-22.json
+//   POST_FLIP_RANKING_SNAPSHOT=data/resilience-snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json
 //   WORLDMONITOR_API_KEY=<pro-api-key> # adds sampled score-endpoint evidence
 
 import fs from 'node:fs/promises';
@@ -28,7 +28,7 @@ import { INDICATOR_REGISTRY } from '../server/worldmonitor/resilience/v1/_indica
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..');
-const SNAPSHOT_DIR = path.join(REPO_ROOT, 'docs', 'snapshots');
+const SNAPSHOT_DIR = path.join(REPO_ROOT, 'data', 'resilience-snapshots');
 
 const POST_FLIP_RANKING_RE = /^resilience-ranking-live-post-pr1-(\d{4}-\d{2}-\d{2})\.json$/;
 const BASELINE_RANKING_RE = /^resilience-ranking-live-(?:pre-pr1-flip|pre-repair)-(\d{4}-\d{2}-\d{2})\.json$/;
@@ -60,7 +60,7 @@ const SAMPLE_COUNTRIES = (process.env.RESILIENCE_ENERGY_V2_SAMPLE_COUNTRIES || D
 
 class SnapshotNotFoundError extends Error {
   constructor(label) {
-    super(`No ${label} found in docs/snapshots/.`);
+    super(`No ${label} found in data/resilience-snapshots/.`);
     this.name = 'SnapshotNotFoundError';
     this.label = label;
   }
@@ -226,10 +226,10 @@ async function latestSnapshotPath(re, label, snapshotDir = SNAPSHOT_DIR) {
 
 function formatMissingPostFlipRankingSnapshotMessage() {
   return [
-    'No post-flip PR1 resilience ranking snapshot found in docs/snapshots/.',
+    'No post-flip PR1 resilience ranking snapshot found in data/resilience-snapshots/.',
     '',
     'Required prerequisite:',
-    '  docs/snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
+    '  data/resilience-snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
     '',
     'Capture it with production credentials; the freeze script verifies score anchors through get-resilience-score:',
     '  API_BASE=https://www.worldmonitor.app \\',
@@ -237,7 +237,7 @@ function formatMissingPostFlipRankingSnapshotMessage() {
     '    RESILIENCE_RANKING_OUTPUT_BASENAME=resilience-ranking-live-post-pr1-YYYY-MM-DD.json \\',
     '    node scripts/freeze-resilience-ranking.mjs',
     '  # The script must print:',
-    '  #   [freeze-resilience-ranking] wrote .../docs/snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
+    '  #   [freeze-resilience-ranking] wrote .../data/resilience-snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
     '',
     'Then rerun this harness:',
     '  API_BASE=https://www.worldmonitor.app \\',

@@ -28,8 +28,6 @@ CLAUDE.md
 skills/
 !api/skills/
 ideas/
-docs/internal/
-docs/ideation/
 internal/
 # Exception: api/internal/ hosts Vercel edge endpoints that must be tracked
 # (e.g. api/internal/brief-why-matters.ts — RELAY_SHARED_SECRET-auth'd
@@ -100,7 +98,4 @@ tmp/
 # Local data layer's synced SQLite cache (src-tauri/sidecar/local-sync.mjs output)
 src-tauri/sidecar/local-cache.db
 
-# Local planning documents (not for public repo)
-docs/plans/
-docs/brainstorms/
 playground-pricing.html

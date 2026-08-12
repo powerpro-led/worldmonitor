@@ -1,15 +1,23 @@
 #!/usr/bin/env node
 /**
- * docs-stats — single source of truth for the capability counts quoted in docs.
+ * docs-stats — single source of truth for the capability counts quoted in the
+ * repo's remaining (non-Mintlify) docs: README.md, ARCHITECTURE.md, AGENTS.md,
+ * CONTRIBUTING.md, SECURITY.md, index.html.
  *
- * Default mode  : recompute every stat from code and write docs/generated/stats.json.
+ * Default mode  : recompute every stat from code and write
+ *                 scripts/generated/stats.json.
  * --check mode  : recompute, then assert that every registered doc claim still
  *                 matches the live number. Exits non-zero on drift (CI gate).
  *
  * Why this exists: capability counts (map layers, services, protos, locales,
- * workflows, freshness sources, feeds) were hand-maintained across README,
- * ARCHITECTURE.md, and docs/*.mdx and drifted independently. Every number a doc
- * quotes must be derivable here and registered in CLAIMS below.
+ * workflows, freshness sources, feeds) were hand-maintained across these docs
+ * and drifted independently. Every number a doc quotes must be derivable here
+ * and registered in CLAIMS below.
+ *
+ * Note: this previously also validated docs/*.mdx (the public Mintlify docs
+ * site) and blog-site/*.md (the public blog); both were retired along with
+ * the rest of the public-product surface (private fork, no public docs/blog),
+ * so those claims were removed rather than left to fail on missing files.
  *
  * Stats are parsed from source text (no TS execution / import-graph / env deps)
  * so this runs anywhere Node runs, including bare CI.
@@ -25,7 +33,6 @@ const dirsIn = (p) =>
 const filesIn = (p) =>
   readdirSync(join(ROOT, p), { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
 const entriesIn = (p) => readdirSync(join(ROOT, p), { withFileTypes: true }).map((e) => e.name);
-const parseJson = (p) => JSON.parse(read(p));
 
 function sorted(items) {
   return [...items].sort();
@@ -252,7 +259,6 @@ function walk(rel, out = []) {
 
 function computeStats() {
   const makefile = read('Makefile');
-  const serverCard = parseJson('public/.well-known/mcp/server-card.json');
   const mcpApps = parseMcpAppsInventory();
 
   // ---- Map layers (src/config/map-layer-definitions.ts) ----
@@ -285,9 +291,6 @@ function computeStats() {
     .map((f) => (read(f).match(/^service\s+\w+/gm) || []).length)
     .reduce((a, b) => a + b, 0);
   const protoDomainFolders = dirsIn('proto/worldmonitor').length;
-
-  // ---- Generated OpenAPI service specs (docs/api/*Service.openapi.yaml) ----
-  const openapiServiceSpecs = filesIn('docs/api').filter((f) => /Service\.openapi\.yaml$/.test(f)).length;
 
   // ---- Server domain handlers (server/worldmonitor/*/) ----
   const serverDomains = dirsIn('server/worldmonitor').length;
@@ -369,7 +372,6 @@ function computeStats() {
     protoFiles: protoFiles.length,
     protoServices,
     protoDomainFolders,
-    openapiServiceSpecs,
     serverDomains,
     localeCodes,
     locales,
@@ -386,7 +388,6 @@ function computeStats() {
     leaderNames,
     populationPriorityCountries,
     sebufVersion: makefileVar(makefile, 'SEBUF_VERSION'),
-    mcpToolCount: Array.isArray(serverCard.tools) ? serverCard.tools.length : 0,
     mcpApps,
     mcpAppCount: mcpApps.apps.length,
     mcpAppUiResources: mcpApps.uiResources,
@@ -406,11 +407,8 @@ function claims(s) {
     { file: 'README.md', re: /Protocol Buffers \((\d+)\s+protos/, value: s.protoFiles },
     { file: 'README.md', re: /(\d+)\s+services\)/, value: s.protoServices },
     { file: 'README.md', re: /(\d+)\s+languages/, value: s.locales },
-    { file: 'public/llms.txt', re: /(\d+)\s+languages with RTL support/, value: s.locales },
-    { file: 'public/llms-full.txt', re: /(\d+)\s+languages with RTL support/, value: s.locales },
     { file: 'README.md', re: /(\d+)\+\s+curated news feeds/, value: s.feedDefinitions, min: true },
     { file: 'README.md', re: /(\d+)\s+stock exchanges/, value: s.stockExchangeCount },
-    { file: 'docs/overview.mdx', re: /(\d+)\+\s+curated news feeds/, value: s.feedDefinitions, min: true },
 
     // ---- Root contributor/agent/security docs ----
     { file: 'AGENTS.md', re: /with (\d+)\s+top-level TypeScript component files/, value: s.componentTopLevelTsFiles },
@@ -431,145 +429,7 @@ function claims(s) {
     { file: 'SECURITY.md', re: /All (\d+)\s+domain APIs are served through Sebuf/, value: s.serverDomains },
     { file: 'index.html', re: /"(\d+)\s+language support with RTL"/, value: s.locales },
     { file: 'index.html', re: /multilingual \((\d+)\s+locales\)/, value: s.locales },
-
-    { file: 'docs/architecture.mdx', re: /(\d+)\s+service domains, and (?:\d+)\s+map layers/, value: s.protoServices },
-    { file: 'docs/architecture.mdx', re: /(\d+)\s+map layers\./, value: s.layerDefinitions },
-    { file: 'docs/architecture.mdx', re: /\*\*(\d+)\s+service domains\*\* cover/, value: s.protoServices },
-    { file: 'docs/architecture.mdx', re: /All (\d+)\s+map layer toggle definitions/, value: s.layerDefinitions },
-
-    { file: 'docs/map-engine.mdx', re: /\*\*(\d+)\s+data layers\*\*/, value: s.layerDefinitions },
-    { file: 'docs/map-engine.mdx', re: /full \((\d+)\b/, value: s.variantLayers.full },
-    { file: 'docs/map-engine.mdx', re: /tech \((\d+)\b/, value: s.variantLayers.tech },
-    { file: 'docs/map-engine.mdx', re: /finance \((\d+)\b/, value: s.variantLayers.finance },
-    { file: 'docs/map-engine.mdx', re: /happy \((\d+)\b/, value: s.variantLayers.happy },
-    { file: 'docs/map-engine.mdx', re: /commodity \((\d+)\b/, value: s.variantLayers.commodity },
-    { file: 'docs/map-engine.mdx', re: /energy \((\d+)\b/, value: s.variantLayers.energy },
-
-    { file: 'docs/features.mdx', re: /(\d+)\s+data layers/, value: s.layerDefinitions },
-
-    { file: 'docs/agent-discovery.mdx', re: /all (\d+)\s+services/, value: s.protoServices },
-    { file: 'docs/api-reference.mdx', re: /all (\d+)\s+generated services/, value: s.protoServices },
-
-    { file: 'docs/mcp-overview.mdx', re: /same (\d+)\s+tools/, value: s.mcpToolCount },
-    { file: 'docs/mcp-apps.mdx', re: /current fleet ships (\d+)\s+MCP Apps/, value: s.mcpAppCount },
-    { file: 'docs/mcp-quickstart.mdx', re: /WorldMonitor exposes (\d+)\s+live tools/, value: s.mcpToolCount },
-    { file: 'docs/mcp-quickstart.mdx', re: /receives (\d+)\s+compressed tool descriptions/, value: s.mcpToolCount },
-    { file: 'public/mcp-server.md', re: /server ships \*\*(\d+)\s+tools\*\*/, value: s.mcpToolCount },
-
-    { file: 'docs/data-sources.mdx', re: /monitors (\d+)\s+data sources/, value: s.freshnessSources },
-    { file: 'docs/data-sources.mdx', re: /across (\d+)\s+monitored airports/, value: s.airportCount },
-    { file: 'docs/data-sources.mdx', re: /^(\d+)\s+airports across 5 regions/m, value: s.airportCount },
-    { file: 'docs/data-sources.mdx', re: /(\d+)\s+global stock exchanges/, value: s.stockExchangeCount },
-    { file: 'docs/data-sources.mdx', re: /(\d+)\s+central-bank and supranational finance institutions/, value: s.centralBankInstitutionCount },
-    { file: 'docs/features.mdx', re: /signals from (\d+)\s+central-bank and supranational finance institutions/, value: s.centralBankInstitutionCount },
-    { file: 'docs/overview.mdx', re: /(\d+)\s+central-bank and supranational finance institutions/, value: s.centralBankInstitutionCount },
-    { file: 'docs/architecture.mdx', re: /stock exchanges \((\d+)\)/, value: s.stockExchangeCount },
-    { file: 'docs/architecture.mdx', re: /central-bank and supranational finance institutions \((\d+)\)/, value: s.centralBankInstitutionCount },
-    { file: 'docs/COMMUNITY-PROMOTION-GUIDE.md', re: /"(\d+)\s+global stock exchanges mapped/, value: s.stockExchangeCount },
-    { file: 'docs/COMMUNITY-PROMOTION-GUIDE.md', re: /Finance variant with (\d+)\s+exchanges/, value: s.stockExchangeCount },
-    { file: 'docs/PRESS_KIT.md', re: /\| Stock exchanges mapped \| (\d+) \|/, value: s.stockExchangeCount },
-    { file: 'public/llms-full.txt', re: /Stock Exchanges\*\*: (\d+)\s+global exchanges/, value: s.stockExchangeCount },
-    { file: 'public/llms-full.txt', re: /Central Banks & Institutions\*\*: (\d+)\s+central-bank and supranational finance institutions/, value: s.centralBankInstitutionCount },
-    { file: 'public/llms-full.txt', re: /Unique layers: (\d+)\s+stock exchanges/, value: s.stockExchangeCount },
-    { file: 'public/llms-full.txt', re: /Unique layers: \d+\s+stock exchanges, \d+\s+financial centers, (\d+)\s+central-bank and supranational finance institutions/, value: s.centralBankInstitutionCount },
-    { file: 'docs/data-sources.mdx', re: /^(\d+)\s+enabled channels in the default `full` Telegram channel set/m, value: s.telegramFullEnabledChannels },
-    { file: 'docs/data-sources.mdx', re: /\*\*Tier 1\*\* \| (\d+)\s+\|/, value: s.telegramFullTierCounts['1'] },
-    { file: 'docs/data-sources.mdx', re: /\*\*Tier 2\*\* \| (\d+)\s+\|/, value: s.telegramFullTierCounts['2'] },
-    { file: 'docs/data-sources.mdx', re: /\*\*Tier 3\*\* \| (\d+)\s+\|/, value: s.telegramFullTierCounts['3'] },
-    { file: 'docs/algorithms.mdx', re: /local (\d+)-country priority population table/, value: s.populationPriorityCountries },
-    { file: 'docs/algorithms.mdx', re: /and (\d+)\s+tracked world-leader names/, value: s.leaderNames },
-
-    // ---- Blog posts (blog-site/) — capability counts quoted in evergreen developer/overview posts ----
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /typed API: (\d+)\s+services/, value: s.protoServices },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /typed API: \d+\s+services, (\d+)\s+proto files/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /\*\*(\d+)\s+proto files\*\* defining/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /\*\*(\d+)\s+typed service domains\*\*/, value: s.protoServices },
-    // Heading labels the table below it, which is enumerated from server/worldmonitor/* dirs → pin to serverDomains (not protoServices; the two equal 34 today but a domain with two `service` blocks would diverge them).
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /##\s+(\d+)\s+Service Domains/, value: s.serverDomains },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /Protocol Buffers \((\d+)\s+files\)/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /worldmonitor\)\. (\d+)\s+services, \d+\s+proto files, and a global/, value: s.protoServices },
-    { file: 'blog-site/src/content/blog/build-on-worldmonitor-developer-api-open-source.md', re: /worldmonitor\)\. \d+\s+services, (\d+)\s+proto files, and a global/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/what-is-worldmonitor-real-time-global-intelligence.md', re: /typed APIs \((\d+)\s+proto files, \d+\s+services\)/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/what-is-worldmonitor-real-time-global-intelligence.md', re: /typed APIs \(\d+\s+proto files, (\d+)\s+services\)/, value: s.protoServices },
-    { file: 'blog-site/src/content/blog/ai-powered-intelligence-without-the-cloud.md', re: /architecture \((\d+)\s+proto files, \d+\s+typed services\)/, value: s.protoFiles },
-    { file: 'blog-site/src/content/blog/ai-powered-intelligence-without-the-cloud.md', re: /architecture \(\d+\s+proto files, (\d+)\s+typed services\)/, value: s.protoServices },
-    { file: 'blog-site/src/content/blog/worldmonitor-vs-traditional-intelligence-tools.md', re: /using the (\d+)\s+typed API services/, value: s.protoServices },
   ];
-}
-
-function findDocsJsonPages(node, out = []) {
-  if (typeof node === 'string') {
-    out.push(node);
-    return out;
-  }
-  if (Array.isArray(node)) {
-    for (const item of node) findDocsJsonPages(item, out);
-    return out;
-  }
-  if (!node || typeof node !== 'object') return out;
-  for (const value of Object.values(node)) findDocsJsonPages(value, out);
-  return out;
-}
-
-function validateMcpAppsDocs(stats) {
-  const failures = [];
-  const docsPage = read('docs/mcp-apps.mdx');
-  const overview = read('docs/mcp-overview.mdx');
-  const publicMcp = read('public/mcp-server.md');
-  const docsJson = parseJson('docs/docs.json');
-  const serverCard = parseJson('public/.well-known/mcp/server-card.json');
-
-  if (!findDocsJsonPages(docsJson).includes('mcp-apps')) {
-    failures.push('docs/docs.json: MCP Apps page `mcp-apps` is not in navigation');
-  }
-
-  const cardApps = serverCard.metadata?.mcpApps;
-  if (!cardApps || cardApps.supported !== true) {
-    failures.push('public/.well-known/mcp/server-card.json: metadata.mcpApps.supported must be true');
-  } else {
-    if (cardApps.extension !== 'io.modelcontextprotocol/ui') {
-      failures.push(`public/.well-known/mcp/server-card.json: metadata.mcpApps.extension is ${cardApps.extension}`);
-    }
-    if (cardApps.specVersion !== stats.mcpApps.specVersion) {
-      failures.push(
-        `public/.well-known/mcp/server-card.json: metadata.mcpApps.specVersion is ${cardApps.specVersion}, code says ${stats.mcpApps.specVersion}`,
-      );
-    }
-    if (cardApps.uiResourceMimeType !== stats.mcpApps.mimeType) {
-      failures.push(
-        `public/.well-known/mcp/server-card.json: metadata.mcpApps.uiResourceMimeType is ${cardApps.uiResourceMimeType}, code says ${stats.mcpApps.mimeType}`,
-      );
-    }
-    if (!sameStringSet(cardApps.uiResources ?? [], stats.mcpAppUiResources)) {
-      failures.push(
-        `public/.well-known/mcp/server-card.json: metadata.mcpApps.uiResources drift (${describeSetDelta(cardApps.uiResources ?? [], stats.mcpAppUiResources)})`,
-      );
-    }
-  }
-
-  for (const { tool, uri } of stats.mcpApps.toolLinks) {
-    for (const [file, text] of [
-      ['docs/mcp-apps.mdx', docsPage],
-      ['docs/mcp-overview.mdx', overview],
-      ['public/mcp-server.md', publicMcp],
-    ]) {
-      if (!text.includes(uri)) failures.push(`${file}: missing MCP Apps ui resource ${uri}`);
-      if (!text.includes(tool)) failures.push(`${file}: missing MCP Apps linked tool ${tool}`);
-    }
-  }
-
-  for (const app of stats.mcpApps.apps) {
-    if (!docsPage.includes(app.name)) failures.push(`docs/mcp-apps.mdx: missing MCP Apps display name ${app.name}`);
-  }
-
-  if (!docsPage.includes(stats.mcpApps.specVersion)) {
-    failures.push(`docs/mcp-apps.mdx: missing MCP Apps spec version ${stats.mcpApps.specVersion}`);
-  }
-  if (!docsPage.includes(stats.mcpApps.mimeType)) {
-    failures.push(`docs/mcp-apps.mdx: missing MCP Apps mime type ${stats.mcpApps.mimeType}`);
-  }
-
-  return failures;
 }
 
 function main() {
@@ -577,9 +437,9 @@ function main() {
   const stats = computeStats();
 
   if (!check) {
-    mkdirSync(join(ROOT, 'docs/generated'), { recursive: true });
-    writeFileSync(join(ROOT, 'docs/generated/stats.json'), JSON.stringify(stats, null, 2) + '\n');
-    console.log('docs/generated/stats.json written:');
+    mkdirSync(join(ROOT, 'scripts/generated'), { recursive: true });
+    writeFileSync(join(ROOT, 'scripts/generated/stats.json'), JSON.stringify(stats, null, 2) + '\n');
+    console.log('scripts/generated/stats.json written:');
     console.log(JSON.stringify(stats, null, 2));
     return;
   }
@@ -596,7 +456,6 @@ function main() {
 
   failures.push(...validateIndexLanguageMetadata(stats));
   failures.push(...validateSupportedLanguagesRegistry(stats));
-  failures.push(...validateMcpAppsDocs(stats));
 
   for (const c of claims(stats)) {
     let text;
@@ -642,7 +501,6 @@ export {
   sameStringSet,
   describeSetDelta,
   parseMcpAppsInventory,
-  validateMcpAppsDocs,
 };
 
 // Run only when executed directly (node scripts/docs-stats.mjs [--check]).

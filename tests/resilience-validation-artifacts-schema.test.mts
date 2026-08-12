@@ -26,12 +26,10 @@ import { RESILIENCE_COHORTS } from './helpers/resilience-cohorts.mts';
 import { MATCHED_PAIRS } from './helpers/resilience-matched-pairs.mts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const validationDir = resolve(here, '../docs/methodology/country-resilience-index/validation');
+const validationDir = resolve(here, '../data/resilience-validation');
 const benchmarkPath = resolve(validationDir, 'benchmark-results.json');
 const backtestPath = resolve(validationDir, 'backtest-results.json');
-const snapshotDir = resolve(here, '../docs/snapshots');
-const runbookPath = resolve(here, '../docs/methodology/energy-v2-flag-flip-runbook.md');
-const methodologyPath = resolve(here, '../docs/methodology/country-resilience-index.mdx');
+const snapshotDir = resolve(here, '../data/resilience-snapshots');
 const freezeScriptPath = resolve(here, '../scripts/freeze-resilience-ranking.mjs');
 const compareScriptPath = resolve(here, '../scripts/compare-resilience-current-vs-proposed.mjs');
 const energyV2CaptureScriptPath = resolve(here, '../scripts/capture-resilience-energy-v2-acceptance.mjs');
@@ -155,12 +153,12 @@ function assertEnergyV2AcceptanceArtifact(artifact: Record<string, unknown>, fil
   const baseline = asRecord(artifact.baseline, `${filename}.baseline`);
   assert.match(
     assertString(baseline.rankingSnapshot, `${filename}.baseline.rankingSnapshot`),
-    /docs\/snapshots\/resilience-ranking-live-(?:pre-pr1-flip|pre-repair)-\d{4}-\d{2}-\d{2}\.json$/,
+    /data\/resilience-snapshots\/resilience-ranking-live-(?:pre-pr1-flip|pre-repair)-\d{4}-\d{2}-\d{2}\.json$/,
   );
   const postFlip = asRecord(artifact.postFlip, `${filename}.postFlip`);
   assert.match(
     assertString(postFlip.rankingSnapshot, `${filename}.postFlip.rankingSnapshot`),
-    /docs\/snapshots\/resilience-ranking-live-post-pr1-\d{4}-\d{2}-\d{2}\.json$/,
+    /data\/resilience-snapshots\/resilience-ranking-live-post-pr1-\d{4}-\d{2}-\d{2}\.json$/,
   );
 
   const acceptanceGates = asRecord(artifact.acceptanceGates, `${filename}.acceptanceGates`);
@@ -312,31 +310,10 @@ describe('resilience validation artifacts', () => {
   });
 
   it('keeps missing post-flip energy-v2 artifact capture explicit and actionable', () => {
-    const postFlipRankingFiles = listSnapshotFiles(POST_FLIP_RANKING_RE);
-    const energyV2AcceptanceFiles = listSnapshotFiles(ENERGY_V2_ACCEPTANCE_RE);
-    const runbook = readTextFile(runbookPath);
-    const methodology = readTextFile(methodologyPath);
     const freezeScript = readTextFile(freezeScriptPath);
     const compareScript = readTextFile(compareScriptPath);
     const energyV2CaptureScript = readTextFile(energyV2CaptureScriptPath);
 
-    assert.match(
-      runbook,
-      /formulaTag == "pc"[\s\S]*constructVersions\.energy == "v2"[\s\S]*rankingCache\.count == rankingCache\.scored == rankingCache\.total == 196/,
-      'runbook must preserve the public post-flip manifest evidence needed for closeout triage.',
-    );
-    assert.match(
-      runbook,
-      /lowCarbonGeneration[\s\S]*fossilElectricityShare[\s\S]*powerLosses[\s\S]*OK/,
-      'runbook must name the three energy-v2 health checks and their expected OK status.',
-    );
-    if (postFlipRankingFiles.length === 0 || energyV2AcceptanceFiles.length === 0) {
-      assert.match(
-        methodology,
-        /post-flip ranking and acceptance artifacts still need a credentialed operator capture/,
-        'methodology doc must not imply the post-flip closeout artifacts are already committed while either required artifact is absent.',
-      );
-    }
     assert.match(
       freezeScript,
       /post-flip ranking snapshots must verify score anchors through get-resilience-score/,
@@ -357,42 +334,6 @@ describe('resilience validation artifacts', () => {
       /requires a committed post-flip PR1 ranking artifact/i,
       'energy-v2 acceptance harness must require real post-flip ranking evidence before writing an artifact.',
     );
-    assert.match(
-      runbook,
-      /capture-resilience-energy-v2-acceptance\.mjs/,
-      'runbook must point operators at the dedicated energy-v2 acceptance harness.',
-    );
-
-    if (postFlipRankingFiles.length === 0) {
-      assert.match(
-        runbook,
-        /WORLDMONITOR_API_KEY[\s\S]*get-resilience-score[\s\S]*Pro authentication required/,
-        'runbook must explain that the post-flip ranking artifact requires a Pro/API key for score-anchor verification.',
-      );
-      assert.ok(
-        runbook.includes('resilience-ranking-live-post-pr1-*.json') ||
-          runbook.includes('resilience-ranking-live-post-pr1-{date}.json'),
-        'runbook must name the required post-flip ranking artifact pattern.',
-      );
-      assert.match(
-        runbook,
-        /RESILIENCE_RANKING_OUTPUT_BASENAME=resilience-ranking-live-post-pr1-\$\{CAPTURE_DATE\}\.json/,
-        'runbook must direct freeze-resilience-ranking to write the post-flip ranking artifact directly.',
-      );
-    }
-
-    if (energyV2AcceptanceFiles.length === 0) {
-      assert.match(
-        runbook,
-        /capture-resilience-energy-v2-acceptance\.mjs[\s\S]*do\s+not commit (?:a )?synthetic acceptance JSON/i,
-        'runbook must block synthetic energy-v2 acceptance artifacts until the dedicated harness returns PASS.',
-      );
-      assert.match(
-        runbook,
-        /resilience-energy-v2-acceptance-\{date\}\.json/,
-        'runbook must name the required energy-v2 acceptance artifact pattern.',
-      );
-    }
   });
 
   it('builds a passing energy-v2 acceptance artifact only from ranking snapshot inputs', () => {
@@ -750,10 +691,10 @@ describe('resilience validation artifacts', () => {
         },
       },
       baseline: {
-        rankingSnapshot: 'docs/snapshots/resilience-ranking-live-pre-pr1-flip-2026-05-27.json',
+        rankingSnapshot: 'data/resilience-snapshots/resilience-ranking-live-pre-pr1-flip-2026-05-27.json',
       },
       postFlip: {
-        rankingSnapshot: 'docs/snapshots/resilience-ranking-live-post-pr1-2026-06-03.json',
+        rankingSnapshot: 'data/resilience-snapshots/resilience-ranking-live-post-pr1-2026-06-03.json',
       },
       acceptanceGates: {
         verdict: 'PASS',

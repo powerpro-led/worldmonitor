@@ -35,7 +35,7 @@ describe('agent-auth WWW-Authenticate challenge (/agent/auth)', () => {
       body.authorization_server,
       'https://worldmonitor.app/.well-known/oauth-authorization-server',
     );
-    assert.equal(body.skill, 'https://worldmonitor.app/auth.md');
+    assert.equal(body.skill, undefined, 'no /auth.md walkthrough is published on this fork');
   });
 
   it('derives resource_metadata from the request Host (www stays self-consistent)', async () => {

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Ops audit + cleanup for residual contamination in story:track:v1:* and the
-// digest accumulator (U6 of docs/plans/2026-04-26-001-fix-brief-static-page-
-// contamination-plan.md).
+// digest accumulator (originally tracked as U6 of the 2026-04-26 fix-brief
+// static-page-contamination plan; that internal plan doc has since been
+// removed).
 //
 // Cleanup modes:
 //

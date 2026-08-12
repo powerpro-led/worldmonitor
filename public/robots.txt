@@ -23,7 +23,6 @@ Content-Signal: ai-train=no, search=yes, ai-input=yes
 Allow: /
 Allow: /api/story
 Allow: /api/og-story
-Allow: /api/llms.txt
 Allow: /api/product-catalog
 Disallow: /api/
 Disallow: /tests/
@@ -46,7 +45,6 @@ Content-Signal: ai-train=no, search=yes, ai-input=yes
 Allow: /
 Allow: /api/story
 Allow: /api/og-story
-Allow: /api/llms.txt
 Allow: /api/product-catalog
 Disallow: /api/
 Disallow: /tests/

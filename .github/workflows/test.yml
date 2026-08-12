@@ -58,7 +58,7 @@ jobs:
           # its committed artifacts, or its focused tests change.
           VALIDATION=$(echo "$FILES" | awk '
             /^Dockerfile\.seed-bundle-resilience-validation$/ { count++ }
-            /^docs\/methodology\/country-resilience-index\/validation\// { count++ }
+            /^data\/resilience-validation\// { count++ }
             /^package\.json$/ || /^package-lock\.json$/ { count++ }
             /^scripts\/benchmark-resilience-external\.mjs$/ { count++ }
             /^scripts\/backtest-resilience-outcomes\.mjs$/ { count++ }
@@ -96,9 +96,9 @@ jobs:
         # untracked (`??`) alike, so it catches all three.
         run: |
           node scripts/docs-stats.mjs
-          if [ -n "$(git status --porcelain -- docs/generated/stats.json)" ]; then
-            echo '::error::docs/generated/stats.json is missing, untracked, or stale — run `npm run docs:stats` and commit it.'
-            git status --porcelain -- docs/generated/stats.json
+          if [ -n "$(git status --porcelain -- scripts/generated/stats.json)" ]; then
+            echo '::error::scripts/generated/stats.json is missing, untracked, or stale — run `npm run docs:stats` and commit it.'
+            git status --porcelain -- scripts/generated/stats.json
             exit 1
           fi
       - name: Doc claims match code

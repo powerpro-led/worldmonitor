@@ -8,24 +8,10 @@
  * Submits separate batches per subdomain.
  */
 
-import { readdirSync } from 'node:fs';
-import { basename } from 'node:path';
-
 const KEY = 'a7f3e9d1b2c44e8f9a0b1c2d3e4f5a6b';
-const BLOG_DIR = new URL('../blog-site/src/content/blog/', import.meta.url);
-
-function getBlogPostUrls() {
-  return readdirSync(BLOG_DIR)
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => `https://www.worldmonitor.app/blog/posts/${basename(file, '.md')}/`)
-    .sort();
-}
 
 const WWW_URLS = [
   'https://www.worldmonitor.app/',
-  'https://www.worldmonitor.app/pro',
-  'https://www.worldmonitor.app/blog/',
-  ...getBlogPostUrls(),
 ];
 
 const BATCHES = [

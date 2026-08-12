@@ -4,12 +4,13 @@
 // and has now completed its rollout (off default → staging `on` → prod `on` →
 // this commit flips the default): 2025-06-18 is negotiated by DEFAULT and the
 // env var survives only as an explicit `=off` kill-switch that pins the server
-// back to the legacy [2025-03-26] floor. The published server-card
-// (public/.well-known/mcp/server-card.json) advertises the bumped floor
-// unconditionally — the card is a static capability declaration; the live
-// initialize handler is what actually negotiates with each client. Keeping the
-// default in lock-step with the card is what lets a strict scanner's handshake
-// (which validates the negotiated version against the advertised floor) pass.
+// back to the legacy [2025-03-26] floor. (This previously had to stay in
+// lock-step with a published static server-card.json capability declaration
+// so a strict scanner's handshake — which validated the negotiated version
+// against the advertised floor — would pass; that static card has since been
+// removed from this private fork along with the rest of the public dev-portal
+// surface, so the live initialize handler below is now the sole source of
+// truth for the negotiated floor.)
 //
 // Negotiation rule (per MCP lifecycle spec): if the client's requested
 // `protocolVersion` is in MCP_SUPPORTED_PROTOCOL_VERSIONS, the server MUST
@@ -260,9 +261,10 @@ export const SERVER_NAME = 'worldmonitor';
 //     `capabilities.extensions` key, so the surface read as a plain MCP server
 //     despite carrying every ui:// artifact. Purely additive: clients that
 //     don't speak the extension ignore the extra capability key; no schema,
-//     envelope, or auth change. Mirrored into
+//     envelope, or auth change. Mirrored (at the time) into
 //     public/.well-known/mcp/server-card.json::capabilities.extensions so the
-//     static card and the live wire stay in parity.
+//     static card and the live wire stayed in parity; that static card has
+//     since been removed from this private fork.
 // Bumped 1.13.0 → 1.14.0 (2026-07-08) reflecting:
 //   - MCP Apps interactive-dashboard fleet: four new ui:// app-shell resources
 //     joining the v1.11.0 country-risk widget —
@@ -293,8 +295,10 @@ export const SERVER_NAME = 'worldmonitor';
 //     appears on five newly-linked tools; every ui:// read stays anonymously
 //     servable, quota-exempt, and data-free. No input/output schema, envelope,
 //     or auth change.
-// Keep aligned with public/.well-known/mcp/server-card.json::serverInfo.version
-// — discovery scanners cross-check both values.
+// Formerly had to stay aligned with a published
+// public/.well-known/mcp/server-card.json::serverInfo.version for external
+// discovery scanners to cross-check; that static card has been removed from
+// this private fork, so this constant is now the sole source of truth.
 export const SERVER_VERSION = '1.15.0';
 
 // MCP logging capability — valid severity levels per the 2025-03-26 spec
@@ -331,19 +335,19 @@ export const TOOL_DESCRIPTION_MAX_BYTES = 120;
 // Session-level discovery instructions. Per MCP 2025-03-26 lifecycle spec,
 // servers MAY return an `instructions` string in the `initialize` result;
 // clients SHOULD surface this to the model. Each stanza names an affordance
-// (JMESPath, describe_tool, prompts/list, resources/list), states its one-line
-// use case, and points at the authoritative docs URL for full detail — the
-// LLM does not reliably fetch URLs mid-session, so the in-band sentences must
-// stand alone. Inline guide/envelope detail used to live here; it now lives in
-// docs/mcp-jmespath.mdx, docs/mcp-error-catalog.mdx, and
-// docs/mcp-tools-reference.mdx, fetched on demand instead of amortising
-// ~550 bytes per session.
+// (JMESPath, describe_tool, prompts/list, resources/list) and states its
+// one-line use case. Inline guide/envelope detail used to live in a
+// docs/mcp-jmespath.mdx / docs/mcp-error-catalog.mdx / docs/mcp-tools-reference.mdx
+// trio hosted on the public Mintlify docs site; that site no longer exists
+// for this deployment, so the stanzas below are fully self-contained instead
+// of pointing at doc pages an agent could not fetch anyway (the LLM does not
+// reliably fetch URLs mid-session).
 export const SERVER_INSTRUCTIONS = [
-  'Every tool accepts an optional `jmespath` string. Server-side projection applied AFTER per-tool filter/summary; typical 80-95% token reduction. Grammar: https://jmespath.org/specification.html. Guide + 12 worked examples: https://www.worldmonitor.app/docs/mcp-jmespath.',
+  'Every tool accepts an optional `jmespath` string. Server-side projection applied AFTER per-tool filter/summary; typical 80-95% token reduction. Grammar: https://jmespath.org/specification.html.',
   '',
-  `Limits: expr ≤ ${JMESPATH_MAX_EXPR_BYTES}B, output ≤ ${JMESPATH_MAX_OUTPUT_BYTES}B. Bad expressions soft-fail via {_jmespath_error, original_keys} envelope (consumes one Pro/OAuth daily quota unit on retry when that quota path applies — self-correct from original_keys). Full envelope reference: https://www.worldmonitor.app/docs/mcp-error-catalog.`,
+  `Limits: expr ≤ ${JMESPATH_MAX_EXPR_BYTES}B, output ≤ ${JMESPATH_MAX_OUTPUT_BYTES}B. Bad expressions soft-fail via {_jmespath_error, original_keys} envelope (consumes one Pro/OAuth daily quota unit on retry when that quota path applies — self-correct from original_keys).`,
   '',
-  `tools/list ships compressed tool descriptions (≤${TOOL_DESCRIPTION_MAX_BYTES}B). Call describe_tool({tool_name}) for the full uncompressed definition — quota-exempt (still counts toward the 60/min rate limit), so use freely while exploring. describe_tool({tool_name: 'nonexistent'}) returns {error: 'unknown_tool', available: [...]} so you can self-correct. Full reference: https://www.worldmonitor.app/docs/mcp-tools-reference.`,
+  `tools/list ships compressed tool descriptions (≤${TOOL_DESCRIPTION_MAX_BYTES}B). Call describe_tool({tool_name}) for the full uncompressed definition — quota-exempt (still counts toward the 60/min rate limit), so use freely while exploring. describe_tool({tool_name: 'nonexistent'}) returns {error: 'unknown_tool', available: [...]} so you can self-correct.`,
   '',
   'Issue prompts/list to discover pre-built workflow templates (country-briefing, energy-shock-watch, market-open-prep, conflict-pulse, route-risk-check, freshness-audit). Each prompt pre-bakes a JMESPath projection per step so the first execution lands on the right shape. prompts/list + prompts/get are quota-exempt (per-minute limit only).',
   '',

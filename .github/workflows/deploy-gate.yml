@@ -33,7 +33,13 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          required='["changes","docs-stats","unit","consumer-prices","sidecar","variant-smoke-full","resilience-validation-smoke","digest-image","typecheck","biome","public-docs","security-audit"]'
+          required='["changes","docs-stats","unit","consumer-prices","sidecar","variant-smoke-full","resilience-validation-smoke","digest-image","typecheck","biome","security-audit"]'
+          # NOTE: "public-docs" (a lint-code.yml job that validated the public
+          # Mintlify docs/ site) is intentionally absent — that job no longer
+          # exists, and listing it here would strand the gate waiting on a
+          # check that never runs. "docs-stats" (test.yml) is unrelated and
+          # stays required: it guards README/ARCHITECTURE capability counts
+          # against code, not the deleted docs/ site, and that job still runs.
 
           if [ -n "$SHA" ]; then
             # workflow_run event — evaluate exactly the triggering SHA.

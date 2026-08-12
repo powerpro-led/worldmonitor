@@ -15,6 +15,4 @@ src-tauri/sidecar/node
 *.md
 !README.md
 !CHANGELOG.md
-docs/internal
-docs/Docs_To_Review
 tests

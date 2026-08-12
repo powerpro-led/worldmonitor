@@ -255,10 +255,8 @@ async function main(): Promise<void> {
     : path.join(
       __dirname,
       '..',
-      'docs',
-      'methodology',
-      'country-resilience-index',
-      'reference-edition',
+      'data',
+      'resilience-reference-edition',
       '2026',
       'manifest.json',
     );

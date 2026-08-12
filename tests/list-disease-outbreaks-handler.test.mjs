@@ -70,16 +70,6 @@ describe('proto + generated bindings declare alertLevelMethodologyVersion (#3793
       'server ListDiseaseOutbreaksResponse must declare alertLevelMethodologyVersion: string',
     );
   });
-
-  it('OpenAPI HealthService.openapi.yaml surfaces alertLevelMethodologyVersion under ListDiseaseOutbreaksResponse', () => {
-    const yaml = readFileSync(resolve(root, 'docs/api/HealthService.openapi.yaml'), 'utf-8');
-    // Naive but sufficient: locate the response schema block and assert the
-    // property name appears inside it.
-    const startIdx = yaml.indexOf('ListDiseaseOutbreaksResponse:');
-    assert.ok(startIdx >= 0, 'response schema must be present');
-    const block = yaml.slice(startIdx, startIdx + 1500);
-    assert.match(block, /alertLevelMethodologyVersion:\s*\n\s*type:\s*string/);
-  });
 });
 
 // ── Behavioural — invoke the handler against stubbed Redis ───────────────

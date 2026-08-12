@@ -1,12 +1,20 @@
 #!/usr/bin/env -S npx tsx
 /**
  * Validates every key in ENDPOINT_RATE_POLICIES (server/_shared/rate-limit.ts)
- * is a real gateway route by checking the OpenAPI specs generated from protos.
- * Catches rename-drift that causes policies to become dead code (the
+ * is a real gateway route by checking the generated sebuf gateway server
+ * modules (src/generated/server/worldmonitor/<domain>/v<N>/service_server.ts)
+ * compiled straight from the proto `sebuf.http` annotations. Catches
+ * rename-drift that causes policies to become dead code (the
  * sanctions-entity-search review finding — the policy key was
  * `/api/sanctions/v1/lookup-entity` but the proto RPC generates path
  * `/api/sanctions/v1/lookup-sanction-entity`, so the 30/min limit never
  * applied and the endpoint fell through to the 600/min global limiter).
+ *
+ * Previously this validated against docs/api/*.openapi.yaml (a Mintlify-docs
+ * build artifact). That docs site was deleted for this private fork, so the
+ * check now reads straight from the generated gateway server modules — the
+ * same fully-resolved `{ method, path }` pairs the gateway itself dispatches
+ * on, and a more direct source of truth than the OpenAPI YAML ever was.
  *
  * Runs in the same pre-push + CI context as lint:api-contract. Invoked via
  * `tsx` so it can import the policy object straight from the TS source
@@ -29,7 +37,7 @@
  *     to inherit the fail-open fallback (each with a justification).
  *
  * #4676 (systemic guardrail): enumerate EVERY non-GET (post/put/patch/delete)
- * route from the generated OpenAPI metadata and require each to be either
+ * route from the generated gateway server route tables and require each to be either
  * covered by ENDPOINT_RATE_POLICIES or explicitly listed in
  * RATE_LIMIT_MUTATION_FALLBACK_EXEMPT. Previously the audit only checked
  * registry internal consistency, so an expensive/mutation route omitted from
@@ -39,10 +47,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parse as parseYaml } from 'yaml';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const OPENAPI_DIR = join(ROOT, 'docs/api');
+const GEN_SERVER_DIR = join(ROOT, 'src/generated/server/worldmonitor');
 const RATE_LIMIT_SRC = join(ROOT, 'server/_shared/rate-limit.ts');
 const API_EXCEPTIONS = join(ROOT, 'api/api-route-exceptions.json');
 const RUNTIME_RATE_LIMIT_DIRS = ['server', 'api'].map((dir) => join(ROOT, dir));
@@ -76,28 +83,38 @@ async function extractRateLimitPolicyModule() {
   return mod;
 }
 
-function extractRoutesFromOpenApi() {
-  // Parse the OpenAPI YAML rather than regex-scrape for top-level `paths:`
-  // keys — the earlier `/^\s{4}(\/api\/[^\s:]+):/gm` hard-coded 4-space
-  // indent, so any YAML formatter change (2-space indent, flow style, line
-  // folding) would silently drop routes and let policy-drift slip through
-  // (#3287 greptile nit 3).
+function findServiceServerFiles(dir, files = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      findServiceServerFiles(fullPath, files);
+      continue;
+    }
+    if (entry.isFile() && entry.name === 'service_server.ts') files.push(fullPath);
+  }
+  return files;
+}
+
+function extractRoutesFromGeneratedServers() {
+  // Each generated `service_server.ts` declares its route table as an array
+  // of `{ method: "GET", path: "/api/<domain>/v<N>/<rpc-path>", ... }`
+  // entries — the fully-resolved (service base_path + rpc path) route the
+  // gateway itself dispatches on, compiled straight from each proto's
+  // `sebuf.http.service_config`/`sebuf.http.config` annotations. Regex-scrape
+  // rather than importing the module: these files import framework/runtime
+  // code with side effects this audit has no business triggering, and the
+  // `method:`/`path:` string-literal pair shape is stable generated output.
   const routes = new Map();
-  const files = readdirSync(OPENAPI_DIR).filter((f) => f.endsWith('.openapi.yaml'));
+  const methodPathPair = /method:\s*"([A-Z]+)",\s*\n\s*path:\s*"([^"]+)"/g;
+  const files = findServiceServerFiles(GEN_SERVER_DIR);
   for (const file of files) {
-    const doc = parseYaml(readFileSync(join(OPENAPI_DIR, file), 'utf8'));
-    const paths = doc?.paths;
-    if (!paths || typeof paths !== 'object') continue;
-    for (const [route, operations] of Object.entries(paths)) {
-      if (!route.startsWith('/api/') || !operations || typeof operations !== 'object') continue;
-      routes.set(
-        route,
-        new Set(
-          Object.keys(operations)
-            .map((method) => method.toLowerCase())
-            .filter((method) => ['get', 'post', 'put', 'patch', 'delete'].includes(method)),
-        ),
-      );
+    const src = readFileSync(file, 'utf8');
+    for (const [, method, route] of src.matchAll(methodPathPair)) {
+      if (!route.startsWith('/api/')) continue;
+      const methodLower = method.toLowerCase();
+      if (!['get', 'post', 'put', 'patch', 'delete'].includes(methodLower)) continue;
+      if (!routes.has(route)) routes.set(route, new Set());
+      routes.get(route).add(methodLower);
     }
   }
   return routes;
@@ -105,8 +122,9 @@ function extractRoutesFromOpenApi() {
 
 function extractEdgeFunctionRoutes() {
   // Top-level Vercel Edge Functions registered as non-proto exceptions in
-  // api/api-route-exceptions.json don't appear in docs/api/*.openapi.yaml
-  // (no proto → no generated path). They can still register a rate-limit
+  // api/api-route-exceptions.json don't appear in any generated
+  // service_server.ts route table (no proto → no generated path). They can
+  // still register a rate-limit
   // policy that's enforced in-handler via `checkScopedRateLimit` — most
   // notably /api/mcp-proxy (PR #3821 / #3805 review). Convert each exception
   // file path (e.g. "api/mcp-proxy.ts") to its URL path ("/api/mcp-proxy")
@@ -183,7 +201,7 @@ async function main() {
   const failClosedRequired = Object.keys(rateLimitPolicyModule.FAIL_CLOSED_ENDPOINT_RATE_POLICY_REQUIRED);
   const globalFallbackReadRoutes = Object.keys(rateLimitPolicyModule.GLOBAL_RATE_LIMIT_FALLBACK_READ_ROUTES);
   const mutationFallbackExempt = Object.keys(rateLimitPolicyModule.RATE_LIMIT_MUTATION_FALLBACK_EXEMPT);
-  const gatewayRoutes = extractRoutesFromOpenApi();
+  const gatewayRoutes = extractRoutesFromGeneratedServers();
   const edgeRoutes = extractEdgeFunctionRoutes();
   const gatewayRoutePaths = new Set(gatewayRoutes.keys());
   const missing = keys.filter((k) => !gatewayRoutePaths.has(k) && !edgeRoutes.has(k));
@@ -194,12 +212,13 @@ async function main() {
       console.error(`  - ${key}`);
     }
     console.error('\nEach key must be either:');
-    console.error('  (a) a proto-generated RPC path that appears in docs/api/<Service>.openapi.yaml');
+    console.error('  (a) a proto-generated RPC path that appears in a generated');
+    console.error('      src/generated/server/worldmonitor/<domain>/v<N>/service_server.ts route table');
     console.error('      (gateway-enforced via checkEndpointRateLimit), OR');
     console.error('  (b) a top-level Vercel Edge Function registered in');
     console.error('      api/api-route-exceptions.json (enforced in-handler via checkScopedRateLimit).');
     console.error('\nChecklist:');
-    console.error('  1. The key matches the path in docs/api/<Service>.openapi.yaml exactly, OR');
+    console.error('  1. The key matches the `path` in the generated service_server.ts route table exactly, OR');
     console.error('     api/<that-key>.ts (or .js) is listed in api/api-route-exceptions.json.');
     console.error('  2. If you renamed the RPC in proto, update the policy key to match.');
     console.error('  3. If the policy is for a non-proto legacy route, remove it once that route is migrated.\n');
@@ -236,7 +255,7 @@ async function main() {
       for (const key of fallbackWithPolicy) console.error(`    - ${key}`);
     }
     if (fallbackMissingRoute.length > 0) {
-      console.error('  Routes that do not appear in generated OpenAPI gateway specs:');
+      console.error('  Routes that do not appear in generated gateway server route tables:');
       for (const key of fallbackMissingRoute) console.error(`    - ${key}`);
     }
     if (fallbackNonGet.length > 0) {

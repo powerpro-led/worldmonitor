@@ -37,9 +37,12 @@ export default function handler(req: Request): Response {
     error: {
       code: 'not_found',
       message: `No API endpoint matches ${pathname}.`,
-      hint: 'Check the endpoint path against the OpenAPI spec at https://worldmonitor.app/openapi.yaml or the API reference at https://www.worldmonitor.app/docs/api-reference.',
+      // No public API-reference doc page exists on this private fork (the
+      // Mintlify docs site is gone) — the OpenAPI spec is the sole surviving
+      // machine-readable reference.
+      hint: 'Check the endpoint path against the OpenAPI spec at https://worldmonitor.app/openapi.yaml.',
     },
-    documentation: 'https://www.worldmonitor.app/docs/api-reference',
+    documentation: 'https://worldmonitor.app/openapi.yaml',
   };
 
   return new Response(JSON.stringify(body), {

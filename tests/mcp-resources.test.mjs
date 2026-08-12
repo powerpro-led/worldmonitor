@@ -1108,13 +1108,18 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
   });
 
   // -------------------------------------------------------------------------
-  // server-card.json drift (mirrors the prompts test posture)
+  // server-card drift (mirrors the prompts test posture). The card used to
+  // be a static file; it's now generated in-process (see
+  // buildServerCardPayload in api/mcp/handler.ts), so this fetches the
+  // live-generated card instead of reading public/.well-known/mcp/server-card.json.
   // -------------------------------------------------------------------------
-  it('server-card.json advertises resources: true (matches the wire capability)', () => {
-    const card = JSON.parse(
-      readFileSync(resolve(__dirname, '..', 'public', '.well-known', 'mcp', 'server-card.json'), 'utf8'),
-    );
+  it('generated server card advertises resources: true (matches the wire capability)', async () => {
+    const res = await handler(new Request('https://worldmonitor.app/.well-known/mcp', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }));
+    const card = JSON.parse(await res.text());
     assert.equal(card.capabilities?.resources, true,
-      'server-card.json::capabilities.resources must be true (wire-card parity)');
+      'generated server card::capabilities.resources must be true (wire-card parity)');
   });
 });

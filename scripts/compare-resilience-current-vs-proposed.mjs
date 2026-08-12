@@ -29,7 +29,7 @@ import wgiIndicatorKeys from '../shared/wgi-indicator-keys.json' with { type: 'j
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..');
-const SNAPSHOT_DIR = path.join(REPO_ROOT, 'docs', 'snapshots');
+const SNAPSHOT_DIR = path.join(REPO_ROOT, 'data', 'resilience-snapshots');
 
 loadEnvFile(import.meta.url);
 
@@ -1154,7 +1154,7 @@ async function main() {
     baselineComparison = {
       status: 'unavailable',
       reason:
-        'No baseline snapshot found in docs/snapshots/. Expected resilience-ranking-live-pre-repair-<date>.json from PR 0 freeze.',
+        'No baseline snapshot found in data/resilience-snapshots/. Expected resilience-ranking-live-pre-repair-<date>.json from PR 0 freeze.',
     };
   } else {
     const baselineScores = baseline.scoresByCountry;

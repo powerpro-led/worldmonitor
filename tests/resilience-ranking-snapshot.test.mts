@@ -11,7 +11,7 @@ import {
 } from '../server/worldmonitor/resilience/v1/_dimension-scorers.ts';
 
 // Regression-verifies the frozen resilience-ranking snapshots under
-// docs/snapshots/. Two shapes are supported:
+// data/resilience-snapshots/. Two shapes are supported:
 //
 //  1. "Published tables" shape (e.g. resilience-ranking-2026-04-21.json):
 //     tables.topTen / tables.bottomTen / tables.majorEconomies curated rows.
@@ -23,11 +23,11 @@ import {
 //     (monotonic, unique ranks, headline eligibility / greyOut gating) are
 //     asserted on this shape.
 //
-// Any new snapshot committed to docs/snapshots/ is auto-discovered.
+// Any new snapshot committed to data/resilience-snapshots/ is auto-discovered.
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..');
-const SNAPSHOT_DIR = path.join(REPO_ROOT, 'docs', 'snapshots');
+const SNAPSHOT_DIR = path.join(REPO_ROOT, 'data', 'resilience-snapshots');
 
 // Band anchors from the release-gate tests (tests/resilience-release-gate.test.mts
 // and tests/resilience-pillar-combine-activation.test.mts).
@@ -208,7 +208,7 @@ describe('resilience-ranking snapshots', () => {
   it('snapshot directory contains at least one frozen artifact', () => {
     assert.ok(
       SNAPSHOTS.length >= 1,
-      `expected at least one resilience-ranking-YYYY-MM-DD.json under docs/snapshots/, got 0. Run scripts/freeze-resilience-ranking.mjs against the live API to refresh.`,
+      `expected at least one resilience-ranking-YYYY-MM-DD.json under data/resilience-snapshots/, got 0. Run scripts/freeze-resilience-ranking.mjs against the live API to refresh.`,
     );
   });
 

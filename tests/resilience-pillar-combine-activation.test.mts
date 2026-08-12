@@ -29,7 +29,7 @@ import {
 
 // Re-anchored bands for the pillar-combined formula, derived from the
 // 52-country live-Redis sensitivity capture in
-// docs/snapshots/resilience-pillar-sensitivity-2026-04-21.json.
+// data/resilience-snapshots/resilience-pillar-sensitivity-2026-04-21.json.
 // Old (6-domain): NO ≥ 70, YE/SO/CD ≤ 35, NO − US ≥ 8.
 // New (pillar combine, α=0.5): every country drops ~13 points, top
 // stays ~65-72, fragile states drop to ~15-35. The re-anchored bands
@@ -49,7 +49,7 @@ const HIGH_BAND_FLOOR = 55;
 const LOW_BAND_CEILING = 40;
 const MIN_HIGH_LOW_SEPARATION = 15;
 const POST_ACTIVATION_SNAPSHOT_URL = new URL(
-  '../docs/snapshots/resilience-ranking-2026-05-28.json',
+  '../data/resilience-snapshots/resilience-ranking-2026-05-28.json',
   import.meta.url,
 );
 

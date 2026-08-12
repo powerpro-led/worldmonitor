@@ -33,8 +33,10 @@ const SCHEMA = 'https://schemas.agentskills.io/discovery/0.2.0/schema.json';
 // and want explicit when-to-use guidance in it — a "when to use" section in
 // llms.txt does not satisfy the check because the grader evaluates the manifest
 // it found, not llms.txt. Names best-fit jobs, when NOT to use, and how an
-// agent should call World Monitor. Keep in sync with the "When to Use World
-// Monitor (Agent Guidance)" section of public/llms.txt.
+// agent should call World Monitor. (Used to be kept in sync with a "When to
+// Use World Monitor" section of public/llms.txt — that file was part of the
+// public dev-portal doc surface retired for this private fork; this is now
+// the sole source for this guidance.)
 const INSTRUCTIONS = [
   'World Monitor is a live, machine-readable global-intelligence API and MCP server. Reach for it when a task needs fresh, correlated, structured data about the state of the world — JSON to reason over, not prose to re-parse.',
   '',
@@ -72,8 +74,7 @@ const INSTRUCTIONS = [
   'How an agent should call it:',
   '- MCP server (recommended): https://worldmonitor.app/mcp — Streamable HTTP; issue `tools/list` for the live inventory.',
   '- REST API: base https://api.worldmonitor.app — OpenAPI spec at https://worldmonitor.app/openapi.yaml.',
-  '- CLI (shell/scripts): the `worldmonitor` npm package wraps these tools — `npx worldmonitor tools` (public, no key) or `npm i -g worldmonitor`, then pass `--api-key` for data calls. https://www.npmjs.com/package/worldmonitor',
-  '- Auth: OAuth2 (`scope=mcp`) or an API-key header `X-WorldMonitor-Key: wm_<40-hex>`. Issue a key at https://worldmonitor.app/pro.',
+  '- Auth: OAuth2 (`scope=mcp`) for an account that has already cleared sign-in, or an API-key header `X-WorldMonitor-Key: wm_<40-hex>` (operator-issued only — this private fork has no self-service key issuance).',
 ].join('\n');
 
 // Closing fence must be anchored to its own line so values that happen to

@@ -27,11 +27,6 @@ const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRan
 //   Node undici default UA, which is short enough to trip the "no UA or
 //   suspiciously short" 403 below (Railway log 2026-04-21 post-#3248 merge:
 //   every cron call returned 403 and silently fell back to legacy Gemini).
-// - /api/llms.txt: static, intentionally-public agent-discovery document
-//   (the section-level llms.txt for the developer/API surface, served from
-//   public/api/llms.txt). It MUST bypass the bot gate — AI crawlers (ClaudeBot,
-//   GPTBot, PerplexityBot, CCBot, …) are the entire audience for an llms.txt,
-//   yet every one of those UAs matches BOT_UA and would otherwise 403.
 // - /api/product-catalog: public read-only pricing catalog (Redis-cached,
 //   keyless, advertised as service-meta in /.well-known/api-catalog). Agents
 //   evaluating the product are a primary audience; an agent-journey run (#4854)
@@ -41,7 +36,6 @@ const PUBLIC_API_PATHS = new Set([
   '/api/health',
   '/api/seed-contract-probe',
   '/api/internal/brief-why-matters',
-  '/api/llms.txt',
   '/api/product-catalog',
 ]);
 
@@ -199,7 +193,7 @@ export default function middleware(request: Request) {
               url: 'https://www.worldmonitor.app/',
             },
             sameAs: [
-              'https://github.com/koala73/worldmonitor',
+              'https://github.com/powerpro-led/worldmonitor',
               'https://x.com/worldmonitorai',
             ],
           })}</script>` : '';
@@ -213,9 +207,7 @@ export default function middleware(request: Request) {
 <li><a href="https://finance.worldmonitor.app/dashboard">Finance Monitor</a></li>
 <li><a href="https://commodity.worldmonitor.app/dashboard">Commodity Monitor</a></li>
 <li><a href="https://happy.worldmonitor.app/dashboard">Happy Monitor</a></li>
-<li><a href="https://www.worldmonitor.app/pro">World Monitor Pro</a></li>
-<li><a href="https://www.worldmonitor.app/blog/">Blog</a></li>
-<li><a href="https://github.com/koala73/worldmonitor">Open source on GitHub</a></li>
+<li><a href="https://github.com/powerpro-led/worldmonitor">Open source on GitHub</a></li>
 </ul>
 <h2>Sources</h2>
 <p>Data ingested live from <a href="https://acleddata.com/">ACLED</a>, <a href="https://ucdp.uu.se/">UCDP</a>, <a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a>, <a href="https://earthquake.usgs.gov/">USGS</a>, <a href="https://opensky-network.org/">OpenSky</a>, <a href="https://aisstream.io/">AISStream</a>, <a href="https://fred.stlouisfed.org/">FRED</a>, <a href="https://www.imf.org/en/Data">IMF</a>, and <a href="https://www.bis.org/">BIS</a>.</p>` : '';

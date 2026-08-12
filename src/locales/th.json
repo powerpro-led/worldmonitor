@@ -607,8 +607,7 @@
         "NASA_FIRMS_API_KEY": "ระบบข้อมูลไฟสำหรับการจัดการทรัพยากร",
         "OLLAMA_API_URL": "เช่น http://127.0.0.1:11434 (Ollama) หรือ http://127.0.0.1:1234/v1 (LM Studio) — จุดปลายทางที่เข้ากันได้กับ OpenAI",
         "OLLAMA_MODEL": "เช่น llama3.1:8b — แท็กโมเดลที่ใช้สำหรับการสรุป"
-      },
-      "reserveEarlyAccess": "จองสิทธิ์เข้าถึงก่อน"
+      }
     },
     "settingsWindow": {
       "validating": "กำลังตรวจสอบ API key...",
@@ -629,12 +628,6 @@
           "title": "คีย์ใบอนุญาต / API",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "สมาชิก API Starter และ API Business สร้างคีย์นี้ในแดชบอร์ดเว็บที่ Settings → API Keys หากคีย์แบบเต็มสูญหาย ให้เพิกถอนและสร้างคีย์ใหม่"
-        },
-        "dividerOr": "หรือ",
-        "register": {
-          "title": "ต้องการคีย์ API หรือไม่?",
-          "description": "ดูคำแนะนำทีละขั้นตอนได้ที่ worldmonitor.app/docs/api-keys คีย์ API แบบกำหนดเองต้องใช้แผน API Starter หรือ API Business",
-          "submitBtn": "ดูแผน API"
         }
       },
       "table": {

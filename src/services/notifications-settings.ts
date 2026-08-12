@@ -114,7 +114,9 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           // means signed-out — sign in rather than start a checkout.
           upgradeBtn.addEventListener('click', () => {
             import('@/services/auth-provider').then(m => m.signInWithGithub()).catch(() => {
-              window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer');
+              import('@/services/error-toast')
+                .then(m => m.showErrorToast('Sign-in is temporarily unavailable. Please try again.'))
+                .catch(() => window.alert('Sign-in is temporarily unavailable. Please try again.'));
             });
           }, { signal });
         }

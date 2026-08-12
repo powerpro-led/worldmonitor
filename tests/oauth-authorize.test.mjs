@@ -42,7 +42,7 @@ describe('consentPage — Pro CTA structure (U4)', () => {
   it('renders the brand-green Pro CTA as a top-level <a> with the apex grant URL', async () => {
     const html = await renderHtml(BASE_PARAMS, NONCE);
     // CTA element exists with stable id and class for U3+settings UI to depend on.
-    assert.match(html, /<a id="pc" class="pro-cta"[^>]*>Sign in with WorldMonitor Pro<\/a>/);
+    assert.match(html, /<a id="pc" class="pro-cta"[^>]*>Sign in with WorldMonitor<\/a>/);
     // Brand green at the CSS layer (matches existing #2d8a6e for the Authorize
     // button family — keeps visual identity consistent with htmlError + logo).
     assert.match(html, /\.pro-cta\{[^}]*background:#2d8a6e/);
@@ -165,7 +165,7 @@ describe('consentPage — XSS defense for client metadata (U4)', () => {
   it('"Unknown Client" fallback (handler line ~217) still renders the Pro CTA correctly', async () => {
     const html = await renderHtml({ ...BASE_PARAMS, client_name: 'Unknown Client' }, NONCE);
     assert.match(html, /<div class="client-name">Unknown Client wants access<\/div>/);
-    assert.match(html, /<a id="pc" class="pro-cta"[^>]*>Sign in with WorldMonitor Pro<\/a>/);
+    assert.match(html, /<a id="pc" class="pro-cta"[^>]*>Sign in with WorldMonitor<\/a>/);
     const m = html.match(/<a id="pc"[^>]*href="([^"]+)"/);
     assert.equal(m[1], `https://worldmonitor.app/mcp-grant?nonce=${NONCE}`);
   });
@@ -199,9 +199,10 @@ describe('consentPage — preserved invariants (regression guard for U6+)', () =
     assert.match(html, /stocks, commodities/);
   });
 
-  it('legacy "Get an API key" footer link is preserved', async () => {
+  it('does not link to the defunct /pro self-service page', async () => {
     const html = await renderHtml(BASE_PARAMS, NONCE);
-    assert.match(html, /href="https:\/\/www\.worldmonitor\.app\/pro"/);
+    assert.doesNotMatch(html, /worldmonitor\.app\/pro/);
+    assert.match(html, /operator-issued/);
   });
 
   it('PAGE_HEADERS contract preserved: text/html + DENY + no-store + Pragma', async () => {

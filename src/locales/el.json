@@ -607,8 +607,7 @@
         "NASA_FIRMS_API_KEY": "Σύστημα Πληροφοριών Πυρκαγιών για Διαχείριση Πόρων.",
         "OLLAMA_API_URL": "π.χ. http://127.0.0.1:11434 (Ollama) ή http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-συμβατό endpoint.",
         "OLLAMA_MODEL": "π.χ. llama3.1:8b — ετικέτα μοντέλου για περίληψη."
-      },
-      "reserveEarlyAccess": "Κρατήστε Πρόωρη Πρόσβαση"
+      }
     },
     "settingsWindow": {
       "validating": "Επικύρωση API keys...",
@@ -629,12 +628,6 @@
           "title": "Κλειδί άδειας / API",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Οι συνδρομητές API Starter και API Business δημιουργούν αυτό το κλειδί στον διαδικτυακό πίνακα από Settings → API Keys. Αν χαθεί το πλήρες κλειδί, ανακαλέστε το και δημιουργήστε ένα νέο."
-        },
-        "dividerOr": "Ή",
-        "register": {
-          "title": "Χρειάζεστε κλειδί API;",
-          "description": "Δείτε το worldmonitor.app/docs/api-keys για οδηγίες βήμα προς βήμα. Τα μη αυτόματα κλειδιά API απαιτούν πρόγραμμα API Starter ή API Business.",
-          "submitBtn": "Προβολή προγραμμάτων API"
         }
       },
       "table": {

@@ -89,7 +89,7 @@ const HOW_TO_CALL = {
   mcp: {
     endpoint: 'https://worldmonitor.app/mcp',
     transport: 'streamable-http',
-    note: "Issue tools/list for the live inventory (anonymous). Data calls need OAuth2 (scope=mcp) or an API key header 'X-WorldMonitor-Key: wm_<40-hex>' — issue one at https://worldmonitor.app/pro.",
+    note: "Issue tools/list for the live inventory (anonymous). Data calls need OAuth2 (scope=mcp) or an API key header 'X-WorldMonitor-Key: wm_<40-hex>' — keys are operator-issued, no self-service enrollment on this private fork.",
   },
   rest: {
     base: 'https://api.worldmonitor.app',

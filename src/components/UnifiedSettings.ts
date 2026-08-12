@@ -126,7 +126,16 @@ export class UnifiedSettings {
       const panelItem = target.closest<HTMLElement>('.panel-toggle-item');
       if (panelItem?.dataset.panel) {
         if (panelItem.dataset.proLocked) {
-          window.open('/pro', '_blank', 'noopener,noreferrer');
+          // Every signed-in user is fully entitled post-billing-cut — this
+          // gate always means signed-out, so sign in rather than open the
+          // defunct worldmonitor.app/pro marketing page.
+          void import('@/services/auth-provider')
+            .then((m) => m.signInWithGithub())
+            .catch(() => {
+              void import('@/services/error-toast')
+                .then((m) => m.showErrorToast('Sign-in is temporarily unavailable. Please try again.'))
+                .catch(() => window.alert('Sign-in is temporarily unavailable. Please try again.'));
+            });
           return;
         }
         this.toggleDraftPanel(panelItem.dataset.panel);

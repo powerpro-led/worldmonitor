@@ -609,8 +609,7 @@
         "NASA_FIRMS_API_KEY": "Informații de incendiu pentru sistemul de management al resurselor.",
         "OLLAMA_API_URL": "de ex. http://127.0.0.1:11434 (Ollama) sau http://127.0.0.1:1234/v1 (LM Studio) — punct final compatibil cu OpenAI.",
         "OLLAMA_MODEL": "de ex. llama3.1:8b — etichetă model de utilizat pentru rezumat."
-      },
-      "reserveEarlyAccess": "Rezervați Accesul Timpuriu"
+      }
     },
     "settingsWindow": {
       "validating": "Se validează cheile API...",
@@ -631,12 +630,6 @@
           "title": "Cheie de licență / API",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Abonații API Starter și API Business creează această cheie în panoul web din Settings → API Keys. Dacă pierdeți cheia completă, revocați-o și creați una nouă."
-        },
-        "dividerOr": "SAU",
-        "register": {
-          "title": "Aveți nevoie de o cheie API?",
-          "description": "Consultați worldmonitor.app/docs/api-keys pentru instrucțiuni pas cu pas. Cheile API manuale necesită un plan API Starter sau API Business.",
-          "submitBtn": "Vedeți planurile API"
         }
       },
       "table": {

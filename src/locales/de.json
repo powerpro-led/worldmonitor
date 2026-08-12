@@ -607,8 +607,7 @@
         "NASA_FIRMS_API_KEY": "Branderkennungssystem für Ressourcenmanagement.",
         "OLLAMA_API_URL": "e.g. http://127.0.0.1:11434 (Ollama) or http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-compatible endpoint.",
         "OLLAMA_MODEL": "e.g. llama3.1:8b — model tag to use for summarization."
-      },
-      "reserveEarlyAccess": "Frühen Zugriff reservieren"
+      }
     },
     "countryIntel": {
       "identifying": "Land wird identifiziert...",
@@ -706,12 +705,6 @@
           "title": "Lizenz- / API-Schlüssel",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Abonnenten von API Starter und API Business erstellen diesen Schlüssel im Web-Dashboard unter Settings → API Keys. Wenn der vollständige Schlüssel verloren ist, widerrufen Sie ihn und erstellen Sie einen Ersatz."
-        },
-        "dividerOr": "ODER",
-        "register": {
-          "title": "Benötigen Sie einen API-Schlüssel?",
-          "description": "Eine Schritt-für-Schritt-Anleitung finden Sie unter worldmonitor.app/docs/api-keys. Manuelle API-Schlüssel erfordern einen API Starter- oder API Business-Tarif.",
-          "submitBtn": "API-Tarife ansehen"
         }
       },
       "shellTitle": "World Monitor – Einstellungen",

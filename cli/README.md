@@ -29,7 +29,7 @@ npx worldmonitor tools
 # Discover every tool — public, no key needed
 worldmonitor tools
 
-# Data commands need a user API key (get one at https://worldmonitor.app/pro)
+# Data commands need a user API key (operator-issued — no self-service enrollment)
 export WORLDMONITOR_API_KEY=wm_xxxxxxxx
 
 worldmonitor world                       # live global situation brief

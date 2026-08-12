@@ -337,8 +337,7 @@
         "OLLAMA_API_URL": "e.g. http://127.0.0.1:11434 (Ollama) or http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-compatible endpoint.",
         "OLLAMA_MODEL": "e.g. llama3.1:8b — model tag to use for summarization."
       },
-      "skipSetup": "Hoppa över installationen — en enda World Monitor-licens låser upp allt. Gå med i väntelistan för tidig tillgång.",
-      "reserveEarlyAccess": "Reservera din tidig åtkomst"
+      "skipSetup": "Hoppa över installationen — en enda World Monitor-licens låser upp allt. Gå med i väntelistan för tidig tillgång."
     },
     "countryIntel": {
       "identifying": "Identifierar land...",
@@ -450,12 +449,6 @@
           "description": "Prenumeranter på API Starter och API Business skapar nyckeln i webbpanelen via Settings → API Keys. Om den fullständiga nyckeln går förlorad ska du återkalla den och skapa en ny.",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "title": "Licens- / API-nyckel"
-        },
-        "dividerOr": "ELLER",
-        "register": {
-          "description": "Se worldmonitor.app/docs/api-keys för stegvisa instruktioner. Manuella API-nycklar kräver abonnemanget API Starter eller API Business.",
-          "submitBtn": "Visa API-abonnemang",
-          "title": "Behöver du en API-nyckel?"
         }
       },
       "shellTitle": "World Monitor-inställningar",

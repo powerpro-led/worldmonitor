@@ -337,8 +337,7 @@
         "OLLAMA_API_URL": "e.g. http://127.0.0.1:11434 (Ollama) or http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-compatible endpoint.",
         "OLLAMA_MODEL": "e.g. llama3.1:8b — model tag to use for summarization."
       },
-      "skipSetup": "Sla de configuratie over — een enkele World Monitor-licentie ontgrendelt alles. Meld u aan voor de wachtlijst voor vroege toegang.",
-      "reserveEarlyAccess": "Reserveer Vroege Toegang"
+      "skipSetup": "Sla de configuratie over — een enkele World Monitor-licentie ontgrendelt alles. Meld u aan voor de wachtlijst voor vroege toegang."
     },
     "countryIntel": {
       "identifying": "Land identificeren...",
@@ -450,12 +449,6 @@
           "title": "Licentie- / API-sleutel",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Abonnees van API Starter en API Business maken deze sleutel in het webdashboard via Settings → API Keys. Als u de volledige sleutel kwijt bent, trekt u deze in en maakt u een vervangende sleutel."
-        },
-        "dividerOr": "OF",
-        "register": {
-          "title": "Een API-sleutel nodig?",
-          "description": "Ga naar worldmonitor.app/docs/api-keys voor stapsgewijze hulp. Handmatige API-sleutels vereisen een API Starter- of API Business-abonnement.",
-          "submitBtn": "API-abonnementen bekijken"
         }
       },
       "shellTitle": "World Monitor-instellingen",

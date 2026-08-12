@@ -746,7 +746,7 @@ export class CountryBriefPage implements CountryBriefPanel {
   private canExportEvidenceBundle(): boolean {
     if (hasPremiumAccess(getAuthState())) return true;
     trackGateHit('evidence-export');
-    showToast('Evidence export is available on Pro.');
+    showToast('Sign in to export evidence bundles.');
     return false;
   }
 

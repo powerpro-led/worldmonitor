@@ -929,14 +929,14 @@ export class Panel {
       lockedChildren.push(featureList);
     }
 
+    // signInWithGithub() already handles every runtime correctly (web,
+    // packaged Tauri, VS Code webview — see its own header comment), so
+    // there's no reason to special-case desktop by opening the defunct
+    // worldmonitor.app/pro marketing page instead.
     const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, t('premium.signIn'));
-    if (isDesktopRuntime()) {
-      ctaBtn.addEventListener('click', () => void invokeTauri<void>('open_url', { url: 'https://worldmonitor.app/pro' }).catch(() => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer')));
-    } else {
-      ctaBtn.addEventListener('click', () => {
-        void signInWithGithub();
-      });
-    }
+    ctaBtn.addEventListener('click', () => {
+      void signInWithGithub();
+    });
     lockedChildren.push(ctaBtn);
 
     replaceChildren(this.content, h('div', { className: 'panel-locked-state' }, ...lockedChildren));

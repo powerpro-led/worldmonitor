@@ -72,7 +72,7 @@ export class LeftRail {
   }
 
   private renderGate(): void {
-    setTrustedHtml(this.element, trustedHtml('<div class="re-leftrail__empty">Upgrade to PRO for route intelligence.</div>', "legacy direct innerHTML migration"));
+    setTrustedHtml(this.element, trustedHtml('<div class="re-leftrail__empty">Sign in to unlock route intelligence.</div>', "legacy direct innerHTML migration"));
   }
 
   private static readonly FLAG_LABELS: Record<string, string> = {

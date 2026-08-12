@@ -611,8 +611,7 @@
         "OLLAMA_API_URL": "e.g. http://127.0.0.1:11434 (Ollama) or http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-compatible endpoint.",
         "OLLAMA_MODEL": "e.g. llama3.1:8b — model tag to use for summarization."
       },
-      "skipSetup": "Pomiń konfigurację — jedna licencja World Monitor odblokowuje wszystko. Dołącz do listy oczekujących, aby uzyskać wczesny dostęp.",
-      "reserveEarlyAccess": "Zarezerwuj wczesny dostęp"
+      "skipSetup": "Pomiń konfigurację — jedna licencja World Monitor odblokowuje wszystko. Dołącz do listy oczekujących, aby uzyskać wczesny dostęp."
     },
     "countryIntel": {
       "identifying": "Identyfikacja kraju...",
@@ -710,12 +709,6 @@
           "description": "Subskrybenci API Starter i API Business tworzą ten klucz w panelu internetowym przez Settings → API Keys. Jeśli pełny klucz zostanie utracony, unieważnij go i utwórz nowy.",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "title": "Klucz licencyjny / API"
-        },
-        "dividerOr": "LUB",
-        "register": {
-          "description": "Instrukcje krok po kroku znajdziesz na worldmonitor.app/docs/api-keys. Ręczne klucze API wymagają planu API Starter lub API Business.",
-          "submitBtn": "Zobacz plany API",
-          "title": "Potrzebujesz klucza API?"
         }
       },
       "shellTitle": "Ustawienia World Monitor",

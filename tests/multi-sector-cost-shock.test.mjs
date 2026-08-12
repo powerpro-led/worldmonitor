@@ -370,8 +370,8 @@ describe('CountryDeepDivePanel Cost Shock Calculator', () => {
     assert.match(src, /\.sort\(\(a, b\) => b\.totalCostShock - a\.totalCostShock\)/);
   });
 
-  it('gates the card as PRO when the user is not premium', () => {
-    assert.match(src, /makeProLocked\('Upgrade to PRO for multi-sector cost shock modelling'\)/);
+  it('gates the card behind sign-in when the user is not premium', () => {
+    assert.match(src, /makeProLocked\('Sign in to unlock multi-sector cost shock modelling'\)/);
   });
 
   it('resetPanelContent clears all cost shock calculator state', () => {

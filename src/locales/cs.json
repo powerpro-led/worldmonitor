@@ -611,8 +611,7 @@
         "NASA_FIRMS_API_KEY": "Systém informací o požárech pro řízení zdrojů (FIRMS).",
         "OLLAMA_API_URL": "např. http://127.0.0.1:11434 (Ollama) nebo http://127.0.0.1:1234/v1 (LM Studio) — koncový bod kompatibilní s OpenAI.",
         "OLLAMA_MODEL": "např. llama3.1:8b — značka modelu k použití pro sumarizaci."
-      },
-      "reserveEarlyAccess": "Rezervujte si ranný přístup"
+      }
     },
     "settingsWindow": {
       "validating": "Ověřování klíčů API...",
@@ -633,12 +632,6 @@
           "title": "Licenční / API klíč",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Předplatitelé API Starter a API Business vytvoří tento klíč na webovém panelu v části Settings → API Keys. Pokud celý klíč ztratíte, zrušte jej a vytvořte náhradní."
-        },
-        "dividerOr": "NEBO",
-        "register": {
-          "title": "Potřebujete API klíč?",
-          "description": "Podrobný návod najdete na worldmonitor.app/docs/api-keys. Ruční API klíče vyžadují tarif API Starter nebo API Business.",
-          "submitBtn": "Zobrazit tarify API"
         }
       },
       "table": {

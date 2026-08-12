@@ -42,7 +42,7 @@
       "type": "skill-md",
       "description": "Retrieve normalized OFAC sanctions pressure — designation summaries, recent additions, and per-country/per-program aggregates including sanctioned vessels and aircraft. Use when the user asks which countries or programs face sanctions pressure, or what was recently designated.",
       "url": "https://worldmonitor.app/.well-known/agent-skills/check-sanctions-pressure/SKILL.md",
-      "digest": "sha256:a9c2e4d91e311c3c6c37d60d0200fc97a405d3496a76807a6e6a1e57ba031d99"
+      "digest": "sha256:fb1c8459af72327e76e132d5ca5ef46486851376b43649e5c9a744712e44cf57"
     },
     {
       "name": "fetch-country-brief",
@@ -63,7 +63,7 @@
       "type": "skill-md",
       "description": "Retrieve the composite country resilience score (0-100) and its domain/pillar breakdown for a single country. Use when the user asks how resilient a country is, or wants its numeric resilience score, trend, or per-domain breakdown.",
       "url": "https://worldmonitor.app/.well-known/agent-skills/fetch-resilience-score/SKILL.md",
-      "digest": "sha256:6416e8d5b15e5ca7832adea7462f5127a3302970c489127ba02b96fda1046f48"
+      "digest": "sha256:c3c42ff2c4d62e876a96f232a672fe3e9dd9526cd46318ba6aeaecd8a8ad6dc9"
     },
     {
       "name": "get-market-quotes",
@@ -126,7 +126,7 @@
       "type": "skill-md",
       "description": "Retrieve strategic UN Comtrade commodity flows with anomaly flags. Use when the user asks who trades a critical commodity, which flows changed sharply, or how trade exposure is shifting.",
       "url": "https://worldmonitor.app/.well-known/agent-skills/trace-trade-flows/SKILL.md",
-      "digest": "sha256:da16310dffb8b134ac9df590861d5edb748b2848a32d543e341e26cc25d90217"
+      "digest": "sha256:b73fd39c8bca74c7547cf4d9547b5d7176a565f5a8f43aae37041b22c5245f6c"
     },
     {
       "name": "track-climate-hazards",
@@ -161,7 +161,7 @@
       "type": "skill-md",
       "description": "Retrieve tariff-rate timeseries for a country pair — applied vs bound rates by product sector and year, plus the current effective tariff rate. Use when the user asks how tariffs between two countries have changed or what rate applies to a sector.",
       "url": "https://worldmonitor.app/.well-known/agent-skills/track-tariff-trends/SKILL.md",
-      "digest": "sha256:e8ad4d9e5132d83be9227c3026907dc4e3b51c2f50ee4912b501efc27ea4ca5c"
+      "digest": "sha256:26002429120bcc69f00bd4fb9abe0a23bc91cdb25eb301091a0ad61ab50fa6f9"
     },
     {
       "name": "track-unrest-events",

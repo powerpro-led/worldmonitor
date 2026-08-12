@@ -361,7 +361,11 @@ export class RouteExplorer {
         });
         void import('@/services/auth-provider')
           .then((m) => m.signInWithGithub())
-          .catch(() => window.open('https://worldmonitor.app/pro', '_blank', 'noopener,noreferrer'));
+          .catch(() => {
+            void import('@/services/error-toast')
+              .then((m) => m.showErrorToast('Sign-in is temporarily unavailable. Please try again.'))
+              .catch(() => window.alert('Sign-in is temporarily unavailable. Please try again.'));
+          });
       }, { once: true });
     }
   }

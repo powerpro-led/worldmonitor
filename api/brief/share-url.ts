@@ -2,7 +2,6 @@
  * POST /api/brief/share-url?slot=YYYY-MM-DD-HHMM
  *   -> 200 { shareUrl, hash, issueSlot }           on success
  *   -> 401 UNAUTHENTICATED                         on missing/bad JWT
- *   -> 403 pro_required                            for non-PRO users
  *   -> 400 invalid_slot_shape / invalid_payload    on bad inputs
  *   -> 404 brief_not_found                         when the per-user
  *            brief key is missing (reader can't share what doesn't exist)
@@ -37,7 +36,6 @@ import { readRawJsonFromUpstash, redisPipeline } from '../_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from '../_sentry-edge.js';
 import { validateBearerToken } from '../../server/auth-session';
-import { getEntitlements } from '../../server/_shared/entitlement-check';
 import {
   BriefShareUrlError,
   BRIEF_PUBLIC_POINTER_PREFIX,
@@ -90,15 +88,6 @@ export default async function handler(
   const session = await validateBearerToken(jwt);
   if (!session.valid || !session.userId) {
     return jsonResponse({ error: 'UNAUTHENTICATED' }, 401, cors);
-  }
-
-  const ent = await getEntitlements(session.userId);
-  if (!ent || ent.features.tier < 1) {
-    return jsonResponse(
-      { error: 'pro_required', message: 'Sharing is available on the Pro plan.' },
-      403,
-      cors,
-    );
   }
 
   const secret = process.env.BRIEF_SHARE_SECRET ?? '';

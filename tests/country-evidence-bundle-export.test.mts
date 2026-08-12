@@ -584,7 +584,7 @@ describe('country evidence bundle export', () => {
 
       assert.equal(harness.getEvidenceExports().length, 0);
       assert.deepEqual(harness.getGateHits(), ['evidence-export']);
-      assert.deepEqual(harness.getToasts(), ['Evidence export is available on Pro.']);
+      assert.deepEqual(harness.getToasts(), ['Sign in to export evidence bundles.']);
     } finally {
       harness.cleanup();
     }
@@ -715,7 +715,7 @@ describe('country evidence bundle export', () => {
 
       assert.equal(harness.getEvidenceExports().length, 0);
       assert.deepEqual(harness.getGateHits(), ['evidence-export']);
-      assert.deepEqual(harness.getToasts(), ['Evidence export is available on Pro.']);
+      assert.deepEqual(harness.getToasts(), ['Sign in to export evidence bundles.']);
     } finally {
       harness.cleanup();
     }

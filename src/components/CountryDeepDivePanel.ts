@@ -1986,7 +1986,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
     const isPro = hasPremiumAccess(getAuthState());
     if (!isPro) {
-      const gateEl = this.makeProLocked('Bypass corridors available with PRO');
+      const gateEl = this.makeProLocked('Sign in to unlock bypass corridors');
       gateEl.addEventListener('click', () => trackGateHit('sector-bypass-corridors'), { once: true });
       bypassContent.append(gateEl);
     } else {
@@ -2504,11 +2504,11 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     });
     const evidenceButton = this.el('button', 'cdp-action-btn cdp-evidence-export-btn', 'Evidence') as HTMLButtonElement;
     evidenceButton.setAttribute('type', 'button');
-    evidenceButton.setAttribute('title', 'Export evidence bundle as Markdown (PRO)');
+    evidenceButton.setAttribute('title', 'Export evidence bundle as Markdown (sign in required)');
     evidenceButton.addEventListener('click', () => {
       if (!hasPremiumAccess(getAuthState())) {
         trackGateHit('evidence-export');
-        showToast('Evidence export is available on Pro.');
+        showToast('Sign in to export evidence bundles.');
         return;
       }
       this.exportEvidenceBundle();
@@ -2579,28 +2579,28 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     );
     this.costShockCalcBody = costShockCalcBody;
     costShockCalcBody.append(
-      isPro ? this.makeLoading('Loading cost shock calculator\u2026') : this.makeProLocked('Upgrade to PRO for multi-sector cost shock modelling'),
+      isPro ? this.makeLoading('Loading cost shock calculator\u2026') : this.makeProLocked('Sign in to unlock multi-sector cost shock modelling'),
     );
 
     const [productImportsCard, productImportsCardBody] = this.sectionCard('Product Imports', 'Top imported products by HS4 code with supplier breakdown and concentration risk.');
     this.productImportsBody = productImportsCardBody;
-    productImportsCardBody.append(isPro ? this.makeLoading('Loading product data\u2026') : this.makeProLocked('Upgrade to PRO for product import data'));
+    productImportsCardBody.append(isPro ? this.makeLoading('Loading product data\u2026') : this.makeProLocked('Sign in to unlock product import data'));
 
     const [debtCard, debtBody] = this.sectionCard('National Debt', 'Government debt-to-GDP ratio, total debt, and year-over-year growth.');
     this.debtBody = debtBody;
-    debtBody.append(isPro ? this.makeLoading('Loading debt data\u2026') : this.makeProLocked('Upgrade to PRO for national debt data'));
+    debtBody.append(isPro ? this.makeLoading('Loading debt data\u2026') : this.makeProLocked('Sign in to unlock national debt data'));
 
     const [sanctionsCard, sanctionsBody] = this.sectionCard('Sanctions Pressure', 'Sanctioned entities, vessels, and aircraft linked to this country.');
     this.sanctionsBody = sanctionsBody;
-    sanctionsBody.append(isPro ? this.makeLoading('Loading sanctions data\u2026') : this.makeProLocked('Upgrade to PRO for sanctions data'));
+    sanctionsBody.append(isPro ? this.makeLoading('Loading sanctions data\u2026') : this.makeProLocked('Sign in to unlock sanctions data'));
 
     const [comtradeCard, comtradeBody] = this.sectionCard('Trade Flows', 'Top Comtrade trade flows sorted by value, with partner and commodity.');
     this.comtradeBody = comtradeBody;
-    comtradeBody.append(isPro ? this.makeLoading('Loading trade flows\u2026') : this.makeProLocked('Upgrade to PRO for trade flow data'));
+    comtradeBody.append(isPro ? this.makeLoading('Loading trade flows\u2026') : this.makeProLocked('Sign in to unlock trade flow data'));
 
     const [tariffCard, tariffBody] = this.sectionCard('Tariff Trends', 'Effective tariff rate and historical trend direction.');
     this.tariffBody = tariffBody;
-    tariffBody.append(isPro ? this.makeLoading('Loading tariff data\u2026') : this.makeProLocked('Upgrade to PRO for tariff trend data'));
+    tariffBody.append(isPro ? this.makeLoading('Loading tariff data\u2026') : this.makeProLocked('Sign in to unlock tariff trend data'));
 
 
     this.signalsBody = signalBody;

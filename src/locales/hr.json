@@ -667,7 +667,6 @@
         "some": "Neke funkcije trebaju API ključeve"
       },
       "openSettings": "Otvori Postavke",
-      "reserveEarlyAccess": "Rezerviši Rani Pristup",
       "skipSetup": "Preskoči postavljanje — jedna World Monitor licenca otključava sve. Pridruži se listi čekanja za rani pristup.",
       "summary": {
         "desktop": "Desktop režim",
@@ -728,18 +727,6 @@
           "description": "Pretplatnici na API Starter i API Business stvaraju ovaj ključ na web nadzornoj ploči putem Settings → API Keys. Ako izgubiš cijeli ključ, opozovi ga i izradi zamjenski.",
           "statusValid": "LICENCIRANO",
           "statusMissing": "NEMA LICENCE"
-        },
-        "dividerOr": "ILI",
-        "register": {
-          "title": "Trebaš API ključ?",
-          "description": "Detaljne upute potraži na worldmonitor.app/docs/api-keys. Ručni API ključevi zahtijevaju plan API Starter ili API Business.",
-          "emailPlaceholder": "tvoj@email.com",
-          "submitBtn": "Prikaži API planove",
-          "submitting": "Slanje...",
-          "success": "Već si na listi! Obavijestit ćemo te prvi.",
-          "alreadyRegistered": "Već ste na listi čekanja.",
-          "error": "Registracija nije uspjela. Pokušajte ponovno.",
-          "invalidEmail": "Unesite valjanu email adresu."
         },
         "byokTitle": "Ili donesite vlastite ključeve",
         "byokDescription": "Želite potpunu kontrolu? Otvorite kartice API ključevi i LLM-ovi kako biste konfigurirali svaki izvor podataka i AI pružatelja posebno."

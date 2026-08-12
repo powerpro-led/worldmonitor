@@ -722,8 +722,12 @@ function renderStoryPage({ story, rank, palette, pageIndex, totalPages, issueDat
  * }} opts
  */
 function renderBackCover({ tz, pageIndex, totalPages, publicMode, refCode }) {
+  // No self-service signup exists on this private fork (operator-issued
+  // access only) \u2014 the public-view CTA points at the homepage, not a
+  // purchase/subscribe flow. refCode is still threaded through for
+  // share-attribution analytics even though there's nothing to "convert" to.
   const ctaHref = publicMode
-    ? `https://worldmonitor.app/pro${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`
+    ? `https://worldmonitor.app${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`
     : 'https://worldmonitor.app';
   const kicker = publicMode
     ? 'You\u2019re reading a shared brief'
@@ -732,7 +736,7 @@ function renderBackCover({ tz, pageIndex, totalPages, publicMode, refCode }) {
     ? 'Get your own<br/>daily brief.'
     : 'End of<br/>Transmission.';
   const metaLeft = publicMode
-    ? `<a href="${escapeHtml(ctaHref)}" class="mono back-cta" target="_blank" rel="noopener">Subscribe \u2192</a>`
+    ? `<a href="${escapeHtml(ctaHref)}" class="mono back-cta" target="_blank" rel="noopener">Get your own \u2192</a>`
     : '<span class="mono">worldmonitor.app</span>';
   const metaRight = publicMode
     ? '<span class="mono">worldmonitor.app</span>'
@@ -1136,7 +1140,7 @@ const STYLE_BLOCK = `<style>
   .wm-share[data-state="copied"]::after { content: ' \u00b7 copied'; opacity: 0.75; }
   .wm-share[data-state="error"]::after { content: ' \u00b7 error'; opacity: 0.75; color: #ff9b9b; }
 
-  /* ── Public view: Subscribe banner ─────────────────────────────── */
+  /* ── Public view: shared-issue banner ───────────────────── */
   .wm-public-strip {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -1424,7 +1428,7 @@ function redactForPublic(data) {
     },
     stories: data.stories.map((s) => ({
       ...s,
-      whyMatters: 'Subscribe to WorldMonitor Brief to see the full editorial on this story.',
+      whyMatters: 'The full editorial for this story is in the original brief.',
     })),
   };
 }
@@ -1613,9 +1617,12 @@ export function renderBriefMagazine(envelope, options = {}) {
   const title = `WorldMonitor Brief · ${escapeHtml(dateLong)}`;
 
   // In public view: the per-hash mirror is noindexed via the HTTP
-  // header AND a meta tag, and we prepend a subscribe strip pointing
-  // at /pro (with optional referral attribution).
-  const publicStripHref = `https://worldmonitor.app/pro${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`;
+  // header AND a meta tag, and we prepend a strip pointing at the
+  // homepage (with optional referral attribution) — no self-service
+  // signup exists on this private fork, so there's nothing to
+  // subscribe to; the strip just orients a visitor who followed a
+  // shared link.
+  const publicStripHref = `https://worldmonitor.app${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`;
   const publicStripHtml = publicMode
     ? '<div class="wm-public-strip">'
       + '<span>WorldMonitor Brief \u00b7 shared issue</span>'
@@ -1624,7 +1631,7 @@ export function renderBriefMagazine(envelope, options = {}) {
       // chars inside refCode — consistency for anyone auditing XSS
       // hygiene, and a safety net if the route boundary loosens.
       + `<a href="${escapeHtml(publicStripHref)}" target="_blank" rel="noopener">`
-      + 'Subscribe \u2192</a>'
+      + 'Get your own \u2192</a>'
       + '</div>'
     : '';
 

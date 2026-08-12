@@ -1,9 +1,11 @@
 /**
  * Notification publish endpoint.
  *
- * POST /api/notify — validates Clerk JWT, publishes event to Upstash wm:events:notify channel
+ * POST /api/notify — validates a Bearer session, publishes event to Upstash wm:events:notify channel
  *
- * Authentication: Clerk Bearer token in Authorization header.
+ * Authentication: Supabase-issued Bearer token in Authorization header. No
+ * separate Pro-tier gate: every signed-in user is fully entitled
+ * post-billing-cut (see server/_shared/entitlement-check.ts).
  * Requires UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN env vars.
  */
 
@@ -19,7 +21,6 @@ import {
   getIdempotencyKey,
 } from './_idempotency.js';
 import { validateBearerToken } from '../server/auth-session';
-import { getEntitlements } from '../server/_shared/entitlement-check';
 
 const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
 const INTERNAL_EVENT_TYPES = new Set(['flush_quiet_held', 'channel_welcome', 'watchlist_story_alert']);
@@ -55,11 +56,6 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const idempotencyRequest = req.clone();
-
-  const ent = await getEntitlements(session.userId);
-  if (!ent || ent.features.tier < 1) {
-    return jsonResponse({ error: 'pro_required', message: 'Event publishing is available on the Pro plan.', upgradeUrl: 'https://worldmonitor.app/pro' }, 403, cors);
-  }
 
   let body: { eventType?: unknown; payload?: unknown; severity?: unknown; variant?: unknown };
   try {

@@ -245,9 +245,6 @@ export class RuntimeConfigPanel extends Panel {
             ${availableFeatures}/${totalFeatures} ${t('modals.runtimeConfig.summary.available')}${configuredCount > 0 ? ` · ${configuredCount} ${t('modals.runtimeConfig.summary.secrets')}` : ''}.
           </p>
           <p class="runtime-alert-skip">${t('modals.runtimeConfig.skipSetup')}</p>
-          <button type="button" class="runtime-early-access-btn" data-early-access>
-            ${t('modals.runtimeConfig.reserveEarlyAccess')}
-          </button>
         </section>
       `, "legacy direct innerHTML migration"));
       this.attachListeners();
@@ -371,14 +368,6 @@ export class RuntimeConfigPanel extends Panel {
     if (!isDesktopRuntime()) return;
 
     if (this.mode === 'alert') {
-      this.content.querySelector<HTMLButtonElement>('[data-early-access]')?.addEventListener('click', () => {
-        const url = 'https://www.worldmonitor.app/pro';
-        if (isDesktopRuntime()) {
-          void invokeTauri<void>('open_url', { url }).catch(() => window.open(url, '_blank', 'noopener,noreferrer'));
-        } else {
-          window.open(url, '_blank', 'noopener,noreferrer');
-        }
-      });
       return;
     }
 

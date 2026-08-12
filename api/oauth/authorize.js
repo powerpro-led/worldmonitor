@@ -178,19 +178,19 @@ button:disabled{opacity:.5;cursor:default}
 <li>Markets: stocks, commodities, crypto &amp; FX</li>
 </ul>
 <hr>
-<a id="pc" class="pro-cta" href="${escapeHtml(proCtaHref)}">Sign in with WorldMonitor Pro</a>
+<a id="pc" class="pro-cta" href="${escapeHtml(proCtaHref)}">Sign in with WorldMonitor</a>
 <div class="disclosure" id="dt"><a id="tk" role="button" tabindex="0">Use API key instead</a></div>
 <form id="cf" method="POST" action="https://api.worldmonitor.app/oauth/authorize" style="display:none;margin-top:1.25rem">
 <input type="hidden" name="_nonce" id="nn" value="${escapeHtml(nonce)}">
 <input type="hidden" name="_js" id="jf" value="">
 <label for="api_key">API Key</label>
 <input type="password" id="api_key" name="api_key" placeholder="wm_&#8230;" autocomplete="current-password">
-<p class="hint">No key? <a href="https://www.worldmonitor.app/pro" target="_blank" rel="noopener">Get one at worldmonitor.app/pro &#x2192;</a></p>
+<p class="hint">No key? Keys are operator-issued on this private fork &mdash; no self-service enrollment.</p>
 <p class="error" id="ke"${errorMsg ? '' : ' style="display:none"'}>${errorMsg ? escapeHtml(errorMsg) : ''}</p>
 <button type="submit" id="ab">Authorize</button>
 </form>
 </div>
-<p class="footer"><a href="https://www.worldmonitor.app" target="_blank" rel="noopener">worldmonitor.app</a> &middot; <a href="https://www.worldmonitor.app/pro" target="_blank" rel="noopener">Get an API key &#x2192;</a></p>
+<p class="footer"><a href="https://www.worldmonitor.app" target="_blank" rel="noopener">worldmonitor.app</a></p>
 <script>(function(){function showForm(){var f=document.getElementById('cf');if(f)f.style.display='';var d=document.getElementById('dt');if(d)d.style.display='none';var k=document.getElementById('api_key');if(k){k.required=true;try{k.focus();}catch(e){}}}var em=document.getElementById('ke');if(em&&em.textContent&&em.textContent.length>0){showForm();}if(window.location.hash==='#api-key'){showForm();}var tk=document.getElementById('tk');if(tk){tk.addEventListener('click',function(e){e.preventDefault();showForm();});tk.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();showForm();}});}var cf=document.getElementById('cf');if(cf){cf.addEventListener('submit',function(e){e.preventDefault();var jf=document.getElementById('jf');if(jf)jf.value='1';var b=document.getElementById('ab');b.disabled=true;b.textContent='Authorizing…';var d=new URLSearchParams(new FormData(e.target));fetch('/oauth/authorize',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:d}).then(function(r){var c=r.headers.get('Content-Type')||'';if(c.indexOf('json')>=0)return r.json().then(function(j){if(j.location){window.location.replace(j.location);return;}if(j.error==='invalid_key'){var n=document.getElementById('nn');if(n)n.value=j.nonce||'';var em2=document.getElementById('ke');if(em2){em2.textContent='Invalid API key. Please check and try again.';em2.style.display='';}showForm();}b.disabled=false;b.textContent='Authorize';});return r.text().then(function(h){document.open();document.write(h);document.close();});}).catch(function(){b.disabled=false;b.textContent='Authorize';});});}})();</script>
 </body></html>`, { status: 200, headers: PAGE_HEADERS });
 }

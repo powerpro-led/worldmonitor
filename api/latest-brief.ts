@@ -1,7 +1,7 @@
 /**
  * Latest-brief preview endpoint.
  *
- * GET /api/latest-brief (Clerk JWT required, PRO tier gated)
+ * GET /api/latest-brief (Supabase-issued Bearer JWT required)
  *   -> 200 { status: 'ready', issueDate, issueSlot, dateLong, greeting,
  *      threadCount, magazineUrl } when a composed brief exists for this
  *      user's current/requested slot.
@@ -11,8 +11,10 @@
  *      dashboard panel uses this to render an empty state instead of an
  *      error.
  *   -> 401 UNAUTHENTICATED on missing/bad JWT
- *   -> 403 pro_required for non-PRO users
  *   -> 503 if BRIEF_URL_SIGNING_SECRET is not configured
+ *
+ * No separate Pro-tier gate: every signed-in user is fully entitled
+ * post-billing-cut (see server/_shared/entitlement-check.ts).
  *
  * The returned magazineUrl is freshly signed per request. It is safe
  * to expose to the authenticated client — the HMAC binds {userId,
@@ -34,7 +36,6 @@ import { readRawJsonFromUpstash } from './_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from './_sentry-edge.js';
 import { validateBearerToken } from '../server/auth-session';
-import { getEntitlements } from '../server/_shared/entitlement-check';
 import { signBriefUrl, BriefUrlError } from '../server/_shared/brief-url';
 import { assertBriefEnvelope } from '../server/_shared/brief-render.js';
 
@@ -45,7 +46,7 @@ const ISSUE_SLOT_RE = /^\d{4}-\d{2}-\d{2}-\d{4}$/;
 // Per-attempt timeouts for the cache-read retry helper. Worst-case wall
 // time = FIRST_ATTEMPT_MS + RETRY_ATTEMPT_MS per read × 2 reads = 18s,
 // which leaves headroom under Vercel Edge's ~25s initial-response cap
-// after `validateBearerToken` + `getEntitlements` preflight. Retry uses
+// after the `validateBearerToken` preflight. Retry uses
 // a shorter budget on the theory that a transient blip clears in <3s; a
 // real Upstash outage will time out the retry quickly and fall through
 // to the 503 fallback before the platform kills the function.
@@ -192,19 +193,6 @@ export default async function handler(
   const session = await validateBearerToken(jwt);
   if (!session.valid || !session.userId) {
     return jsonResponse({ error: 'UNAUTHENTICATED' }, 401, cors);
-  }
-
-  const ent = await getEntitlements(session.userId);
-  if (!ent || ent.features.tier < 1) {
-    return jsonResponse(
-      {
-        error: 'pro_required',
-        message: 'The Brief is available on the Pro plan.',
-        upgradeUrl: 'https://worldmonitor.app/pro',
-      },
-      403,
-      cors,
-    );
   }
 
   const secret = process.env.BRIEF_URL_SIGNING_SECRET ?? '';

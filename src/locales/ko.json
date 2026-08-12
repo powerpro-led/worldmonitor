@@ -607,8 +607,7 @@
         "NASA_FIRMS_API_KEY": "자원 관리 시스템을 위한 화재 정보.",
         "OLLAMA_API_URL": "예: http://127.0.0.1:11434 (Ollama) 또는 http://127.0.0.1:1234/v1 (LM Studio) — OpenAI 호환 엔드포인트.",
         "OLLAMA_MODEL": "예: llama3.1:8b — 요약에 사용할 모델 태그."
-      },
-      "reserveEarlyAccess": "조기 접근 예약"
+      }
     },
     "settingsWindow": {
       "validating": "API 키 검증 중...",
@@ -629,12 +628,6 @@
           "title": "라이선스 / API 키",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "API Starter 및 API Business 구독자는 웹 대시보드의 Settings → API Keys에서 이 키를 생성합니다. 전체 키를 분실한 경우 기존 키를 취소하고 새 키를 생성하세요."
-        },
-        "dividerOr": "또는",
-        "register": {
-          "title": "API 키가 필요하신가요?",
-          "description": "단계별 안내는 worldmonitor.app/docs/api-keys에서 확인하세요. 수동 API 키에는 API Starter 또는 API Business 요금제가 필요합니다.",
-          "submitBtn": "API 요금제 보기"
         }
       },
       "table": {

@@ -852,7 +852,7 @@ describe('renderBriefMagazine — publicMode', () => {
     const publicHtml = renderBriefMagazine(env, { publicMode: true });
     assert.ok(!publicHtml.includes('Hormuz is roughly a fifth'), 'whyMatters stripped on public');
     assert.ok(
-      publicHtml.includes('Subscribe to WorldMonitor Brief to see the full editorial'),
+      publicHtml.includes('The full editorial for this story is in the original brief.'),
       'generic placeholder callout rendered',
     );
   });
@@ -865,18 +865,20 @@ describe('renderBriefMagazine — publicMode', () => {
     assert.ok(publicHtml.includes('<meta name="robots" content="noindex,nofollow">'), 'public render sets noindex meta');
   });
 
-  it('prepends a Subscribe strip on public views', () => {
+  it('prepends a shared-issue strip on public views', () => {
     const env = envelope();
     const html = renderBriefMagazine(env, { publicMode: true });
-    assert.ok(html.includes('class="wm-public-strip"'), 'subscribe strip element emitted');
-    assert.ok(html.includes('worldmonitor.app/pro'), 'strip links to /pro');
-    assert.ok(html.includes('Subscribe'), 'strip CTA text present');
+    assert.ok(html.includes('class="wm-public-strip"'), 'shared-issue strip element emitted');
+    // No self-service signup exists on this private fork — the strip
+    // links to the homepage, not a dead /pro purchase flow.
+    assert.ok(!html.includes('worldmonitor.app/pro'), 'strip does not link to the defunct /pro page');
+    assert.ok(html.includes('Get your own'), 'strip CTA text present');
   });
 
   it('attaches ?ref= to public CTAs when refCode is provided', () => {
     const env = envelope();
     const html = renderBriefMagazine(env, { publicMode: true, refCode: 'ABC123' });
-    assert.ok(html.includes('worldmonitor.app/pro?ref=ABC123'), 'refCode appended to /pro URL');
+    assert.ok(html.includes('worldmonitor.app?ref=ABC123'), 'refCode appended to the homepage URL');
   });
 
   it('HTML-escapes a hostile refCode before interpolation', () => {
@@ -888,12 +890,12 @@ describe('renderBriefMagazine — publicMode', () => {
     assert.ok(!html.includes('<script>1'), 'raw hostile payload never appears');
   });
 
-  it('swaps the back cover to a Subscribe CTA on public views', () => {
+  it('swaps the back cover to a "get your own" CTA on public views', () => {
     const env = envelope();
     const privateHtml = renderBriefMagazine(env);
     const publicHtml = renderBriefMagazine(env, { publicMode: true });
     assert.ok(privateHtml.includes('End of'), 'private back cover reads "End of Transmission"');
-    assert.ok(publicHtml.includes('Get your own'), 'public back cover reads Subscribe-style headline');
+    assert.ok(publicHtml.includes('Get your own'), 'public back cover reads "Get your own" headline');
     assert.ok(publicHtml.includes('class="mono back-cta"'), 'public back cover has CTA anchor');
   });
 

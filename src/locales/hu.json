@@ -648,7 +648,6 @@
         "needsKeys": "Konfiguráld az API-kulcsokat a funkciók feloldásához",
         "some": "Néhány funkció API-kulcsokat igényel"
       },
-      "reserveEarlyAccess": "Foglalj korai hozzáférést",
       "skipSetup": "Hagyj ki a beállítást — egy World Monitor licenc mindent feloldja. Csatlakozz a várólistához a korai hozzáféréshez.",
       "summary": {
         "desktop": "Asztali mód",
@@ -704,12 +703,6 @@
           "title": "Licenc- / API-kulcs",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Az API Starter és API Business előfizetők a webes irányítópult Settings → API Keys részében hozzák létre ezt a kulcsot. Ha a teljes kulcs elveszett, vonja vissza, és hozzon létre újat."
-        },
-        "dividerOr": "VAGY",
-        "register": {
-          "title": "API-kulcsra van szüksége?",
-          "description": "A részletes útmutatóért keresse fel a worldmonitor.app/docs/api-keys oldalt. A kézi API-kulcsokhoz API Starter vagy API Business csomag szükséges.",
-          "submitBtn": "API-csomagok megtekintése"
         }
       },
       "table": {

@@ -607,8 +607,7 @@
         "NASA_FIRMS_API_KEY": "Информация за пожарите за система за управление на ресурсите.",
         "OLLAMA_API_URL": "напр. http://127.0.0.1:11434 (Ollama) или http://127.0.0.1:1234/v1 (LM Studio) — OpenAI-съместима крайна точка.",
         "OLLAMA_MODEL": "напр. llama3.1:8b — етикет на модел за използване при обобщение."
-      },
-      "reserveEarlyAccess": "Резервирайте Вашия ранен достъп"
+      }
     },
     "settingsWindow": {
       "validating": "Валидиране на API ключове...",
@@ -629,12 +628,6 @@
           "title": "Лицензионен / API ключ",
           "placeholder": "wm_xxxxxxxxxxxxxxxxxxxxxxxx",
           "description": "Абонатите на API Starter и API Business създават този ключ в уеб таблото от Settings → API Keys. Ако пълният ключ е изгубен, отменете го и създайте нов."
-        },
-        "dividerOr": "ИЛИ",
-        "register": {
-          "title": "Нуждаете се от API ключ?",
-          "description": "Вижте worldmonitor.app/docs/api-keys за инструкции стъпка по стъпка. Ръчните API ключове изискват план API Starter или API Business.",
-          "submitBtn": "Вижте API плановете"
         }
       },
       "table": {

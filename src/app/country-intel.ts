@@ -107,7 +107,7 @@ export class CountryIntelManager implements AppModule {
   private briefRequestToken = 0;
   private frameworkUnsubscribe: (() => void) | null = null;
   private _fwDebounce: ReturnType<typeof setTimeout> | null = null;
-  // Re-fire PRO-gated country sections on false→true entitlement transition.
+  // Re-fire auth-gated country sections on false→true entitlement transition.
   // Without this, a user who opens a country brief before Clerk resolves
   // keeps seeing empty national-debt / sanctions / comtrade / tariff cards
   // until they reselect the country or reload. Tracks the last-seen
@@ -139,7 +139,7 @@ export class CountryIntelManager implements AppModule {
     this.authUnsubscribe = subscribeAuthState(() => {
       const nowPremium = hasPremiumAccess(getAuthState());
       if (nowPremium && !this.lastHadPremium) {
-        // Entitlement just resolved — refetch PRO sections for whatever
+        // Entitlement just resolved — refetch premium sections for whatever
         // country the user is currently viewing. No current country =
         // nothing to retry; the next country open will pick up the new
         // entitlement naturally.
@@ -1036,7 +1036,7 @@ export class CountryIntelManager implements AppModule {
     });
 
     const unCode = iso2ToComtradeReporterCode(code);
-    // Trade RPCs (listComtradeFlows + getTariffTrends) are PRO-gated and
+    // Trade RPCs (listComtradeFlows + getTariffTrends) are auth-gated and
     // 401 for anonymous/free users. Mirror the hasPremiumAccess() guard
     // already used above for the other premium country-brief cards so we
     // don't spray the console with 401s on every country click.

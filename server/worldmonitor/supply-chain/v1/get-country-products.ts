@@ -23,7 +23,7 @@ export async function getCountryProducts(
 
   // Input-shape errors return 400 — restoring the legacy /api/supply-chain/v1/
   // country-products contract which predated the sebuf migration. Empty-payload-200
-  // is reserved for the PRO-gate deny path (intentional contract shift), not for
+  // is reserved for the auth-gate deny path (intentional contract shift), not for
   // caller bugs (malformed/missing fields). Distinguishing the two matters for
   // logging, external API consumers, and silent-failure detection.
   if (!/^[A-Z]{2}$/.test(iso2)) {

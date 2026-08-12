@@ -86,11 +86,10 @@ export function openWidgetChatModal(options: WidgetChatOptions): void {
 
   const isModify = options.mode === 'modify';
   const titleText = isModify ? t('widgets.modifyTitle') : t('widgets.chatTitle');
-  const proBadgeHtml = isPro ? `<span class="widget-pro-badge">${escapeHtml(t('widgets.proBadge'))}</span>` : '';
 
   setTrustedHtml(modal, trustedHtml(`
     <div class="modal-header">
-      <span class="modal-title">${escapeHtml(titleText)}${proBadgeHtml}</span>
+      <span class="modal-title">${escapeHtml(titleText)}</span>
       <button class="modal-close" aria-label="${escapeHtml(t('common.close'))}">\u2715</button>
     </div>
     <div class="widget-chat-layout">
@@ -404,18 +403,20 @@ function resolvePreflightMessage(
   isPro: boolean,
   usedTesterKey: boolean,
 ): string {
+  if (status === 401) {
+    // api/widget-agent.ts 401s on an invalid/expired Bearer session — sign-in
+    // is the only thing standing between the caller and access (Stage 1
+    // collapsed entitlements to binary: any verified session is authorized).
+    return t('widgets.preflightSignInRequired');
+  }
   if (status === 403) {
     // Tester-key path: tell the operator to update the wm-*-key they actually have.
     if (usedTesterKey) return isPro ? t('widgets.preflightInvalidProKey') : t('widgets.preflightInvalidKey');
-    // Clerk-auth path: split on isPro.
-    //   isPro=true  — the modal believes the user is Pro; a 403 means either
-    //                 (a) they just upgraded (entitlement still propagating)
-    //                 or (b) the entitlement service is degraded. Tell them to
-    //                 refresh / contact support.
-    //   isPro=false — a free user reached a Pro action; "contact support" is
-    //                 wrong, they need to upgrade. Surface a clean upgrade ask
-    //                 without the "just upgraded" language.
-    return isPro ? t('widgets.preflightProSubscriptionRequired') : t('widgets.preflightProRequired');
+    // Non-tester-key 403 (e.g. the origin check ahead of auth). The server's
+    // Bearer-session gate itself 401s on an invalid/expired session — see
+    // above — so a 403 reaching here isn't an entitlement question; nothing
+    // left to differentiate on isPro for.
+    return t('widgets.preflightRequestRejected');
   }
   if (status === 503 && payload?.proKeyConfigured === false) return t('widgets.preflightProUnavailable');
   if (payload?.anthropicConfigured === false) return t('widgets.preflightAiUnavailable');

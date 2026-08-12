@@ -404,7 +404,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Wyszukaj loty na żywo po znaku zapytania (PRO)",
+      "flight": "Szukaj lotów na żywo po znaku wywoławczym (wymagane logowanie)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -715,8 +715,8 @@
       "shellSearchPlaceholder": "Przeszukaj ustawienia…",
       "shellCancel": "Anuluj",
       "shellSaveClose": "Zapisz i zamknij",
-      "freePanelLimit": "Plan bezpłatny: maks. {{max}} paneli. Uaktualnij do PRO, aby uzyskać nieograniczoną liczbę.",
-      "freeSourceLimit": "Plan bezpłatny: maks. {{max}} źródeł. Uaktualnij do PRO, aby uzyskać nieograniczoną liczbę."
+      "freePanelLimit": "Plan darmowy: maks. {{max}} paneli. Zaloguj się, aby uzyskać bez limitu.",
+      "freeSourceLimit": "Plan darmowy: maks. {{max}} źródeł. Zaloguj się, aby uzyskać bez limitu."
     }
   },
   "components": {
@@ -2193,108 +2193,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB Ticker Scanner</strong> Wzmianki o tickers w czasie rzeczywistym z r/wallstreetbets, r/stocks i r/investing. Uporządkowane według częstotliwości wzmianek i zaangażowania. Prędkość mierzy, jak szybko ticker zyskuje rozpęd wśród postów."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro został uruchomiony",
-      "tagline": "Więcej sygnału, mniej szumu. Więcej briefów AI. Geopolityk i analityk akcji tylko dla Ciebie.",
-      "cta": "Przejdź na Pro →",
-      "dismiss": "Odrzuć"
-    },
-    "billingState": {
-      "onHoldDesc": "Płatność nie powiodła się. Zaktualizuj metodę płatności, aby przywrócić dostęp premium.",
-      "onHoldBannerMessage": "Płatność nie powiodła się. Zaktualizuj metodę płatności, aby zachować aktywną subskrypcję.",
-      "updatePayment": "Zaktualizuj płatność",
-      "renewalPendingDesc": "Weryfikujemy odnowienie Twojej subskrypcji. Dostęp premium zostanie automatycznie przywrócony po potwierdzeniu.",
-      "refreshStatus": "Odśwież status",
-      "renewalFailedDesc": "Nie udało się zweryfikować odnowienia Twojej subskrypcji. Zarządzaj rozliczeniami lub skontaktuj się z pomocą techniczną, jeśli problem będzie się powtarzał.",
-      "manageBilling": "Zarządzaj rozliczeniami",
-      "lapsedDesc": "Twoja subskrypcja Pro wygasła. Subskrybuj ponownie, aby odzyskać dostęp premium.",
-      "resubscribe": "Subskrybuj ponownie"
-    },
-    "checkoutFailureBanner": {
-      "message": "Nie można ukończyć płatności. Nie dokonano opłaty.",
-      "retry": "Spróbuj ponownie",
-      "retrying": "Ponawianie…",
-      "dismiss": "Odrzuć"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Krok {{current}} z {{total}}",
-      "closeLabel": "Pomiń konfigurację",
-      "ariaLabel": "Konfiguracja aktywacji Pro",
-      "signedInAs": "Zalogowano jako {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Twój codzienny brief, każdego ranka",
-          "body": "Wyselekcjonowany brief wywiadowczy w Twojej skrzynce odbiorczej każdego ranka — najważniejsze sygnały z nocy, ujęte w pięciominutową lekturę.",
-          "confirmCta": "Włącz mój poranny brief",
-          "confirming": "Włączanie…",
-          "doneNote": "Twój poranny brief już działa.",
-          "scheduleNote": "Zachowamy Twoją obecną godzinę dostarczania.",
-          "summaryLabel": "Poranny brief",
-          "summaryVerified": "Włączony — zacznie się od Twojego następnego porannego briefu.",
-          "deliverAt": "Dostarczenie o",
-          "previewLoading": "Przygotowujemy podgląd Twojego pierwszego briefu…",
-          "previewLabel": "Dzisiejszy poranny brief"
-        },
-        "alerts": {
-          "heading": "Krytyczne alerty",
-          "body": "Otrzymuj powiadomienia w przeglądarce, gdy wydarzy się coś ważnego — eskalacje konfliktów, wstrząsy rynkowe, nowe sankcje. Dostosuj częstotliwość w dowolnym momencie w Ustawieniach.",
-          "confirmCta": "Włącz alerty",
-          "confirming": "Włączanie…",
-          "doneNote": "Alerty w przeglądarce są już włączone.",
-          "blockedNote": "Powiadomienia są zablokowane w Twojej przeglądarce. Włącz je w ustawieniach witryny w przeglądarce, aby otrzymywać alerty.",
-          "declinedNote": "Nie ma problemu — nie będziemy wysyłać alertów w przeglądarce. Możesz je później włączyć w ustawieniach witryny w przeglądarce.",
-          "summaryLabel": "Krytyczne alerty",
-          "summaryVerified": "Włączone — krytyczne sygnały dotrą do Twojej przeglądarki."
-        },
-        "power": {
-          "heading": "Twój zestaw narzędzi Pro",
-          "body": "Niestandardowe widżety, połączenia MCP i badacz AI zostały odblokowane. Zbuduj panel, który naprawdę chcesz obserwować.",
-          "confirmCta": "Poznaj narzędzia Pro",
-          "confirming": "Otwieranie…",
-          "doneNote": "Już korzystasz ze swoich narzędzi Pro.",
-          "summaryLabel": "Zestaw narzędzi Pro",
-          "summaryVerified": "Odblokowane i gotowe, gdy Ty będziesz gotowy.",
-          "channelsNote": "Wolisz Telegram, Slack, Discord czy webhook?",
-          "pointers": {
-            "widgets": "Utwórz niestandardowy widżet",
-            "analyst": "Zapytaj analityka AI",
-            "apiKeys": "Pobierz swoje klucze API i MCP",
-            "channels": "Skonfiguruj je w ustawieniach powiadomień"
-          }
-        }
-      },
-      "status": {
-        "pending": "Nie skonfigurowano",
-        "inFlight": "Konfigurowanie…",
-        "verified": "Gotowe",
-        "failed": "Nie zadziałało",
-        "blocked": "Zablokowane",
-        "unavailable": "Niedostępne",
-        "blockedNote": "To nie jest teraz dostępne — możesz to skonfigurować później w ustawieniach.",
-        "unavailableNote": "To nie jest dostępne na Twoim urządzeniu — możesz to skonfigurować później.",
-        "failedBody": "Coś poszło nie tak. Możesz spróbować ponownie lub skonfigurować to później w ustawieniach.",
-        "retry": "Spróbuj ponownie"
-      },
-      "actions": {
-        "skip": "Na razie pomiń",
-        "continue": "Kontynuuj"
-      },
-      "summary": {
-        "heading": "Wszystko gotowe",
-        "subVerified": "Oto, co działa na Twoim koncie.",
-        "subPending": "Możesz dokończyć konfigurację w dowolnym momencie w ustawieniach.",
-        "linePending": "Jeszcze nie skonfigurowano — dokończ w dowolnym momencie w ustawieniach.",
-        "lineFailed": "Nie udało nam się tego skonfigurować — spróbuj ponownie w ustawieniach.",
-        "finish": "Przejdź do mojego panelu"
-      },
-      "chip": {
-        "message": "Dokończ konfigurację swojego konta Pro.",
-        "action": "Dokończ konfigurację",
-        "dismissLabel": "Odrzuć"
-      }
-    },
     "frameworkSelector": {
       "label": "Framework analizy",
       "defaultNeutral": "Domyślny (Neutralny)",
@@ -3253,11 +3151,8 @@
     "previewComposingCopy": "Podgląd jest renderowany z najnowszymi danymi na żywo i stylowaniem tablicy.",
     "previewErrorCopy": "Napraw problem, a następnie spróbuj ponownie. Twoje istniejące widgety nie zostaną zmienione.",
     "createInteractive": "Utwórz interaktywny widget",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "Agent widgetu PRO niedostępny. Sprawdź PRO_WIDGET_KEY na serwerze.",
-    "preflightInvalidProKey": "Klucz PRO odrzucony. Zaktualizuj wm-pro-key i przeładuj.",
-    "preflightProSubscriptionRequired": "Wymagana subskrypcja Pro. Jeśli właśnie dokonałeś aktualizacji, odśwież stronę; w innym razie skontaktuj się z pomocą techniczną.",
-    "preflightProRequired": "Wymagana subskrypcja Pro, aby korzystać z Konstruktora Widgetów. Uaktualnij, aby odblokować.",
+    "preflightProUnavailable": "Agent widżetów niedostępny. Sprawdź PRO_WIDGET_KEY na serwerze.",
+    "preflightInvalidProKey": "Klucz logowania odrzucony. Zaktualizuj wm-pro-key i odśwież.",
     "examples": {
       "oilGold": "Pokaż mi dzisiejszą cenę ropy naftowej w stosunku do złota",
       "cryptoMovers": "Utwórz widget dla głównych zmian kryptowalut w ciągu ostatnich 24 godzin",
@@ -3269,7 +3164,9 @@
       "sortableTable": "Tabela cen kryptowalut z sortowaniem i filtrem wyszukiwania",
       "animatedCounters": "Liczniki animowane dla kluczowych wskaźników gospodarczych",
       "tabbedComparison": "Porównanie wydarzeń konfliktowych w kartach według regionów"
-    }
+    },
+    "preflightSignInRequired": "Zaloguj się, aby korzystać z kreatora widżetów.",
+    "preflightRequestRejected": "Żądanie zostało odrzucone. Odśwież stronę i spróbuj ponownie, lub skontaktuj się z pomocą techniczną, jeśli problem się utrzymuje."
   },
   "connectivity": {
     "offlineCached": "Offline — wyświetlanie danych z pamięci podręcznej z {{freshness}}.",
@@ -3277,12 +3174,9 @@
     "cachedFallback": "Dane na żywo niedostępne — wyświetlanie danych z pamięci podręcznej z {{freshness}}."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Wymaga klucza licencji World Monitor",
     "signInToUnlock": "Zaloguj się, aby odblokować funkcje premium",
     "signIn": "Zaloguj się, aby odblokować",
-    "upgradeDesc": "Przejdź na Pro, aby uzyskać pełny dostęp do analityki premium",
-    "upgradeToPro": "Przejdź na Pro",
     "features": {
       "orefSirens1": "Alerty rakietowe i rakietowe Izraela w czasie rzeczywistym",
       "orefSirens2": "Mapowanie stref syren z klasyfikacją zagrożeń",

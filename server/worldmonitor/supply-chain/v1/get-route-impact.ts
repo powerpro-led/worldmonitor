@@ -7,7 +7,7 @@
  * - Resilience score (server-side, from Redis cache)
  * - Dependency flags (reuses get-sector-dependency logic)
  *
- * PRO-gated. Non-bootstrapped (request-varying cache key).
+ * auth-gated. Non-bootstrapped (request-varying cache key).
  */
 
 import type {

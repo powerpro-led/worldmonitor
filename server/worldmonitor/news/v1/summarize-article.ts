@@ -106,10 +106,10 @@ export async function summarizeArticle(
       provider: provider,
       tokens: 0,
       fallback: true,
-      error: 'Pro subscription required',
+      error: 'Sign-in or API key required',
       errorType: 'AuthError',
       status: 'SUMMARIZE_STATUS_ERROR',
-      statusDetail: 'Pro subscription required',
+      statusDetail: 'Sign-in or API key required',
     };
   }
 

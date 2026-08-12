@@ -116,7 +116,7 @@ export async function saveWidget(spec: CustomWidgetSpec): Promise<void> {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       try { localStorage.removeItem(proHtmlKey(spec.id)); } catch { /* ignore legacy side-key cleanup */ }
     } catch {
-      throw new Error('Storage quota exceeded saving PRO widget');
+      throw new Error('Storage quota exceeded saving premium widget');
     }
   } else {
     const { sanitizeWidgetHtml } = await getWidgetSanitizer();

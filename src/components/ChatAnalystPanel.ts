@@ -216,7 +216,7 @@ export class ChatAnalystPanel extends Panel {
   private attachListeners(): void {
     // Click + keydown are both delegated on this.content (the persistent
     // panel content div), so attaching exactly once survives every buildUI()
-    // re-render — including the FREE→PRO unlock rebuild path. Re-attaching
+    // re-render — including the signed-out→signed-in unlock rebuild path. Re-attaching
     // would duplicate handlers and fire send() N times per Enter.
     if (this.contentDelegationAttached) return;
     this.contentDelegationAttached = true;
@@ -503,7 +503,7 @@ export class ChatAnalystPanel extends Panel {
       });
 
       if (!res.ok) {
-        const err = res.status === 403 ? 'Pro subscription required.' : `Error ${res.status}`;
+        const err = res.status === 403 ? 'Sign-in or API key required.' : `Error ${res.status}`;
         this.finalizeStreamingBubble(streamingBody, `⚠ ${err}`, false);
         return;
       }
@@ -652,7 +652,7 @@ export class ChatAnalystPanel extends Panel {
   // when a previously-locked panel transitions to unlocked. The chat surface
   // (chips, messages, quick actions, input row) lives entirely in buildUI()
   // and is only constructed once in the ctor — without a rebuild here, the
-  // body would stay empty after the FREE→PRO unlock fired by
+  // body would stay empty after the signed-out→signed-in unlock fired by
   // panel-layout.ts:updatePanelGating(). Re-detect via querySelector so we
   // only pay the cost when the wipe actually happened.
   override unlockPanel(): void {

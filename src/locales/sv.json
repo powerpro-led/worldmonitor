@@ -144,7 +144,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Sök live-flyg efter callsign (PRO)",
+      "flight": "Sök livetrafik efter anropssignal (inloggning krävs)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -455,8 +455,8 @@
       "shellSearchPlaceholder": "Sök inställningar...",
       "shellCancel": "Avbryt",
       "shellSaveClose": "Spara & Stäng",
-      "freePanelLimit": "Gratisplan: max {{max}} paneler. Uppgradera till PRO för obegränsat.",
-      "freeSourceLimit": "Gratisplan: max {{max}} källor. Uppgradera till PRO för obegränsat."
+      "freePanelLimit": "Gratisplan: max {{max}} paneler. Logga in för obegränsat.",
+      "freeSourceLimit": "Gratisplan: max {{max}} källor. Logga in för obegränsat."
     }
   },
   "components": {
@@ -1919,108 +1919,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB-tickersökare</strong> Realtidsticker-omnämnanden från r/wallstreetbets, r/stocks och r/investing. Rankade efter omnämnningsfrekvens och engagemang. Hastighet mäter hur snabbt en ticker får momentum över inlägg."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro är lanserad",
-      "tagline": "Mer signal, mindre brus. Fler AI-uppdateringar. En geopolitisk och aktieanalytiker bara för dig.",
-      "cta": "Uppgradera till Pro →",
-      "dismiss": "Stäng"
-    },
-    "billingState": {
-      "onHoldDesc": "Betalningen misslyckades. Uppdatera din betalningsmetod för att återställa premiumåtkomsten.",
-      "onHoldBannerMessage": "Betalningen misslyckades. Uppdatera din betalningsmetod för att hålla din prenumeration aktiv.",
-      "updatePayment": "Uppdatera betalning",
-      "renewalPendingDesc": "Vi verifierar förnyelsen av din prenumeration. Premiumåtkomsten återställs automatiskt när den har bekräftats.",
-      "refreshStatus": "Uppdatera status",
-      "renewalFailedDesc": "Vi kunde inte verifiera förnyelsen av din prenumeration. Hantera fakturering eller kontakta supporten om problemet kvarstår.",
-      "manageBilling": "Hantera fakturering",
-      "lapsedDesc": "Din Pro-prenumeration har upphört. Prenumerera igen för att återfå premiumåtkomsten.",
-      "resubscribe": "Prenumerera igen"
-    },
-    "checkoutFailureBanner": {
-      "message": "Betalningen kunde inte genomföras. Ingen debitering gjordes.",
-      "retry": "Försök igen",
-      "retrying": "Försöker igen…",
-      "dismiss": "Stäng"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Steg {{current}} av {{total}}",
-      "closeLabel": "Hoppa över installationen",
-      "ariaLabel": "Inställning för Pro-aktivering",
-      "signedInAs": "Inloggad som {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Din dagliga sammanfattning, varje morgon",
-          "body": "En sammanställd underrättelsesammanfattning i din inkorg varje morgon — nattens viktiga signaler, komprimerade till fem minuters läsning.",
-          "confirmCta": "Slå på min morgonsammanfattning",
-          "confirming": "Slår på…",
-          "doneNote": "Din morgonsammanfattning körs redan.",
-          "scheduleNote": "Vi behåller din nuvarande leveranstid.",
-          "summaryLabel": "Morgonsammanfattning",
-          "summaryVerified": "På — börjar med din nästa morgonsammanfattning.",
-          "deliverAt": "Leverans kl.",
-          "previewLoading": "Förbereder en förhandsvisning av din första sammanfattning…",
-          "previewLabel": "Dagens morgonsammanfattning"
-        },
-        "alerts": {
-          "heading": "Kritiska varningar",
-          "body": "Få ett meddelande i din webbläsare när något stort händer — konflikteskaleringar, marknadschocker, nya sanktioner. Justera frekvensen när som helst i Inställningar.",
-          "confirmCta": "Aktivera varningar",
-          "confirming": "Aktiverar…",
-          "doneNote": "Webbläsarvarningar är redan på.",
-          "blockedNote": "Aviseringar är blockerade i din webbläsare. Slå på dem i webbläsarens webbplatsinställningar för att få varningar.",
-          "declinedNote": "Inga problem — vi skickar inga webbläsarvarningar. Du kan slå på dem senare via webbläsarens webbplatsinställningar.",
-          "summaryLabel": "Kritiska varningar",
-          "summaryVerified": "På — kritiska signaler når din webbläsare."
-        },
-        "power": {
-          "heading": "Din Pro-verktygslåda",
-          "body": "Anpassade widgetar, MCP-anslutningar och AI-forskaren är upplåsta. Bygg den vy du verkligen vill bevaka.",
-          "confirmCta": "Utforska Pro-verktyg",
-          "confirming": "Öppnar…",
-          "doneNote": "Du använder redan dina Pro-verktyg.",
-          "summaryLabel": "Pro-verktygslåda",
-          "summaryVerified": "Upplåst och redo när du är det.",
-          "channelsNote": "Föredrar du Telegram, Slack, Discord eller en webhook?",
-          "pointers": {
-            "widgets": "Skapa en anpassad widget",
-            "analyst": "Fråga AI-analytikern",
-            "apiKeys": "Hämta dina API- och MCP-nycklar",
-            "channels": "Ställ in dem i aviseringsinställningarna"
-          }
-        }
-      },
-      "status": {
-        "pending": "Inte konfigurerat",
-        "inFlight": "Konfigurerar…",
-        "verified": "Klart",
-        "failed": "Det fungerade inte",
-        "blocked": "Blockerat",
-        "unavailable": "Inte tillgängligt",
-        "blockedNote": "Det här är inte tillgängligt just nu — du kan konfigurera det senare i inställningarna.",
-        "unavailableNote": "Det här är inte tillgängligt på din enhet — du kan konfigurera det senare.",
-        "failedBody": "Något gick fel. Du kan försöka igen eller konfigurera det senare i inställningarna.",
-        "retry": "Försök igen"
-      },
-      "actions": {
-        "skip": "Hoppa över för nu",
-        "continue": "Fortsätt"
-      },
-      "summary": {
-        "heading": "Allt är klart",
-        "subVerified": "Så här är det på ditt konto just nu.",
-        "subPending": "Du kan slutföra installationen när som helst i inställningarna.",
-        "linePending": "Inte konfigurerat än — slutför när som helst i inställningarna.",
-        "lineFailed": "Vi kunde inte konfigurera det här — försök igen i inställningarna.",
-        "finish": "Gå till min instrumentpanel"
-      },
-      "chip": {
-        "message": "Slutför installationen av ditt Pro-konto.",
-        "action": "Slutför installation",
-        "dismissLabel": "Stäng"
-      }
-    },
     "frameworkSelector": {
       "label": "Analysramverk",
       "defaultNeutral": "Standard (Neutral)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "Förhandsvisningen renderas med de senaste livedata och instrumentpanelsstilen.",
     "previewErrorCopy": "Åtgärda problemet och försök sedan igen. Dina befintliga widgetar påverkas inte.",
     "createInteractive": "Skapa interaktiv widget",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO-widgetagent otillgänglig. Kontrollera PRO_WIDGET_KEY på servern.",
-    "preflightInvalidProKey": "PRO-nyckel avvisad. Uppdatera wm-pro-key och ladda om.",
-    "preflightProSubscriptionRequired": "Pro-prenumeration krävs. Om du precis uppgraderade bör du uppdatera sidan, annars kontaktar du support.",
-    "preflightProRequired": "Pro-prenumeration krävs för att använda Widget Builder. Uppgradera för att låsa upp.",
+    "preflightProUnavailable": "Widget-agenten är otillgänglig. Kontrollera PRO_WIDGET_KEY på servern.",
+    "preflightInvalidProKey": "Inloggningsnyckeln avvisades. Uppdatera wm-pro-key och ladda om.",
     "examples": {
       "oilGold": "Visa dagens råoljepris jämfört med guld",
       "cryptoMovers": "Skapa en widget för de bästa kryptorörelserna under de senaste 24 timmarna",
@@ -3233,7 +3128,9 @@
       "sortableTable": "Sortbar kryptopristabll med sökfilter",
       "animatedCounters": "Animerade räknare för viktiga ekonomiska indikatorer",
       "tabbedComparison": "Tabbad jämförelse av konflikthändelser efter region"
-    }
+    },
+    "preflightSignInRequired": "Logga in för att använda widgetbyggaren.",
+    "preflightRequestRejected": "Begäran avvisades. Ladda om sidan och försök igen, eller kontakta support om detta kvarstår."
   },
   "connectivity": {
     "offlineCached": "Offline — visar cachad data från {{freshness}}.",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "Livedata otillgänglig — visar cachad data från {{freshness}}."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Kräver en World Monitor-licensnyckel",
     "signInToUnlock": "Logga in för att låsa upp premiumfunktioner",
     "signIn": "Logga in för att låsa upp",
-    "upgradeDesc": "Uppgradera till Pro för fullständig åtkomst till premiumanalytik",
-    "upgradeToPro": "Uppgradera till Pro",
     "features": {
       "orefSirens1": "Varningar om missiler och raketer från Israel i realtid",
       "orefSirens2": "Sirenzoner med hotklassificering",

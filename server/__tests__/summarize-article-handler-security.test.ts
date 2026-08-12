@@ -55,10 +55,10 @@ describe("summarizeArticle handler premium mode gate", () => {
     expect(result).toMatchObject({
       summary: "",
       fallback: true,
-      error: "Pro subscription required",
+      error: "Sign-in or API key required",
       errorType: "AuthError",
       status: "SUMMARIZE_STATUS_ERROR",
-      statusDetail: "Pro subscription required",
+      statusDetail: "Sign-in or API key required",
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -66,7 +66,7 @@ describe("summarizeArticle handler premium mode gate", () => {
   test("anonymous analysis mode is rejected before provider fetch", async () => {
     const result = await summarizeArticle(makeContext({ "X-WorldMonitor-Key": "wms_basic_session" }), request("analysis"));
 
-    expect(result.error).toBe("Pro subscription required");
+    expect(result.error).toBe("Sign-in or API key required");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -97,6 +97,6 @@ describe("summarizeArticle handler premium mode gate", () => {
       status: "SUMMARIZE_STATUS_SKIPPED",
       statusDetail: "GROQ_API_KEY not configured",
     });
-    expect(result.error).not.toBe("Pro subscription required");
+    expect(result.error).not.toBe("Sign-in or API key required");
   });
 });

@@ -1435,7 +1435,7 @@ export class MapContainer {
 
   /**
    * Activate a scenario across all active renderers.
-   * PRO-gated — free users trigger `trackGateHit('scenario-engine')` only.
+   * auth-gated — free users trigger `trackGateHit('scenario-engine')` only.
    *
    * @param scenarioId  Template ID from scenario-templates.ts
    * @param result      Computed result from the scenario worker

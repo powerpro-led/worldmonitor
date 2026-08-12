@@ -22,7 +22,7 @@ import { MAX_QUEUE_DEPTH } from '../../../../scripts/_simulation-queue-constants
 /**
  * POST /api/forecast/v1/trigger-simulation
  *
- * PRO-gated mutation that enqueues a simulation task for the current
+ * auth-gated mutation that enqueues a simulation task for the current
  * SIMULATION_PACKAGE_LATEST_KEY pointer. Mirrors run-scenario.ts shape
  * (gateway Pro gate + per-IP rate-limit + queue-depth backpressure +
  * ApiError for non-200 status codes). See #3734.
@@ -56,7 +56,7 @@ export async function triggerSimulation(
   // Step 1: Pro gate (defense-in-depth).
   const isPro = await isCallerPremium(ctx.request);
   if (!isPro) {
-    throw new ApiError(403, 'Pro subscription required', '');
+    throw new ApiError(403, 'Sign-in or API key required', '');
   }
 
   // Step 2: queue-depth backpressure (mirrors run-scenario:50).

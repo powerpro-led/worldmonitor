@@ -208,7 +208,7 @@ describe('api/mcp-proxy', () => {
       const res = await handler(req);
       assert.equal(res.status, 401, 'wms_ session token must NOT unlock /api/mcp-proxy');
       const body = await res.json();
-      assert.match(body.error, /Pro authentication required/i);
+      assert.match(body.error, /Sign-in or API key required/i);
     });
 
     // wm_ user keys: isCallerPremium calls validateUserApiKey which hits

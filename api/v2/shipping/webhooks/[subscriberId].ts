@@ -43,7 +43,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const isPro = await isCallerPremium(req);
   if (!isPro) {
-    return new Response(JSON.stringify({ error: 'PRO subscription required' }), {
+    return new Response(JSON.stringify({ error: 'Sign-in or API key required' }), {
       status: 403,
       headers: { ...cors, 'Content-Type': 'application/json' },
     });

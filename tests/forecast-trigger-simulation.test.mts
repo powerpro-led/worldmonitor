@@ -102,7 +102,7 @@ describe('triggerSimulation handler (#3734 U4)', () => {
     installFetch(() => ({ result: 0 }));
     await assert.rejects(
       () => triggerSimulation(makeCtx(), { clientVersion: '' }),
-      (err) => err instanceof ApiError && err.statusCode === 403 && /Pro subscription/.test(err.message),
+      (err) => err instanceof ApiError && err.statusCode === 403 && /Sign-in or API key required/.test(err.message),
     );
   });
 

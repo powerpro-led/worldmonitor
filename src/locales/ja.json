@@ -400,7 +400,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "コールサインでライブフライトを検索 (PRO)",
+      "flight": "コールサインでライブフライトを検索（サインインが必要）",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -641,8 +641,8 @@
       "shellSearchPlaceholder": "設定を検索...",
       "shellCancel": "キャンセル",
       "shellSaveClose": "保存して閉じる",
-      "freePanelLimit": "無料プラン: 最大 {{max}} パネル。PRO にアップグレードして無制限にしましょう。",
-      "freeSourceLimit": "無料プラン: 最大 {{max}} ソース。PRO にアップグレードして無制限にしましょう。"
+      "freePanelLimit": "無料プラン: 最大{{max}}パネル。無制限にするにはサインインしてください。",
+      "freeSourceLimit": "無料プラン: 最大{{max}}ソース。無制限にするにはサインインしてください。"
     },
     "countryIntel": {
       "identifying": "国を特定中...",
@@ -2175,108 +2175,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSBティッカースキャナー</strong>r/wallstreetbets、r/stocks、r/investingからのリアルタイムティッカーメンション。メンション頻度とエンゲージメント順でランク付け。速度は、複数の投稿全体でティッカーがどれだけ急速に勢いを獲得しているかを示します。"
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Proがローンチしました",
-      "tagline": "より多くのシグナル、ノイズ削減。AI ブリーフィングの強化。あなたのための地政学&エクイティリサーチャー。",
-      "cta": "Pro にアップグレード →",
-      "dismiss": "閉じる"
-    },
-    "billingState": {
-      "onHoldDesc": "お支払いに失敗しました。プレミアムアクセスを復元するには、お支払い方法を更新してください。",
-      "onHoldBannerMessage": "お支払いに失敗しました。サブスクリプションを有効に保つには、お支払い方法を更新してください。",
-      "updatePayment": "支払い方法を更新",
-      "renewalPendingDesc": "サブスクリプションの更新を確認しています。確認が完了すると、プレミアムアクセスは自動的に復元されます。",
-      "refreshStatus": "ステータスを更新",
-      "renewalFailedDesc": "サブスクリプションの更新を確認できませんでした。問題が続く場合は、請求を管理するかサポートにお問い合わせください。",
-      "manageBilling": "請求を管理",
-      "lapsedDesc": "Proサブスクリプションが終了しました。プレミアムアクセスを取り戻すには再登録してください。",
-      "resubscribe": "再登録"
-    },
-    "checkoutFailureBanner": {
-      "message": "お支払いが完了できませんでした。請求はされていません。",
-      "retry": "もう一度試す",
-      "retrying": "再試行中…",
-      "dismiss": "閉じる"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "ステップ {{current}} / {{total}}",
-      "closeLabel": "セットアップをスキップ",
-      "ariaLabel": "Proアクティベーション設定",
-      "signedInAs": "{{email}} としてサインイン中",
-      "steps": {
-        "brief": {
-          "heading": "毎朝届くデイリーブリーフ",
-          "body": "毎朝、受信トレイに厳選されたインテリジェンスブリーフをお届け — 一晩の重要なシグナルを5分で読める内容に凝縮。",
-          "confirmCta": "モーニングブリーフをオンにする",
-          "confirming": "オンにしています…",
-          "doneNote": "モーニングブリーフはすでに配信中です。",
-          "scheduleNote": "現在の配信時刻を維持します。",
-          "summaryLabel": "モーニングブリーフ",
-          "summaryVerified": "オン — 次回のモーニングブリーフから開始します。",
-          "deliverAt": "配信時刻",
-          "previewLoading": "最初のブリーフのプレビューを準備しています…",
-          "previewLabel": "今朝のブリーフ"
-        },
-        "alerts": {
-          "heading": "重大アラート",
-          "body": "紛争の激化、市場ショック、新たな制裁など、大きな出来事が起きたときにブラウザで通知を受け取れます。頻度は設定でいつでも調整できます。",
-          "confirmCta": "アラートを有効にする",
-          "confirming": "有効にしています…",
-          "doneNote": "ブラウザアラートはすでにオンです。",
-          "blockedNote": "ブラウザで通知がブロックされています。アラートを受け取るには、ブラウザのサイト設定でオンにしてください。",
-          "declinedNote": "問題ありません — ブラウザアラートは送信しません。後でブラウザのサイト設定からいつでもオンにできます。",
-          "summaryLabel": "重大アラート",
-          "summaryVerified": "オン — 重大なシグナルがブラウザに届きます。"
-        },
-        "power": {
-          "heading": "あなたのProツールキット",
-          "body": "カスタムウィジェット、MCP接続、AIリサーチャーが解放されました。本当に見ておきたいボードを作りましょう。",
-          "confirmCta": "Proツールを見る",
-          "confirming": "開いています…",
-          "doneNote": "すでにProツールを使用中です。",
-          "summaryLabel": "Proツールキット",
-          "summaryVerified": "解放済み — いつでも準備完了です。",
-          "channelsNote": "Telegram、Slack、Discord、またはWebhookがお好みですか？",
-          "pointers": {
-            "widgets": "カスタムウィジェットを作成",
-            "analyst": "AIアナリストに質問",
-            "apiKeys": "APIとMCPのキーを取得",
-            "channels": "通知設定でセットアップ"
-          }
-        }
-      },
-      "status": {
-        "pending": "未設定",
-        "inFlight": "設定中…",
-        "verified": "準備完了",
-        "failed": "うまくいきませんでした",
-        "blocked": "ブロック済み",
-        "unavailable": "利用できません",
-        "blockedNote": "現在ご利用いただけません — 後で設定から設定できます。",
-        "unavailableNote": "お使いのデバイスではご利用いただけません — 後で設定できます。",
-        "failedBody": "問題が発生しました。もう一度お試しいただくか、後で設定から設定してください。",
-        "retry": "もう一度試す"
-      },
-      "actions": {
-        "skip": "今はスキップ",
-        "continue": "続ける"
-      },
-      "summary": {
-        "heading": "準備完了です",
-        "subVerified": "アカウントで有効になっている内容です。",
-        "subPending": "セットアップは設定からいつでも完了できます。",
-        "linePending": "まだ設定されていません — 設定からいつでも完了できます。",
-        "lineFailed": "設定できませんでした — 設定からもう一度お試しください。",
-        "finish": "ダッシュボードに移動"
-      },
-      "chip": {
-        "message": "Proアカウントのセットアップを完了してください。",
-        "action": "セットアップを完了",
-        "dismissLabel": "閉じる"
-      }
-    },
     "frameworkSelector": {
       "label": "分析フレームワーク",
       "defaultNeutral": "デフォルト (ニュートラル)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "プレビューが最新のライブデータとダッシュボードスタイルでレンダリングされています。",
     "previewErrorCopy": "問題を修正して再試行してください。既存のウィジェットは影響を受けません。",
     "createInteractive": "インタラクティブウィジェットを作成",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PROウィジェットエージェントが利用できません。サーバーのPRO_WIDGET_KEYを確認してください。",
-    "preflightInvalidProKey": "PROキーが拒否されました。wm-pro-keyを更新して再読み込みしてください。",
-    "preflightProSubscriptionRequired": "Proサブスクリプションが必要です。アップグレード直後の場合はページを更新してください。それ以外の場合はサポートに連絡してください。",
-    "preflightProRequired": "Pro サブスクリプションが必要です。Widget Builder を使用するにはアップグレードしてください。",
+    "preflightProUnavailable": "ウィジェットエージェントを利用できません。サーバーのPRO_WIDGET_KEYを確認してください。",
+    "preflightInvalidProKey": "サインインキーが拒否されました。wm-pro-keyを更新して再読み込みしてください。",
     "examples": {
       "oilGold": "今日の原油価格と金の比較を表示",
       "cryptoMovers": "過去 24 時間のトップ暗号資産変動ウィジェットを作成",
@@ -3233,7 +3128,9 @@
       "sortableTable": "検索フィルター付きの並び替え可能な暗号資産価格テーブル",
       "animatedCounters": "主要経済指標のアニメーション カウンター",
       "tabbedComparison": "地域別紛争イベントのタブ付き比較"
-    }
+    },
+    "preflightSignInRequired": "ウィジェットビルダーを使用するにはサインインしてください。",
+    "preflightRequestRejected": "リクエストが拒否されました。ページを再読み込みして再試行するか、問題が続く場合はサポートにお問い合わせください。"
   },
   "connectivity": {
     "offlineCached": "オフライン — {{freshness}}からのキャッシュデータを表示しています。",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "ライブデータが利用できません — {{freshness}}からのキャッシュデータを表示しています。"
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "World Monitor ライセンスキーが必要です",
     "signInToUnlock": "サインインしてプレミアム機能を利用",
     "signIn": "サインインして利用",
-    "upgradeDesc": "Proにアップグレードしてプレミアム分析に完全アクセス",
-    "upgradeToPro": "Proにアップグレード",
     "features": {
       "orefSirens1": "イスラエルのミサイル・ロケット警報をリアルタイム配信",
       "orefSirens2": "サイレンゾーンマッピングと脅威分類",

@@ -1019,42 +1019,15 @@ export function createDomainGateway(
             usage.sessionUserId = session.userId;
             request = withAuthenticatedUserId(request, session.userId);
           }
-          // Accept EITHER a Clerk 'pro' role OR a Convex Dodo entitlement with
-          // tier >= 1. The Dodo webhook pipeline writes Convex entitlements but
-          // does NOT sync Clerk publicMetadata.role, so a paying subscriber's
-          // session.role stays 'free' indefinitely. A Clerk-role-only check
-          // would block every paying user on legacy premium endpoints despite
-          // a valid Dodo subscription. This mirrors the two-signal logic in
-          // server/_shared/premium-check.ts::isCallerPremium so the gateway
-          // gate and the per-handler gate agree on who is premium — same split
-          // already documented at the frontend layer (panel-gating.ts:11-27).
-          //
-          // Note: validateBearerToken returns session.userId directly, so we
-          // use it without needing to resolveSessionUserId() — sessionUserId
-          // is intentionally only resolved for ENDPOINT_ENTITLEMENTS-tier-gated
-          // endpoints earlier (line 292) to avoid a JWKS lookup on every
-          // legacy premium request. validateBearerToken already does its own
-          // verification here (line 360) and exposes userId on the result.
-          let allowed = session.role === 'pro';
-          if (!allowed && session.userId) {
-            const ent = await getEntitlements(session.userId);
-            recordUsageEntitlement(ent);
-            const proCovered = !!ent &&
-              ent.features.tier >= 1 &&
-              ent.validUntil >= Date.now();
-            const billingDenial = denyForBillingVerification(
-              ent,
-              corsHeaders,
-              proCovered,
-            );
-            if (billingDenial) return billingDenial;
-            allowed = !!ent && ent.features.tier >= 1 && ent.validUntil >= Date.now();
-          }
-          if (!allowed) {
-            emitRequest(403, 'tier_403', null);
-            return createGatewayAuthErrorResponse(403, 'Pro subscription required', corsHeaders);
-          }
-          // Valid pro session (Clerk role OR Dodo entitlement) — fall through to route handling.
+          // Stage 1 (Supabase migration) collapsed entitlements to binary: any
+          // verified session gets role: 'pro' unconditionally (see
+          // server/auth-session.ts's own header comment), so the Convex/Dodo
+          // entitlement-tier fallback and billing-verification-denial branch
+          // this used to have could never fire in production; removed rather
+          // than left as dead code (2026-08-12), matching the same cleanup
+          // already done for api/widget-agent.ts, api/latest-brief.ts,
+          // api/notify.ts, and api/brief/share-url.ts.
+          // Valid session — fall through to route handling.
         } else {
           emitRequest(401, 'auth_401', null);
           return createGatewayAuthErrorResponse(401, keyCheck.error, corsHeaders);
@@ -1415,7 +1388,7 @@ export function createDomainGateway(
     if (requiresDirectLlmQuota && !isEnterpriseAuth) {
       if (!sessionUserId) {
         emitRequest(401, 'auth_401', null);
-        return createGatewayAuthErrorResponse(401, 'Pro authentication required', corsHeaders);
+        return createGatewayAuthErrorResponse(401, 'Sign-in or API key required', corsHeaders);
       }
 
       const reservation = await reserveDirectLlmQuota({

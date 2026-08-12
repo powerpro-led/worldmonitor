@@ -952,12 +952,11 @@ describe('CustomWidgetPanel — header buttons and events', () => {
     );
   });
 
-  it('PRO badge rendered in header when tier is pro', () => {
-    assert.ok(
-      panel.includes('widget-pro-badge'),
-      'CustomWidgetPanel must render .widget-pro-badge for PRO widgets',
-    );
-  });
+  // (Former "PRO badge rendered in header when tier is pro" test deleted
+  // 2026-08-12: the static .widget-pro-badge was removed — it rendered
+  // unconditionally for any 'pro'-tier widget regardless of the viewer's
+  // own sign-in state, same category as the other static PRO badges
+  // removed the same session — not a lock/CTA, just a stale always-on tag.)
 });
 
 // ---------------------------------------------------------------------------
@@ -1601,7 +1600,6 @@ describe('PRO widget — i18n keys and CSS', () => {
 
   const PRO_REQUIRED_KEYS = [
     'createInteractive',
-    'proBadge',
     'preflightProUnavailable',
   ];
 
@@ -1624,12 +1622,9 @@ describe('PRO widget — i18n keys and CSS', () => {
     }
   });
 
-  it('.widget-pro-badge CSS class defined', () => {
-    assert.ok(
-      css.includes('.widget-pro-badge'),
-      'CSS must define .widget-pro-badge class for PRO pill badge',
-    );
-  });
+  // (Former ".widget-pro-badge CSS class defined" test deleted 2026-08-12:
+  // the static badge and its CSS class were removed — see the
+  // CustomWidgetPanel suite above for the removal rationale.)
 
   it('.wm-widget-pro iframe CSS sets 400px height', () => {
     assert.ok(
@@ -1646,52 +1641,21 @@ describe('PRO widget — i18n keys and CSS', () => {
 });
 
 // ---------------------------------------------------------------------------
-// PRO widget — edge-proxy auth (Convex entitlement fallback for paid users)
+// entitlement-check — cache-write failure must NOT collapse to "no entitlement"
 // ---------------------------------------------------------------------------
 //
-// Dodo webhook does NOT sync Clerk publicMetadata.plan, so a paying subscriber's
-// Clerk session.role stays 'free' indefinitely. The edge proxy at
-// api/widget-agent.ts must accept EITHER Clerk role==='pro' OR Convex
-// entitlement tier>=1, mirroring server/_shared/premium-check.ts::isCallerPremium
-// and server/gateway.ts:521-526. A regression here surfaces as a misleading
-// "PRO key rejected. Update wm-pro-key…" 403 in the modal — the user has no
-// tester key, so the suggested action is a dead end.
-describe('widget-agent edge proxy — Convex entitlement fallback', () => {
-  const edge = src('api/widget-agent.ts');
-
-  it('imports getEntitlements from server/_shared/entitlement-check', () => {
-    assert.ok(
-      /import\s*\{[^}]*\bgetEntitlements\b[^}]*\}\s*from\s*['"][^'"]*entitlement-check['"]/.test(edge),
-      'api/widget-agent.ts must import getEntitlements for Dodo entitlement fallback',
-    );
-  });
-
-  it('Clerk JWT path falls back to Convex entitlement when role !== "pro"', () => {
-    const bearerIdx = edge.indexOf("authHeader?.startsWith('Bearer ')");
-    assert.ok(bearerIdx !== -1, 'Bearer-token branch not found in api/widget-agent.ts');
-    // Constrain the search to the bearer-token branch only.
-    const region = edge.slice(bearerIdx, bearerIdx + 2000);
-    assert.ok(
-      region.includes('getEntitlements(session.userId)'),
-      'Bearer-token branch must call getEntitlements(session.userId) when Clerk role !== "pro"',
-    );
-    assert.ok(
-      /features\.tier\s*>=\s*1/.test(region),
-      'Bearer-token branch must accept Convex entitlement tier >= 1',
-    );
-  });
-
-  it('does NOT 403 immediately on session.role !== "pro"', () => {
-    // The legacy shape `if (session.role !== 'pro') return 403` is the bug —
-    // it would short-circuit before the Convex fallback. Lock it out.
-    assert.ok(
-      !/if\s*\(\s*session\.role\s*!==\s*['"]pro['"]\s*\)\s*\{\s*return\s+json\([^}]*403/.test(edge),
-      'api/widget-agent.ts must NOT 403 on session.role !== "pro" without checking Convex entitlement',
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
+// (Former "PRO widget — edge-proxy auth (Convex entitlement fallback)" suite
+// deleted 2026-08-12: it pinned api/widget-agent.ts's Convex/Dodo
+// entitlement-tier fallback and its "Pro subscription required" 403 —
+// confirmed dead code and removed in the same pass, since Stage 1 (Supabase
+// migration) made getEntitlements()/getBillingVerificationDenial() permanent
+// no-ops and session.role is unconditionally 'pro' for any verified session
+// (see server/auth-session.ts's own header comment). Same category of
+// cleanup as api/latest-brief.ts/api/notify.ts/api/brief/share-url.ts earlier
+// the same day, and server/__tests__/widget-agent-billing-denial.test.ts
+// (deleted alongside this suite, its own header comment already documented
+// three sibling tests removed for testing the same removed functionality).)
+//
 // entitlement-check — cache-write failure must NOT collapse to "no entitlement"
 // ---------------------------------------------------------------------------
 //
@@ -1949,7 +1913,15 @@ describe('WidgetChatModal — preflight 403 message branches on auth mode', () =
     );
   });
 
-  it('resolvePreflightMessage takes usedTesterKey and branches Clerk path on isPro', () => {
+  // 2026-08-12: api/widget-agent.ts no longer returns a 403 "Pro subscription
+  // required" on the Bearer-session path — that Convex/Dodo entitlement-tier
+  // fallback was confirmed dead (session.role is unconditionally 'pro' for
+  // any verified session) and removed; an invalid/expired session now 401s
+  // instead. resolvePreflightMessage was updated to match: a 401 gets its
+  // own sign-in message, and the non-tester-key 403 branch (now reachable
+  // only for something like the origin check, not an entitlement question)
+  // collapsed from two Pro-flavored messages down to one generic, honest one.
+  it('resolvePreflightMessage handles 401 and the non-tester-key 403 without a Pro-tier split', () => {
     const fnIdx = modal.indexOf('function resolvePreflightMessage');
     assert.ok(fnIdx !== -1, 'resolvePreflightMessage not found');
     const region = modal.slice(fnIdx, fnIdx + 1200);
@@ -1958,71 +1930,43 @@ describe('WidgetChatModal — preflight 403 message branches on auth mode', () =
       'resolvePreflightMessage must take usedTesterKey to branch on auth mode',
     );
     assert.ok(
-      region.includes('preflightProSubscriptionRequired'),
-      'Clerk-auth 403 (isPro=true) must surface preflightProSubscriptionRequired',
+      region.includes("status === 401"),
+      'resolvePreflightMessage must handle 401 (invalid/expired session) explicitly',
     );
     assert.ok(
-      region.includes('preflightProRequired'),
-      'Clerk-auth 403 (isPro=false, free user) must surface preflightProRequired (clean upgrade ask, no "just upgraded" language)',
-    );
-  });
-
-  it('en.json defines widgets.preflightProSubscriptionRequired (just-upgraded / outage)', () => {
-    assert.ok(
-      typeof en.widgets?.preflightProSubscriptionRequired === 'string'
-        && en.widgets.preflightProSubscriptionRequired.length > 0,
-      'en.json must define widgets.preflightProSubscriptionRequired',
+      region.includes('preflightSignInRequired'),
+      '401 must surface preflightSignInRequired',
     );
     assert.ok(
-      !/wm-pro-key/i.test(en.widgets.preflightProSubscriptionRequired),
-      'preflightProSubscriptionRequired must not mention wm-pro-key — Clerk users have no tester key',
+      region.includes('preflightRequestRejected'),
+      'non-tester-key 403 must surface the generic preflightRequestRejected',
+    );
+    assert.ok(
+      !region.includes('preflightProSubscriptionRequired') && !region.includes('preflightProRequired'),
+      'the removed Pro-tier-split messages must not still be referenced',
     );
   });
 
-  it('en.json defines widgets.preflightProRequired (free-user upgrade ask, no "just upgraded" language)', () => {
+  it('en.json defines widgets.preflightSignInRequired (401, invalid/expired session)', () => {
     assert.ok(
-      typeof en.widgets?.preflightProRequired === 'string'
-        && en.widgets.preflightProRequired.length > 0,
-      'en.json must define widgets.preflightProRequired',
+      typeof en.widgets?.preflightSignInRequired === 'string'
+        && en.widgets.preflightSignInRequired.length > 0,
+      'en.json must define widgets.preflightSignInRequired',
     );
+  });
+
+  it('en.json defines widgets.preflightRequestRejected (generic non-tester-key 403)', () => {
     assert.ok(
-      !/wm-pro-key/i.test(en.widgets.preflightProRequired),
-      'preflightProRequired must not mention wm-pro-key',
-    );
-    assert.ok(
-      !/just upgraded|refresh the page|contact support/i.test(en.widgets.preflightProRequired),
-      'preflightProRequired is for genuinely-free users — must not include "just upgraded / refresh / contact support" language',
+      typeof en.widgets?.preflightRequestRejected === 'string'
+        && en.widgets.preflightRequestRejected.length > 0,
+      'en.json must define widgets.preflightRequestRejected',
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// widget-agent edge proxy — observability for fail-closed entitlement 403s
-// ---------------------------------------------------------------------------
-//
-// When getEntitlements returns null, callers can't tell "user genuinely not
-// entitled" from "entitlement service degraded" — both shapes 403 paying users
-// during a Convex/Upstash outage. Emit a structured log at the 403 site so
-// on-call can grep Vercel logs and disambiguate incident vs not-entitled
-// without waiting for refund tickets.
-describe('widget-agent edge proxy — fail-closed observability', () => {
-  const edge = src('api/widget-agent.ts');
-
-  it('403 site emits a structured log with reason + userId + entitlementTier', () => {
-    const idx = edge.indexOf("error: 'Pro subscription required'");
-    assert.ok(idx !== -1, 'Pro-required 403 site not found');
-    // Walk backward from the 403 to find the preceding console.warn — must
-    // sit in the same allowed-check block, not in some unrelated error path.
-    const before = edge.slice(Math.max(0, idx - 1500), idx);
-    assert.ok(
-      /console\.warn\([^)]*widget-agent[^)]*pro-required/i.test(before),
-      'A console.warn naming "widget-agent" + "pro-required" must precede the 403 return',
-    );
-    assert.ok(before.includes('reason'), 'Structured log must include "reason" field (not_entitled vs service_unavailable)');
-    assert.ok(before.includes('userId'), 'Structured log must include userId for grep/correlation');
-    assert.ok(
-      before.includes('service_unavailable') && before.includes('not_entitled'),
-      'Structured log must distinguish service_unavailable (Convex/Redis down) from not_entitled (real free user)',
-    );
-  });
-});
+// (Former "widget-agent edge proxy — fail-closed observability" suite
+// deleted 2026-08-12 alongside the Convex entitlement-fallback suite above —
+// it pinned the structured console.warn that used to precede the now-removed
+// "Pro subscription required" 403 site. See that suite's replacement comment
+// for the full removal rationale.)

@@ -7,7 +7,7 @@
  * Railway delivery/digest scripts' `getDigestRules`/`getByEnabled` reads —
  * separate CommonJS client, same table).
  *
- * The PRO-entitlement gate (`assertProEntitlement`) is NOT ported — see the
+ * The entitlement gate (`assertProEntitlement`) is NOT ported — see the
  * module doc in `server/_shared/notification-channels.ts` for why: Convex's
  * `entitlements` table has had nothing writing to it since Stage 1, so the
  * gate had degenerated into "reject every write." Dropped entirely.

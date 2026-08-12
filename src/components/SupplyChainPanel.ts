@@ -255,7 +255,7 @@ export class SupplyChainPanel extends Panel {
     if (!chokepointId) return;
 
     const renderGate = (): string => {
-      return `<div class="sc-bypass-gate"><span class="sc-bypass-lock">\uD83D\uDD12</span><span class="sc-bypass-gate-text">Bypass corridors available with PRO</span></div>`;
+      return `<div class="sc-bypass-gate"><span class="sc-bypass-lock">\uD83D\uDD12</span><span class="sc-bypass-gate-text">Sign in to unlock bypass corridors</span></div>`;
     };
 
     const renderRows = (options: import('@/services/supply-chain').BypassOption[]): string => {

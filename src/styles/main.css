@@ -8184,18 +8184,6 @@ a.prediction-link:hover {
   color: var(--text-dim);
 }
 
-.panel-toggle-pro-badge {
-  margin-left: auto;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 1px 4px;
-  border: 1px solid var(--green);
-  color: var(--green);
-  opacity: 0.7;
-  flex-shrink: 0;
-}
-
 /* Sources Modal */
 .sources-modal {
   max-width: 600px;
@@ -12789,37 +12777,6 @@ a.prediction-link:hover {
 
 .panel-locked-cta:hover {
   filter: brightness(1.15);
-}
-
-/* -- PRO badge (panel header) -- */
-.panel-pro-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #d4a843;
-  border: 1px solid rgba(212, 168, 67, 0.4);
-  border-radius: 3px;
-  padding: 1px 4px;
-  margin-left: 6px;
-  vertical-align: middle;
-  line-height: 1;
-}
-
-/* -- PRO badge (layer toggle) -- */
-.layer-pro-badge {
-  display: inline;
-  font-size: 7px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #d4a843;
-  border: 1px solid rgba(212, 168, 67, 0.35);
-  border-radius: 2px;
-  padding: 0 3px;
-  margin-left: 4px;
-  vertical-align: middle;
 }
 
 /* -- Locked panel: hide count badge + extra chrome -- */
@@ -22562,20 +22519,6 @@ body.map-width-resizing {
   display: block;
 }
 
-.widget-pro-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #f5a623;
-  color: #000;
-  vertical-align: middle;
-  margin-left: 6px;
-  letter-spacing: 0.03em;
-}
-
 .ai-widget-block-pro {
   position: relative;
 }
@@ -25864,19 +25807,6 @@ body.map-width-resizing {
     border-color: var(--accent);
     color: var(--bg);
     font-weight: 600;
-  }
-
-  /* PRO chip — gold treatment matching the .panel-locked-cta aesthetic. */
-  .mobile-panel-nav-chip-pro {
-    border-color: #d4a843;
-    color: #d4a843;
-    font-weight: 600;
-  }
-
-  .mobile-panel-nav-chip-pro.active {
-    background: linear-gradient(135deg, #d4a843 0%, #b8902e 100%);
-    border-color: #d4a843;
-    color: #111;
   }
 
   /* Lock CTAs get touch-sized and prominent — in the single-column scroll

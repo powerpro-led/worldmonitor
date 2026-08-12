@@ -64,10 +64,16 @@ const DIRECT_LLM_PREMIUM_BYPASS_ALLOWLIST: Record<string, string> = {
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const apiDir = join(repoRoot, 'api');
 
-// Two server-side premium-gate markers:
-//   - isCallerPremium(           — endpoints using the shared check
+// Three server-side premium-gate markers:
+//   - isCallerPremium(            — endpoints using the shared check
 //   - "Pro subscription required" — literal 403 body used by hand-rolled gates
-const PREMIUM_GATE_RE = /(isCallerPremium\s*\(|['"`]Pro subscription required['"`])/;
+//   - "Invalid or expired session" — api/widget-agent.ts's own hand-rolled
+//     Bearer-session gate (2026-08-12: dropped the "Pro subscription
+//     required" 403 entirely once its Convex/Dodo entitlement-tier fallback
+//     was confirmed dead — see the file's own header comment — but the file
+//     is still real auth-gated, just via a 401 on an invalid/expired session
+//     rather than a 403; this marker keeps the guard able to see it).
+const PREMIUM_GATE_RE = /(isCallerPremium\s*\(|['"`]Pro subscription required['"`]|['"`]Invalid or expired session['"`])/;
 
 function walkApiFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

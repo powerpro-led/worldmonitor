@@ -123,7 +123,7 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const premiumIdentity = await resolvePremiumCallerIdentity(req);
     if (!premiumIdentity.isPremium) {
-      return json({ error: 'Pro subscription required' }, 403, corsHeaders);
+      return json({ error: 'Sign-in or API key required' }, 403, corsHeaders);
     }
     if (!premiumIdentity.quotaExempt) {
       const reservation = await reserveDirectLlmQuota({

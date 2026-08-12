@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PANEL_CATEGORY_MAP, VARIANT_DEFAULTS, getVariantPanelCategories, getProPanelKeys } from '../src/config/panels';
+import { PANEL_CATEGORY_MAP, VARIANT_DEFAULTS, getVariantPanelCategories } from '../src/config/panels';
 import type { PanelConfig } from '../src/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,35 +97,11 @@ describe('getVariantPanelCategories', () => {
   });
 });
 
-describe('getProPanelKeys (mobile nav PRO chip)', () => {
-  // NOTE: runs on the web surface (no Tauri under tsx) — desktop-only
-  // premium fields (`_desktop && {...}` in panels.ts) are absent here, so
-  // assertions cover the web gating shape.
-  it('includes enabled premium panels, excludes free and disabled ones', () => {
-    const result = getProPanelKeys(settings({
-      'stock-analysis': true,   // premium: 'locked' on all surfaces
-      'chat-analyst': true,     // premium: 'locked' on all surfaces
-      'daily-market-brief': false, // premium but disabled
-      intel: true,              // free panel
-    }), 'full');
-    assert.deepEqual(result.sort(), ['chat-analyst', 'stock-analysis']);
-  });
-
-  it('drops unknown keys (custom widgets / MCP panels)', () => {
-    const result = getProPanelKeys(settings({ 'cw-abc123': true, 'mcp-panel-1': true }), 'full');
-    assert.deepEqual(result, []);
-  });
-
-  it('full-variant defaults surface a non-empty premium suite', () => {
-    const enabledDefaults = settings(
-      Object.fromEntries((VARIANT_DEFAULTS['full'] ?? []).map((k: string) => [k, true])),
-    );
-    const result = getProPanelKeys(enabledDefaults, 'full');
-    assert.ok(result.includes('stock-analysis'));
-    assert.ok(result.includes('chat-analyst'));
-    assert.ok(result.length >= 5, `expected a meaningful premium suite, got ${result.join(', ')}`);
-  });
-});
+// (Former "getProPanelKeys (mobile nav PRO chip)" suite deleted 2026-08-12:
+// the mobile nav's PRO category chip was removed — it was a static "PRO"
+// label shown regardless of sign-in state, same category as the other
+// static PRO badges removed the same session — and getProPanelKeys() (the
+// function that drove it) had no other consumer, so it was removed too.)
 
 describe('mobile nav i18n contract', () => {
   it('every category labelKey resolves in en.json', () => {

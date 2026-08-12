@@ -117,21 +117,21 @@ export const CHOKEPOINT_EXPOSURE_SEED_META_KEY = 'seed-meta:supply_chain:chokepo
 
 /**
  * Per-country + per-chokepoint cost shock cache.
- * NOT in bootstrap — request-varying, PRO-gated.
+ * NOT in bootstrap — request-varying, auth-gated.
  */
 export const COST_SHOCK_KEY = (iso2: string, chokepointId: string) =>
   `supply-chain:cost-shock:${iso2}:${chokepointId}:v1` as const;
 
 /**
  * Per-country + per-HS2 sector dependency cache.
- * NOT in bootstrap — request-varying, PRO-gated.
+ * NOT in bootstrap — request-varying, auth-gated.
  */
 export const SECTOR_DEPENDENCY_KEY = (iso2: string, hs2: string) =>
   `supply-chain:sector-dep:${iso2}:${hs2}:v1` as const;
 
 /**
  * Route Explorer lane cache — per (fromIso2, toIso2, hs2, cargoType).
- * NOT in bootstrap — request-varying, PRO-gated.
+ * NOT in bootstrap — request-varying, auth-gated.
  */
 export const ROUTE_EXPLORER_LANE_KEY = (
   fromIso2: string,
@@ -142,7 +142,7 @@ export const ROUTE_EXPLORER_LANE_KEY = (
 
 /**
  * Route impact cache — per (fromIso2, toIso2, hs2).
- * NOT in bootstrap — request-varying, PRO-gated. 24h Redis TTL.
+ * NOT in bootstrap — request-varying, auth-gated. 24h Redis TTL.
  */
 export const ROUTE_IMPACT_KEY = (fromIso2: string, toIso2: string, hs2: string) =>
   `supply-chain:route-impact:${fromIso2}:${toIso2}:${hs2}:v1` as const;

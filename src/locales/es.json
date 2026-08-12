@@ -402,7 +402,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Buscar vuelos en vivo por indicativo (PRO)",
+      "flight": "Buscar vuelos en vivo por indicativo (requiere inicio de sesión)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -713,8 +713,8 @@
       "shellSearchPlaceholder": "Buscar configuración...",
       "shellCancel": "Cancelar",
       "shellSaveClose": "Guardar y cerrar",
-      "freePanelLimit": "Plan gratuito: máx {{max}} paneles. Actualiza a PRO para acceso ilimitado.",
-      "freeSourceLimit": "Plan gratuito: máx {{max}} fuentes. Actualiza a PRO para acceso ilimitado."
+      "freePanelLimit": "Plan gratuito: máx. {{max}} paneles. Inicia sesión para ilimitados.",
+      "freeSourceLimit": "Plan gratuito: máx. {{max}} fuentes. Inicia sesión para ilimitadas."
     }
   },
   "components": {
@@ -2184,108 +2184,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>Escáner de tickers WSB</strong> Menciones de tickers en tiempo real de r/wallstreetbets, r/stocks e r/investing. Clasificadas por frecuencia de mención y participación. La velocidad mide la rapidez con que un ticker gana impulso en las publicaciones."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro ha sido lanzado",
-      "tagline": "Más señal, menos ruido. Más resúmenes con IA. Un investigador de geopolítica y equidad solo para ti.",
-      "cta": "Actualiza a Pro →",
-      "dismiss": "Descartar"
-    },
-    "billingState": {
-      "onHoldDesc": "El pago falló. Actualiza tu método de pago para restaurar el acceso premium.",
-      "onHoldBannerMessage": "El pago falló. Actualiza tu método de pago para mantener tu suscripción activa.",
-      "updatePayment": "Actualizar pago",
-      "renewalPendingDesc": "Estamos verificando la renovación de tu suscripción. El acceso premium se restaurará automáticamente una vez confirmada.",
-      "refreshStatus": "Actualizar estado",
-      "renewalFailedDesc": "No pudimos verificar la renovación de tu suscripción. Gestiona la facturación o contacta con soporte si el problema persiste.",
-      "manageBilling": "Gestionar facturación",
-      "lapsedDesc": "Tu suscripción Pro ha finalizado. Vuelve a suscribirte para recuperar el acceso premium.",
-      "resubscribe": "Volver a suscribirse"
-    },
-    "checkoutFailureBanner": {
-      "message": "No se pudo completar el pago. No se realizó ningún cargo.",
-      "retry": "Reintentar",
-      "retrying": "Reintentando…",
-      "dismiss": "Descartar"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Paso {{current}} de {{total}}",
-      "closeLabel": "Omitir configuración",
-      "ariaLabel": "Configuración de activación Pro",
-      "signedInAs": "Sesión iniciada como {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Tu resumen diario, cada mañana",
-          "body": "Un resumen de inteligencia curado en tu bandeja de entrada cada mañana: las señales de la noche que importan, condensadas en una lectura de cinco minutos.",
-          "confirmCta": "Activar mi resumen matutino",
-          "confirming": "Activando…",
-          "doneNote": "Tu resumen matutino ya está activo.",
-          "scheduleNote": "Mantendremos tu horario de entrega actual.",
-          "summaryLabel": "Resumen matutino",
-          "summaryVerified": "Activo — comienza con tu próximo resumen matutino.",
-          "deliverAt": "Entregar a las",
-          "previewLoading": "Preparando una vista previa de tu primer resumen…",
-          "previewLabel": "El resumen de esta mañana"
-        },
-        "alerts": {
-          "heading": "Alertas críticas",
-          "body": "Recibe un aviso en tu navegador cuando ocurra algo importante: escaladas de conflictos, shocks del mercado, nuevas sanciones. Ajusta la frecuencia cuando quieras en Configuración.",
-          "confirmCta": "Activar alertas",
-          "confirming": "Activando…",
-          "doneNote": "Las alertas del navegador ya están activadas.",
-          "blockedNote": "Las notificaciones están bloqueadas en tu navegador. Actívalas en la configuración del sitio de tu navegador para recibir alertas.",
-          "declinedNote": "No hay problema — no enviaremos alertas del navegador. Puedes activarlas más tarde desde la configuración del sitio de tu navegador.",
-          "summaryLabel": "Alertas críticas",
-          "summaryVerified": "Activas — las señales críticas llegarán a tu navegador."
-        },
-        "power": {
-          "heading": "Tu kit de herramientas Pro",
-          "body": "Widgets personalizados, conexiones MCP y el investigador de IA están desbloqueados. Crea el panel que realmente quieres vigilar.",
-          "confirmCta": "Explorar herramientas Pro",
-          "confirming": "Abriendo…",
-          "doneNote": "Ya estás usando tus herramientas Pro.",
-          "summaryLabel": "Kit de herramientas Pro",
-          "summaryVerified": "Desbloqueado y listo cuando tú lo estés.",
-          "channelsNote": "¿Prefieres Telegram, Slack, Discord o un webhook?",
-          "pointers": {
-            "widgets": "Crear un widget personalizado",
-            "analyst": "Preguntar al analista de IA",
-            "apiKeys": "Obtener tus claves de API y MCP",
-            "channels": "Configúralos en los ajustes de notificaciones"
-          }
-        }
-      },
-      "status": {
-        "pending": "Sin configurar",
-        "inFlight": "Configurando…",
-        "verified": "Listo",
-        "failed": "No funcionó",
-        "blocked": "Bloqueado",
-        "unavailable": "No disponible",
-        "blockedNote": "Esto no está disponible ahora mismo — puedes configurarlo más tarde desde los ajustes.",
-        "unavailableNote": "Esto no está disponible en tu dispositivo — puedes configurarlo más tarde.",
-        "failedBody": "Algo salió mal. Puedes intentarlo de nuevo o configurarlo más tarde desde los ajustes.",
-        "retry": "Intentar de nuevo"
-      },
-      "actions": {
-        "skip": "Omitir por ahora",
-        "continue": "Continuar"
-      },
-      "summary": {
-        "heading": "Todo listo",
-        "subVerified": "Esto es lo que está activo en tu cuenta.",
-        "subPending": "Puedes terminar la configuración cuando quieras desde los ajustes.",
-        "linePending": "Aún sin configurar — termínalo cuando quieras en los ajustes.",
-        "lineFailed": "No pudimos configurar esto — inténtalo de nuevo desde los ajustes.",
-        "finish": "Ir a mi panel"
-      },
-      "chip": {
-        "message": "Termina de configurar tu cuenta Pro.",
-        "action": "Terminar configuración",
-        "dismissLabel": "Descartar"
-      }
-    },
     "frameworkSelector": {
       "label": "Marco de análisis",
       "defaultNeutral": "Predeterminado (Neutral)",
@@ -3235,11 +3133,8 @@
     "previewComposingCopy": "La vista previa se está renderizando con los datos en vivo más recientes y el estilo del panel.",
     "previewErrorCopy": "Soluciona el problema e inténtalo de nuevo. Tus widgets existentes no se ven afectados.",
     "createInteractive": "Crear Widget Interactivo",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "Agente de widget PRO no disponible. Verifica PRO_WIDGET_KEY en el servidor.",
-    "preflightInvalidProKey": "Clave PRO rechazada. Actualiza wm-pro-key y recarga.",
-    "preflightProSubscriptionRequired": "Se requiere suscripción Pro. Si acabas de actualizar, actualiza la página; de lo contrario, contacta con soporte.",
-    "preflightProRequired": "Se requiere suscripción Pro para usar el Generador de Widgets. Actualiza tu plan para desbloquear.",
+    "preflightProUnavailable": "Agente de widgets no disponible. Verifica PRO_WIDGET_KEY en el servidor.",
+    "preflightInvalidProKey": "Clave de inicio de sesión rechazada. Actualiza wm-pro-key y recarga.",
     "examples": {
       "oilGold": "Muéstrame el precio del petróleo crudo de hoy versus el oro",
       "cryptoMovers": "Crear un widget para los principales movimientos de criptomonedas en las últimas 24 horas",
@@ -3251,7 +3146,9 @@
       "sortableTable": "Tabla de precios de criptomonedas ordenable con filtro de búsqueda",
       "animatedCounters": "Contadores animados para indicadores económicos clave",
       "tabbedComparison": "Comparación con pestañas de eventos de conflicto por región"
-    }
+    },
+    "preflightSignInRequired": "Inicia sesión para usar el creador de widgets.",
+    "preflightRequestRejected": "La solicitud fue rechazada. Recarga la página e inténtalo de nuevo, o contacta a soporte si esto persiste."
   },
   "connectivity": {
     "offlineCached": "Sin conexión — mostrando datos en caché de {{freshness}}.",
@@ -3259,12 +3156,9 @@
     "cachedFallback": "Datos en vivo no disponibles — mostrando datos en caché de {{freshness}}."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Requiere una clave de licencia de World Monitor",
     "signInToUnlock": "Inicia sesión para desbloquear funciones premium",
     "signIn": "Inicia Sesión para Desbloquear",
-    "upgradeDesc": "Actualiza a Pro para acceso completo a análisis premium",
-    "upgradeToPro": "Actualizar a Pro",
     "features": {
       "orefSirens1": "Alertas en tiempo real de misiles y cohetes de Israel",
       "orefSirens2": "Mapeo de zona de sirena con clasificación de amenazas",

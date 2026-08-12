@@ -107,8 +107,8 @@ export class RegionalIntelligenceBoard extends Panel {
     void this.loadCurrent();
 
     // Re-fire loadCurrent on false→true entitlement transitions (user signs
-    // in / purchases PRO mid-session). Without this, a user whose Clerk
-    // session hasn't resolved at panel-construction time would see
+    // in mid-session). Without this, a user whose session hasn't resolved
+    // at panel-construction time would see
     // renderEmpty() and then stay empty forever even after sign-in, because
     // nothing else triggers loadCurrent for the current region.
     this.authUnsubscribe = subscribeAuthState(() => this.handlePremiumAccessChange());
@@ -172,8 +172,8 @@ export class RegionalIntelligenceBoard extends Panel {
     // fires get-regional-snapshot on every page load for every visitor and
     // gets a 401 in the browser console. The panel's `premium: 'locked'`
     // config + apiKeyPanels entry already keeps it visually hidden until
-    // the user is PRO — this just stops the RPC from firing during the
-    // constructor's `void this.loadCurrent()` before Clerk auth resolves.
+    // the user signs in — this just stops the RPC from firing during the
+    // constructor's `void this.loadCurrent()` before auth resolves.
     if (!hasPremiumAccess()) {
       this.renderEmpty();
       return;

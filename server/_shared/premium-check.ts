@@ -30,7 +30,7 @@ export async function resolvePremiumCallerIdentity(request: Request): Promise<Pr
 
   const keyCheck = (await validateApiKey(request, {})) as { valid: boolean; required: boolean };
   // Only treat as premium when an explicit API key was validated (required: true).
-  // Trusted-origin short-circuits (required: false) do NOT imply PRO entitlement.
+  // Trusted-origin short-circuits (required: false) do NOT imply entitlement.
   if (keyCheck.valid && keyCheck.required) {
     return { isPremium: true, userId: null, kind: 'enterprise', quotaExempt: true };
   }
@@ -56,7 +56,7 @@ export async function resolvePremiumCallerIdentity(request: Request): Promise<Pr
 }
 
 /**
- * Returns true when the caller has a valid API key OR a PRO bearer token.
+ * Returns true when the caller has a valid API key OR a session token.
  * Used by handlers where the RPC endpoint is public but certain fields
  * (e.g. framework/systemAppend) should only be honored for premium callers.
  */

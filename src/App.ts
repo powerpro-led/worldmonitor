@@ -551,7 +551,7 @@ export class App {
       primeTask('oil', () => this.dataLoader.loadOilAnalytics());
     }
     // trade-policy moved into the _wmAccess block below — see fix for
-    // anonymous 401 bug where loadTradePolicy fired 6 PRO-gated RPCs
+    // anonymous 401 bug where loadTradePolicy fired 6 auth-gated RPCs
     // unconditionally on every page load.
     if (shouldPrime('supply-chain')) {
       primeTask('supplyChain', () => this.dataLoader.loadSupplyChain());
@@ -1365,7 +1365,7 @@ export class App {
     this.enforceFreeTierLimits();
 
     let _prevUserId: string | null = null;
-    // Track the last-seen PRO entitlement so we can re-fire PRO-gated loaders
+    // Track the last-seen entitlement so we can re-fire auth-gated loaders
     // ONCE on a false→true transition (user signs in mid-session). Without
     // this, loaders gated behind hasPremiumAccess() at init time (e.g.
     // loadTradePolicy) would sit empty until the next scheduled refresh — for
@@ -1380,7 +1380,7 @@ export class App {
       const hadPremium = _prevHadPremium;
       const nowPremium = hasPremiumAccess();
       if (nowPremium && !hadPremium) {
-        // Entitlement just resolved → fire PRO-gated initial loads that were
+        // Entitlement just resolved → fire auth-gated initial loads that were
         // skipped at boot. Each loader early-returns if the panel isn't
         // mounted and re-checks hasPremiumAccess() internally, so these
         // calls are safe and idempotent. Without this, panels would sit empty
@@ -2031,7 +2031,7 @@ export class App {
     }
 
     // WTO trade policy data — annual data, poll every 10 min to avoid hammering upstream.
-    // PRO-gated: the isNearViewport check is a visibility gate, not an entitlement gate,
+    // auth-gated: the isNearViewport check is a visibility gate, not an entitlement gate,
     // so without hasPremiumAccess() here we'd still hit the 6 WTO RPCs every poll for
     // free users once the panel scrolled into view.
     if (SITE_VARIANT === 'full' || SITE_VARIANT === 'finance' || SITE_VARIANT === 'commodity' || SITE_VARIANT === 'energy') {

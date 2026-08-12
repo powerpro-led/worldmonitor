@@ -8,7 +8,7 @@
  * `scripts/lib/notification-channels-fetch.cjs` (the Railway delivery
  * scripts' read/deactivate path — separate CommonJS client, same table).
  *
- * The PRO-entitlement gate Convex enforced at the write boundary
+ * The entitlement gate Convex enforced at the write boundary
  * (`assertProEntitlement`) is NOT ported — Convex's `entitlements` table has
  * had nothing writing to it since Stage 1 deleted Dodo billing, so that gate
  * had degenerated into "reject every write." Dropped entirely, consistent

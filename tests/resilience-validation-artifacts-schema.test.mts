@@ -563,7 +563,7 @@ describe('resilience validation artifacts', () => {
     assert.match(message, /\[freeze-resilience-ranking\] wrote .*resilience-ranking-live-post-pr1-YYYY-MM-DD\.json/);
     assert.doesNotMatch(message, /\$\(date /);
     assert.match(message, /node --import tsx\/esm scripts\/capture-resilience-energy-v2-acceptance\.mjs/);
-    assert.match(message, /HTTP 401[\s\S]*get-resilience-score[\s\S]*Pro authentication required/);
+    assert.match(message, /HTTP 401[\s\S]*get-resilience-score[\s\S]*Sign-in or API key required/);
     assert.match(message, /gate-7-matched-pair[\s\S]*do not commit a synthetic artifact/);
   });
 
@@ -609,7 +609,7 @@ describe('resilience validation artifacts', () => {
           assert.ok(err instanceof Error);
           assert.match(err.message, /resilience-ranking-live-post-pr1-YYYY-MM-DD\.json/);
           assert.match(err.message, /WORLDMONITOR_API_KEY=<pro-api-key>/);
-          assert.match(err.message, /HTTP 401[\s\S]*get-resilience-score[\s\S]*Pro authentication required/);
+          assert.match(err.message, /HTTP 401[\s\S]*get-resilience-score[\s\S]*Sign-in or API key required/);
           assert.match(err.message, /gate-7-matched-pair[\s\S]*do not commit a synthetic artifact/);
           return true;
         },

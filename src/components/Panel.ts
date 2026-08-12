@@ -5,7 +5,6 @@ import { h, replaceChildren, safeHtml as sanitizeHtmlFragment, setTrustedHtml, t
 import { safeHtmlToString, type SafeHtml } from '@/utils/sanitize';
 import { trackPanelResized } from '@/services/analytics';
 import { getAiFlowSettings } from '@/services/ai-flow-settings';
-import { getSecretState } from '@/services/runtime-config';
 import { PanelGateReason } from '@/services/panel-gating';
 import { getAuthState } from '@/services/auth-state';
 import { signInWithGithub } from '@/services/auth-provider';
@@ -154,7 +153,7 @@ export class Panel {
   // showGatedCta replaces them with a lock CTA. unlockPanel re-attaches
   // these nodes so subclasses whose UI is constructed once (typically in
   // the ctor — chips, input rows, static chrome) don't end up with a
-  // permanently empty body after a FREE→PRO auth-state cycle. The cache
+  // permanently empty body after a signed-out→signed-in auth-state cycle. The cache
   // holds the actual DOM nodes; reattaching preserves any listeners and
   // any subclass references like `this.inputEl`.
   private _savedContent: ChildNode[] | null = null;
@@ -228,11 +227,6 @@ export class Panel {
       this.newBadgeEl.className = 'panel-new-badge';
       this.newBadgeEl.style.display = 'none';
       headerLeft.appendChild(this.newBadgeEl);
-    }
-
-    if (options.premium && !getSecretState('WORLDMONITOR_API_KEY').present) {
-      const proBadge = h('span', { className: 'panel-pro-badge' }, t('premium.pro'));
-      headerLeft.appendChild(proBadge);
     }
 
     this.header.appendChild(headerLeft);

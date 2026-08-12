@@ -400,7 +400,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Uçuş çağrı işareti ile canlı uçuşları arayın (PRO)",
+      "flight": "Çağrı işaretine göre canlı uçuş ara (oturum açma gerekli)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -641,8 +641,8 @@
       "shellSearchPlaceholder": "Ayarları ara...",
       "shellCancel": "İptal",
       "shellSaveClose": "Kaydet ve Kapat",
-      "freePanelLimit": "Ücretsiz plan: en fazla {{max}} panel. Sınırsız kullanım için PRO'ya yükseltin.",
-      "freeSourceLimit": "Ücretsiz plan: en fazla {{max}} kaynak. Sınırsız kullanım için PRO'ya yükseltin."
+      "freePanelLimit": "Ücretsiz plan: en fazla {{max}} panel. Sınırsız için oturum açın.",
+      "freeSourceLimit": "Ücretsiz plan: en fazla {{max}} kaynak. Sınırsız için oturum açın."
     },
     "countryIntel": {
       "identifying": "Ulke belirleniyor...",
@@ -2175,108 +2175,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB Ticker Tarayıcı</strong> r/wallstreetbets, r/stocks ve r/investing'den gerçek zamanlı ticker bahsetmeleri. Bahsetme sıklığı ve katılım oranına göre sıralanmıştır. Hız, bir ticker'ın paylaşımlar arasında ne kadar hızlı momentum kazandığını ölçer."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro yayında",
-      "tagline": "Daha Fazla İşaret, Daha Az Gürültü. Daha Fazla AI Özeti. Sadece Sizin için Jeopolitik & Sermaye Piyasası Araştırmacısı.",
-      "cta": "Pro'ya Yükselt →",
-      "dismiss": "Kapat"
-    },
-    "billingState": {
-      "onHoldDesc": "Ödeme başarısız oldu. Premium erişimi geri yüklemek için ödeme yönteminizi güncelleyin.",
-      "onHoldBannerMessage": "Ödeme başarısız oldu. Aboneliğinizi aktif tutmak için ödeme yönteminizi güncelleyin.",
-      "updatePayment": "Ödemeyi Güncelle",
-      "renewalPendingDesc": "Aboneliğinizin yenilenmesini doğruluyoruz. Onaylandığında premium erişim otomatik olarak geri yüklenecek.",
-      "refreshStatus": "Durumu Yenile",
-      "renewalFailedDesc": "Aboneliğinizin yenilenmesini doğrulayamadık. Sorun devam ederse faturalandırmayı yönetin veya destekle iletişime geçin.",
-      "manageBilling": "Faturalandırmayı Yönet",
-      "lapsedDesc": "Pro aboneliğiniz sona erdi. Premium erişimi yeniden kazanmak için tekrar abone olun.",
-      "resubscribe": "Tekrar Abone Ol"
-    },
-    "checkoutFailureBanner": {
-      "message": "Ödeme tamamlanamadı. Herhangi bir ücret alınmadı.",
-      "retry": "Tekrar Dene",
-      "retrying": "Tekrar Deneniyor…",
-      "dismiss": "Kapat"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Adım {{current}} / {{total}}",
-      "closeLabel": "Kurulumu Atla",
-      "ariaLabel": "Pro Etkinleştirme Kurulumu",
-      "signedInAs": "{{email}} olarak oturum açıldı",
-      "steps": {
-        "brief": {
-          "heading": "Her sabah günlük özetiniz",
-          "body": "Her sabah gelen kutunuzda özenle hazırlanmış bir istihbarat özeti — gece boyunca önemli olan sinyaller, beş dakikalık bir okumaya sığdırılmış.",
-          "confirmCta": "Sabah Özetimi Aç",
-          "confirming": "Açılıyor…",
-          "doneNote": "Sabah özetiniz zaten çalışıyor.",
-          "scheduleNote": "Mevcut teslim saatinizi koruyacağız.",
-          "summaryLabel": "Sabah Özeti",
-          "summaryVerified": "Açık — bir sonraki sabah özetinizle başlar.",
-          "deliverAt": "Teslim saati",
-          "previewLoading": "İlk özetinizin önizlemesi hazırlanıyor…",
-          "previewLabel": "Bu sabahki özet"
-        },
-        "alerts": {
-          "heading": "Kritik Uyarılar",
-          "body": "Çatışma tırmanışları, piyasa şokları, yeni yaptırımlar gibi büyük bir şey olduğunda tarayıcınızda bildirim alın. Sıklığı istediğiniz zaman Ayarlar'dan değiştirebilirsiniz.",
-          "confirmCta": "Uyarıları Etkinleştir",
-          "confirming": "Etkinleştiriliyor…",
-          "doneNote": "Tarayıcı uyarıları zaten açık.",
-          "blockedNote": "Tarayıcınızda bildirimler engellenmiş. Uyarı alabilmek için tarayıcınızın site ayarlarından bunları açın.",
-          "declinedNote": "Sorun değil — tarayıcı uyarısı göndermeyeceğiz. Bunları daha sonra tarayıcınızın site ayarlarından açabilirsiniz.",
-          "summaryLabel": "Kritik Uyarılar",
-          "summaryVerified": "Açık — kritik sinyaller tarayıcınıza ulaşacak."
-        },
-        "power": {
-          "heading": "Pro Araç Setiniz",
-          "body": "Özel widget'lar, MCP bağlantıları ve yapay zeka araştırmacısının kilidi açıldı. Gerçekten izlemek istediğiniz paneli oluşturun.",
-          "confirmCta": "Pro Araçları Keşfet",
-          "confirming": "Açılıyor…",
-          "doneNote": "Pro araçlarınızı zaten kullanıyorsunuz.",
-          "summaryLabel": "Pro Araç Seti",
-          "summaryVerified": "Kilidi açıldı, siz hazır olduğunuzda kullanıma hazır.",
-          "channelsNote": "Telegram, Slack, Discord veya bir webhook mu tercih edersiniz?",
-          "pointers": {
-            "widgets": "Özel bir widget oluşturun",
-            "analyst": "Yapay zeka analistine sorun",
-            "apiKeys": "API ve MCP anahtarlarınızı alın",
-            "channels": "Bunları bildirim ayarlarından yapılandırın"
-          }
-        }
-      },
-      "status": {
-        "pending": "Kurulmadı",
-        "inFlight": "Kuruluyor…",
-        "verified": "Hazır",
-        "failed": "Başarısız Oldu",
-        "blocked": "Engellendi",
-        "unavailable": "Kullanılamıyor",
-        "blockedNote": "Bu şu anda kullanılamıyor — daha sonra ayarlardan kurabilirsiniz.",
-        "unavailableNote": "Bu, cihazınızda kullanılamıyor — daha sonra kurabilirsiniz.",
-        "failedBody": "Bir şeyler ters gitti. Tekrar deneyebilir veya daha sonra ayarlardan kurabilirsiniz.",
-        "retry": "Tekrar Dene"
-      },
-      "actions": {
-        "skip": "Şimdilik Atla",
-        "continue": "Devam Et"
-      },
-      "summary": {
-        "heading": "Her Şey Hazır",
-        "subVerified": "Hesabınızda çalışan şeyler burada.",
-        "subPending": "Kurulumu istediğiniz zaman ayarlardan tamamlayabilirsiniz.",
-        "linePending": "Henüz kurulmadı — istediğiniz zaman ayarlardan tamamlayın.",
-        "lineFailed": "Bunu kuramadık — ayarlardan tekrar deneyin.",
-        "finish": "Panelime Git"
-      },
-      "chip": {
-        "message": "Pro hesabınızın kurulumunu tamamlayın.",
-        "action": "Kurulumu Tamamla",
-        "dismissLabel": "Kapat"
-      }
-    },
     "frameworkSelector": {
       "label": "Analiz Çerçevesi",
       "defaultNeutral": "Varsayılan (Tarafsız)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "Önizleme, en son canlı veriler ve pano stillemesiyle işleniyor.",
     "previewErrorCopy": "Sorunu düzeltin, ardından yeniden deneyin. Mevcut widget'larınız etkilenmez.",
     "createInteractive": "Etkileşimli Widget Oluştur",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO widget ajanı kullanılamıyor. Sunucudaki PRO_WIDGET_KEY kontrol edin.",
-    "preflightInvalidProKey": "PRO anahtarı reddedildi. wm-pro-key'i güncelleyin ve yeniden yükleyin.",
-    "preflightProSubscriptionRequired": "Pro aboneliği gerekli. Az önce yükseltildiyse sayfayı yenileyin; aksi takdirde desteğe başvurun.",
-    "preflightProRequired": "Pro aboneliği Widget Builder'ı kullanmak için gereklidir. Kilidini açmak için yükselt.",
+    "preflightProUnavailable": "Widget aracısı kullanılamıyor. Sunucuda PRO_WIDGET_KEY'i kontrol edin.",
+    "preflightInvalidProKey": "Oturum açma anahtarı reddedildi. wm-pro-key'i güncelleyip yeniden yükleyin.",
     "examples": {
       "oilGold": "Bugünün ham petrol fiyatını altınla karşılaştır",
       "cryptoMovers": "Son 24 saatte en çok hareket eden kripto varlıklar için widget oluştur",
@@ -3233,7 +3128,9 @@
       "sortableTable": "Arama filtresine sahip sıralanabilir kripto fiyat tablosu",
       "animatedCounters": "Kilit ekonomik göstergeler için animasyonlu sayaçlar",
       "tabbedComparison": "Çatışma olaylarının bölgeye göre sekmeli karşılaştırması"
-    }
+    },
+    "preflightSignInRequired": "Widget Oluşturucuyu kullanmak için oturum açın.",
+    "preflightRequestRejected": "İstek reddedildi. Sayfayı yenileyip tekrar deneyin veya sorun devam ederse destek ekibiyle iletişime geçin."
   },
   "connectivity": {
     "offlineCached": "Çevrimdışı — {{freshness}} tarihli önbelleğe alınan veriler gösteriliyor.",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "Canlı veriler kullanılamıyor — {{freshness}} tarihli önbelleğe alınan veriler gösteriliyor."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "World Monitor lisans anahtarı gereklidir",
     "signInToUnlock": "Premium özelliklerin kilidini açmak için oturum açın",
     "signIn": "Kilidini Açmak İçin Oturum Aç",
-    "upgradeDesc": "Premium analitiğe tam erişim için Pro'ya yükseltin",
-    "upgradeToPro": "Pro'ya Yüksel",
     "features": {
       "orefSirens1": "Gerçek zamanlı İsrail füze ve roket uyarıları",
       "orefSirens2": "Tehdit sınıflandırması ile siren bölgesi haritalaması",

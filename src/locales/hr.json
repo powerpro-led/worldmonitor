@@ -56,11 +56,8 @@
     "previewComposingCopy": "Prikaz se prikazuje s najnovijim uživo podacima i stilizacijom nadzorne ploče.",
     "previewErrorCopy": "Ispravi problem, zatim pokušaj ponovno. Tvoji postojeći widgeti nisu na udaru.",
     "createInteractive": "Kreiraj interaktivni widget",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO widget agent nije dostupan. Provjeri PRO_WIDGET_KEY na serveru.",
-    "preflightInvalidProKey": "PRO ključ odbijen. Ažuriraj wm-pro-key i ponovno učitaj.",
-    "preflightProSubscriptionRequired": "Potrebna Pro pretplata. Ako si se upravo nadogradio, osvježi stranicu; inače kontaktiraj podršku.",
-    "preflightProRequired": "Pro pretplata je obavezna za korištenje Widget Builder-a. Nadogradi se kako bi otključao funkcionalnost.",
+    "preflightProUnavailable": "Widget agent nije dostupan. Provjerite PRO_WIDGET_KEY na poslužitelju.",
+    "preflightInvalidProKey": "Ključ za prijavu odbijen. Ažurirajte wm-pro-key i ponovno učitajte.",
     "examples": {
       "oilGold": "Prikaži mi cijenu sirove nafte naspram zlata za danas",
       "cryptoMovers": "Kreiraj widget za najbolje kriptovalutne pokrete u zadnjih 24 sata",
@@ -72,7 +69,9 @@
       "sortableTable": "Sortabilna tablica cijena kriptovaluta s filterom pretrage",
       "animatedCounters": "Animirani brojači za ključne ekonomske pokazatelje",
       "tabbedComparison": "Usporedba konfliktnih događaja po regijama u karticama"
-    }
+    },
+    "preflightSignInRequired": "Prijavite se za korištenje alata za izradu widgeta.",
+    "preflightRequestRejected": "Zahtjev je odbijen. Ponovno učitajte stranicu i pokušajte ponovno, ili kontaktirajte podršku ako se problem nastavi."
   },
   "countryBrief": {
     "identifying": "Identificiram zemlju...",
@@ -475,7 +474,7 @@
       "layers": "Upišite \"military\" ili \"finance\" za unaprijed postavljene slojeve",
       "time": "Upišite \"1h\", \"24h\" ili \"7d\" za filtriranje po vremenu",
       "settings": "Upišite \"dark mode\", \"settings\" ili \"fullscreen\"",
-      "flight": "Pretražite direktne letove prema pozivu (PRO)",
+      "flight": "Pretraži uživo letove po pozivnom znaku (potrebna prijava)",
       "mapExample": "iran",
       "panelExample": "news",
       "briefExample": "brief china",
@@ -702,8 +701,8 @@
       "shellSearchPlaceholder": "Pretraži postavke...",
       "shellCancel": "Odustani",
       "shellSaveClose": "Spremi i zatvori",
-      "freePanelLimit": "Besplatni plan: maks {{max}} panela. Nadogradi na PRO za neograničeno.",
-      "freeSourceLimit": "Besplatni plan: maks {{max}} izvora. Nadogradi na PRO za neograničeno.",
+      "freePanelLimit": "Besplatni plan: maks. {{max}} panela. Prijavite se za neograničeno.",
+      "freeSourceLimit": "Besplatni plan: maks. {{max}} izvora. Prijavite se za neograničeno.",
       "validating": "Provjera API ključeva...",
       "saved": "Postavke spremljene",
       "failed": "Spremanje neuspješno: {{error}}",
@@ -2415,108 +2414,6 @@
     "yieldCurve": {
       "infoTooltip": "<strong>Yield Curve &amp; Rates</strong> Krivulja prinosa američki trezora (2Y, 5Y, 10Y, 30Y) i ključni spread stopa uključujući 10Y-2Y inverziski indikator. Također prikazuje stope eurozone (EURIBOR, ESTR). Obrnuta krivulja povijesno prethodi recesijama. Izvor: FRED."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro je lansiran",
-      "tagline": "Više signala, manje šuma. Više AI sažetaka. Geopolitički i equity istraživač samo za vas.",
-      "cta": "Nadogradi na Pro →",
-      "dismiss": "Odbaci"
-    },
-    "billingState": {
-      "onHoldDesc": "Plaćanje nije uspjelo. Ažurirajte način plaćanja kako biste vratili premium pristup.",
-      "onHoldBannerMessage": "Plaćanje nije uspjelo. Ažurirajte način plaćanja kako bi vaša pretplata ostala aktivna.",
-      "updatePayment": "Ažuriraj plaćanje",
-      "renewalPendingDesc": "Provjeravamo obnovu vaše pretplate. Premium pristup bit će automatski vraćen nakon potvrde.",
-      "refreshStatus": "Osvježi status",
-      "renewalFailedDesc": "Nismo mogli provjeriti obnovu vaše pretplate. Upravljajte naplatom ili kontaktirajte podršku ako se problem nastavi.",
-      "manageBilling": "Upravljanje naplatom",
-      "lapsedDesc": "Vaša Pro pretplata je istekla. Pretplatite se ponovno kako biste vratili premium pristup.",
-      "resubscribe": "Ponovno se pretplati"
-    },
-    "checkoutFailureBanner": {
-      "message": "Plaćanje nije moglo biti dovršeno. Nije izvršena nikakva naplata.",
-      "retry": "Pokušaj ponovno",
-      "retrying": "Ponovno pokušavam…",
-      "dismiss": "Odbaci"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Korak {{current}} od {{total}}",
-      "closeLabel": "Preskoči postavljanje",
-      "ariaLabel": "Postavljanje aktivacije Pro",
-      "signedInAs": "Prijavljeni ste kao {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Vaš dnevni pregled, svako jutro",
-          "body": "Kurirani obavještajni pregled u vašem pretincu svako jutro — noćni signali koji su bitni, sažeti u petominutno čitanje.",
-          "confirmCta": "Uključi moj jutarnji pregled",
-          "confirming": "Uključivanje…",
-          "doneNote": "Vaš jutarnji pregled već radi.",
-          "scheduleNote": "Zadržat ćemo vaše trenutno vrijeme dostave.",
-          "summaryLabel": "Jutarnji pregled",
-          "summaryVerified": "Uključeno — počinje s vašim sljedećim jutarnjim pregledom.",
-          "deliverAt": "Dostava u",
-          "previewLoading": "Priprema pregleda vašeg prvog izvještaja…",
-          "previewLabel": "Jutrošnji pregled"
-        },
-        "alerts": {
-          "heading": "Kritična upozorenja",
-          "body": "Primite obavijest u pregledniku kad se dogodi nešto veliko — eskalacije sukoba, tržišni šokovi, nove sankcije. Prilagodite učestalost bilo kada u Postavkama.",
-          "confirmCta": "Omogući upozorenja",
-          "confirming": "Omogućavanje…",
-          "doneNote": "Upozorenja u pregledniku već su uključena.",
-          "blockedNote": "Obavijesti su blokirane u vašem pregledniku. Uključite ih u postavkama stranice u vašem pregledniku kako biste primali upozorenja.",
-          "declinedNote": "Nema problema — nećemo slati obavijesti u pregledniku. Možete ih kasnije uključiti putem postavki stranice u vašem pregledniku.",
-          "summaryLabel": "Kritična upozorenja",
-          "summaryVerified": "Uključeno — kritični signali stizat će do vašeg preglednika."
-        },
-        "power": {
-          "heading": "Vaš Pro komplet alata",
-          "body": "Prilagođeni widgeti, MCP veze i AI istraživač su otključani. Izgradite nadzornu ploču koju stvarno želite pratiti.",
-          "confirmCta": "Istraži Pro alate",
-          "confirming": "Otvaranje…",
-          "doneNote": "Već koristite svoje Pro alate.",
-          "summaryLabel": "Pro komplet alata",
-          "summaryVerified": "Otključano i spremno kad i vi budete.",
-          "channelsNote": "Preferirate Telegram, Slack, Discord ili webhook?",
-          "pointers": {
-            "widgets": "Izradi prilagođeni widget",
-            "analyst": "Pitaj AI analitičara",
-            "apiKeys": "Preuzmi svoje API i MCP ključeve",
-            "channels": "Postavite ih u postavkama obavijesti"
-          }
-        }
-      },
-      "status": {
-        "pending": "Nije postavljeno",
-        "inFlight": "Postavljanje…",
-        "verified": "Spremno",
-        "failed": "Nije uspjelo",
-        "blocked": "Blokirano",
-        "unavailable": "Nedostupno",
-        "blockedNote": "Ovo trenutno nije dostupno — možete to postaviti kasnije u postavkama.",
-        "unavailableNote": "Ovo nije dostupno na vašem uređaju — možete to postaviti kasnije.",
-        "failedBody": "Nešto je pošlo po zlu. Možete pokušati ponovno ili to postaviti kasnije u postavkama.",
-        "retry": "Pokušaj ponovno"
-      },
-      "actions": {
-        "skip": "Preskoči za sada",
-        "continue": "Nastavi"
-      },
-      "summary": {
-        "heading": "Sve je spremno",
-        "subVerified": "Evo što radi na vašem računu.",
-        "subPending": "Postavljanje možete dovršiti bilo kada u postavkama.",
-        "linePending": "Još nije postavljeno — dovršite bilo kada u postavkama.",
-        "lineFailed": "Nismo uspjeli ovo postaviti — pokušajte ponovno u postavkama.",
-        "finish": "Idi na moju nadzornu ploču"
-      },
-      "chip": {
-        "message": "Dovršite postavljanje svog Pro računa.",
-        "action": "Dovrši postavljanje",
-        "dismissLabel": "Odbaci"
-      }
-    },
     "frameworkSelector": {
       "label": "Analysis Framework",
       "defaultNeutral": "Default (Neutral)",
@@ -3446,15 +3343,12 @@
     "fontSystem": "Zadana vrijednost sustava"
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Zahtijeva ključ World Monitor licence",
     "joinWaitlist": "Pridruži se Listi Čekanja",
     "signInToUnlock": "Prijavite se da biste otključali premium značajke",
     "signIn": "Prijavite se za Otključavanje",
     "verifyEmailToUnlock": "Potvrdite vašu e-poštu za pristup premium značajkama",
     "resendVerification": "Ponovno Pošalji Provjeru",
-    "upgradeDesc": "Nadogradite se na Pro za potpun pristup premium analitici",
-    "upgradeToPro": "Nadogradite se na Pro",
     "features": {
       "orefSirens1": "Upozorenja o raketama i raketama u izraelskom realnom vremenu",
       "orefSirens2": "Mapiranje zone sirena s klasifikacijom prijetnje",

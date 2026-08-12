@@ -106,7 +106,7 @@ test('PR #3557 review: wms_ session token is REJECTED when forceKey=true (premiu
   const r = await validateApiKey(makeReq({ key: token }), { forceKey: true });
   assert.equal(r.valid, false);
   assert.equal(r.required, true);
-  assert.match(r.error, /Pro authentication/);
+  assert.match(r.error, /Sign-in or API key required/);
 });
 
 test('PR #3557 review: wms_ result must NOT carry kind=enterprise (gateway entitlement-bypass anti-regression)', async () => {

@@ -400,7 +400,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "按呼号搜索实时航班 (PRO)",
+      "flight": "按呼号搜索实时航班（需要登录）",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -641,8 +641,8 @@
       "shellSearchPlaceholder": "搜索设置...",
       "shellCancel": "取消",
       "shellSaveClose": "保存并关闭",
-      "freePanelLimit": "免费计划：最多 {{max}} 个面板。升级至 PRO 获得无限面板。",
-      "freeSourceLimit": "免费计划：最多 {{max}} 个信息源。升级至 PRO 获得无限信息源。"
+      "freePanelLimit": "免费计划：最多 {{max}} 个面板。登录以解锁无限制。",
+      "freeSourceLimit": "免费计划：最多 {{max}} 个来源。登录以解锁无限制。"
     },
     "countryIntel": {
       "identifying": "正在识别国家...",
@@ -2175,108 +2175,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB股票代码扫描器</strong>来自r/wallstreetbets、r/stocks和r/investing的实时股票代码提及。按提及频率和参与度排名。速度指标衡量股票代码在帖子中获得动量的速度。"
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro已上线",
-      "tagline": "更多信号，更少噪音。更多AI简报。专属于您的地缘政治和股票研究员。",
-      "cta": "升级到Pro →",
-      "dismiss": "关闭"
-    },
-    "billingState": {
-      "onHoldDesc": "支付失败。请更新您的支付方式以恢复高级访问权限。",
-      "onHoldBannerMessage": "支付失败。请更新您的支付方式以保持订阅有效。",
-      "updatePayment": "更新支付方式",
-      "renewalPendingDesc": "我们正在核实您的订阅续订。确认后将自动恢复高级访问权限。",
-      "refreshStatus": "刷新状态",
-      "renewalFailedDesc": "我们无法核实您的订阅续订。请管理账单，如问题持续请联系支持。",
-      "manageBilling": "管理账单",
-      "lapsedDesc": "您的 Pro 订阅已结束。重新订阅以恢复高级访问权限。",
-      "resubscribe": "重新订阅"
-    },
-    "checkoutFailureBanner": {
-      "message": "支付无法完成。未进行任何扣款。",
-      "retry": "重试",
-      "retrying": "重试中…",
-      "dismiss": "关闭"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "第 {{current}} 步，共 {{total}} 步",
-      "closeLabel": "跳过设置",
-      "ariaLabel": "Pro 激活设置",
-      "signedInAs": "以 {{email}} 身份登录",
-      "steps": {
-        "brief": {
-          "heading": "您的每日简报，每天早晨送达",
-          "body": "每天早晨在您的收件箱中呈现精心策划的情报简报——夜间重要信号，浓缩成五分钟的阅读内容。",
-          "confirmCta": "开启我的晨间简报",
-          "confirming": "正在开启…",
-          "doneNote": "您的晨间简报已在运行。",
-          "scheduleNote": "我们将保留您当前的发送时间。",
-          "summaryLabel": "晨间简报",
-          "summaryVerified": "已开启——将从您的下一份晨间简报开始。",
-          "deliverAt": "发送时间",
-          "previewLoading": "正在准备您第一份简报的预览…",
-          "previewLabel": "今早的简报"
-        },
-        "alerts": {
-          "heading": "重大警报",
-          "body": "当发生重大事件时（冲突升级、市场震荡、新的制裁措施），在浏览器中接收提醒。随时可在设置中调整提醒频率。",
-          "confirmCta": "启用警报",
-          "confirming": "正在启用…",
-          "doneNote": "浏览器警报已开启。",
-          "blockedNote": "您的浏览器中通知已被屏蔽。请在浏览器的网站设置中开启通知以接收警报。",
-          "declinedNote": "没关系——我们不会发送浏览器警报。您可以稍后在浏览器的网站设置中开启。",
-          "summaryLabel": "重大警报",
-          "summaryVerified": "已开启——重大信号将发送至您的浏览器。"
-        },
-        "power": {
-          "heading": "您的 Pro 工具包",
-          "body": "自定义小组件、MCP 连接和 AI 研究员已解锁。构建您真正想要关注的看板。",
-          "confirmCta": "探索 Pro 工具",
-          "confirming": "正在打开…",
-          "doneNote": "您已经在使用 Pro 工具了。",
-          "summaryLabel": "Pro 工具包",
-          "summaryVerified": "已解锁，随时可用。",
-          "channelsNote": "更喜欢 Telegram、Slack、Discord 还是 Webhook？",
-          "pointers": {
-            "widgets": "创建自定义小组件",
-            "analyst": "咨询 AI 分析师",
-            "apiKeys": "获取您的 API 和 MCP 密钥",
-            "channels": "在通知设置中进行配置"
-          }
-        }
-      },
-      "status": {
-        "pending": "尚未设置",
-        "inFlight": "正在设置…",
-        "verified": "已就绪",
-        "failed": "未能成功",
-        "blocked": "已屏蔽",
-        "unavailable": "不可用",
-        "blockedNote": "此功能目前不可用——您可以稍后在设置中进行配置。",
-        "unavailableNote": "此功能在您的设备上不可用——您可以稍后进行配置。",
-        "failedBody": "出现了问题。您可以重试，或稍后在设置中进行配置。",
-        "retry": "重试"
-      },
-      "actions": {
-        "skip": "暂时跳过",
-        "continue": "继续"
-      },
-      "summary": {
-        "heading": "一切就绪",
-        "subVerified": "以下是您账户中正在运行的内容。",
-        "subPending": "您可以随时在设置中完成配置。",
-        "linePending": "尚未设置——可随时在设置中完成。",
-        "lineFailed": "我们未能完成此设置——请在设置中重试。",
-        "finish": "前往我的仪表盘"
-      },
-      "chip": {
-        "message": "完成您的 Pro 账户设置。",
-        "action": "完成设置",
-        "dismissLabel": "关闭"
-      }
-    },
     "frameworkSelector": {
       "label": "分析框架",
       "defaultNeutral": "默认（中立）",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "预览正在使用最新的实时数据和仪表板样式进行呈现。",
     "previewErrorCopy": "修复问题后重试。您现有的小组件不受影响。",
     "createInteractive": "创建交互式小组件",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO 小组件代理不可用。请检查服务器上的 PRO_WIDGET_KEY。",
-    "preflightInvalidProKey": "PRO 密钥被拒绝。请更新 wm-pro-key 并重新加载。",
-    "preflightProSubscriptionRequired": "需要 Pro 订阅。如果您刚升级，请刷新页面；否则请联系支持。",
-    "preflightProRequired": "需要 Pro 订阅才能使用小部件生成器。升级以解锁。",
+    "preflightProUnavailable": "小组件代理不可用。请检查服务器上的 PRO_WIDGET_KEY。",
+    "preflightInvalidProKey": "登录密钥被拒绝。请更新 wm-pro-key 并重新加载。",
     "examples": {
       "oilGold": "显示今天的原油价格与黄金价格对比",
       "cryptoMovers": "为过去 24 小时内涨跌幅最大的加密货币创建小部件",
@@ -3233,7 +3128,9 @@
       "sortableTable": "具有搜索筛选功能的可排序加密货币价格表",
       "animatedCounters": "主要经济指标的动画计数器",
       "tabbedComparison": "按地区分类的冲突事件选项卡式对比"
-    }
+    },
+    "preflightSignInRequired": "登录以使用小组件构建器。",
+    "preflightRequestRejected": "请求被拒绝。请刷新页面并重试，如果问题持续存在，请联系支持。"
   },
   "connectivity": {
     "offlineCached": "离线——显示来自 {{freshness}} 的缓存数据。",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "实时数据不可用——显示来自 {{freshness}} 的缓存数据。"
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "需要 World Monitor 许可证密钥",
     "signInToUnlock": "登录以解锁高级功能",
     "signIn": "登录以解锁",
-    "upgradeDesc": "升级到 Pro 以获得完整的高级分析访问权限",
-    "upgradeToPro": "升级到 Pro",
     "features": {
       "orefSirens1": "实时以色列导弹和火箭警报",
       "orefSirens2": "警报区域地图及威胁分类",

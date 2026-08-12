@@ -50,11 +50,8 @@
     "previewComposingCopy": "Az előnézet a legújabb élő adatokkal és irányítópult stílust használva jelenik meg.",
     "previewErrorCopy": "Hárítsa el a problémát, majd próbálkozzon újra. Meglévő widgetjei érintetlen maradnak.",
     "createInteractive": "Interaktív widget létrehozása",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO widget ügynök nem érhető el. Ellenőrizze a PRO_WIDGET_KEY értéket a szerveren.",
-    "preflightInvalidProKey": "PRO kulcs visszautasítva. Frissítse a wm-pro-key értéket és töltse újra az oldalt.",
-    "preflightProSubscriptionRequired": "Pro előfizetés szükséges. Ha éppen frissített, frissítse az oldalt; egyéb esetben forduljon az ügyfélszolgálathoz.",
-    "preflightProRequired": "Pro előfizetés szükséges a Widget Builder használatához. Frissítsen a feloldáshoz.",
+    "preflightProUnavailable": "A widgetügynök nem érhető el. Ellenőrizze a PRO_WIDGET_KEY-t a szerveren.",
+    "preflightInvalidProKey": "A bejelentkezési kulcs elutasítva. Frissítse a wm-pro-key-t, majd töltse be újra.",
     "examples": {
       "oilGold": "Mutasd meg a mai nyersolaj árát az aranyhoz képest",
       "cryptoMovers": "Készíts widgetet az utolsó 24 óra legjobb kriptomozgásaihoz",
@@ -66,7 +63,9 @@
       "sortableTable": "Rendezható kriptóár-táblázat keresési szűrővel",
       "animatedCounters": "Animált számlálók a legfontosabb gazdasági mutatókhoz",
       "tabbedComparison": "Tabulos összehasonlítás a konfliktusesemények régió szerinti csoportosításával"
-    }
+    },
+    "preflightSignInRequired": "Jelentkezzen be a Widget Builder használatához.",
+    "preflightRequestRejected": "A kérést elutasították. Töltse be újra az oldalt, és próbálja újra, vagy lépjen kapcsolatba az ügyfélszolgálattal, ha ez továbbra is fennáll."
   },
   "countryBrief": {
     "identifying": "Ország azonosítása...",
@@ -463,7 +462,7 @@
       "layers": "Írj be a \"military\" vagy \"finance\" szót a réteg-előbeállításokhoz",
       "time": "Írj be az \"1h\", \"24h\" vagy \"7d\" szót az időszűréshez",
       "settings": "Írj be a \"dark mode\", \"settings\" vagy \"fullscreen\" szót",
-      "flight": "Keress élő járatokat hívójel alapján (PRO)",
+      "flight": "Élő járatok keresése hívójel alapján (bejelentkezés szükséges)",
       "mapExample": "iran",
       "panelExample": "news",
       "briefExample": "brief china",
@@ -683,8 +682,8 @@
       "shellSearchPlaceholder": "Beállítások keresése...",
       "shellCancel": "Mégse",
       "shellSaveClose": "Mentés és bezárás",
-      "freePanelLimit": "Ingyenes csomag: max {{max}} panel. Frissítsen PRO-ra a korlátlan verzióért.",
-      "freeSourceLimit": "Ingyenes csomag: max {{max}} forrás. Frissítsen PRO-ra a korlátlan verzióért.",
+      "freePanelLimit": "Ingyenes csomag: max. {{max}} panel. Jelentkezzen be a korlátlan hozzáféréshez.",
+      "freeSourceLimit": "Ingyenes csomag: max. {{max}} forrás. Jelentkezzen be a korlátlan hozzáféréshez.",
       "validating": "API-kulcsok ellenőrzése...",
       "saved": "Beállítások mentve",
       "failed": "Mentés sikertelen: {{error}}",
@@ -2244,108 +2243,6 @@
     "yieldCurve": {
       "infoTooltip": "<strong>Yield Curve &amp; Rates</strong> Az USA Treasury hozamgörbéje (2Y, 5Y, 10Y, 30Y) és legfontosabb kamat-spreadek, beleértve a 10Y-2Y inverzió indikátorát. Az euró-övezeti kamatokat is mutatja (EURIBOR, ESTR). Az invertált görbe történelmileg megelőzi a recessziókat. Forrás: FRED."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro elindult",
-      "tagline": "Több jel, kevesebb zaj. Több AI Brief. Egy Geopolitikai & Részvény Kutató, csak neked.",
-      "cta": "Frissítés Pro-ra →",
-      "dismiss": "Eltüntetés"
-    },
-    "billingState": {
-      "onHoldDesc": "A fizetés sikertelen. Frissítse fizetési módját a prémium hozzáférés visszaállításához.",
-      "onHoldBannerMessage": "A fizetés sikertelen. Frissítse fizetési módját, hogy előfizetése aktív maradjon.",
-      "updatePayment": "Fizetés frissítése",
-      "renewalPendingDesc": "Ellenőrizzük előfizetése megújítását. A prémium hozzáférés a megerősítés után automatikusan helyreáll.",
-      "refreshStatus": "Állapot frissítése",
-      "renewalFailedDesc": "Nem sikerült ellenőrizni előfizetése megújítását. Kezelje a számlázást, vagy lépjen kapcsolatba az ügyfélszolgálattal, ha a probléma továbbra is fennáll.",
-      "manageBilling": "Számlázás kezelése",
-      "lapsedDesc": "Pro előfizetése lejárt. Fizessen elő újra a prémium hozzáférés visszaszerzéséhez.",
-      "resubscribe": "Újra előfizetek"
-    },
-    "checkoutFailureBanner": {
-      "message": "A fizetés nem fejeződött be. Nem történt költség.",
-      "retry": "Próbáld újra",
-      "retrying": "Újrapróbálás…",
-      "dismiss": "Eltüntetés"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "{{current}}. lépés / {{total}}",
-      "closeLabel": "Beállítás kihagyása",
-      "ariaLabel": "Pro aktiválás beállítása",
-      "signedInAs": "Bejelentkezve mint {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Napi összefoglalója minden reggel",
-          "body": "Válogatott hírszerzési összefoglaló a postafiókjában minden reggel — az éjszaka fontos jelei öt perces olvasmányba sűrítve.",
-          "confirmCta": "Reggeli összefoglaló bekapcsolása",
-          "confirming": "Bekapcsolás…",
-          "doneNote": "A reggeli összefoglalója már fut.",
-          "scheduleNote": "Megtartjuk a jelenlegi kézbesítési időpontját.",
-          "summaryLabel": "Reggeli összefoglaló",
-          "summaryVerified": "Bekapcsolva — a következő reggeli összefoglalóval indul.",
-          "deliverAt": "Kézbesítés ekkor",
-          "previewLoading": "Az első összefoglaló előnézetének előkészítése…",
-          "previewLabel": "A mai reggeli összefoglaló"
-        },
-        "alerts": {
-          "heading": "Kritikus riasztások",
-          "body": "Kapjon értesítést a böngészőjében, ha valami nagy dolog történik — konfliktusok eszkalációja, piaci sokkok, friss szankciók. A gyakoriságot bármikor módosíthatja a Beállításokban.",
-          "confirmCta": "Riasztások engedélyezése",
-          "confirming": "Engedélyezés…",
-          "doneNote": "A böngészőriasztások már be vannak kapcsolva.",
-          "blockedNote": "Az értesítések le vannak tiltva a böngészőjében. Kapcsolja be őket a böngésző webhelybeállításaiban, hogy riasztásokat kapjon.",
-          "declinedNote": "Semmi gond — nem küldünk böngészőriasztásokat. Később bármikor bekapcsolhatja őket a böngésző webhelybeállításaiban.",
-          "summaryLabel": "Kritikus riasztások",
-          "summaryVerified": "Bekapcsolva — a kritikus jelzések eljutnak a böngészőjéhez."
-        },
-        "power": {
-          "heading": "Az Ön Pro eszköztára",
-          "body": "Egyéni widgetek, MCP-kapcsolatok és az AI kutató fel vannak oldva. Építse fel azt az irányítópultot, amit valóban figyelni szeretne.",
-          "confirmCta": "Pro eszközök felfedezése",
-          "confirming": "Megnyitás…",
-          "doneNote": "Már használja Pro eszközeit.",
-          "summaryLabel": "Pro eszköztár",
-          "summaryVerified": "Feloldva és készen áll, amikor Ön is az.",
-          "channelsNote": "Inkább Telegramot, Slacket, Discordot vagy egy webhookot szeretne?",
-          "pointers": {
-            "widgets": "Egyéni widget létrehozása",
-            "analyst": "Kérdezze meg az AI elemzőt",
-            "apiKeys": "API és MCP kulcsok beszerzése",
-            "channels": "Állítsa be ezeket az értesítési beállításokban"
-          }
-        }
-      },
-      "status": {
-        "pending": "Nincs beállítva",
-        "inFlight": "Beállítás…",
-        "verified": "Kész",
-        "failed": "Nem sikerült",
-        "blocked": "Blokkolva",
-        "unavailable": "Nem elérhető",
-        "blockedNote": "Ez most nem elérhető — később beállíthatja a beállításokban.",
-        "unavailableNote": "Ez nem elérhető az Ön eszközén — később beállíthatja.",
-        "failedBody": "Valami elromlott. Próbálja újra, vagy állítsa be később a beállításokban.",
-        "retry": "Próbálja újra"
-      },
-      "actions": {
-        "skip": "Kihagyás egyelőre",
-        "continue": "Folytatás"
-      },
-      "summary": {
-        "heading": "Minden készen áll",
-        "subVerified": "Íme, mi fut a fiókján.",
-        "subPending": "A beállítást bármikor befejezheti a beállításokban.",
-        "linePending": "Még nincs beállítva — bármikor befejezheti a beállításokban.",
-        "lineFailed": "Ezt nem sikerült beállítanunk — próbálja újra a beállításokban.",
-        "finish": "Ugrás az irányítópultomra"
-      },
-      "chip": {
-        "message": "Fejezze be Pro fiókja beállítását.",
-        "action": "Beállítás befejezése",
-        "dismissLabel": "Elvetés"
-      }
-    },
     "frameworkSelector": {
       "label": "Elemzési Keretrendszer",
       "defaultNeutral": "Alapértelmezett (Semleges)",
@@ -3237,12 +3134,9 @@
     "fontSystem": "Rendszer alapértelmezés"
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "World Monitor licenckulcs szükséges",
     "signInToUnlock": "Jelentkezzen be a prémium funkciók feloldásához",
     "signIn": "Jelentkezzen be a feloldáshoz",
-    "upgradeDesc": "Frissítsen Pro verzióra a teljes hozzáféréshez a prémium elemzésekhez",
-    "upgradeToPro": "Frissítés Pro verzióra",
     "features": {
       "orefSirens1": "Valós idejű izraeli rakéta- és légicsapás-riasztások",
       "orefSirens2": "Szirénazóna térképezése veszélyforrás besorolással",

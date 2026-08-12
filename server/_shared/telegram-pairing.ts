@@ -7,7 +7,7 @@
  * settings UI) and the new `api/telegram/pair-callback.ts` (`claimPairingToken`,
  * the Telegram webhook target).
  *
- * The PRO-entitlement gate Convex checked in `claimPairingToken`
+ * The entitlement gate Convex checked in `claimPairingToken`
  * (`hasProEntitlement`) is NOT ported — see `server/_shared/notification-channels.ts`'s
  * module doc for why. Dropped entirely; any signed-in user's token claims.
  *

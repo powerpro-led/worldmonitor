@@ -14,7 +14,7 @@ export interface StockAnalysisTarget {
 
 /**
  * Free tier (and the empty-watchlist baseline for every tier) analyses this
- * many tickers. PRO users get their full watchlist analysed, up to
+ * many tickers. signed-in users get their full watchlist analysed, up to
  * STOCK_ANALYSIS_PRO_LIMIT — which mirrors the 50-entry storage cap enforced
  * in market-watchlist.ts.
  */
@@ -34,8 +34,8 @@ export function isAnalyzableSymbol(symbol: string): boolean {
  * never collapses the panel to one card (the original "tracking only one
  * ticker" bug).
  *
- * - Free tier: capped at STOCK_ANALYSIS_FREE_LIMIT.
- * - PRO tier: sized to the user's own analysable picks, floored at the free
+ * - Anonymous: capped at STOCK_ANALYSIS_FREE_LIMIT.
+ * - Signed-in: sized to the user's own analysable picks, floored at the free
  *   limit (an empty/tiny watchlist is never emptier than free) and capped at
  *   STOCK_ANALYSIS_PRO_LIMIT.
  *

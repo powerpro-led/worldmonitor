@@ -50,11 +50,8 @@
     "previewComposingCopy": "The preview is rendering with the latest live data and dashboard styling.",
     "previewErrorCopy": "Fix the issue, then retry. Your existing widgets are unaffected.",
     "createInteractive": "Create Interactive Widget",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO widget agent unavailable. Check PRO_WIDGET_KEY on the server.",
-    "preflightInvalidProKey": "PRO key rejected. Update wm-pro-key and reload.",
-    "preflightProSubscriptionRequired": "Pro subscription required. If you just upgraded, refresh the page; otherwise contact support.",
-    "preflightProRequired": "Pro subscription required to use the Widget Builder. Upgrade to unlock.",
+    "preflightProUnavailable": "عامل ابزارک در دسترس نیست. PRO_WIDGET_KEY را روی سرور بررسی کنید.",
+    "preflightInvalidProKey": "کلید ورود رد شد. wm-pro-key را به‌روزرسانی کرده و صفحه را دوباره بارگذاری کنید.",
     "examples": {
       "oilGold": "Show me today's crude oil price versus gold",
       "cryptoMovers": "Create a widget for the top crypto movers in the last 24 hours",
@@ -66,7 +63,9 @@
       "sortableTable": "Sortable crypto price table with search filter",
       "animatedCounters": "Animated counters for key economic indicators",
       "tabbedComparison": "Tabbed comparison of conflict events by region"
-    }
+    },
+    "preflightSignInRequired": "برای استفاده از سازنده ابزارک وارد شوید.",
+    "preflightRequestRejected": "درخواست رد شد. صفحه را دوباره بارگذاری کرده و دوباره امتحان کنید، یا در صورت تداوم مشکل با پشتیبانی تماس بگیرید."
   },
   "countryBrief": {
     "identifying": "Identifying country...",
@@ -463,7 +462,7 @@
       "layers": "Type \"military\" or \"finance\" for layer presets",
       "time": "Type \"1h\", \"24h\", or \"7d\" to filter by time",
       "settings": "Type \"dark mode\", \"settings\", or \"fullscreen\"",
-      "flight": "Search live flights by callsign (PRO)",
+      "flight": "جستجوی پروازهای زنده بر اساس شماره تماس (نیاز به ورود)",
       "mapExample": "iran",
       "panelExample": "news",
       "briefExample": "brief china",
@@ -683,8 +682,8 @@
       "shellSearchPlaceholder": "Search settings...",
       "shellCancel": "Cancel",
       "shellSaveClose": "Save & Close",
-      "freePanelLimit": "Free plan: max {{max}} panels. Upgrade to PRO for unlimited.",
-      "freeSourceLimit": "Free plan: max {{max}} sources. Upgrade to PRO for unlimited.",
+      "freePanelLimit": "طرح رایگان: حداکثر {{max}} پنل. برای نامحدود وارد شوید.",
+      "freeSourceLimit": "طرح رایگان: حداکثر {{max}} منبع. برای نامحدود وارد شوید.",
       "validating": "Validating API keys...",
       "saved": "Settings saved",
       "failed": "Save failed: {{error}}",
@@ -2247,108 +2246,6 @@
     "yieldCurve": {
       "infoTooltip": "<strong>Yield Curve &amp; Rates</strong> US Treasury yield curve (2Y, 5Y, 10Y, 30Y) and key rate spreads including the 10Y-2Y inversion indicator. Also shows Euro area rates (EURIBOR, ESTR). An inverted curve historically precedes recessions. Source: FRED."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro is launched",
-      "tagline": "More Signal, Less Noise. More AI Briefings. A Geopolitical & Equity Researcher just for you.",
-      "cta": "Upgrade to Pro →",
-      "dismiss": "Dismiss"
-    },
-    "billingState": {
-      "onHoldDesc": "پرداخت ناموفق بود. روش پرداخت خود را به‌روزرسانی کنید تا دسترسی ویژه بازیابی شود.",
-      "onHoldBannerMessage": "پرداخت ناموفق بود. روش پرداخت خود را به‌روزرسانی کنید تا اشتراک شما فعال بماند.",
-      "updatePayment": "به‌روزرسانی پرداخت",
-      "renewalPendingDesc": "در حال بررسی تمدید اشتراک شما هستیم. دسترسی ویژه پس از تأیید به‌طور خودکار بازیابی می‌شود.",
-      "refreshStatus": "به‌روزرسانی وضعیت",
-      "renewalFailedDesc": "تمدید اشتراک شما تأیید نشد. صورتحساب را مدیریت کنید یا در صورت ادامه مشکل با پشتیبانی تماس بگیرید.",
-      "manageBilling": "مدیریت صورتحساب",
-      "lapsedDesc": "اشتراک Pro شما به پایان رسیده است. برای بازیابی دسترسی ویژه دوباره مشترک شوید.",
-      "resubscribe": "اشتراک مجدد"
-    },
-    "checkoutFailureBanner": {
-      "message": "Payment couldn't be completed. No charge was made.",
-      "retry": "Try again",
-      "retrying": "Retrying…",
-      "dismiss": "Dismiss"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Step {{current}} of {{total}}",
-      "closeLabel": "Skip setup",
-      "ariaLabel": "Pro activation setup",
-      "signedInAs": "Signed in as {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Your daily brief, every morning",
-          "body": "A curated intelligence briefing in your inbox each morning — the overnight signals that matter, distilled into a five-minute read.",
-          "confirmCta": "Turn on my morning brief",
-          "confirming": "Turning it on…",
-          "doneNote": "Your morning brief is already running.",
-          "scheduleNote": "We'll keep your current delivery time.",
-          "summaryLabel": "Morning brief",
-          "summaryVerified": "On — starts with your next morning brief.",
-          "deliverAt": "Deliver at",
-          "previewLoading": "Preparing a preview of your first brief…",
-          "previewLabel": "This morning's brief"
-        },
-        "alerts": {
-          "heading": "Critical alerts",
-          "body": "Get pinged in your browser when something big breaks — conflict escalations, market shocks, fresh sanctions. Tune the cadence anytime in Settings.",
-          "confirmCta": "Enable alerts",
-          "confirming": "Enabling…",
-          "doneNote": "Browser alerts are already on.",
-          "blockedNote": "Notifications are blocked in your browser. Turn them on in your browser's site settings to get alerts.",
-          "declinedNote": "No problem — we won't send browser alerts. You can turn them on later from your browser's site settings.",
-          "summaryLabel": "Critical alerts",
-          "summaryVerified": "On — critical signals will reach your browser."
-        },
-        "power": {
-          "heading": "Your Pro toolkit",
-          "body": "Custom widgets, MCP connections, and the AI researcher are unlocked. Build the board you actually want to watch.",
-          "confirmCta": "Explore Pro tools",
-          "confirming": "Opening…",
-          "doneNote": "You're already using your Pro tools.",
-          "summaryLabel": "Pro toolkit",
-          "summaryVerified": "Unlocked and ready when you are.",
-          "channelsNote": "Prefer Telegram, Slack, Discord, or a webhook?",
-          "pointers": {
-            "widgets": "Build a custom widget",
-            "analyst": "Ask the AI analyst",
-            "apiKeys": "Get your API & MCP keys",
-            "channels": "Set those up in notification settings"
-          }
-        }
-      },
-      "status": {
-        "pending": "Not set up",
-        "inFlight": "Setting up…",
-        "verified": "Ready",
-        "failed": "Didn't work",
-        "blocked": "Blocked",
-        "unavailable": "Not available",
-        "blockedNote": "This isn't available right now — you can set it up later from settings.",
-        "unavailableNote": "This isn't available on your device — you can set it up later.",
-        "failedBody": "Something went wrong. You can try again, or set it up later from settings.",
-        "retry": "Try again"
-      },
-      "actions": {
-        "skip": "Skip for now",
-        "continue": "Continue"
-      },
-      "summary": {
-        "heading": "You're all set",
-        "subVerified": "Here's what's running on your account.",
-        "subPending": "You can finish setup any time from settings.",
-        "linePending": "Not set up yet — finish any time in settings.",
-        "lineFailed": "We couldn't set this up — try again from settings.",
-        "finish": "Go to my dashboard"
-      },
-      "chip": {
-        "message": "Finish setting up your Pro account.",
-        "action": "Finish setup",
-        "dismissLabel": "Dismiss"
-      }
-    },
     "frameworkSelector": {
       "label": "Analysis Framework",
       "defaultNeutral": "Default (Neutral)",
@@ -3237,12 +3134,9 @@
     "fontSystem": "System Default"
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Requires a World Monitor license key",
     "signInToUnlock": "Sign in to unlock premium features",
     "signIn": "Sign In to Unlock",
-    "upgradeDesc": "Upgrade to Pro for full access to premium analytics",
-    "upgradeToPro": "Upgrade to Pro",
     "features": {
       "orefSirens1": "Real-time Israel missile & rocket alerts",
       "orefSirens2": "Siren zone mapping with threat classification",

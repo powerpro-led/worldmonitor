@@ -13,7 +13,7 @@
  * action (RELAY_SHARED_SECRET) and negotiate a "durable welcome scheduling"
  * capability with it (that negotiation existed only because Convex and
  * Vercel deploy independently — with the write and the welcome-queue publish
- * now in the same request, there's nothing to negotiate). The PRO-entitlement
+ * now in the same request, there's nothing to negotiate). The entitlement
  * gate that used to 403 this endpoint is also dropped — see
  * `server/_shared/notification-channels.ts`'s module doc for why (Convex's
  * `entitlements` table has had nothing writing to it since Stage 1, so the

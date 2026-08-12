@@ -56,7 +56,7 @@ const iframeHtmlStore = new WeakMap<HTMLIFrameElement, string>();
 const iframeTokenStore = new WeakMap<HTMLIFrameElement, { id: string; token: string }>();
 // AbortController per mounted iframe — scopes the global `message` listener
 // to the iframe's DOM lifetime so it can be torn down on iframe removal.
-// Without this, every mounted PRO widget leaks a window-level listener that
+// Without this, every mounted premium widget leaks a window-level listener that
 // retains a strong reference to the iframe element (and its ~80 KB HTML
 // payload via iframeHtmlStore), preventing garbage collection in long-
 // running dashboard sessions that add/remove widgets repeatedly.

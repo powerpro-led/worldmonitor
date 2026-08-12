@@ -2,7 +2,7 @@
  * Shared market-watchlist editor modal.
  *
  * The watchlist drives the Markets panel (additive to the defaults) and the
- * PRO panels — Premium Stock Analysis, Backtesting, and the Daily Market Brief
+ * premium panels — Premium Stock Analysis, Backtesting, and the Daily Market Brief
  * — so the editor is reachable from every panel that consumes it rather than
  * living only on the Markets header.
  */
@@ -51,7 +51,7 @@ export function openWatchlistModal(): void {
         Search a ticker or company name and pick from the list — every entry is a
         real, tracked symbol. Your picks are <strong>added</strong> to the Markets
         panel and lead the Premium Stock Analysis, Backtesting and Daily Market
-        Brief panels. PRO members get every ticker in the list reported (up to 50).
+        Brief panels. users get every ticker in the list reported (up to 50).
       </div>
       <div id="wmWatchlistEditorMount"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
@@ -84,8 +84,8 @@ export function openWatchlistModal(): void {
     // Watchlist story alerts (#4922 U3): if the user's alert rule opted into
     // watchlist_story_alert, re-sync its server-side ticker-scope to the
     // just-saved list. Fire-and-forget + dynamically imported so the modal
-    // stays dependency-light; gated on signed-in PRO before any network call
-    // (the notification-channels endpoint 403s free users — avoid the
+    // stays dependency-light; gated on signed-in state before any network
+    // call (the notification-channels endpoint 403s signed-out users — avoid the
     // client-side 4xx flood class). The helper itself additionally no-ops
     // when the rule is disabled or never opted in.
     void (async () => {

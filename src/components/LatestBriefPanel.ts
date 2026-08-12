@@ -9,7 +9,7 @@
  *   - composing  → soft empty state. The composer hasn't produced
  *                  today's brief yet; the panel auto-refreshes on
  *                  the next user-visible interaction.
- *   - locked     → the PRO gate (ANONYMOUS or FREE_TIER) is
+ *   - locked     → the auth gate (ANONYMOUS or FREE_TIER) is
  *                  handled by the base Panel class via the
  *                  premium-locked-content pattern — the panel itself
  *                  is marked premium and the base draws the overlay.
@@ -105,7 +105,7 @@ export class LatestBriefPanel extends Panel {
       title: 'Latest Brief',
       infoTooltip:
         "Your personalised daily editorial magazine. One brief per day, assembled from the news-intelligence layer and delivered via email, Telegram, Slack, and here.",
-      // premium: 'locked' marks this as PRO-gated. The base Panel
+      // premium: 'locked' marks this as auth-gated. The base Panel
       // handles the ANONYMOUS + FREE_TIER overlay via
       // panel-gating.ts's getPanelGateReason. No story content,
       // headline, or greeting leaks through DOM attributes on the
@@ -267,7 +267,7 @@ export class LatestBriefPanel extends Panel {
 
   /**
    * Override to catch the unlock transition. `updatePanelGating`
-   * calls this when a user upgrades (free/anon → PRO). The base
+   * calls this when a user signs in (anon → signed-in). The base
    * clears locked content but leaves us empty — without this
    * override the panel stays blank until page reload. Trigger a
    * fresh fetch on transition.

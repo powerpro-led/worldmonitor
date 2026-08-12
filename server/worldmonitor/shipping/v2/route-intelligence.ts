@@ -42,7 +42,7 @@ export async function routeIntelligence(
 ): Promise<RouteIntelligenceResponse> {
   const isPro = await isCallerPremium(ctx.request);
   if (!isPro) {
-    throw new ApiError(403, 'PRO subscription required', '');
+    throw new ApiError(403, 'Sign-in or API key required', '');
   }
 
   const fromIso2 = (req.fromIso2 ?? '').trim().toUpperCase();

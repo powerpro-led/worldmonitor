@@ -623,7 +623,7 @@ export default async function handler(req) {
   // for Pro users; /api/mcp-proxy is now in PREMIUM_RPC_PATHS for that
   // path-gated injection.
   if (!(await isCallerPremium(req)))
-    return jsonResponse({ error: 'Pro authentication required' }, 401, cors);
+    return jsonResponse({ error: 'Sign-in or API key required' }, 401, cors);
 
   const started = Date.now();
   const ip = getClientIp(req);

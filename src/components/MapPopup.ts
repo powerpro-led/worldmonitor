@@ -320,14 +320,14 @@ export class MapPopup {
           });
         }
       }
-      // Track PRO gate impression for transit chart — we always render the gate
-      // for non-PRO users on chokepoints (history is a PRO feature); this
+      // Track auth gate impression for transit chart — we always render the gate
+      // for non-signed-in users on chokepoints (history is a premium feature); this
       // doesn't depend on whether history has resolved.
       if (cpId && !isPro) {
         trackGateHit('chokepoint-transit-chart');
       }
 
-      // Mount HS2 sector ring chart for PRO users
+      // Mount HS2 sector ring chart for signed-in users
       const sectors = CHOKEPOINT_HS2_SECTORS[waterway.chokepointId];
       if (sectors?.length) {
         const ringEl = this.popup.querySelector<HTMLElement>(`[data-hs2-ring="${waterway.chokepointId}"]`);
@@ -1409,13 +1409,13 @@ export class MapPopup {
     const isPro = hasPremiumAccess(getAuthState());
     const sectors = CHOKEPOINT_HS2_SECTORS[waterway.chokepointId];
 
-    // Sector mix: only show the compact SVG ring for free users (PRO users get the full HS2RingChart below)
+    // Sector mix: only show the compact SVG ring for free users (signed-in users get the full HS2RingChart below)
     const sectorSection = (sectors && !isPro)
       ? `<div class="popup-section-title" style="margin-top:10px;font-size:10px;text-transform:uppercase;opacity:.6;letter-spacing:.06em">Trade Sector Mix</div>
          ${renderSectorRing(sectors)}`
       : '';
 
-    // Transit chart is PRO-gated (real-time PortWatch data)
+    // Transit chart is auth-gated (real-time PortWatch data)
     let chartSection = '';
     if (hasChart) {
       if (isPro) {
@@ -1425,14 +1425,14 @@ export class MapPopup {
           <div class="sector-pro-gate" data-gate="chokepoint-transit-chart" style="position:relative;overflow:hidden;border-radius:6px;margin-top:10px;min-height:120px;background:var(--surface-elevated, #111)">
             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
               <span style="font-size:16px">🔒</span>
-              <span style="font-size:10px;font-weight:600;opacity:.8">PRO</span>
+              <span style="font-size:10px;font-weight:600;opacity:.8">SIGN IN</span>
               <span style="font-size:9px;opacity:.5">Transit History</span>
             </div>
           </div>`;
       }
     }
 
-    // Sector exposure ring is PRO-gated (canvas donut with legend)
+    // Sector exposure ring is auth-gated (canvas donut with legend)
     let ringSection = '';
     if (sectors) {
       if (isPro) {
@@ -1444,7 +1444,7 @@ export class MapPopup {
           <div class="sector-pro-gate" data-gate="chokepoint-sector-ring" style="position:relative;overflow:hidden;border-radius:6px;margin-top:10px;min-height:80px;background:var(--surface-elevated, #111)">
             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
               <span style="font-size:16px">🔒</span>
-              <span style="font-size:10px;font-weight:600;opacity:.8">PRO</span>
+              <span style="font-size:10px;font-weight:600;opacity:.8">SIGN IN</span>
               <span style="font-size:9px;opacity:.5">Sector Breakdown</span>
             </div>
           </div>`;

@@ -153,29 +153,96 @@ below), `npm run test:sidecar` (1 failure, #12, unchanged).
       pattern that was deliberately used to avoid this exact staleness when that entry was added).
       Verified via `node scripts/enforce-sebuf-api-contract.mjs`.
 
-- **Not done, still stale, found while touching this file**: `api/latest-brief.ts`'s reason
-  ("Auth-gated and Clerk-coupled...") and `api/notify.ts`'s reason ("validates Clerk bearer
-  auth...") still say Clerk by name — same category as the 2 fixed above but outside this item's
-  original 2-file scope; add to the next pass.
+- **`api/notify.ts`'s stale reason text — RESOLVED same day, fifth session**: reworded
+  ("validates Clerk bearer auth" → "validates a Supabase session bearer") as part of the "PRO"
+  internal-branding pass below, since it was directly adjacent to that pass's other
+  `api-route-exceptions.json` edit. **Still not done**: `api/latest-brief.ts` has 3 remaining
+  Clerk mentions in code comments (not the exceptions-file reason, the source file itself) — same
+  category, smaller, not yet touched.
 
 ---
 
-## 🆕 New findings from the 2026-08-12 fix passes (2 still open)
+## ✅ Resolved 2026-08-12 (fifth same-day session) — the "PRO" internal-branding rename
 
-- [ ] **"PRO" is used as a pervasive internal badge/naming convention across ~60 files** — found
-      via a final repo-wide grep while closing out the item above, and **deliberately NOT
-      touched**: this is a much bigger question (rebrand the whole "Pro feature" concept's
-      internal naming?) than the dead-link/dead-gate bugs this session fixed. Examples: visible
-      "PRO" badges/chips (`panel-toggle-pro-badge`, `layer-pro-badge`, mobile nav's "PRO" tab,
-      CSS in `main.css`), a **real, currently-enforced** anonymous-user cap (`FREE_MAX_PANELS =
-      40`, `FREE_MAX_SOURCES = 80` in `src/config/panels.ts`, shown via locale strings
-      `freePanelLimit`/`freeSourceLimit` — genuinely still enforced for signed-out visitors, not
-      dead, just worded "Upgrade to PRO" instead of "Sign in"), and dozens of `// PRO-gated`
-      code comments describing the (real, correct) signed-in/signed-out gate mechanism. None of
-      this is broken — it's consistent, working internal terminology that predates the Stage-1
-      binary-entitlement decision and was never renamed to match it. Whether to rename "PRO" →
-      something reflecting "signed in" throughout the UI is a real product/branding call, not a
-      mechanical fix — ask the operator before touching any of this.
+**Operator chose: badges/CTAs → "Sign In" framing, static always-shown badges → removed entirely
+(not renamed, since a signed-in user seeing a permanent "SIGN IN" tag would be wrong), leave
+identifiers (env vars, storage keys, CSS class *names*) untouched, propagate to all 24 non-English
+locales.** 92 files changed. Scope grew substantially beyond a text rename once the sweep started
+— every finding below was confirmed live/dead before touching it, verified via `typecheck:all`,
+`enforce-sebuf-api-contract.mjs`, `test:data` (40 failures, byte-identical baseline), `test:sidecar`
+(1 pre-existing failure), `docs:check`, and `sync:locales:check`, all clean.
+
+- [x] **2 confirmed-dead Convex/Dodo entitlement-fallback branches removed from live auth code**,
+      same shape and same proof already used earlier the same day (`session.role` is
+      unconditionally `'pro'` for any verified session, so the fallback checking `getEntitlements`/
+      `getBillingVerificationDenial` could never fire): `api/widget-agent.ts` and — much
+      higher-blast-radius — **`server/gateway.ts` itself, the core API gateway dispatching all
+      ~34 sebuf domains** (explicitly confirmed with the operator before touching, given its
+      centrality). Deleted `server/__tests__/widget-agent-billing-denial.test.ts` and 2 stale
+      `describe` blocks in `tests/widget-builder.test.mjs` that exclusively pinned the removed
+      branches (their own header comments already documented 3 sibling tests removed for the same
+      reason in an earlier pass).
+- [x] **Real, still-reachable "Pro subscription required" / "Pro authentication required" 403s
+      renamed to "Sign-in or API key required"** across 9 live call sites the wording sweep
+      surfaced (not dead code — genuine `isCallerPremium`-gated endpoints, just stale copy):
+      `server/gateway.ts` (2 sites), `server/worldmonitor/scenario/v1/{run-scenario,
+      get-scenario-status}.ts`, `server/worldmonitor/shipping/v2/{register-webhook,list-webhooks,
+      route-intelligence}.ts`, `server/worldmonitor/news/v1/summarize-article.ts`,
+      `api/chat-analyst.ts`, `api/v2/shipping/webhooks/[subscriberId].ts` (+`[action].ts`),
+      `api/_api-key.js`, `api/mcp-proxy.ts`. Updated every test/script assertion pinned to the old
+      literal in lockstep (`tests/forecast-trigger-simulation.test.mts`,
+      `server/__tests__/summarize-article-handler-security.test.ts`,
+      `tests/resilience-validation-artifacts-schema.test.mts`, `api/_api-key.test.mjs`,
+      `scripts/capture-resilience-energy-v2-acceptance.mjs`).
+- [x] **`WidgetChatModal.ts`'s preflight-error handler fixed** — it still showed real anonymous
+      users "Pro subscription required... Upgrade to unlock" on a 403, missed by the earlier
+      "Upgrade to Pro" sweep because it was gated behind an `isPro`-tier conditional, not a static
+      link. Added explicit 401 handling (sign-in-required) and collapsed the now-meaningless
+      isPro-conditional 403 branch into one honest message, since the server no longer
+      differentiates by entitlement tier.
+- [x] **2 more dead `worldmonitor.app/pro` + `worldmonitor.app/docs` footer links removed**
+      (`src/app/panel-layout.ts`, mobile menu + site footer) — missed by both the earlier
+      "Upgrade to Pro" sweep and the public-product-surface retirement (an absolute external URL,
+      not a local route, so neither sweep's grep pattern caught it).
+- [x] **2 more hardcoded lock-CTA/badge text sites found and fixed**: `SupplyChainPanel.ts`'s
+      "Bypass corridors available with PRO" (a duplicate of the exact string already fixed in
+      `CountryDeepDivePanel.ts` during the earlier sweep — reused that fix's exact wording, "Sign
+      in to unlock bypass corridors") and `MapPopup.ts`'s 2 chokepoint-transit-chart/sector-ring
+      lock overlays (`isPro`-conditional, genuine lock CTAs → "SIGN IN").
+- [x] **All static "PRO" badges removed entirely** (not renamed — they rendered unconditionally
+      regardless of the viewer's own sign-in state, so "SIGN IN" text would have been wrong for an
+      already-signed-in viewer): `Panel.ts` (`panel-pro-badge`), `panel-layout.ts` (2 Add-Panel
+      discovery tiles), `MobilePanelNav.ts` (the mobile nav's PRO category chip — filtering
+      functionality removed too, not just the label), `UnifiedSettings.ts`
+      (`panel-toggle-pro-badge`), `DeckGLMap.ts`/`GlobeMap.ts` (`layer-pro-badge`),
+      `CustomWidgetPanel.ts`, `WidgetChatModal.ts`'s modal-title badge. Removed the now-orphaned
+      CSS (`main.css`, 5 rules) and locale keys (`widgets.proBadge`, `premium.pro`) once confirmed
+      zero remaining references; removed `getProPanelKeys()` from `src/config/panels.ts` (its sole
+      consumer was the deleted chip) plus its dedicated test suite in
+      `tests/mobile-panel-nav-categories.test.mts`.
+- [x] **Confirmed-dead billing/promo locale content deleted from `en.json` + `en.shell.json`**
+      (zero live code references found via repo-wide grep before deleting): `components.proBanner`
+      (a "Pro is launched" marketing banner), `components.billingState` (payment-failed/renewal
+      copy), `components.checkoutFailureBanner`, `components.proActivation` (a whole onboarding
+      wizard), `premium.upgradeDesc`/`upgradeToPro`. `en.shell.json` needed a hand-applied pass
+      separately — it's explicitly excluded from `sync-locale-keys.mjs`'s scope as a distinct
+      partial first-paint bundle, so it never inherited the `en.json` edits automatically.
+- [x] **Real user-facing copy renamed** to "Sign In" framing: `widgets.preflightInvalidProKey`,
+      `widgets.preflightProUnavailable` (kept the `PRO_WIDGET_KEY` identifier name, reworded the
+      adjective), `settingsWindow.freePanelLimit`/`freeSourceLimit` (the real, still-enforced
+      `FREE_MAX_PANELS`/`FREE_MAX_SOURCES` anonymous-visitor cap), `commands.tips.flight`. Deleted
+      `widgets.preflightProRequired`/`preflightProSubscriptionRequired` (superseded by the
+      WidgetChatModal.ts fix above), added `widgets.preflightSignInRequired`/`preflightRequestRejected`.
+      **Propagated to all 24 non-English locales** — translated by hand for each language (not
+      machine-API-translated), reusing each locale's own existing "Sign In to Unlock" phrasing
+      where natural for consistency; verified via `npm run sync:locales:check`.
+- [x] **~35 files' internal `// PRO-gated`/`PRO entitlement`/`PRO tier` code comments** reworded to
+      "auth-gated"/"entitlement"/"signed-in" phrasing for consistency, across `src/App.ts`,
+      `src/app/{country-intel,data-loader}.ts`, `src/components/*` (8 files), `src/services/*`
+      (5 files), `server/_shared/*` (6 files), `server/worldmonitor/{supply-chain/v1,scenario/v1,
+      shipping/v2,forecast/v1}/*`. Left identifier-referencing comments alone (e.g.
+      `api/widget-agent.ts`'s "PRO-only deployments" note, which is describing the
+      `PRO_WIDGET_KEY` env var by name, not the entitlement concept).
 
 - [ ] **CSP `script-src` hash allowlist is hand-maintained in 3 separate files that must stay in
       byte-identical sync**: `vercel.json`, `docker/nginx-security-headers.conf`,
@@ -273,11 +340,10 @@ test` path.
 
 ## 📌 Housekeeping — also don't forget
 
-- [ ] **5 commits on `main` not yet pushed** — confirm with operator before pushing:
-      `7a4308e` (public-product-surface retirement: blog-site/docs/sdk/registry deletion),
-      `5551550` (TASKS.md tracker creation), `dd63ae6` (2026-08-12 mechanical-backlog fix pass +
-      `public/blog/` deletion), `1eaab4c` (TASKS.md updated with those results), `d580d1a`
-      (the "Upgrade to Pro" leftover resolution — see the ✅ section above).
+- [x] **First 7 commits (`7a4308e`..`6ea13d7`) pushed to `origin/main` 2026-08-12** — confirmed
+      `main`/`origin/main` in sync after a transient HTTP/2 framing error resolved on retry.
+- [ ] **The "PRO" internal-branding rename commit (fifth session, 92 files) is NOT yet pushed** —
+      confirm with operator before pushing, per repo convention.
 
 ---
 

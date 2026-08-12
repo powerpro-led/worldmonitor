@@ -201,8 +201,8 @@ export async function setDigestSettings(settings: {
  *
  * No-ops (without any network write) unless the user's rule is enabled AND
  * has opted into 'watchlist_story_alert' — callers additionally gate on
- * PRO tier + signed-in state before invoking, so free/anon watchlist edits
- * never generate 4xx traffic against the PRO-gated endpoint.
+ * signed-in state before invoking, so anonymous watchlist edits never
+ * generate 4xx traffic against the auth-gated endpoint.
  */
 const WATCHLIST_TICKERS_MAX = 50;
 const WATCHLIST_TICKER_RE = /^[A-Z][A-Z0-9&-]{0,11}(\.[A-Z]{1,3})?$/;

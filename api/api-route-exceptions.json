@@ -505,7 +505,7 @@
     {
       "path": "api/notify.ts",
       "category": "internal-helper",
-      "reason": "Authenticated PRO event-publish endpoint that validates Clerk bearer auth, rejects relay-internal control events, and enqueues accepted events outside sebuf because it is queue plumbing rather than a typed domain RPC.",
+      "reason": "Authenticated event-publish endpoint that validates a Supabase session bearer, rejects relay-internal control events, and enqueues accepted events outside sebuf because it is queue plumbing rather than a typed domain RPC.",
       "owner": "@SebastienMelki",
       "removal_issue": null
     },

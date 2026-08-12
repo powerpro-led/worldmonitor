@@ -85,16 +85,16 @@ function writeSessionStorageValue(key: string, value: string): void {
 /**
  * Panels that require premium access on web. Auth-based gating applies to
  * these — `updatePanelGating()` calls `Panel.showGatedCta()` to render
- * "Sign In to Unlock" / "Upgrade to Pro" for non-premium users.
+ * "Sign In to Unlock" for signed-out users.
  *
  * INVARIANT: every panel listed in `apiKeyPanels` (src/config/panels.ts
  * `isPanelEntitled`) MUST appear here. If it's API-key-entitled but missing
- * from this set, anonymous/free-Clerk users see the panel mount and run
- * its loader (which writes empty/loading/error UI directly into the body)
- * instead of the lock CTA. The PRO badge in the title still renders, so
- * the symptom is "PRO badge + panel-internal loading or empty copy"
- * which looks broken (e.g. Regional Intelligence rendering its empty-state
- * "is being refreshed" message to anonymous users — see todo #257 item 8).
+ * from this set, anonymous users see the panel mount and run its loader
+ * (which writes empty/loading/error UI directly into the body) instead of
+ * the lock CTA. The symptom is panel-internal loading or empty copy shown
+ * to a signed-out visitor who should have seen the lock screen instead
+ * (e.g. Regional Intelligence rendering its empty-state "is being
+ * refreshed" message to anonymous users — see todo #257 item 8).
  *
  * The static test in tests/panel-config-guardrails.test.mjs enforces
  * `apiKeyPanels ⊆ WEB_PREMIUM_PANELS` so this drift can't recur silently.
@@ -715,8 +715,6 @@ export class PanelLayoutManager implements AppModule {
         </a>
         <div class="mobile-menu-divider"></div>
         <div class="mobile-menu-footer-links">
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/pro' : 'https://www.worldmonitor.app/pro'}" target="_blank" rel="noopener">Pro</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
           <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
         </div>
         <div class="mobile-menu-version">v${__APP_VERSION__}</div>
@@ -782,8 +780,6 @@ export class PanelLayoutManager implements AppModule {
           </div>
         </div>
         <nav>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/pro' : 'https://www.worldmonitor.app/pro'}" target="_blank" rel="noopener">Pro</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
           <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
           <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">GitHub</a>
           <a href="https://discord.gg/re63kWKxaz" target="_blank" rel="noopener">Discord</a>
@@ -1575,7 +1571,7 @@ export class PanelLayoutManager implements AppModule {
 
     // Latest Brief — reads /api/latest-brief and opens the hosted
     // magazine on click. Self-fetching (no data-loader integration);
-    // PRO gating handled by the base Panel class via premium: 'locked'.
+    // auth gating handled by the base Panel class via premium: 'locked'.
     this.lazyDefaultPanel('latest-brief', () => import('@/components/LatestBriefPanel'), 'LatestBriefPanel');
 
     this.lazyDefaultPanel('commodities', () => import('@/components/MarketPanel'), 'CommoditiesPanel');
@@ -2173,12 +2169,8 @@ export class PanelLayoutManager implements AppModule {
     const proLabel = document.createElement('span');
     proLabel.className = 'add-panel-block-label';
     proLabel.textContent = t('widgets.createInteractive');
-    const proBadge = document.createElement('span');
-    proBadge.className = 'widget-pro-badge';
-    proBadge.textContent = t('widgets.proBadge');
     proBlock.appendChild(proIcon);
     proBlock.appendChild(proLabel);
-    proBlock.appendChild(proBadge);
     proBlock.addEventListener('click', () => {
       void import('@/components/WidgetChatModal').then((m) => m.openWidgetChatModal({
         mode: 'create',
@@ -2203,12 +2195,8 @@ export class PanelLayoutManager implements AppModule {
     const mcpLabel = document.createElement('span');
     mcpLabel.className = 'add-panel-block-label';
     mcpLabel.textContent = t('mcp.connectPanel');
-    const mcpBadge = document.createElement('span');
-    mcpBadge.className = 'widget-pro-badge';
-    mcpBadge.textContent = t('widgets.proBadge');
     mcpBlock.appendChild(mcpIcon);
     mcpBlock.appendChild(mcpLabel);
-    mcpBlock.appendChild(mcpBadge);
     mcpBlock.addEventListener('click', () => {
       void import('@/components/McpConnectModal').then((m) => m.openMcpConnectModal({
         onComplete: (spec) => this.addMcpPanel(spec),
@@ -2216,22 +2204,13 @@ export class PanelLayoutManager implements AppModule {
     });
     panelsGrid.appendChild(mcpBlock);
 
-    // Reactively show/hide Pro-only UI blocks ("Create Interactive Widget" +
-    // "Connect MCP" CTAs) based on premium access.
-    //
-    // hasPremiumAccess() folds in isEntitled() (Convex Dodo entitlement) per
-    // panel-gating.ts:11-27 — so a paying subscriber whose Clerk publicMetadata
-    // is never written by the webhook still resolves to true once the Convex
-    // snapshot lands. BUT: the snapshot lands AFTER auth state stabilises, and
-    // Convex updates do NOT necessarily fire a fresh subscribeAuthState event.
-    // Subscribing only to subscribeAuthState meant these CTAs stayed
-    // display:none for the whole page lifetime for paying users — exactly the
-    // shape PR #3505 chased on the server side, repeated here on the client.
-    //
-    // Subscribe to BOTH auth state and entitlement changes; whichever fires
-    // last (typically entitlements) is the one that flips the CTAs visible.
-    // Mirrors the same dual-subscription wiring used by updatePanelGating
-    // for existing panels (see lines ~259 and ~282).
+    // Reactively show/hide these advanced-feature UI blocks ("Create
+    // Interactive Widget" + "Connect MCP" CTAs) based on sign-in state —
+    // hasPremiumAccess() is a synchronous binary check post-Stage-1
+    // (panel-gating.ts), no async entitlement snapshot to race against
+    // anymore. Still subscribes to both auth-state and entitlement-change
+    // events, mirroring the same dual-subscription wiring updatePanelGating
+    // uses for existing panels (see lines ~259 and ~282), for consistency.
     const proBlocks = [proBlock, mcpBlock];
     const applyProBlockGating = (isPro: boolean) => {
       for (const block of proBlocks) {

@@ -351,7 +351,7 @@ const emptyMultiSectorShock: GetMultiSectorCostShockResponse = {
 
 /**
  * Fetch multi-sector cost shock for a country+chokepoint+closureDays window.
- * PRO-gated: non-premium callers get an empty payload from the handler.
+ * auth-gated: non-premium callers get an empty payload from the handler.
  */
 export async function fetchMultiSectorCostShock(
   iso2: string,

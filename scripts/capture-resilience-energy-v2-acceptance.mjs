@@ -245,7 +245,7 @@ function formatMissingPostFlipRankingSnapshotMessage() {
     '    node --import tsx/esm scripts/capture-resilience-energy-v2-acceptance.mjs',
     '',
     'Expected unauthenticated failure mode:',
-    '  HTTP 401 from /api/resilience/v1/get-resilience-score: Pro authentication required',
+    '  HTTP 401 from /api/resilience/v1/get-resilience-score: Sign-in or API key required',
     '',
     'If the harness prints acceptanceGates with gate-7-matched-pair failures, do not commit a synthetic artifact; attach the gate JSON to the closeout issue and wait for the P1 matched-pair workstream.',
   ].join('\n');

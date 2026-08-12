@@ -73,7 +73,7 @@ export async function getMultiSectorCostShock(
 
   // Input-shape errors return 400 — restoring the legacy /api/supply-chain/v1/
   // multi-sector-cost-shock contract. Empty-payload-200 is reserved for the
-  // PRO-gate deny path (intentional contract shift), not for caller bugs
+  // auth-gate deny path (intentional contract shift), not for caller bugs
   // (malformed or missing fields). Distinguishing the two matters for external
   // API consumers, tests, and silent-failure detection in logs.
   if (!/^[A-Z]{2}$/.test(iso2)) {

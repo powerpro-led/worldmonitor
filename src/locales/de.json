@@ -400,7 +400,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Live-Flüge nach Rufzeichen durchsuchen (PRO)",
+      "flight": "Live-Flüge nach Rufzeichen suchen (Anmeldung erforderlich)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -711,8 +711,8 @@
       "shellSearchPlaceholder": "Einstellungen durchsuchen…",
       "shellCancel": "Abbrechen",
       "shellSaveClose": "Speichern & Schließen",
-      "freePanelLimit": "Kostenlos: max. {{max}} Panels. Upgraden Sie auf PRO für unbegrenzte Panels.",
-      "freeSourceLimit": "Kostenlos: max. {{max}} Quellen. Upgraden Sie auf PRO für unbegrenzte Quellen."
+      "freePanelLimit": "Kostenloser Plan: max. {{max}} Panels. Zum Anmelden für unbegrenzt.",
+      "freeSourceLimit": "Kostenloser Plan: max. {{max}} Quellen. Zum Anmelden für unbegrenzt."
     }
   },
   "components": {
@@ -2175,108 +2175,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB Ticker Scanner</strong> Echtzeit-Ticker-Erwähnungen von r/wallstreetbets, r/stocks und r/investing. Nach Erwähnungshäufigkeit und Engagement rangiert. Die Geschwindigkeit misst, wie schnell ein Ticker an Dynamik über Posts hinweg gewinnt."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro ist gestartet",
-      "tagline": "Mehr Signal, weniger Rauschen. Mehr KI-Briefings. Ein Geopolitik- und Aktienanalyst nur für Sie.",
-      "cta": "Upgrade auf Pro →",
-      "dismiss": "Verwerfen"
-    },
-    "billingState": {
-      "onHoldDesc": "Zahlung fehlgeschlagen. Aktualisieren Sie Ihre Zahlungsmethode, um den Premium-Zugriff wiederherzustellen.",
-      "onHoldBannerMessage": "Zahlung fehlgeschlagen. Aktualisieren Sie Ihre Zahlungsmethode, damit Ihr Abonnement aktiv bleibt.",
-      "updatePayment": "Zahlungsmethode aktualisieren",
-      "renewalPendingDesc": "Wir überprüfen die Verlängerung Ihres Abonnements. Der Premium-Zugriff wird nach Bestätigung automatisch wiederhergestellt.",
-      "refreshStatus": "Status aktualisieren",
-      "renewalFailedDesc": "Die Verlängerung Ihres Abonnements konnte nicht überprüft werden. Verwalten Sie Ihre Abrechnung oder kontaktieren Sie den Support, falls das Problem weiterhin besteht.",
-      "manageBilling": "Abrechnung verwalten",
-      "lapsedDesc": "Ihr Pro-Abonnement ist abgelaufen. Abonnieren Sie erneut, um den Premium-Zugriff wiederzuerlangen.",
-      "resubscribe": "Erneut abonnieren"
-    },
-    "checkoutFailureBanner": {
-      "message": "Zahlung konnte nicht abgeschlossen werden. Es wurde keine Gebühr eingezogen.",
-      "retry": "Erneut versuchen",
-      "retrying": "Wird erneut versucht…",
-      "dismiss": "Verwerfen"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Schritt {{current}} von {{total}}",
-      "closeLabel": "Einrichtung überspringen",
-      "ariaLabel": "Pro-Aktivierung einrichten",
-      "signedInAs": "Angemeldet als {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Ihr tägliches Briefing, jeden Morgen",
-          "body": "Ein kuratiertes Intelligence-Briefing jeden Morgen in Ihrem Posteingang — die wichtigen Signale der Nacht, destilliert auf eine Fünf-Minuten-Lektüre.",
-          "confirmCta": "Mein Morgen-Briefing aktivieren",
-          "confirming": "Wird aktiviert…",
-          "doneNote": "Ihr Morgen-Briefing läuft bereits.",
-          "scheduleNote": "Wir behalten Ihre aktuelle Zustellzeit bei.",
-          "summaryLabel": "Morgen-Briefing",
-          "summaryVerified": "Aktiv — startet mit Ihrem nächsten Morgen-Briefing.",
-          "deliverAt": "Zustellung um",
-          "previewLoading": "Vorschau Ihres ersten Briefings wird vorbereitet…",
-          "previewLabel": "Das heutige Briefing"
-        },
-        "alerts": {
-          "heading": "Kritische Warnmeldungen",
-          "body": "Werden Sie in Ihrem Browser benachrichtigt, wenn etwas Großes passiert — Konflikteskalationen, Marktschocks, neue Sanktionen. Passen Sie die Häufigkeit jederzeit in den Einstellungen an.",
-          "confirmCta": "Warnmeldungen aktivieren",
-          "confirming": "Wird aktiviert…",
-          "doneNote": "Browser-Warnmeldungen sind bereits aktiv.",
-          "blockedNote": "Benachrichtigungen sind in Ihrem Browser blockiert. Aktivieren Sie sie in den Website-Einstellungen Ihres Browsers, um Warnmeldungen zu erhalten.",
-          "declinedNote": "Kein Problem — wir senden keine Browser-Warnmeldungen. Sie können sie später in den Website-Einstellungen Ihres Browsers aktivieren.",
-          "summaryLabel": "Kritische Warnmeldungen",
-          "summaryVerified": "Aktiv — kritische Signale erreichen Ihren Browser."
-        },
-        "power": {
-          "heading": "Ihr Pro-Toolkit",
-          "body": "Individuelle Widgets, MCP-Verbindungen und der KI-Researcher sind freigeschaltet. Bauen Sie sich das Dashboard, das Sie wirklich im Blick behalten wollen.",
-          "confirmCta": "Pro-Tools entdecken",
-          "confirming": "Wird geöffnet…",
-          "doneNote": "Sie nutzen Ihre Pro-Tools bereits.",
-          "summaryLabel": "Pro-Toolkit",
-          "summaryVerified": "Freigeschaltet und einsatzbereit, wenn Sie es sind.",
-          "channelsNote": "Lieber Telegram, Slack, Discord oder ein Webhook?",
-          "pointers": {
-            "widgets": "Ein individuelles Widget erstellen",
-            "analyst": "Den KI-Analysten fragen",
-            "apiKeys": "Ihre API- & MCP-Schlüssel abrufen",
-            "channels": "In den Benachrichtigungseinstellungen einrichten"
-          }
-        }
-      },
-      "status": {
-        "pending": "Nicht eingerichtet",
-        "inFlight": "Wird eingerichtet…",
-        "verified": "Bereit",
-        "failed": "Hat nicht funktioniert",
-        "blocked": "Blockiert",
-        "unavailable": "Nicht verfügbar",
-        "blockedNote": "Das ist gerade nicht verfügbar — Sie können es später in den Einstellungen einrichten.",
-        "unavailableNote": "Das ist auf Ihrem Gerät nicht verfügbar — Sie können es später einrichten.",
-        "failedBody": "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder richten Sie es später in den Einstellungen ein.",
-        "retry": "Erneut versuchen"
-      },
-      "actions": {
-        "skip": "Vorerst überspringen",
-        "continue": "Weiter"
-      },
-      "summary": {
-        "heading": "Alles eingerichtet",
-        "subVerified": "Das läuft jetzt auf Ihrem Konto.",
-        "subPending": "Sie können die Einrichtung jederzeit in den Einstellungen abschließen.",
-        "linePending": "Noch nicht eingerichtet — jederzeit in den Einstellungen abschließbar.",
-        "lineFailed": "Das konnten wir nicht einrichten — versuchen Sie es erneut in den Einstellungen.",
-        "finish": "Zu meinem Dashboard"
-      },
-      "chip": {
-        "message": "Schließen Sie die Einrichtung Ihres Pro-Kontos ab.",
-        "action": "Einrichtung abschließen",
-        "dismissLabel": "Schließen"
-      }
-    },
     "frameworkSelector": {
       "label": "Analysisframework",
       "defaultNeutral": "Standard (Neutral)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "Die Vorschau wird mit den neuesten Live-Daten und dem Dashboard-Styling gerendert.",
     "previewErrorCopy": "Beheben Sie das Problem und versuchen Sie es erneut. Ihre vorhandenen Widgets sind nicht betroffen.",
     "createInteractive": "Interaktives Widget erstellen",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO-Widget-Agent nicht verfügbar. Überprüfen Sie PRO_WIDGET_KEY auf dem Server.",
-    "preflightInvalidProKey": "PRO-Schlüssel abgelehnt. Aktualisieren Sie wm-pro-key und laden Sie neu.",
-    "preflightProSubscriptionRequired": "Pro-Abonnement erforderlich. Falls Sie gerade ein Upgrade durchgeführt haben, aktualisieren Sie die Seite. Wenden Sie sich andernfalls an den Support.",
-    "preflightProRequired": "Pro-Abonnement erforderlich, um den Widget Builder zu verwenden. Upgrade zum Entsperren.",
+    "preflightProUnavailable": "Widget-Agent nicht verfügbar. Prüfe PRO_WIDGET_KEY auf dem Server.",
+    "preflightInvalidProKey": "Anmeldeschlüssel abgelehnt. wm-pro-key aktualisieren und neu laden.",
     "examples": {
       "oilGold": "Zeige mir den heutigen Rohölpreis im Vergleich zu Gold",
       "cryptoMovers": "Erstelle ein Widget für die Top-Krypto-Beweger der letzten 24 Stunden",
@@ -3233,7 +3128,9 @@
       "sortableTable": "Sortierbare Krypto-Preistabelle mit Suchfilter",
       "animatedCounters": "Animierte Zähler für Schlüsselindikatoren der Wirtschaft",
       "tabbedComparison": "Tabbasierte Vergleich von Konfliktereignissen nach Region"
-    }
+    },
+    "preflightSignInRequired": "Melde dich an, um den Widget-Builder zu nutzen.",
+    "preflightRequestRejected": "Anfrage abgelehnt. Seite neu laden und erneut versuchen, oder Support kontaktieren, falls dies weiterhin auftritt."
   },
   "connectivity": {
     "offlineCached": "Offline – gecacherte Daten von {{freshness}} werden angezeigt.",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "Live-Daten nicht verfügbar – gecacherte Daten von {{freshness}} werden angezeigt."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Erfordert einen World Monitor Lizenzschlüssel",
     "signInToUnlock": "Melden Sie sich an, um Premium-Funktionen freizuschalten",
     "signIn": "Anmelden zum Freischalten",
-    "upgradeDesc": "Upgrade auf Pro für vollständigen Zugriff auf Premium-Analysen",
-    "upgradeToPro": "Auf Pro upgraden",
     "features": {
       "orefSirens1": "Echtzeitwarnungen für israelische Raketen und Raketen",
       "orefSirens2": "Sirenenzonenkartierung mit Bedrohungsklassifizierung",

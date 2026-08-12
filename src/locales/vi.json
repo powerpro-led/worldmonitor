@@ -400,7 +400,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Tìm kiếm các chuyến bay trực tiếp theo callsign (PRO)",
+      "flight": "Tìm chuyến bay trực tiếp theo hô hiệu (yêu cầu đăng nhập)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -641,8 +641,8 @@
       "shellSearchPlaceholder": "Tìm kiếm cài đặt...",
       "shellCancel": "Hủy",
       "shellSaveClose": "Lưu & Đóng",
-      "freePanelLimit": "Gói miễn phí: tối đa {{max}} bảng. Nâng cấp lên PRO để không giới hạn.",
-      "freeSourceLimit": "Gói miễn phí: tối đa {{max}} nguồn. Nâng cấp lên PRO để không giới hạn."
+      "freePanelLimit": "Gói miễn phí: tối đa {{max}} bảng điều khiển. Đăng nhập để không giới hạn.",
+      "freeSourceLimit": "Gói miễn phí: tối đa {{max}} nguồn. Đăng nhập để không giới hạn."
     },
     "countryIntel": {
       "identifying": "Đang xác định quốc gia...",
@@ -2175,108 +2175,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB Ticker Scanner</strong> Các lượt nhắc đến ticker theo thời gian thực từ r/wallstreetbets, r/stocks và r/investing. Được xếp hạng theo tần suất và mức độ tham gia. Vận tốc đo lường tốc độ nhanh chóng mà một ticker tăng đà trên các bài đăng."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro đã được phát hành",
-      "tagline": "Nhiều tín hiệu, ít nhiễu. Nhiều AI Briefings. Một nhà nghiên cứu Địa chính trị & Vốn chỉ dành cho bạn.",
-      "cta": "Nâng cấp lên Pro →",
-      "dismiss": "Bỏ qua"
-    },
-    "billingState": {
-      "onHoldDesc": "Thanh toán không thành công. Cập nhật phương thức thanh toán của bạn để khôi phục quyền truy cập cao cấp.",
-      "onHoldBannerMessage": "Thanh toán không thành công. Cập nhật phương thức thanh toán của bạn để duy trì gói đăng ký.",
-      "updatePayment": "Cập nhật thanh toán",
-      "renewalPendingDesc": "Chúng tôi đang xác minh việc gia hạn gói đăng ký của bạn. Quyền truy cập cao cấp sẽ tự động được khôi phục sau khi xác nhận.",
-      "refreshStatus": "Làm mới trạng thái",
-      "renewalFailedDesc": "Chúng tôi không thể xác minh việc gia hạn gói đăng ký của bạn. Quản lý thanh toán hoặc liên hệ hỗ trợ nếu sự cố vẫn tiếp diễn.",
-      "manageBilling": "Quản lý thanh toán",
-      "lapsedDesc": "Gói đăng ký Pro của bạn đã kết thúc. Đăng ký lại để lấy lại quyền truy cập cao cấp.",
-      "resubscribe": "Đăng ký lại"
-    },
-    "checkoutFailureBanner": {
-      "message": "Không thể hoàn tất thanh toán. Không có khoản phí nào được tính.",
-      "retry": "Thử lại",
-      "retrying": "Đang thử lại…",
-      "dismiss": "Bỏ qua"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Bước {{current}} / {{total}}",
-      "closeLabel": "Bỏ qua thiết lập",
-      "ariaLabel": "Thiết lập kích hoạt Pro",
-      "signedInAs": "Đã đăng nhập với {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Bản tóm tắt hằng ngày của bạn, mỗi sáng",
-          "body": "Một bản tóm tắt tình báo được chọn lọc trong hộp thư của bạn mỗi sáng — những tín hiệu quan trọng qua đêm, được cô đọng thành bài đọc năm phút.",
-          "confirmCta": "Bật bản tóm tắt buổi sáng của tôi",
-          "confirming": "Đang bật…",
-          "doneNote": "Bản tóm tắt buổi sáng của bạn đã đang chạy.",
-          "scheduleNote": "Chúng tôi sẽ giữ nguyên thời gian gửi hiện tại của bạn.",
-          "summaryLabel": "Bản tóm tắt buổi sáng",
-          "summaryVerified": "Đang bật — bắt đầu từ bản tóm tắt buổi sáng tiếp theo của bạn.",
-          "deliverAt": "Gửi lúc",
-          "previewLoading": "Đang chuẩn bị bản xem trước bản tóm tắt đầu tiên của bạn…",
-          "previewLabel": "Bản tóm tắt sáng nay"
-        },
-        "alerts": {
-          "heading": "Cảnh báo quan trọng",
-          "body": "Nhận thông báo trên trình duyệt khi có điều gì đó lớn xảy ra — leo thang xung đột, chấn động thị trường, các lệnh trừng phạt mới. Điều chỉnh tần suất bất cứ lúc nào trong Cài đặt.",
-          "confirmCta": "Bật cảnh báo",
-          "confirming": "Đang bật…",
-          "doneNote": "Cảnh báo trình duyệt đã được bật.",
-          "blockedNote": "Thông báo đang bị chặn trong trình duyệt của bạn. Hãy bật chúng trong cài đặt trang web của trình duyệt để nhận cảnh báo.",
-          "declinedNote": "Không sao — chúng tôi sẽ không gửi cảnh báo trình duyệt. Bạn có thể bật chúng sau này từ cài đặt trang web của trình duyệt.",
-          "summaryLabel": "Cảnh báo quan trọng",
-          "summaryVerified": "Đang bật — các tín hiệu quan trọng sẽ được gửi đến trình duyệt của bạn."
-        },
-        "power": {
-          "heading": "Bộ công cụ Pro của bạn",
-          "body": "Widget tùy chỉnh, kết nối MCP và nhà nghiên cứu AI đã được mở khóa. Xây dựng bảng điều khiển mà bạn thực sự muốn theo dõi.",
-          "confirmCta": "Khám phá công cụ Pro",
-          "confirming": "Đang mở…",
-          "doneNote": "Bạn đã đang sử dụng các công cụ Pro của mình.",
-          "summaryLabel": "Bộ công cụ Pro",
-          "summaryVerified": "Đã mở khóa và sẵn sàng khi bạn sẵn sàng.",
-          "channelsNote": "Bạn thích Telegram, Slack, Discord hay webhook hơn?",
-          "pointers": {
-            "widgets": "Tạo widget tùy chỉnh",
-            "analyst": "Hỏi nhà phân tích AI",
-            "apiKeys": "Lấy khóa API và MCP của bạn",
-            "channels": "Thiết lập chúng trong cài đặt thông báo"
-          }
-        }
-      },
-      "status": {
-        "pending": "Chưa thiết lập",
-        "inFlight": "Đang thiết lập…",
-        "verified": "Sẵn sàng",
-        "failed": "Không thành công",
-        "blocked": "Đã bị chặn",
-        "unavailable": "Không khả dụng",
-        "blockedNote": "Tính năng này hiện không khả dụng — bạn có thể thiết lập sau từ cài đặt.",
-        "unavailableNote": "Tính năng này không khả dụng trên thiết bị của bạn — bạn có thể thiết lập sau.",
-        "failedBody": "Đã xảy ra sự cố. Bạn có thể thử lại hoặc thiết lập sau từ cài đặt.",
-        "retry": "Thử lại"
-      },
-      "actions": {
-        "skip": "Bỏ qua lúc này",
-        "continue": "Tiếp tục"
-      },
-      "summary": {
-        "heading": "Mọi thứ đã sẵn sàng",
-        "subVerified": "Đây là những gì đang chạy trên tài khoản của bạn.",
-        "subPending": "Bạn có thể hoàn tất thiết lập bất cứ lúc nào từ cài đặt.",
-        "linePending": "Chưa thiết lập — hoàn tất bất cứ lúc nào trong cài đặt.",
-        "lineFailed": "Chúng tôi không thể thiết lập việc này — hãy thử lại từ cài đặt.",
-        "finish": "Đi tới bảng điều khiển của tôi"
-      },
-      "chip": {
-        "message": "Hoàn tất thiết lập tài khoản Pro của bạn.",
-        "action": "Hoàn tất thiết lập",
-        "dismissLabel": "Bỏ qua"
-      }
-    },
     "frameworkSelector": {
       "label": "Khung phân tích",
       "defaultNeutral": "Mặc định (Trung lập)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "Bản xem trước đang hiển thị với dữ liệu trực tiếp mới nhất và kiểu bảng điều khiển.",
     "previewErrorCopy": "Khắc phục sự cố, sau đó thử lại. Các tiện ích hiện tại của bạn không bị ảnh hưởng.",
     "createInteractive": "Tạo tiện ích tương tác",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "Đại lý tiện ích PRO không khả dụng. Kiểm tra PRO_WIDGET_KEY trên máy chủ.",
-    "preflightInvalidProKey": "Khóa PRO bị từ chối. Cập nhật wm-pro-key và tải lại.",
-    "preflightProSubscriptionRequired": "Yêu cầu đăng ký Pro. Nếu bạn vừa nâng cấp, hãy làm mới trang; nếu không, hãy liên hệ hỗ trợ.",
-    "preflightProRequired": "Yêu cầu gói Pro để sử dụng Widget Builder. Nâng cấp để mở khóa.",
+    "preflightProUnavailable": "Tác nhân widget không khả dụng. Kiểm tra PRO_WIDGET_KEY trên máy chủ.",
+    "preflightInvalidProKey": "Khóa đăng nhập bị từ chối. Cập nhật wm-pro-key và tải lại trang.",
     "examples": {
       "oilGold": "Hiển thị giá dầu thô so với vàng hôm nay",
       "cryptoMovers": "Tạo widget cho những tiền điện tử tăng giảm hàng đầu trong 24 giờ qua",
@@ -3233,7 +3128,9 @@
       "sortableTable": "Bảng giá tiền điện tử có thể sắp xếp với bộ lọc tìm kiếm",
       "animatedCounters": "Bộ đếm động cho các chỉ số kinh tế chính",
       "tabbedComparison": "So sánh theo tab các sự kiện xung đột theo khu vực"
-    }
+    },
+    "preflightSignInRequired": "Đăng nhập để sử dụng Trình tạo widget.",
+    "preflightRequestRejected": "Yêu cầu đã bị từ chối. Tải lại trang và thử lại, hoặc liên hệ hỗ trợ nếu sự cố vẫn tiếp diễn."
   },
   "connectivity": {
     "offlineCached": "Ngoại tuyến — hiển thị dữ liệu đã lưu từ {{freshness}}.",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "Dữ liệu trực tiếp không khả dụng — hiển thị dữ liệu đã lưu từ {{freshness}}."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Yêu cầu khóa giấy phép World Monitor",
     "signInToUnlock": "Đăng nhập để mở khóa các tính năng cao cấp",
     "signIn": "Đăng nhập để mở khóa",
-    "upgradeDesc": "Nâng cấp lên Pro để có quyền truy cập đầy đủ vào phân tích cao cấp",
-    "upgradeToPro": "Nâng cấp lên Pro",
     "features": {
       "orefSirens1": "Cảnh báo tên lửa và rocket Israel theo thời gian thực",
       "orefSirens2": "Lập bản đồ vùng còi với phân loại mối đe dọa",

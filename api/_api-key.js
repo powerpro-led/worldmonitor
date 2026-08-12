@@ -95,7 +95,7 @@ export async function validateApiKey(req, options = {}) {
     // demands a "real" key (premium / tier-gated endpoints set forceKey=true
     // exactly because they need user-bound auth or a Pro-grade Bearer JWT).
     if (forceKey) {
-      return { valid: false, required: true, error: 'Pro authentication required' };
+      return { valid: false, required: true, error: 'Sign-in or API key required' };
     }
     if (await validateSessionToken(key)) {
       return { valid: true, required: false, kind: 'session' };

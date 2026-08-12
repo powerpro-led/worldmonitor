@@ -144,7 +144,7 @@
       "layersExample": "military layers",
       "timeExample": "24h",
       "settingsExample": "dark mode",
-      "flight": "Zoeken naar live vluchten op roepnaam (PRO)",
+      "flight": "Zoek live vluchten op roepnaam (aanmelden vereist)",
       "flightExample": "UAE528"
     },
     "keywords": {
@@ -455,8 +455,8 @@
       "shellSearchPlaceholder": "Instellingen doorzoeken...",
       "shellCancel": "Annuleren",
       "shellSaveClose": "Opslaan & Sluiten",
-      "freePanelLimit": "Gratis plan: max {{max}} panelen. Upgrade naar PRO voor onbeperkt.",
-      "freeSourceLimit": "Gratis plan: max {{max}} bronnen. Upgrade naar PRO voor onbeperkt."
+      "freePanelLimit": "Gratis plan: max {{max}} panelen. Meld je aan voor onbeperkt.",
+      "freeSourceLimit": "Gratis plan: max {{max}} bronnen. Meld je aan voor onbeperkt."
     }
   },
   "components": {
@@ -1919,108 +1919,6 @@
     "wsbTickerScanner": {
       "infoTooltip": "<strong>WSB Ticker Scanner</strong> Real-time tickervermeldingen van r/wallstreetbets, r/stocks en r/investing. Gerangschikt op vermeldingsfrequentie en engagement. Snelheid meet hoe snel een ticker momentum krijgt over posts."
     },
-    "proBanner": {
-      "badge": "PRO",
-      "headline": "Pro is gelanceerd",
-      "tagline": "Meer signaal, minder ruis. Meer AI-briefings. Een geopolitieke & aandelenonderzoeker speciaal voor jou.",
-      "cta": "Upgrade naar Pro →",
-      "dismiss": "Verwijderen"
-    },
-    "billingState": {
-      "onHoldDesc": "Betaling mislukt. Werk je betaalmethode bij om premium toegang te herstellen.",
-      "onHoldBannerMessage": "Betaling mislukt. Werk je betaalmethode bij om je abonnement actief te houden.",
-      "updatePayment": "Betaling bijwerken",
-      "renewalPendingDesc": "We controleren de verlenging van je abonnement. Premium toegang wordt automatisch hersteld zodra deze is bevestigd.",
-      "refreshStatus": "Status vernieuwen",
-      "renewalFailedDesc": "We konden de verlenging van je abonnement niet verifiëren. Beheer je facturering of neem contact op met support als het probleem aanhoudt.",
-      "manageBilling": "Facturering beheren",
-      "lapsedDesc": "Je Pro-abonnement is beëindigd. Abonneer je opnieuw om premium toegang terug te krijgen.",
-      "resubscribe": "Opnieuw abonneren"
-    },
-    "checkoutFailureBanner": {
-      "message": "Betaling kon niet worden voltooid. Er is geen bedrag in rekening gebracht.",
-      "retry": "Opnieuw proberen",
-      "retrying": "Opnieuw proberen…",
-      "dismiss": "Verwijderen"
-    },
-    "proActivation": {
-      "badge": "PRO",
-      "progress": "Stap {{current}} van {{total}}",
-      "closeLabel": "Installatie overslaan",
-      "ariaLabel": "Pro-activering instellen",
-      "signedInAs": "Aangemeld als {{email}}",
-      "steps": {
-        "brief": {
-          "heading": "Je dagelijkse brief, elke ochtend",
-          "body": "Een samengestelde intelligence-brief in je inbox elke ochtend — de signalen van de nacht die ertoe doen, samengevat in vijf minuten lezen.",
-          "confirmCta": "Mijn ochtendbrief inschakelen",
-          "confirming": "Inschakelen…",
-          "doneNote": "Je ochtendbrief loopt al.",
-          "scheduleNote": "We behouden je huidige bezorgtijd.",
-          "summaryLabel": "Ochtendbrief",
-          "summaryVerified": "Aan — start met je volgende ochtendbrief.",
-          "deliverAt": "Bezorgen om",
-          "previewLoading": "Voorbeeld van je eerste brief wordt voorbereid…",
-          "previewLabel": "De brief van vanochtend"
-        },
-        "alerts": {
-          "heading": "Kritieke meldingen",
-          "body": "Krijg een melding in je browser wanneer er iets groots gebeurt — escalerende conflicten, marktschokken, nieuwe sancties. Pas de frequentie op elk moment aan in Instellingen.",
-          "confirmCta": "Meldingen inschakelen",
-          "confirming": "Inschakelen…",
-          "doneNote": "Browsermeldingen staan al aan.",
-          "blockedNote": "Meldingen zijn geblokkeerd in je browser. Schakel ze in bij de sitegegevens van je browser om meldingen te ontvangen.",
-          "declinedNote": "Geen probleem — we sturen geen browsermeldingen. Je kunt ze later inschakelen via de sitegegevens van je browser.",
-          "summaryLabel": "Kritieke meldingen",
-          "summaryVerified": "Aan — kritieke signalen bereiken je browser."
-        },
-        "power": {
-          "heading": "Jouw Pro-toolkit",
-          "body": "Aangepaste widgets, MCP-verbindingen en de AI-onderzoeker zijn ontgrendeld. Bouw het dashboard dat je echt in de gaten wilt houden.",
-          "confirmCta": "Pro-tools verkennen",
-          "confirming": "Openen…",
-          "doneNote": "Je gebruikt je Pro-tools al.",
-          "summaryLabel": "Pro-toolkit",
-          "summaryVerified": "Ontgrendeld en klaar wanneer jij dat bent.",
-          "channelsNote": "Heb je liever Telegram, Slack, Discord of een webhook?",
-          "pointers": {
-            "widgets": "Een aangepaste widget maken",
-            "analyst": "Stel de AI-analist een vraag",
-            "apiKeys": "Je API- en MCP-sleutels ophalen",
-            "channels": "Stel deze in bij de meldingsinstellingen"
-          }
-        }
-      },
-      "status": {
-        "pending": "Niet ingesteld",
-        "inFlight": "Instellen…",
-        "verified": "Gereed",
-        "failed": "Het is niet gelukt",
-        "blocked": "Geblokkeerd",
-        "unavailable": "Niet beschikbaar",
-        "blockedNote": "Dit is momenteel niet beschikbaar — je kunt het later instellen via instellingen.",
-        "unavailableNote": "Dit is niet beschikbaar op je apparaat — je kunt het later instellen.",
-        "failedBody": "Er is iets misgegaan. Probeer het opnieuw of stel het later in via instellingen.",
-        "retry": "Opnieuw proberen"
-      },
-      "actions": {
-        "skip": "Voorlopig overslaan",
-        "continue": "Doorgaan"
-      },
-      "summary": {
-        "heading": "Alles is ingesteld",
-        "subVerified": "Dit draait nu op je account.",
-        "subPending": "Je kunt de installatie op elk moment afronden via instellingen.",
-        "linePending": "Nog niet ingesteld — rond dit op elk moment af in instellingen.",
-        "lineFailed": "Dit konden we niet instellen — probeer het opnieuw via instellingen.",
-        "finish": "Naar mijn dashboard"
-      },
-      "chip": {
-        "message": "Rond de installatie van je Pro-account af.",
-        "action": "Installatie afronden",
-        "dismissLabel": "Sluiten"
-      }
-    },
     "frameworkSelector": {
       "label": "Analyseframework",
       "defaultNeutral": "Standaard (Neutraal)",
@@ -3217,11 +3115,8 @@
     "previewComposingCopy": "Het voorbeeld wordt weergegeven met de nieuwste live-gegevens en dashboard-opmaak.",
     "previewErrorCopy": "Los het probleem op en probeer opnieuw. Je bestaande widgets worden niet beïnvloed.",
     "createInteractive": "Interactief Widget maken",
-    "proBadge": "PRO",
-    "preflightProUnavailable": "PRO widget-agent niet beschikbaar. Controleer PRO_WIDGET_KEY op de server.",
-    "preflightInvalidProKey": "PRO-sleutel afgewezen. Werk wm-pro-key bij en herlaad.",
-    "preflightProSubscriptionRequired": "Pro-abonnement vereist. Als je zojuist hebt geüpgraded, vernieuw de pagina; anders neem contact op met support.",
-    "preflightProRequired": "Pro-abonnement vereist om Widget Builder te gebruiken. Upgrade om toegang te krijgen.",
+    "preflightProUnavailable": "Widget-agent niet beschikbaar. Controleer PRO_WIDGET_KEY op de server.",
+    "preflightInvalidProKey": "Aanmeldsleutel geweigerd. Werk wm-pro-key bij en herlaad.",
     "examples": {
       "oilGold": "Toon mij de prijs van ruwe olie versus goud vandaag",
       "cryptoMovers": "Maak een widget voor de belangrijkste crypto-bewegingen in de laatste 24 uur",
@@ -3233,7 +3128,9 @@
       "sortableTable": "Sorteerbare cryptoprijstabel met zoekfilter",
       "animatedCounters": "Geanimeerde tellers voor belangrijkste economische indicatoren",
       "tabbedComparison": "Tabblad-vergelijking van conflictgebeurtenissen per regio"
-    }
+    },
+    "preflightSignInRequired": "Meld je aan om de widget-builder te gebruiken.",
+    "preflightRequestRejected": "Verzoek geweigerd. Herlaad de pagina en probeer opnieuw, of neem contact op met support als dit aanhoudt."
   },
   "connectivity": {
     "offlineCached": "Offline — gegevens uit cache van {{freshness}} worden weergegeven.",
@@ -3241,12 +3138,9 @@
     "cachedFallback": "Live gegevens niet beschikbaar — gegevens uit cache van {{freshness}} worden weergegeven."
   },
   "premium": {
-    "pro": "PRO",
     "lockedDesc": "Vereist een World Monitor-licentiesleutel",
     "signInToUnlock": "Meld u aan om premium-functies te ontgrendelen",
     "signIn": "Aanmelden om te ontgrendelen",
-    "upgradeDesc": "Upgrade naar Pro voor volledige toegang tot premium-analyses",
-    "upgradeToPro": "Upgrade naar Pro",
     "features": {
       "orefSirens1": "Waarschuwingen voor Israëlische raketaanvallen in realtime",
       "orefSirens2": "Sirènezone-mapping met dreiging classificatie",

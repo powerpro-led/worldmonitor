@@ -4,7 +4,7 @@
  * GET /api/symbol-search?q=<query>  → { results: [{ symbol, name, display }] }
  *
  * Thin Finnhub-search wrapper with a short Upstash cache. Used by every user
- * (the market watchlist is not a PRO feature), so there's no entitlement
+ * (the market watchlist is not a premium feature), so there's no entitlement
  * gate — just CORS + rate limiting + a 10-minute cache on the normalized
  * query. The cache is the real quota guard: Finnhub's free-tier 60/min is
  * per-key (shared across all users), not per-user, so client-side debounce

@@ -220,9 +220,11 @@ test('checkProbe: non-JSON Redis body returns reason=redis-bad-json-body (no thr
   assert.equal(r.reason, 'redis-bad-json-body');
 });
 
-test('checkPublicBoundary: a transient first-attempt failure on each endpoint recovers on retry', async () => {
-  // First call to each endpoint 503s (cold start); the retry returns a healthy
-  // cache-served catalog + clean bootstrap → the boundary stays green.
+test('checkPublicBoundary: a transient first-attempt failure on the endpoint recovers on retry', async () => {
+  // First call 503s (cold start); the retry returns a clean bootstrap response
+  // → the boundary stays green. (BOUNDARY_CHECKS currently has one entry,
+  // /api/bootstrap — api/product-catalog.js was retired along with the Dodo
+  // pricing-catalog feature it served, see TASKS.md's "Dodo" residue sweep.)
   const callCount = {};
   globalThis.fetch = async (url) => {
     const path = new URL(url).pathname;
@@ -230,13 +232,13 @@ test('checkPublicBoundary: a transient first-attempt failure on each endpoint re
     if (callCount[path] === 1) {
       return { ok: false, status: 503, text: async () => '', headers: { get: () => null } };
     }
-    const body = path === '/api/product-catalog'
-      ? JSON.stringify({ tiers: [{ id: 'pro' }], fetchedAt: 1 })
-      : JSON.stringify({ market: { quotes: [] } });
-    const hdrs = new Headers(path === '/api/product-catalog' ? { 'x-product-catalog-source': 'cache' } : {});
-    return { ok: true, status: 200, text: async () => body, headers: { get: (n) => hdrs.get(n) } };
+    return {
+      ok: true, status: 200,
+      text: async () => JSON.stringify({ market: { quotes: [] } }),
+      headers: { get: () => null },
+    };
   };
   const res = await checkPublicBoundary('https://example.test', 0);
   assert.equal(res.every(r => r.pass), true, JSON.stringify(res));
-  assert.ok(res.every(r => r.recovered === true), 'both endpoints should be flagged recovered');
+  assert.ok(res.every(r => r.recovered === true), 'the endpoint should be flagged recovered');
 });

@@ -125,14 +125,16 @@ for (const url of ENDPOINTS) {
     // Worker's Allow-Methods MUST be a superset of every method any api/*
     // route advertises. DELETE was originally required for
     // api/product-catalog.js's purge preflight; that route is retired
-    // (2026-08-13) but DELETE is left pinned here since another route's
-    // continued need for it wasn't re-audited (see workers/api-cors-
-    // preflight/src/index.js's own comment). Missing a method a route
-    // actually needs silently breaks its browser-origin requests in prod —
-    // exactly the regression that PR review caught locally.
+    // (2026-08-13) and a same-day re-audit (hand-written api/*.ts routes,
+    // server/gateway.ts's sebuf RPC dispatch, every server/worldmonitor/**/
+    // *.proto) found nothing else needs it, so it was dropped (see
+    // workers/api-cors-preflight/src/index.js's own comment). Missing a
+    // method a route actually needs silently breaks its browser-origin
+    // requests in prod — exactly the regression that PR review caught
+    // locally.
     const acam = (resp.headers.get('access-control-allow-methods') || '')
       .split(',').map((s) => s.trim().toUpperCase());
-    for (const required of ['GET', 'POST', 'DELETE', 'OPTIONS']) {
+    for (const required of ['GET', 'POST', 'OPTIONS']) {
       assert.ok(
         acam.includes(required),
         `ACAM must include ${required}; got: ${acam.join(', ')}`,

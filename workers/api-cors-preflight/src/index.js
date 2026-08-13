@@ -44,19 +44,21 @@ const ALLOW_HEADERS = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Ke
 const EXPOSE_HEADERS = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
 
 // Superset of every method any api/* route advertises. The Worker stamps ONE
-// fixed Allow-Methods on every preflight, so if a route handles DELETE but
+// fixed Allow-Methods on every preflight, so if a route handles a method but
 // Allow-Methods omits it, the browser rejects the preflight before the
-// authenticated DELETE can reach Vercel.
-//   - api/product-catalog.js (the route DELETE was originally added for, a
-//     cache-purge endpoint) was retired 2026-08-13 along with the rest of
-//     the orphaned Dodo pricing-catalog feature — whether any other api/*
-//     route still needs DELETE was not re-audited, so it's left in place
-//     rather than risk silently breaking a preflight this pass didn't check.
-//   - most route handlers respond to GET, POST, HEAD, OPTIONS
+// authenticated request can reach Vercel.
+//   - DELETE was listed here for api/product-catalog.js's cache-purge
+//     endpoint; that route was retired 2026-08-13 along with the rest of the
+//     orphaned Dodo pricing-catalog feature. Re-audited 2026-08-13: no
+//     hand-written api/*.ts route, no server/gateway.ts sebuf RPC dispatch
+//     (which only ever branches on GET/POST/OPTIONS), and no .proto in
+//     server/worldmonitor/**/*.proto declares an HTTP_METHOD_DELETE rule —
+//     DELETE was dropped since nothing live needs it.
+//   - all route handlers respond to GET, POST, HEAD, OPTIONS
 //   - HEAD is technically a "simple method" so browsers don't require it in
 //     Allow-Methods, but listing it costs nothing and avoids a different
 //     preflight from a stricter future client.
-const ALLOW_METHODS = 'GET, POST, DELETE, HEAD, OPTIONS';
+const ALLOW_METHODS = 'GET, POST, HEAD, OPTIONS';
 
 // Paths whose Vercel functions own a DIFFERENT CORS policy than this Worker
 // (intentionally wider — e.g. MCP/OAuth endpoints accept https://claude.ai +

@@ -33,13 +33,14 @@ const KNOWN_GOOD = 'https://www.worldmonitor.app';
 const ACAH_EXPECTED = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
 const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
 // Must be a superset of every method any api/* route advertises. DELETE was
-// originally added for api/product-catalog.js's purge endpoint — that route
-// is gone (retired 2026-08-13), but DELETE is pinned here rather than
-// dropped, since whether another api/* route still needs it wasn't
-// re-audited (see src/index.js's own comment). Regression this guards:
-// Worker omits a method some route needs → that route's authenticated
-// requests silently fail preflight in prod.
-const ACAM_EXPECTED = 'GET, POST, DELETE, HEAD, OPTIONS';
+// originally listed for api/product-catalog.js's purge endpoint; that route
+// is gone (retired 2026-08-13) and a full re-audit the same day (hand-written
+// api/*.ts routes, server/gateway.ts's sebuf RPC dispatch, and every
+// server/worldmonitor/**/*.proto) found nothing else needs it, so it was
+// dropped — see src/index.js's own comment. Regression this guards: Worker
+// omits a method some route needs → that route's authenticated requests
+// silently fail preflight in prod.
+const ACAM_EXPECTED = 'GET, POST, HEAD, OPTIONS';
 
 // --- allowlist coverage ---------------------------------------------------
 
@@ -125,22 +126,6 @@ test('OPTIONS preflight returns 204 with Access-Control-Allow-Credentials: true'
   assert.equal(resp.headers.get('access-control-allow-headers'), ACAH_EXPECTED);
   assert.equal(resp.headers.get('access-control-expose-headers'), ACEH_EXPECTED);
   assert.equal(resp.headers.get('vary'), 'Origin');
-});
-
-test('OPTIONS preflight advertises DELETE (regression — api/product-catalog purge)', async () => {
-  // api/product-catalog.js handles `DELETE /api/product-catalog` with its own
-  // 'GET, DELETE, OPTIONS' Allow-Methods string. Because this Worker short-
-  // circuits the preflight before Vercel sees it, the Worker's Allow-Methods
-  // MUST be a superset — if it isn't, the browser rejects the preflight and
-  // the authenticated DELETE never reaches the function. Pin the invariant.
-  const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/product-catalog', {
-    Origin: KNOWN_GOOD,
-    'Access-Control-Request-Method': 'DELETE',
-  });
-  const resp = await worker.fetch(req);
-  const methods = (resp.headers.get('access-control-allow-methods') || '')
-    .split(',').map((s) => s.trim().toUpperCase());
-  assert.ok(methods.includes('DELETE'), `ACAM must include DELETE; got: ${methods.join(', ')}`);
 });
 
 test('OPTIONS preflight from disallowed origin still sets ACAC but echoes fallback origin', async () => {

@@ -546,6 +546,65 @@ isolated re-runs, confirmed unrelated to anything touched this session).
 
 ---
 
+## ✅ Resolved 2026-08-13 (ninth session) — CORS `DELETE` re-audit + stale probe mock
+
+Picked up the eighth session's 2 leftover low-priority items, in the order the tracker suggested.
+Verified via `npm run typecheck:all` (clean), `node scripts/enforce-sebuf-api-contract.mjs` (clean
+— 130 files/96 manifest entries), `npm run docs:check` (clean — 23 doc claims match code), targeted
+`npx tsx --test` runs of every directly-affected test file (63/63 pass across the 3 files), a full
+`npm run test:data` re-run (40 failures — exact byte-for-byte match to the documented pre-existing
+baseline names), and `npm run test:sidecar` (0 failures this run — #12's port-binding flake simply
+didn't reproduce this time, consistent with its already-documented flakiness).
+
+- [x] **`tests/seed-contract-probe.test.mjs`'s stale `/api/product-catalog` mock fixed.** The
+      "checkPublicBoundary: a transient first-attempt failure on each endpoint recovers on retry"
+      test simulated 2 boundary endpoints (bootstrap + product-catalog), but the real
+      `BOUNDARY_CHECKS` array in `api/seed-contract-probe.ts` only has one entry
+      (`/api/bootstrap`) — confirmed by reading the source directly. Rewrote the test to simulate
+      only the one real endpoint, dropped the dead `product-catalog`-specific mock branch, and
+      retitled it (singular "the endpoint," not "each endpoint"/"both endpoints"). 21/21 tests
+      pass in the file.
+- [x] **`workers/api-cors-preflight/`'s `ALLOW_METHODS` `DELETE` removed after a full re-audit
+      found nothing else needs it.** Traced every possible source of a live DELETE route before
+      touching anything: (1) hand-written `api/*.ts` files — repo-wide grep for
+      `req.method === 'DELETE'`/`request.method === 'DELETE'` across all of `api/` returned zero
+      hits; the handful of case-insensitive "delete" matches in `api/a2a.ts`, `api/notify.ts`,
+      `api/notification-channels.ts` are all either the JS `delete` operator, a JSON-RPC method
+      *name* (`tasks/pushNotificationConfig/delete`), or an `action: 'delete-channel'` field
+      inside a POST body — none are an HTTP DELETE dispatch. (2) `server/gateway.ts`, the core
+      sebuf RPC dispatch for all ~34 domains — its only `request.method` branches are
+      `'OPTIONS'`, `'POST'`, and `'GET'`; no DELETE branch exists. (3) The generated
+      `api/*/v1/[rpc].js` gateway bundles (previously "inconclusive within a reasonable search
+      effort" per the eighth session's recon) turned out to be resolvable: read one in full
+      (`api/forecast/v1/[rpc].js`, 36.7k lines) and confirmed its noisy `DELETE` string hits are
+      all inside bundled vendored SDK code (a Supabase admin client) — the file's own actual route
+      registration, at its tail, is just `createDomainGateway(createForecastServiceRoutes(...))`,
+      which routes through the same `server/gateway.ts`/`server/router.ts` dispatch already
+      checked in (2). (4) `server/router.ts`'s `RouteDescriptor.method` values come from
+      sebuf-codegen'd arrays driven by `.proto` HTTP-method annotations; `proto/sebuf/http/
+      annotations.proto` does define an `HTTP_METHOD_DELETE` option, but a repo-wide search of
+      every `server/worldmonitor/**/*.proto` found zero domains that use it — every real RPC
+      sticks to GET/POST. (5) `api/_cors.js`'s `getCorsHeaders(req, methods = 'GET, OPTIONS')` /
+      `getPublicCorsHeaders` take a per-caller `methods` string; grepped every call site
+      repo-wide and none passes `DELETE`. `server/cors.ts`'s own fallback CORS headers were
+      already `'GET, POST, OPTIONS'` with no DELETE, an existing signal this session's audit
+      confirms rather than contradicts. Dropped `DELETE` from `ALLOW_METHODS` in
+      `workers/api-cors-preflight/src/index.js` (now `'GET, POST, HEAD, OPTIONS'`), reworded its
+      header comment to record the audit trail instead of the old "not re-audited" caveat, removed
+      the now-obsolete "OPTIONS preflight advertises DELETE (regression — api/product-catalog
+      purge)" pinning test and updated `ACAM_EXPECTED` in
+      `workers/api-cors-preflight/index.test.mjs` (21/21 tests pass), and updated
+      `tests/cors-preflight-live.test.mjs`'s required-methods list + comment to match (this file
+      is gated behind `LIVE_SMOKE=1` and hits real production — not run this session since it only
+      becomes accurate once the Worker is actually redeployed; syntax-checked via `node --check`
+      instead). **Not done — a follow-up, not this session's scope**: actually deploying the
+      updated Worker to Cloudflare (`workers/api-cors-preflight/`'s `wrangler` config) so
+      production's live `Access-Control-Allow-Methods` header matches the repo; until deployed,
+      prod will keep advertising `DELETE` (harmless — a superset is always safe, just no longer
+      minimal) and `tests/cors-preflight-live.test.mjs` would still see the old header if run.
+
+---
+
 ## 🆕 New flagged items surfaced by the sweep — NOT fixed, out of scope for this pass
 
 - **`pro-test/package-lock.json` dead baseline entry — RESOLVED 2026-08-13 (eighth session)**,
@@ -572,20 +631,15 @@ isolated re-runs, confirmed unrelated to anything touched this session).
       list below as #13 — not an action item, informational only, do NOT "fix" without first
       understanding whether it's a real bug (it hasn't been individually investigated beyond the
       A/B pre-existing-confirmation).
-- [ ] **`workers/api-cors-preflight/`'s `ALLOW_METHODS` may no longer need `DELETE`** now that
-      `api/product-catalog.js` (its original justification) is retired — not re-audited this
-      session, see the Dodo-sweep ✅ section above for what was and wasn't checked. Don't remove
-      without confirming no other live `api/*` route still needs it.
-- [ ] **`tests/seed-contract-probe.test.mjs`'s "checkPublicBoundary...recovers on retry" test
-      still simulates a now-nonexistent `/api/product-catalog` boundary check** — pre-existing
-      staleness, found incidentally during the Dodo sweep (see that section above), currently
-      harmless (the dead mock branch is simply unreachable, not failing) but worth a follow-up.
+- **`workers/api-cors-preflight/`'s `ALLOW_METHODS` `DELETE` — RESOLVED 2026-08-13 (ninth
+      session)**, see the new ✅ section below ("CORS `DELETE` re-audit + stale probe mock").
+- **`tests/seed-contract-probe.test.mjs`'s stale `/api/product-catalog` mock — RESOLVED
+      2026-08-13 (ninth session)**, see the same ✅ section below.
 
-**Suggested next-session order** (updated 2026-08-13, eighth session — all 4 🆕 items from the
-prior session done and pushed, see the ✅ sections above and Housekeeping below): nothing on this
-list is urgent. The 2 new items just above (possible dead `DELETE` in the CORS preflight worker,
-the pre-existing stale mock in `seed-contract-probe.test.mjs`) are low-priority follow-ups, not
-blockers — pick either up cold, or ask the operator what's next if the list runs dry.
+**Suggested next-session order** (updated 2026-08-13, ninth session — both remaining 🆕 items from
+the eighth session done and verified, not yet pushed, see the ✅ section below and Housekeeping):
+the tracker's flagged-item backlog is now empty. A future session should ask the operator what's
+next rather than assume there's more deferred cleanup to find.
 
 ---
 

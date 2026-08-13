@@ -582,9 +582,10 @@ isolated re-runs, confirmed unrelated to anything touched this session).
       harmless (the dead mock branch is simply unreachable, not failing) but worth a follow-up.
 
 **Suggested next-session order** (updated 2026-08-13, eighth session — all 4 🆕 items from the
-prior session done, see the ✅ sections above): (1) push `e8d59a7` + `d02f27c` + this session's
-2 commits once the operator confirms (see Housekeeping below); nothing else on this list is
-urgent — the 2 new items just above are low-priority follow-ups, not blockers.
+prior session done and pushed, see the ✅ sections above and Housekeeping below): nothing on this
+list is urgent. The 2 new items just above (possible dead `DELETE` in the CORS preflight worker,
+the pre-existing stale mock in `seed-contract-probe.test.mjs`) are low-priority follow-ups, not
+blockers — pick either up cold, or ask the operator what's next if the list runs dry.
 
 ---
 
@@ -662,10 +663,10 @@ test` path.
 - [x] **The "PRO" internal-branding rename commit (fifth session, 92 files) pushed 2026-08-12** —
       `f233f7c` pushed to `origin/main` on operator's go-ahead at the start of the next session;
       `main`/`origin/main` confirmed in sync.
-- [ ] **The CSP-hash-tooling + settings-copy commit (`e8d59a7`), the full Clerk-retirement-sweep
-      commit that follows it, and this eighth session's work (the 3 zero-risk 🆕 fixes,
-      `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) are NOT yet pushed** — confirm with
-      operator before pushing, per standing repo convention.
+- [x] **`e8d59a7`, `d02f27c`, and `056d990` (this eighth session's work: the 3 zero-risk 🆕
+      fixes, `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) pushed to `origin/main`
+      2026-08-13** — operator go-ahead given; `main`/`origin/main` confirmed in sync
+      (`f233f7c..056d990`).
 
 ---
 

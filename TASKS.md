@@ -10,7 +10,83 @@ note under it. Don't delete resolved items — leave the trail. Add new deferred
 of only writing a memory file, so it doesn't require a memory search to rediscover.
 
 Related Claude memory entries (fuller narrative/context per item):
-`retire_public_product_surface.md`, `retire_convex_saas_complete.md`.
+`retire_public_product_surface.md`, `retire_convex_saas_complete.md`, `domain_migration_scope.md`
+(the item just below).
+
+---
+
+## 🅿️ Parked 2026-08-13 (ninth session) — full domain migration off `worldmonitor.app`
+
+**Blocked on operator decisions, not on more investigation.** Operator's stated final goal: this
+fork should stop being reachable at / referencing `worldmonitor.app` in production, on **new
+independent infra** (a separate Vercel project + a separate Cloudflare zone, not repointing the
+current ones) — but **no replacement domain has been chosen yet**. Do not start executing any part
+of this until a domain is picked; the scoping below exists so the actual migration can move fast
+once one is.
+
+**Scale**: `grep -rli worldmonitor\.app` (excluding node_modules/dist/git/build artifacts) hits
+**339 files**. This is roughly 5× the size of the largest prior sweep (the "PRO" rename, 93 files).
+Breakdown: 121 `tests/`, 46 `scripts/`, 46 `public/`, 34 `api/`, 32 `src/`, 17 `server/`, 7
+`workers/`, plus `src-tauri/`, `docker/`, `.github/`, `e2e/`, `cli/`, `vscode-extension/`, `data/`,
+and root-level config/docs.
+
+**Needed before any code changes** (operator/infra decisions, not something to guess at):
+1. The new domain name itself (registered + DNS-controllable).
+2. A new Vercel project provisioned under it.
+3. A new Cloudflare zone + Worker route provisioned under it (mirrors the current
+   `workers/api-cors-preflight` binding to `api.worldmonitor.app/*`).
+4. Whether the 5 "variant" subdomains (`tech.`/`finance.`/`commodity.`/`happy.`/`energy.
+   worldmonitor.app` — see `src/config/variants/*.ts`, the Tauri CSP's `frame-src`) carry over as
+   the same concept on the new domain, or get dropped/renamed.
+5. Whether the Tauri desktop app's bundle identifier (`app.worldmonitor.desktop` in
+   `src-tauri/tauri.conf.json:6`) changes. **This is not cosmetic** — changing it breaks the
+   auto-update chain for anyone with the app already installed (a new identifier = a new app
+   identity to the OS; existing installs won't silently follow). Needs an explicit go/no-go, not a
+   default assumption either way.
+6. A real, working mailbox on the new domain before cutover — `shared/hapi-app-identifier.json`
+   hardcodes `monitor@worldmonitor.app` as a live contact address, not just a string.
+7. Whether to fix the `ALLOWED_ORIGIN_PATTERNS`/`PRODUCTION_PATTERNS` **triple-duplication** (hand-
+   synced today across `api/_cors.js`, `server/cors.ts`, and `workers/api-cors-preflight/src/
+   index.js`, each with a header comment saying "keep in sync") as *part of* the migration —
+   collapsing it to one shared source now would mean the new domain only needs updating in one
+   place instead of three, same lesson as the `scripts/sync-csp-script-hashes.mjs` fix from an
+   earlier session. Recommended, not required.
+
+**Risk-tiered breakdown of the 339 files** (sampled, not individually read — a real pass would
+re-verify each before touching):
+- **Tier 1 — real infra identity, each needs its own explicit decision** (~6 files): `vercel.json`,
+  `workers/api-cors-preflight/wrangler.toml` + `src/index.js`, `src-tauri/tauri.conf.json`,
+  `shared/hapi-app-identifier.json`, `cli/package.json` (npm package literally named
+  `worldmonitor`, bin commands `worldmonitor`/`wm`, `homepage` pointing at the now-deleted
+  `/docs/cli` path — also: its `repository.url`/`bugs` point at `github.com/koala73/worldmonitor`,
+  which does **not** match this repo's actual `origin` remote, `github.com/powerpro-led/
+  worldmonitor` — a **pre-existing discrepancy, unrelated to the domain migration**, flagging
+  separately since it looks like stale-from-before-the-fork metadata, not something to silently
+  "fix" as part of this).
+- **Tier 2 — structural content treating the domain as the canonical API host** (~50-60 files):
+  the entire `public/.well-known/agent-skills/*/SKILL.md` surface (~25 files) + its generated
+  `index.json` (regenerate via the existing `build:agent-skills` script, same as every prior
+  SKILL.md edit), `agent-card.json`, `ai-catalog.json`, `api-catalog`, `webhook-sample.json`,
+  `sandbox/*.json`, `sitemap.xml`, `robots.txt`, `schemamap.xml`, `index.html`.
+- **Tier 3 — application source** (~150 files across `src/`, `server/`, `api/`, `scripts/`):
+  CORS/CSP allowlists (security-relevant, needs care), embed URLs, cross-domain storage keys,
+  analytics endpoints, variant configs, seed/deploy scripts. Mostly mechanical once the domain is
+  fixed, but each CORS/CSP touch point should be individually verified, not bulk-replaced.
+- **Tier 4 — tests** (121 files): should mostly follow automatically if Tier 1-3 introduce a
+  single shared constant/env var instead of hardcoding the literal domain per-file — today many
+  don't (e.g. `tests/cors-preflight-live.test.mjs`'s `ORIGIN`/`ENDPOINTS`/`PUBLIC_CORS_PROBES`
+  constants, the concrete example that prompted this scoping pass).
+- **Tier 5 — docs/markdown** (37 files): narrative, lowest urgency, can lag behind the code cutover.
+- **Explicitly OUT of scope — do not touch**: `data/resilience-snapshots/*.json`'s
+  `"source": "Live capture via https://api.worldmonitor.app/..."` fields are a **historical
+  provenance record** of a real fetch that happened from that URL at that time — rewriting them
+  would falsify the data, not rebrand it.
+
+**Suggested execution order once unblocked**: (1) resolve the Needed-before-any-code-changes list
+above, (2) Tier 1 first since it's small and gates whether anything else can be tested against
+real infra, (3) Tier 2's agent-skills surface (self-contained, has its own regen tooling), (4) Tier
+3 with care on every CORS/CSP touch point, (5) Tier 4 tests alongside whichever Tier 3 file they
+cover, (6) Tier 5 docs last.
 
 ---
 

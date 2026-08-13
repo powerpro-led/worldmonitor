@@ -18,7 +18,7 @@ import { describe, it, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 
 const VALID_KEY = 'wm_test_key_123';
-const BASE_URL = 'https://worldmonitor.app/mcp';
+const BASE_URL = 'https://example.test/mcp';
 
 const originalEnv = { ...process.env };
 
@@ -159,7 +159,7 @@ describe('api/mcp.ts — protocol-version floor', () => {
     // doesn't depend on env state left over from a neighboring test.
     delete process.env.MCP_PROTOCOL_FLOOR_2025_06_18;
     const mod = await import(`../api/mcp.ts?t=${Date.now()}_card_default`);
-    const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+    const res = await mod.default(new Request('https://example.test/.well-known/mcp', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     }));

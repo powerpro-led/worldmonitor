@@ -4,6 +4,7 @@
 // short-lived HttpOnly cookies so they stop living in JS-readable storage.
 
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { resolveCookieDomain } from './_domain-config.js';
 import { timingSafeEqualSecret, timingSafeIncludes } from './_crypto.js';
 import { checkRateLimit } from './_rate-limit.js';
 import { issueSessionToken } from './_session.js';
@@ -35,13 +36,24 @@ function appendHeader(headers, name, value) {
   return next;
 }
 
+// The shared cross-subdomain cookie domain, derived from the configured
+// APP_DOMAIN (unset = no shared domain — see shared/domain-config.js; a
+// Domain= attribute unrelated to the current host is meaningless and
+// browsers reject cross-domain scoping per RFC 6265 anyway).
+function sharedCookieDomainSuffix() {
+  return resolveCookieDomain(process.env.APP_DOMAIN);
+}
+
 function shouldUseSharedCookieDomain(req) {
+  const suffix = sharedCookieDomainSuffix();
+  if (!suffix) return false;
+  const bareDomain = suffix.slice(1); // strip the leading '.'
   const host = (req.headers.get('host') || new URL(req.url).hostname).toLowerCase();
-  return host === 'worldmonitor.app' || host.endsWith('.worldmonitor.app');
+  return host === bareDomain || host.endsWith(`.${bareDomain}`);
 }
 
 function cookieDomainAttribute(req) {
-  return shouldUseSharedCookieDomain(req) ? '; Domain=.worldmonitor.app' : '';
+  return shouldUseSharedCookieDomain(req) ? `; Domain=${sharedCookieDomainSuffix()}` : '';
 }
 
 function sessionCookie(req, name, value) {
@@ -49,7 +61,8 @@ function sessionCookie(req, name, value) {
 }
 
 function clearReadableCookie(name) {
-  return `${name}=; Domain=.worldmonitor.app; Path=/; Max-Age=0; Secure; SameSite=Lax`;
+  const suffix = sharedCookieDomainSuffix();
+  return `${name}=${suffix ? `; Domain=${suffix}` : ''}; Path=/; Max-Age=0; Secure; SameSite=Lax`;
 }
 
 function normalizeLegacyKey(value) {

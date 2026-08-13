@@ -23,7 +23,7 @@ const PATH = '/api/scenario/v1/run-scenario';
 const BODY = JSON.stringify({ scenario: 'x' });
 
 function makeRequest(body: string = BODY): Request {
-  return new Request(`https://www.worldmonitor.app${PATH}`, {
+  return new Request(`https://www.example.test${PATH}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,

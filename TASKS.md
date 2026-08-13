@@ -15,20 +15,128 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🅿️ Parked 2026-08-13 (ninth session) — full domain migration off `worldmonitor.app`
+## ✅ Resolved 2026-08-13 (ninth session, continued) — Stage 1: env-var-driven domain config
+
+**This is NOT a rename to a new domain — it's the architectural piece that makes a future rename
+(or genuine multi-instance/white-label support) possible without another 300-file sweep.** Operator
+reframed the ask mid-session: instead of a one-time hardcoded rename, make the codebase read its
+domain from configuration, defaulting to local dev — never to `worldmonitor.app`, since "we are not
+official worldmonitor.app." Planned via `EnterPlanMode`/`ExitPlanMode` (plan saved at the time as
+`glowing-prancing-bear.md`), scoped explicitly to the CORS-allowlist trio + whatever else turned out
+to be required to make the test suite pass again after that change. It grew twice past that initial
+scope, both times for concrete, discovered reasons — see below.
+
+**New module: `shared/domain-config.js` (+ hand-written `.d.ts`).** Zero imports, no
+`process.env`/`import.meta.env` reads inside it — pure functions taking a raw domain string,
+defaulting to `localhost:3000` (matching `vite.config.ts`'s existing `DEV_PORT` default) when unset.
+Exports `resolveAppOrigin`/`resolveWwwOrigin`/`resolveApiOrigin`/`resolveCookieDomain`/
+`buildAllowedOriginPatterns` (the origin-allowlist regex builder, parameterized by domain instead of
+hardcoding `worldmonitor.app`) plus the brand-agnostic Tauri/localhost origin-pattern constants that
+were already generic. New env var: `APP_DOMAIN` (bare host, e.g. `example.com` or `localhost:3000`),
+documented in `.env.example`.
+
+- [x] **The CORS-allowlist trio wired to it** — `api/_cors.js` (via a new copy-sync script,
+      `scripts/sync-domain-config.mjs` + `npm run sync:domain-config`/`:check`, modeled byte-for-byte
+      on the existing `scripts/sync-bootstrap-tier-keys.mjs` precedent, since plain-JS `api/*.js`
+      can't import `shared/` directly — generates `api/_domain-config.js`), `server/cors.ts` (direct
+      import — confirmed `shared/` is already importable from the TS build graph), and
+      `workers/api-cors-preflight/src/index.js` (direct relative import across the Worker's own
+      package boundary — verified with a real `wrangler deploy --dry-run` that the bundle succeeds
+      and the shared module's code actually gets inlined; `isAllowedOrigin`/`buildCorsHeaders` now
+      take `domain` as an explicit second parameter since Workers have no `process.env`, only the
+      `env` binding from `wrangler.toml`'s `[vars]`, which gained an empty `APP_DOMAIN = ""` entry).
+      The `eliewm` Vercel-preview-team regex pattern was deliberately left hardcoded, local to each
+      of the 3 files — it's an infra team-scope identifier, not a domain brand.
+- [x] **2 stray hardcoded `'https://worldmonitor.app'` fallback defaults removed**:
+      `scripts/seed-digest-notifications.mjs` (its `WORLDMONITOR_PUBLIC_BASE_URL` fallback) and
+      `scripts/build-content-corpus-sitemap.mjs` (`SITE_ORIGIN`, converted from a module-load-time
+      `const` to a lazily-evaluated `resolveSiteOrigin()` function — needed because the real,
+      externally-generated `public/countries/` etc. content on this machine, 197+ files, still has
+      `worldmonitor.app` canonical tags baked in; verified the fail-closed behavior directly: with
+      `APP_DOMAIN` unset it correctly throws rather than silently validating against the wrong
+      domain). **Real operational consequence handled, not just noted**: added an explicit
+      `APP_DOMAIN=worldmonitor.app` to the local (gitignored) `.env` — a real configuration choice
+      matching the actually-deployed content on this machine, not a code default — so
+      `npm run build:content-corpus` keeps working locally until that content is regenerated under
+      a real domain.
+- [x] **Scope grew once, for a concrete reason: `api/wm-session.js`'s own independent cookie-domain
+      hardcode.** Discovered while making `tests/cors-preflight-live.test.mjs`'s sibling CORS tests
+      pass again — `shouldUseSharedCookieDomain()`/`cookieDomainAttribute()`/`clearReadableCookie()`
+      each independently checked the request's host against a hardcoded `worldmonitor.app` family
+      pattern, completely separate from the CORS trio's allowlist. Same class of hardcode Stage 1
+      already targets, just in a file the original recon missed, and it was directly blocking the
+      test suite — fixed using the same `shared/domain-config.js` (`resolveCookieDomain()`),
+      preserving exact original semantics (host-gated for the session cookie, unconditional-but-now-
+      domain-derived for the legacy-cookie-clearing path).
+- [x] **Scope grew a second time: a much wider pre-existing test-fixture convention.** Running the
+      full suite after the above surfaced 267 failing subtests across 128 files completely unrelated
+      to CORS — `server/gateway.ts` gates requests via the (already-fixed) allowlist, and it turns
+      out dozens of unrelated tests (rate limiting, telemetry, auth, MCP tools, briefs, etc.) used
+      `https://worldmonitor.app` purely as a generic "this is a legitimate browser origin" fixture,
+      relying on the old hardcoded default. Asked the operator explicitly rather than guess between
+      "set `APP_DOMAIN=worldmonitor.app` for test runs only" vs. "sweep the fixture strings too" —
+      operator chose the full sweep. Set `APP_DOMAIN=example.test` ambiently for `test:data`/
+      `test:sidecar` (via `cross-env`, matching the existing pattern in this `package.json`) and
+      added `tests/helpers/domain-config.mjs` (`TEST_APP_DOMAIN='example.test'` — deliberately
+      neither the real brand nor the module's own `localhost:3000` default, so a test can't
+      accidentally pass against either). Fixed **53 files** this touched (verified failing
+      individually first, not just by grep — several files that merely *contained* the string were
+      correctly left untouched because they assert on *other*, unrelated hardcodes: e.g.
+      `tests/mcp-world-brief-routing.test.mjs`'s variant-subdomain/canonical-API-origin assertions
+      test `api/mcp/downstream.ts`'s own separate hardcode, genuinely Tier-3 scope below, reverted
+      after confirming the file needed no change at all). **6 confirmed pre-existing failures
+      correctly left alone** (5 `server/__tests__/gateway-*.test.ts` files failing on an unrelated
+      `vi.mock`/401-auth issue, confirmed via `git stash` A/B to fail identically — 34/50 — on the
+      unmodified baseline; `browser bundle secret guard #3704`, already in this file's own ⚪
+      reference list below).
+
+**Verification**: `npm run typecheck:all`, `node scripts/enforce-sebuf-api-contract.mjs`,
+`npm run docs:check`, `npm run sync:domain-config:check` all clean. A real `wrangler deploy
+--dry-run` for the Worker succeeded (bundle inlines the shared module correctly, zero
+`worldmonitor.app` strings left in the built output). Full `npm run test:data` re-run matches the
+documented 40-failure baseline **exactly by name**, `npm run test:sidecar` 217/217 clean — both
+re-run twice (once after the CORS-trio work, once after the full 53-file sweep) to confirm no new
+regressions at either stage.
+
+**Not pushed yet** (mirrors this session's earlier CORS-`DELETE` commit) — `workers/
+api-cors-preflight/**` changed, and `.github/workflows/deploy-worker.yml` auto-deploys + live-smokes
+on push to `main`. Also touches `package.json` (2 new npm scripts, `cross-env` added to 2 existing
+test scripts) and a real behavior change to local `.env`. Needs an explicit push go-ahead like the
+CORS-`DELETE` fix earlier this session.
+
+**Explicitly still deferred** (Tier 2/3/4 from the original scoping below, now sharper since
+`shared/domain-config.js` exists for them to build on): the CSP strings in `vercel.json`/
+`docker/nginx*.conf`/`src-tauri/tauri.conf.json`, the 5 variant subdomains
+(`src/config/variant-meta.ts`, `middleware.ts`'s `VARIANT_HOST_MAP`, `api/mcp/downstream.ts`'s
+`MCP_CANONICAL_API_ORIGIN`/variant-host classification — the concrete thing
+`tests/mcp-world-brief-routing.test.mjs` surfaced as out of scope this pass),
+`src/utils/cross-domain-storage.ts`'s `COOKIE_DOMAIN` (client-side, ready to consume
+`resolveCookieDomain()` when tackled), `src/services/analytics.ts` (separate per-instance Umami
+secret, not just a domain swap), the Tauri bundle identifier, the `cli/package.json` git-remote
+mismatch, `scripts/seed-digest-notifications.mjs`'s email-template HTML content (branding/links/
+images, a separate and sizeable area — noticed but explicitly not touched this pass), `server/
+gateway.ts:1304`'s unrelated cosmetic `'https://worldmonitor.app/'` redirect-link constant, and the
+remaining ~150+ files in `scripts/`/`public/`/docs. Domain-migration blockers (new domain name, new
+Vercel project, new Cloudflare zone, Tauri bundle-identifier go/no-go, a real mailbox on the new
+domain) are unchanged from before — still nothing to decide there until a domain is picked.
+
+---
+
+## 🅿️ Parked 2026-08-13 (ninth session) — remaining tiers of the full domain migration
 
 **Blocked on operator decisions, not on more investigation.** Operator's stated final goal: this
 fork should stop being reachable at / referencing `worldmonitor.app` in production, on **new
 independent infra** (a separate Vercel project + a separate Cloudflare zone, not repointing the
 current ones) — but **no replacement domain has been chosen yet**. Do not start executing any part
 of this until a domain is picked; the scoping below exists so the actual migration can move fast
-once one is.
+once one is. **Stage 1 (the CORS-allowlist trio + its knock-on fallout) is DONE — see the ✅ section
+immediately above — this section covers what's left (Tiers 2-4 below).**
 
-**Scale**: `grep -rli worldmonitor\.app` (excluding node_modules/dist/git/build artifacts) hits
-**339 files**. This is roughly 5× the size of the largest prior sweep (the "PRO" rename, 93 files).
-Breakdown: 121 `tests/`, 46 `scripts/`, 46 `public/`, 34 `api/`, 32 `src/`, 17 `server/`, 7
-`workers/`, plus `src-tauri/`, `docker/`, `.github/`, `e2e/`, `cli/`, `vscode-extension/`, `data/`,
-and root-level config/docs.
+**Scale**: `grep -rli worldmonitor\.app` (excluding node_modules/dist/git/build artifacts) hit
+**339 files** before Stage 1. That count is now stale in the good direction — Stage 1 (above)
+resolved the CORS trio, `api/wm-session.js`'s cookie-domain hardcode, and ~60 test files' fixture
+usage — but the Tier breakdown and file counts below were captured pre-Stage-1 and haven't been
+re-run; treat them as directional, not exact, until a fresh grep is done.
 
 **Needed before any code changes** (operator/infra decisions, not something to guess at):
 1. The new domain name itself (registered + DNS-controllable).
@@ -797,6 +905,19 @@ test` path.
       fixes, `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) pushed to `origin/main`
       2026-08-13** — operator go-ahead given; `main`/`origin/main` confirmed in sync
       (`f233f7c..056d990`).
+- [ ] **Ninth session's 2 commits (CORS `DELETE` re-audit, and the larger domain-config Stage 1
+      work) are committed locally but NOT pushed** — both touch `workers/api-cors-preflight/**`,
+      which triggers a real Cloudflare Worker deploy via `.github/workflows/deploy-worker.yml` on
+      push to `main`. Needs an explicit operator go-ahead before pushing, same standing convention
+      as every other session.
+- [ ] **2 small items noticed during the ninth session's domain-config work, not fixed (flagging,
+      not urgent)**: `server/gateway.ts:1304` has an unrelated cosmetic hardcode —
+      `planKey && planKey !== 'enterprise' ? 'https://worldmonitor.app/' : undefined` — a redirect
+      link, not a CORS/security gate, out of Stage 1's scope; `cli/package.json`'s
+      `repository.url`/`bugs` point at `github.com/koala73/worldmonitor`, which does not match this
+      repo's actual `origin` remote (`github.com/powerpro-led/worldmonitor`) — looks like stale
+      metadata from before this fork existed, unrelated to the domain-config work, noticed
+      incidentally while auditing that same file for domain migration Tier 1.
 
 ---
 

@@ -45,21 +45,21 @@ describe('embed public data auth', () => {
     const gateway = makeGateway();
 
     for (const path of EMBED_PUBLIC_RPC_PATHS) {
-      const res = await gateway(new Request(`https://worldmonitor.app${path}`, {
-        headers: { Origin: 'https://worldmonitor.app' },
+      const res = await gateway(new Request(`https://example.test${path}`, {
+        headers: { Origin: 'https://example.test' },
       }));
       assert.equal(res.status, 200, `${path} should not require wm-session in an embed iframe`);
     }
 
-    const gated = await gateway(new Request('https://worldmonitor.app/api/conflict/v1/list-ucdp-events', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const gated = await gateway(new Request('https://example.test/api/conflict/v1/list-ucdp-events', {
+      headers: { Origin: 'https://example.test' },
     }));
     assert.equal(gated.status, 401);
   });
 
   it('scopes anonymous bootstrap access to the weather embed key only', async () => {
-    const publicReq = new Request('https://worldmonitor.app/api/bootstrap?keys=weatherAlerts', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const publicReq = new Request('https://example.test/api/bootstrap?keys=weatherAlerts', {
+      headers: { Origin: 'https://example.test' },
     });
     assert.equal(isPublicWeatherBootstrapRequest(publicReq), true);
 
@@ -71,16 +71,16 @@ describe('embed public data auth', () => {
     assert.equal(publicRes.headers.get('cache-control'), 'no-store');
 
     const rejected = [
-      'https://worldmonitor.app/api/bootstrap',
-      'https://worldmonitor.app/api/bootstrap?tier=fast',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts,marketQuotes',
-      'https://worldmonitor.app/api/bootstrap?keys=marketQuotes',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts&debug=1',
-      'https://worldmonitor.app/api/bootstrap?keys=weatherAlerts&keys=marketQuotes',
+      'https://example.test/api/bootstrap',
+      'https://example.test/api/bootstrap?tier=fast',
+      'https://example.test/api/bootstrap?keys=weatherAlerts,marketQuotes',
+      'https://example.test/api/bootstrap?keys=marketQuotes',
+      'https://example.test/api/bootstrap?keys=weatherAlerts&debug=1',
+      'https://example.test/api/bootstrap?keys=weatherAlerts&keys=marketQuotes',
     ];
 
     for (const url of rejected) {
-      const req = new Request(url, { headers: { Origin: 'https://worldmonitor.app' } });
+      const req = new Request(url, { headers: { Origin: 'https://example.test' } });
       assert.equal(isPublicWeatherBootstrapRequest(req), false, url);
       const res = await bootstrapHandler(req);
       assert.equal(res.status, 401, `${url} must still require auth`);

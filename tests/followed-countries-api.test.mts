@@ -12,10 +12,10 @@ import { FollowedCountriesError } from '../server/_shared/followed-countries.ts'
 const TEST_USER_ID = 'user_followed_countries_test';
 
 function makeReq(init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Request {
-  return new Request('https://worldmonitor.app/api/followed-countries', {
+  return new Request('https://example.test/api/followed-countries', {
     method: init.method ?? 'GET',
     headers: {
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://example.test',
       Authorization: 'Bearer test-token',
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,

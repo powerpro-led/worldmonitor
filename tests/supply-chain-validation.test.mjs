@@ -19,7 +19,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
 function makeCtx(headers = {}, path = '/api/supply-chain/v1/get-country-products') {
-  const req = new Request(`https://worldmonitor.app${path}`, { method: 'GET', headers });
+  const req = new Request(`https://example.test${path}`, { method: 'GET', headers });
   return { request: req, pathParams: {}, headers };
 }
 function proCtx(path) {

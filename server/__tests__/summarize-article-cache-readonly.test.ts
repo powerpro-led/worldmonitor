@@ -13,7 +13,7 @@ const originalFetch = globalThis.fetch;
 
 function makeContext() {
   return {
-    request: new Request("https://www.worldmonitor.app/api/news/v1/summarize-article-cache?cache_key=summary:v1:test-key"),
+    request: new Request("https://www.example.test/api/news/v1/summarize-article-cache?cache_key=summary:v1:test-key"),
     pathParams: {},
     headers: {},
   };

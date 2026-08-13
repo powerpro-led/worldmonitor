@@ -60,7 +60,7 @@ function createHandler(options: { handlerCdnCacheHeader?: string; publicRouteBod
 
 async function requestPublicRoute(origin: string) {
   const handler = createHandler();
-  return handler(new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
+  return handler(new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
     headers: { Origin: origin, 'X-WorldMonitor-Key': sessionToken },
   }));
 }
@@ -71,18 +71,18 @@ function assertNoSharedCacheHeaders(res: Response) {
 }
 
 describe('gateway CDN origin policy', () => {
-  it('keeps per-origin CORS without shared CDN caching for session-bearing worldmonitor.app GETs', async () => {
-    const res = await requestPublicRoute('https://worldmonitor.app');
+  it('keeps per-origin CORS without shared CDN caching for session-bearing example.test GETs', async () => {
+    const res = await requestPublicRoute('https://example.test');
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+    assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
     assert.equal(res.headers.get('Vary'), 'Origin');
     assertNoSharedCacheHeaders(res);
   });
 
   it('keeps per-origin CORS without shared CDN caching for session-bearing production subdomain GETs', async () => {
-    const res = await requestPublicRoute('https://tech.worldmonitor.app');
+    const res = await requestPublicRoute('https://tech.example.test');
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://tech.worldmonitor.app');
+    assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://tech.example.test');
     assert.equal(res.headers.get('Vary'), 'Origin');
     assertNoSharedCacheHeaders(res);
   });
@@ -109,7 +109,7 @@ describe('gateway CDN origin policy', () => {
     const origin = 'tauri://localhost';
     process.env.WORLDMONITOR_VALID_KEYS = 'real-key-123';
     const handler = createHandler();
-    const res = await handler(new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
+    const res = await handler(new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
       headers: {
         Origin: origin,
         'X-WorldMonitor-Key': 'real-key-123',
@@ -122,9 +122,9 @@ describe('gateway CDN origin policy', () => {
   });
 
   it('preserves CDN caching for explicit anonymous public no-auth GETs', async () => {
-    const origin = 'https://worldmonitor.app';
+    const origin = 'https://example.test';
     const handler = createHandler();
-    const res = await handler(new Request('https://worldmonitor.app/api/conflict/v1/list-acled-events', {
+    const res = await handler(new Request('https://example.test/api/conflict/v1/list-acled-events', {
       headers: { Origin: origin },
     }));
     assert.equal(res.status, 200);
@@ -139,8 +139,8 @@ describe('gateway CDN origin policy', () => {
   ]) {
     it(`CDN-shields the exact caller-invariant public RPC variant: ${path}`, async () => {
       const handler = createHandler();
-      const res = await handler(new Request(`https://worldmonitor.app${path}`, {
-        headers: { Origin: 'https://worldmonitor.app' },
+      const res = await handler(new Request(`https://example.test${path}`, {
+        headers: { Origin: 'https://example.test' },
       }));
 
       assert.equal(res.status, 200);
@@ -149,9 +149,9 @@ describe('gateway CDN origin policy', () => {
 
     it(`keeps the public RPC response invariant when credentials are attached: ${path}`, async () => {
       const handler = createHandler();
-      const res = await handler(new Request(`https://worldmonitor.app${path}`, {
+      const res = await handler(new Request(`https://example.test${path}`, {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           'X-WorldMonitor-Key': sessionToken,
         },
       }));
@@ -171,8 +171,8 @@ describe('gateway CDN origin policy', () => {
   ] as const) {
     it(`CDN-shields the public RPC variant when the router echoes ?rpc=: ${path}`, async () => {
       const handler = createHandler();
-      const res = await handler(new Request(`https://worldmonitor.app${path}&rpc=${rpc}`, {
-        headers: { Origin: 'https://worldmonitor.app' },
+      const res = await handler(new Request(`https://example.test${path}&rpc=${rpc}`, {
+        headers: { Origin: 'https://example.test' },
       }));
 
       assert.equal(res.status, 200);
@@ -201,8 +201,8 @@ describe('gateway CDN origin policy', () => {
       '/api/displacement/v1/get-displacement-summary?flow_limit=50&public=1&rpc=bogus',
       '/api/displacement/v1/get-displacement-summary?flow_limit=50&public=1&rpc=list-feed-digest',
     ]) {
-      const res = await handler(new Request(`https://worldmonitor.app${path}`, {
-        headers: { Origin: 'https://worldmonitor.app' },
+      const res = await handler(new Request(`https://example.test${path}`, {
+        headers: { Origin: 'https://example.test' },
       }));
       assert.equal(res.status, 401, path);
       assertNoSharedCacheHeaders(res);
@@ -210,11 +210,11 @@ describe('gateway CDN origin policy', () => {
   });
 
   it('skips CDN caching for degraded dataAvailable=false 200 responses', async () => {
-    const origin = 'https://worldmonitor.app';
+    const origin = 'https://example.test';
     const handler = createHandler({
       publicRouteBody: { events: [], fetchedAt: 0, dataAvailable: false },
     });
-    const res = await handler(new Request('https://worldmonitor.app/api/conflict/v1/list-acled-events?_debug=1', {
+    const res = await handler(new Request('https://example.test/api/conflict/v1/list-acled-events?_debug=1', {
       headers: { Origin: origin },
     }));
     const body = await res.json();
@@ -231,8 +231,8 @@ describe('gateway CDN origin policy', () => {
     const handler = createHandler({
       handlerCdnCacheHeader: 'public, s-maxage=9999, stale-while-revalidate=9999',
     });
-    const res = await handler(new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
-      headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': sessionToken },
+    const res = await handler(new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
+      headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': sessionToken },
     }));
 
     assert.equal(res.status, 200);
@@ -241,7 +241,7 @@ describe('gateway CDN origin policy', () => {
 
   it('still blocks disallowed origins before route handling', async () => {
     const handler = createHandler();
-    const res = await handler(new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
+    const res = await handler(new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
       headers: { Origin: 'https://evil.example.com' },
     }));
     assert.equal(res.status, 403);
@@ -251,20 +251,20 @@ describe('gateway CDN origin policy', () => {
     process.env.WORLDMONITOR_VALID_KEYS = 'real-key-123';
     const handler = createHandler();
 
-    const noCreds = await handler(new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const noCreds = await handler(new Request('https://example.test/api/market/v1/analyze-stock?symbol=AAPL', {
+      headers: { Origin: 'https://example.test' },
     }));
     assert.equal(noCreds.status, 401);
     assert.equal(noCreds.headers.get('Cache-Control'), 'no-store');
 
-    const withKey = await handler(new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
+    const withKey = await handler(new Request('https://example.test/api/market/v1/analyze-stock?symbol=AAPL', {
       headers: {
-        Origin: 'https://worldmonitor.app',
+        Origin: 'https://example.test',
         'X-WorldMonitor-Key': 'real-key-123',
       },
     }));
     assert.equal(withKey.status, 200);
-    assert.equal(withKey.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+    assert.equal(withKey.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
     assert.equal(withKey.headers.get('Vary'), 'Origin');
     assert.equal(withKey.headers.get('CDN-Cache-Control'), null, 'premium endpoints must NOT have CDN caching');
   });

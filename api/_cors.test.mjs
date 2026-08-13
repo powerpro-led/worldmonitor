@@ -1,13 +1,20 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { getCorsHeaders, getPublicCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { setTestAppDomain, TEST_APP_DOMAIN } from '../tests/helpers/domain-config.mjs';
+
+// Safe even though the above is a static import: isAllowedOrigin()/
+// getCorsHeaders() read process.env.APP_DOMAIN lazily (see
+// getAllowedOriginPatterns() in _cors.js), so setting it here — after the
+// imports, before any test runs — takes effect for every call below.
+setTestAppDomain();
 
 function makeRequest(origin) {
   const headers = new Headers();
   if (origin !== null) {
     headers.set('origin', origin);
   }
-  return new Request('https://worldmonitor.app/api/test', { headers });
+  return new Request(`https://${TEST_APP_DOMAIN}/api/test`, { headers });
 }
 
 test('allows desktop Tauri origins', () => {
@@ -32,7 +39,7 @@ test('rejects unrelated external origins', () => {
   const req = makeRequest('https://evil.example.com');
   assert.equal(isDisallowedOrigin(req), true);
   const cors = getCorsHeaders(req);
-  assert.equal(cors['Access-Control-Allow-Origin'], 'https://worldmonitor.app');
+  assert.equal(cors['Access-Control-Allow-Origin'], `https://${TEST_APP_DOMAIN}`);
   assert.equal(cors['Access-Control-Allow-Credentials'], 'true');
 });
 
@@ -42,7 +49,7 @@ test('requests without origin remain allowed', () => {
 });
 
 test('CORS allow headers include MCP transport headers', () => {
-  const privateCors = getCorsHeaders(makeRequest('https://worldmonitor.app'));
+  const privateCors = getCorsHeaders(makeRequest(`https://${TEST_APP_DOMAIN}`));
   const publicCors = getPublicCorsHeaders('POST, GET, OPTIONS');
 
   for (const cors of [privateCors, publicCors]) {

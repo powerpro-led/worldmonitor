@@ -163,8 +163,8 @@ describe('gateway telemetry payload — domain extraction', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/v2/shipping/route-intelligence', {
-        headers: { Origin: 'https://worldmonitor.app' },
+      new Request('https://example.test/api/v2/shipping/route-intelligence', {
+        headers: { Origin: 'https://example.test' },
       }),
       recorder.ctx,
     );
@@ -198,8 +198,8 @@ describe('gateway telemetry payload — domain extraction', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
       recorder.ctx,
     );
@@ -232,8 +232,8 @@ describe('gateway telemetry payload — domain extraction', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
       recorder.ctx,
     );
@@ -266,8 +266,8 @@ describe('gateway telemetry payload — domain extraction', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL&jmespath=a[[[', {
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL&jmespath=a[[[', {
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
       recorder.ctx,
     );
@@ -301,9 +301,9 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
     ]);
     const recorder = makeRecordingCtx();
     const response = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           'X-WorldMonitor-Key': SESSION_TOKEN,
           'cf-connecting-ip': '203.0.113.7',
           'cf-ipcountry': 'FR',
@@ -338,9 +338,9 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
     ]);
     const recorder = makeRecordingCtx();
     const response = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           'X-WorldMonitor-Key': SESSION_TOKEN,
           'cf-connecting-ip': '203.0.113.7',
           'cf-ipcountry': 'FR',
@@ -361,7 +361,7 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
 
   it('never falls back to an unproven Cloudflare country header', () => {
     process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-    const request = new Request('https://worldmonitor.app/api/market/v1/list-market-quotes', {
+    const request = new Request('https://example.test/api/market/v1/list-market-quotes', {
       headers: { 'cf-ipcountry': 'FR' },
     });
 
@@ -370,7 +370,7 @@ describe('gateway telemetry payload — trusted client attribution (#5228)', () 
 
   it('falls back from Cloudflare’s T1 pseudo-country to Vercel geography', () => {
     process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-    const request = new Request('https://worldmonitor.app/api/market/v1/list-market-quotes', {
+    const request = new Request('https://example.test/api/market/v1/list-market-quotes', {
       headers: {
         'cf-ipcountry': 'T1',
         'x-vercel-ip-country': 'ZA',
@@ -399,9 +399,9 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     const token = await signSupabaseToken('user_pro');
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-score?countryCode=US', {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           Authorization: `Bearer ${token}`,
         },
       }),
@@ -462,9 +462,9 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
     const token = await signSupabaseToken('user_api');
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
+      new Request('https://example.test/api/market/v1/analyze-stock?symbol=AAPL', {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           Authorization: `Bearer ${token}`,
         },
       }),
@@ -508,9 +508,9 @@ describe('gateway telemetry payload — bearer identity propagation', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-score?countryCode=US', {
         headers: {
-          Origin: 'https://worldmonitor.app',
+          Origin: 'https://example.test',
           Authorization: 'Bearer not-a-real-token',
         },
       }),
@@ -543,8 +543,8 @@ describe('gateway telemetry payload — ctx-optional safety', () => {
     ]);
 
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL', {
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+      new Request('https://example.test/api/market/v1/list-market-quotes?symbols=AAPL', {
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
     );
     assert.equal(res.status, 200);
@@ -583,8 +583,8 @@ describe('gateway telemetry payload — unmatched route reason labels', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/trade/v1/list-tariffs', {
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+      new Request('https://example.test/api/trade/v1/list-tariffs', {
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
       recorder.ctx,
     );
@@ -623,9 +623,9 @@ describe('gateway telemetry payload — unmatched route reason labels', () => {
 
     const recorder = makeRecordingCtx();
     const res = await handler(
-      new Request('https://worldmonitor.app/api/market/v1/list-market-quotes', {
+      new Request('https://example.test/api/market/v1/list-market-quotes', {
         method: 'DELETE',
-        headers: { Origin: 'https://worldmonitor.app', 'X-WorldMonitor-Key': SESSION_TOKEN },
+        headers: { Origin: 'https://example.test', 'X-WorldMonitor-Key': SESSION_TOKEN },
       }),
       recorder.ctx,
     );

@@ -1,32 +1,30 @@
 /**
  * CORS header generation -- TypeScript port of api/_cors.js.
  *
- * Identical ALLOWED_ORIGIN_PATTERNS and logic, with methods set
- * to 'GET, POST, OPTIONS' (sebuf routes support GET and POST).
+ * Identical allowed-origin logic, with methods set to 'GET, POST, OPTIONS'
+ * (sebuf routes support GET and POST).
  */
 
-const PRODUCTION_PATTERNS: RegExp[] = [
-  /^https:\/\/(.*\.)?worldmonitor\.app$/,
-  // Vercel preview deployments under the "eliewm" team scope, e.g.
-  //   worldmonitor-git-<branch>-eliewm.vercel.app  (git-branch alias)
-  //   worldmonitor-<hash>-eliewm.vercel.app        (deployment URL)
-  // Tight on purpose: never a bare *.vercel.app (this is a security allowlist).
-  /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/,
-  /^https?:\/\/tauri\.localhost(:\d+)?$/,
-  /^https?:\/\/[a-z0-9-]+\.tauri\.localhost(:\d+)?$/i,
-  /^tauri:\/\/localhost$/,
-  /^asset:\/\/localhost$/,
-];
+import { buildAllowedOriginPatterns, resolveAppOrigin } from '../shared/domain-config.js';
 
-const DEV_PATTERNS: RegExp[] = [
-  /^https?:\/\/localhost(:\d+)?$/,
-  /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
-];
+// Vercel preview deployments under the "eliewm" team scope, e.g.
+//   worldmonitor-git-<branch>-eliewm.vercel.app  (git-branch alias)
+//   worldmonitor-<hash>-eliewm.vercel.app        (deployment URL)
+// Tight on purpose: never a bare *.vercel.app (this is a security allowlist).
+// This is a Vercel team-scope identifier, not a domain brand, so it stays
+// hardcoded here rather than living in the domain-agnostic shared config.
+const ELIEWM_PREVIEW_PATTERN = /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/;
 
-const ALLOWED_ORIGIN_PATTERNS: RegExp[] =
-  process.env.NODE_ENV === 'production'
-    ? PRODUCTION_PATTERNS
-    : [...PRODUCTION_PATTERNS, ...DEV_PATTERNS];
+// Recomputed per call (not cached at module load) so APP_DOMAIN/NODE_ENV
+// changes — including a test file setting process.env.APP_DOMAIN before
+// calling into this module — always take effect. See shared/domain-config.js
+// for what's derived from APP_DOMAIN (unset = local dev, never a brand default).
+function getAllowedOriginPatterns(): RegExp[] {
+  return buildAllowedOriginPatterns(process.env.APP_DOMAIN, {
+    includeDevPatterns: process.env.NODE_ENV !== 'production',
+    extraPatterns: [ELIEWM_PREVIEW_PATTERN],
+  });
+}
 
 const ALLOWED_HEADERS = [
   'Content-Type',
@@ -60,12 +58,12 @@ const EXPOSED_HEADERS = [
 ].join(', ');
 
 export function isAllowedOrigin(origin: string): boolean {
-  return Boolean(origin) && ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+  return Boolean(origin) && getAllowedOriginPatterns().some((pattern) => pattern.test(origin));
 }
 
 export function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://worldmonitor.app';
+  const allowOrigin = isAllowedOrigin(origin) ? origin : resolveAppOrigin(process.env.APP_DOMAIN);
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Credentials': 'true',

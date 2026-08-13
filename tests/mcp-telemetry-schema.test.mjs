@@ -10,7 +10,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 
 const VALID_KEY = 'wm_test_key_123';
-const BASE_URL = 'https://worldmonitor.app/mcp';
+const BASE_URL = 'https://example.test/mcp';
 
 // Top-level keys that name a request- or response-body shape. If any of
 // these appears in either allowlist, the redaction contract is broken at

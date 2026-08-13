@@ -2,8 +2,15 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveWwwOrigin } from '../shared/domain-config.js';
 
-export const SITE_ORIGIN = 'https://www.worldmonitor.app';
+// A function, not a module-load-time const: recomputed on every call so a
+// caller (a real `npm run build:content-corpus` invocation, or a test) can
+// set process.env.APP_DOMAIN right before calling discoverContentCorpusPages()
+// rather than needing it set before this module's own static import runs.
+export function resolveSiteOrigin() {
+  return resolveWwwOrigin(process.env.APP_DOMAIN);
+}
 export const CONTENT_CORPUS_PREFIXES = ['countries', 'chokepoints', 'crises', 'tools', 'reference', 'changelog'];
 export const CONTENT_CORPUS_START_MARKER = '<!-- content-corpus:start -->';
 export const CONTENT_CORPUS_END_MARKER = '<!-- content-corpus:end -->';
@@ -84,7 +91,7 @@ const toPublicPath = (relativePath) => {
   return '/' + normalized;
 };
 
-const normalizeHref = (href) => new URL(href, SITE_ORIGIN).href;
+const normalizeHref = (href) => new URL(href, resolveSiteOrigin()).href;
 
 const walkHtmlFiles = (dir) => {
   if (!existsSync(dir)) return [];
@@ -99,8 +106,9 @@ const walkHtmlFiles = (dir) => {
 
 const assertCanonicalMatchesFile = ({ canonical, relativePath, prefix }) => {
   const url = new URL(canonical);
-  if (url.origin !== SITE_ORIGIN) {
-    throw new Error(relativePath + ' canonical must use ' + SITE_ORIGIN + ', saw ' + url.origin);
+  const siteOrigin = resolveSiteOrigin();
+  if (url.origin !== siteOrigin) {
+    throw new Error(relativePath + ' canonical must use ' + siteOrigin + ', saw ' + url.origin);
   }
   if (url.search || url.hash) {
     throw new Error(relativePath + ' canonical must not include query or hash');

@@ -88,7 +88,7 @@ function makeGateway() {
 }
 
 function userKeyRequest() {
-  return new Request("https://www.worldmonitor.app/api/news/v1/list-feed-digest", {
+  return new Request("https://www.example.test/api/news/v1/list-feed-digest", {
     method: "GET",
     headers: { "X-Api-Key": "wm_test_starter_key" },
   });

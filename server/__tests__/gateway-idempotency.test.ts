@@ -57,7 +57,7 @@ function post(key: string | undefined, body: string = DEFAULT_BODY): Request {
     'cf-connecting-ip': '203.0.113.7',
   };
   if (key !== undefined) headers[IDEMPOTENCY_HEADER] = key;
-  return new Request(`https://www.worldmonitor.app${PATH}`, { method: 'POST', headers, body });
+  return new Request(`https://www.example.test${PATH}`, { method: 'POST', headers, body });
 }
 
 async function sha256Hex(str: string): Promise<string> {

@@ -19,23 +19,27 @@
 
 import { maybeShadowKvRead } from './kv-shadow.js';
 import { maybeServeBootstrapFromKv } from './kv-serve.js';
+import { buildAllowedOriginPatterns, resolveAppOrigin } from '../../../shared/domain-config.js';
 
-// Keep in sync with api/_cors.js#ALLOWED_ORIGIN_PATTERNS and
-// server/cors.ts#PRODUCTION_PATTERNS. The Worker's allowlist must be a
+// Vercel previews under the "eliewm" team scope, e.g.
+//   worldmonitor-git-<branch>-eliewm.vercel.app / worldmonitor-<hash>-eliewm.vercel.app
+// This is a Vercel team-scope identifier, not a domain brand, so it stays
+// hardcoded here (mirrored in api/_cors.js + server/cors.ts) rather than
+// living in the domain-agnostic shared config.
+const ELIEWM_PREVIEW_PATTERN = /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/;
+
+// Keep in sync with api/_cors.js#getAllowedOriginPatterns and
+// server/cors.ts#getAllowedOriginPatterns. The Worker's allowlist must be a
 // superset of (or identical to) the function-side allowlist; if it's narrower,
 // origins that the function would accept get the canonical fallback origin
-// echoed back and fail CORS at the browser.
-const ALLOWED_ORIGIN_PATTERNS = [
-  /^https:\/\/(.*\.)?worldmonitor\.app$/,
-  // Vercel previews under the "eliewm" team scope, e.g.
-  //   worldmonitor-git-<branch>-eliewm.vercel.app / worldmonitor-<hash>-eliewm.vercel.app
-  // Mirror of api/_cors.js + server/cors.ts (see superset note above).
-  /^https:\/\/worldmonitor-[a-z0-9-]+-eliewm\.vercel\.app$/,
-  /^https?:\/\/tauri\.localhost(:\d+)?$/,
-  /^https?:\/\/[a-z0-9-]+\.tauri\.localhost(:\d+)?$/i,
-  /^tauri:\/\/localhost$/,
-  /^asset:\/\/localhost$/,
-];
+// echoed back and fail CORS at the browser. Workers have no process.env — the
+// domain comes from the env.APP_DOMAIN binding (wrangler.toml's [vars]),
+// threaded through explicitly rather than read as a module-level global. See
+// shared/domain-config.js for what's derived from it (unset = local dev,
+// never a brand default).
+function getAllowedOriginPatterns(domain) {
+  return buildAllowedOriginPatterns(domain, { extraPatterns: [ELIEWM_PREVIEW_PATTERN] });
+}
 
 // Keep in sync with api/_cors.js#getCorsHeaders Access-Control-Allow-Headers.
 const ALLOW_HEADERS = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
@@ -96,14 +100,14 @@ function hasPublicCorsPolicy(pathname) {
   return PUBLIC_CORS_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-export function isAllowedOrigin(origin) {
-  return Boolean(origin) && ALLOWED_ORIGIN_PATTERNS.some((p) => p.test(origin));
+export function isAllowedOrigin(origin, domain) {
+  return Boolean(origin) && getAllowedOriginPatterns(domain).some((p) => p.test(origin));
 }
 
 export { hasPublicCorsPolicy };
 
-export function buildCorsHeaders(origin) {
-  const allowOrigin = isAllowedOrigin(origin) ? origin : 'https://worldmonitor.app';
+export function buildCorsHeaders(origin, domain) {
+  const allowOrigin = isAllowedOrigin(origin, domain) ? origin : resolveAppOrigin(domain);
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     // Required because the app fetch interceptor sends credentials: 'include'
@@ -191,7 +195,7 @@ export default {
     }
 
     const origin = request.headers.get('Origin') || '';
-    const corsHeaders = buildCorsHeaders(origin);
+    const corsHeaders = buildCorsHeaders(origin, env?.APP_DOMAIN);
 
     // OPTIONS preflight — return immediately, skip Vercel.
     // The browser's CORS gate is the preflight response, not the actual

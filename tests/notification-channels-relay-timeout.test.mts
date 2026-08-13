@@ -34,10 +34,10 @@ async function importFreshNotificationChannels() {
 }
 
 function makeSetChannelRequest(): Request {
-  return new Request('https://worldmonitor.app/api/notification-channels', {
+  return new Request('https://example.test/api/notification-channels', {
     method: 'POST',
     headers: {
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://example.test',
       Authorization: 'Bearer supabase-token',
       'Content-Type': 'application/json',
       'Idempotency-Key': 'notification-channel-timeout-retry',
@@ -122,7 +122,7 @@ describe('/api/notification-channels backend-failure recovery', () => {
 
     assert.equal(first.status, 503);
     assert.deepEqual(await first.json(), { error: 'Service unavailable' });
-    assert.equal(first.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+    assert.equal(first.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
     assert.equal(first.headers.get('Idempotency-Key'), 'notification-channel-timeout-retry');
     assert.equal(first.headers.get('Idempotent-Replayed'), 'false');
     assert.equal(first.headers.get('Retry-After'), '5');

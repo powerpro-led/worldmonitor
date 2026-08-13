@@ -8,7 +8,7 @@
 //   - OPTIONS preflight returns 204 + Access-Control-Allow-Credentials: true
 //     (the load-bearing assertion — the 2026-05-27 outage was a missing ACAC).
 //   - Allowed origins are echoed verbatim into ACAO.
-//   - Disallowed origins fall back to the canonical https://worldmonitor.app
+//   - Disallowed origins fall back to the canonical configured-domain origin
 //     (so browsers reject the request rather than the Worker serving an open
 //     wildcard).
 //   - Non-/api/ paths pass through to fetch() unmodified.
@@ -23,13 +23,19 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import worker, { isAllowedOrigin, buildCorsHeaders, hasPublicCorsPolicy } from './src/index.js';
+import { TEST_APP_DOMAIN } from '../../tests/helpers/domain-config.mjs';
 
 function makeRequest(method, url, headers = {}) {
   return new Request(url, { method, headers });
 }
 
-const CANONICAL_FALLBACK = 'https://worldmonitor.app';
-const KNOWN_GOOD = 'https://www.worldmonitor.app';
+// isAllowedOrigin/buildCorsHeaders take the configured domain as an explicit
+// parameter (Workers have no process.env — see src/index.js) — TEST_APP_DOMAIN
+// is passed at every direct call site below, and TEST_ENV mirrors the
+// wrangler.toml [vars] shape for every worker.fetch(req, env) call.
+const CANONICAL_FALLBACK = `https://${TEST_APP_DOMAIN}`;
+const KNOWN_GOOD = `https://www.${TEST_APP_DOMAIN}`;
+const TEST_ENV = { APP_DOMAIN: TEST_APP_DOMAIN };
 const ACAH_EXPECTED = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
 const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
 // Must be a superset of every method any api/* route advertises. DELETE was
@@ -44,55 +50,57 @@ const ACAM_EXPECTED = 'GET, POST, HEAD, OPTIONS';
 
 // --- allowlist coverage ---------------------------------------------------
 
-test('isAllowedOrigin accepts apex worldmonitor.app and subdomains', () => {
-  assert.equal(isAllowedOrigin('https://worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://www.worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://tech.worldmonitor.app'), true);
-  assert.equal(isAllowedOrigin('https://commodity.worldmonitor.app'), true);
+test('isAllowedOrigin accepts apex domain and subdomains', () => {
+  assert.equal(isAllowedOrigin(`https://${TEST_APP_DOMAIN}`, TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin(`https://www.${TEST_APP_DOMAIN}`, TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin(`https://tech.${TEST_APP_DOMAIN}`, TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin(`https://commodity.${TEST_APP_DOMAIN}`, TEST_APP_DOMAIN), true);
 });
 
 test('isAllowedOrigin accepts Vercel preview deploys under the eliewm team scope (mirrors api/_cors.js)', () => {
   // The project deploys previews under the "eliewm" Vercel team scope, so URLs
   // end in `-eliewm.vercel.app` (git-branch alias AND hash deployment forms).
-  // The Worker MUST mirror api/_cors.js exactly — if it stays narrower, eliewm
-  // preview preflights echo the canonical worldmonitor.app fallback and the
-  // browser blocks them before the request ever reaches Vercel.
-  assert.equal(isAllowedOrigin('https://worldmonitor-git-feat-x-eliewm.vercel.app'), true);
-  assert.equal(isAllowedOrigin('https://worldmonitor-r6q9o-eliewm.vercel.app'), true);
+  // This pattern is a Vercel team-scope identifier, not a domain brand, so it
+  // stays hardcoded regardless of the configured APP_DOMAIN (mirrors
+  // api/_cors.js). The Worker MUST mirror api/_cors.js exactly — if it stays
+  // narrower, eliewm preview preflights echo the canonical fallback origin
+  // and the browser blocks them before the request ever reaches Vercel.
+  assert.equal(isAllowedOrigin('https://worldmonitor-git-feat-x-eliewm.vercel.app', TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin('https://worldmonitor-r6q9o-eliewm.vercel.app', TEST_APP_DOMAIN), true);
   // Tight allowlist: a foreign team scope, a non-worldmonitor app, and the
   // retired personal scope (worldmonitor-*-elie-<hash>, migration complete)
   // must all stay rejected. Never a bare *.vercel.app.
-  assert.equal(isAllowedOrigin('https://worldmonitor-feat-x-attacker.vercel.app'), false);
-  assert.equal(isAllowedOrigin('https://some-other-app-eliewm.vercel.app'), false);
-  assert.equal(isAllowedOrigin('https://worldmonitor-abc-elie-habib.vercel.app'), false);
+  assert.equal(isAllowedOrigin('https://worldmonitor-feat-x-attacker.vercel.app', TEST_APP_DOMAIN), false);
+  assert.equal(isAllowedOrigin('https://some-other-app-eliewm.vercel.app', TEST_APP_DOMAIN), false);
+  assert.equal(isAllowedOrigin('https://worldmonitor-abc-elie-habib.vercel.app', TEST_APP_DOMAIN), false);
 });
 
 test('isAllowedOrigin accepts Tauri desktop runtime origins', () => {
-  assert.equal(isAllowedOrigin('tauri://localhost'), true);
-  assert.equal(isAllowedOrigin('asset://localhost'), true);
-  assert.equal(isAllowedOrigin('http://tauri.localhost'), true);
-  assert.equal(isAllowedOrigin('https://tauri.localhost:1420'), true);
-  assert.equal(isAllowedOrigin('http://app.tauri.localhost'), true);
+  assert.equal(isAllowedOrigin('tauri://localhost', TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin('asset://localhost', TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin('http://tauri.localhost', TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin('https://tauri.localhost:1420', TEST_APP_DOMAIN), true);
+  assert.equal(isAllowedOrigin('http://app.tauri.localhost', TEST_APP_DOMAIN), true);
 });
 
 test('isAllowedOrigin rejects unrelated origins', () => {
-  assert.equal(isAllowedOrigin('https://evil.com'), false);
-  assert.equal(isAllowedOrigin('https://worldmonitor.app.evil.com'), false);
-  assert.equal(isAllowedOrigin('https://notworldmonitor.app'), false);
-  assert.equal(isAllowedOrigin(''), false);
+  assert.equal(isAllowedOrigin('https://evil.com', TEST_APP_DOMAIN), false);
+  assert.equal(isAllowedOrigin(`https://${TEST_APP_DOMAIN}.evil.com`, TEST_APP_DOMAIN), false);
+  assert.equal(isAllowedOrigin(`https://not${TEST_APP_DOMAIN}`, TEST_APP_DOMAIN), false);
+  assert.equal(isAllowedOrigin('', TEST_APP_DOMAIN), false);
 });
 
 // --- CORS header shape ----------------------------------------------------
 
 test('buildCorsHeaders echoes allowed origin and includes credentials flag', () => {
-  const h = buildCorsHeaders(KNOWN_GOOD);
+  const h = buildCorsHeaders(KNOWN_GOOD, TEST_APP_DOMAIN);
   assert.equal(h['Access-Control-Allow-Origin'], KNOWN_GOOD);
   assert.equal(h['Access-Control-Allow-Credentials'], 'true');
   assert.equal(h['Vary'], 'Origin');
 });
 
 test('buildCorsHeaders falls back to canonical origin for disallowed origins', () => {
-  const h = buildCorsHeaders('https://evil.com');
+  const h = buildCorsHeaders('https://evil.com', TEST_APP_DOMAIN);
   assert.equal(h['Access-Control-Allow-Origin'], CANONICAL_FALLBACK);
   // Still must set ACAC: true; missing it would 'work' for opaque requests
   // but the browser CORS gate compares the echoed origin to the request
@@ -101,24 +109,24 @@ test('buildCorsHeaders falls back to canonical origin for disallowed origins', (
 });
 
 test('buildCorsHeaders Access-Control-Allow-Headers matches api/_cors.js', () => {
-  const h = buildCorsHeaders(KNOWN_GOOD);
+  const h = buildCorsHeaders(KNOWN_GOOD, TEST_APP_DOMAIN);
   assert.equal(h['Access-Control-Allow-Headers'], ACAH_EXPECTED);
 });
 
 test('buildCorsHeaders Access-Control-Expose-Headers matches api/_cors.js', () => {
-  const h = buildCorsHeaders(KNOWN_GOOD);
+  const h = buildCorsHeaders(KNOWN_GOOD, TEST_APP_DOMAIN);
   assert.equal(h['Access-Control-Expose-Headers'], ACEH_EXPECTED);
 });
 
 // --- preflight short-circuit (the load-bearing branch) --------------------
 
 test('OPTIONS preflight returns 204 with Access-Control-Allow-Credentials: true', async () => {
-  const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/bootstrap?tier=fast', {
+  const req = makeRequest('OPTIONS', `https://api.${TEST_APP_DOMAIN}/api/bootstrap?tier=fast`, {
     Origin: KNOWN_GOOD,
     'Access-Control-Request-Method': 'GET',
     'Access-Control-Request-Headers': 'content-type',
   });
-  const resp = await worker.fetch(req);
+  const resp = await worker.fetch(req, TEST_ENV);
   assert.equal(resp.status, 204);
   assert.equal(resp.headers.get('access-control-allow-origin'), KNOWN_GOOD);
   assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
@@ -129,10 +137,10 @@ test('OPTIONS preflight returns 204 with Access-Control-Allow-Credentials: true'
 });
 
 test('OPTIONS preflight from disallowed origin still sets ACAC but echoes fallback origin', async () => {
-  const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/bootstrap', {
+  const req = makeRequest('OPTIONS', `https://api.${TEST_APP_DOMAIN}/api/bootstrap`, {
     Origin: 'https://evil.com',
   });
-  const resp = await worker.fetch(req);
+  const resp = await worker.fetch(req, TEST_ENV);
   assert.equal(resp.status, 204);
   assert.equal(resp.headers.get('access-control-allow-origin'), CANONICAL_FALLBACK);
   // Browser sees fallback origin != evil.com → rejects. ACAC: true is still
@@ -153,10 +161,10 @@ test('non-/api/ paths bypass CORS injection and call fetch directly', async () =
     return new Response('ok', { status: 200 });
   };
   try {
-    const req = makeRequest('GET', 'https://api.worldmonitor.app/health-check', {
+    const req = makeRequest('GET', `https://api.${TEST_APP_DOMAIN}/health-check`, {
       Origin: KNOWN_GOOD,
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(resp.status, 200);
     // CORS headers should NOT be injected on pass-through, because the
     // Worker treats non-/api/ paths as out of scope.
@@ -182,10 +190,10 @@ test('GET response from origin has CORS headers stamped by the Worker', async ()
     },
   });
   try {
-    const req = makeRequest('GET', 'https://api.worldmonitor.app/api/health', {
+    const req = makeRequest('GET', `https://api.${TEST_APP_DOMAIN}/api/health`, {
       Origin: KNOWN_GOOD,
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(resp.status, 200);
     assert.equal(resp.headers.get('access-control-allow-origin'), KNOWN_GOOD);
     assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
@@ -214,10 +222,10 @@ test('GET response preserves function-specific exposed headers (bootstrap U3a re
     },
   });
   try {
-    const req = makeRequest('GET', 'https://api.worldmonitor.app/api/bootstrap?tier=slow&public=1', {
+    const req = makeRequest('GET', `https://api.${TEST_APP_DOMAIN}/api/bootstrap?tier=slow&public=1`, {
       Origin: KNOWN_GOOD,
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(
       resp.headers.get('access-control-expose-headers'),
       `${ACEH_EXPECTED}, Server-Timing, X-WorldMonitor-Bootstrap-Redis-Duration, Age, X-Vercel-Cache, CF-Cache-Status`,
@@ -237,10 +245,10 @@ test('GET response does not preserve function-specific exposed headers outside b
     },
   });
   try {
-    const req = makeRequest('GET', 'https://api.worldmonitor.app/api/health', {
+    const req = makeRequest('GET', `https://api.${TEST_APP_DOMAIN}/api/health`, {
       Origin: KNOWN_GOOD,
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(resp.headers.get('access-control-expose-headers'), ACEH_EXPECTED);
   } finally {
     globalThis.fetch = original;
@@ -281,7 +289,7 @@ test('hasPublicCorsPolicy: rejects WM-app routes (so credentialed flow keeps Wor
 
 test('OPTIONS preflight to /api/mcp from https://claude.ai passes through to Vercel (Worker does NOT short-circuit)', async () => {
   // Regression: PR review caught that the Worker was short-circuiting MCP
-  // preflights with the canonical worldmonitor.app fallback origin echo,
+  // preflights with the canonical configured-domain fallback origin echo,
   // which blocked claude.ai / claude.com MCP clients. Pin the bypass.
   const original = globalThis.fetch;
   let received;
@@ -298,13 +306,13 @@ test('OPTIONS preflight to /api/mcp from https://claude.ai passes through to Ver
     });
   };
   try {
-    const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/mcp', {
+    const req = makeRequest('OPTIONS', `https://api.${TEST_APP_DOMAIN}/api/mcp`, {
       Origin: 'https://claude.ai',
       'Access-Control-Request-Method': 'POST',
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.ok(received instanceof Request, 'request should have been forwarded to fetch()');
-    assert.equal(received.url, 'https://api.worldmonitor.app/api/mcp');
+    assert.equal(received.url, `https://api.${TEST_APP_DOMAIN}/api/mcp`);
     assert.equal(resp.status, 204);
     // Vercel's ACAO: * passes through unchanged (Worker did NOT stamp).
     assert.equal(resp.headers.get('access-control-allow-origin'), '*');
@@ -326,11 +334,11 @@ test('OPTIONS preflight to /api/oauth/register from https://claude.com passes th
     });
   };
   try {
-    const req = makeRequest('OPTIONS', 'https://api.worldmonitor.app/api/oauth/register', {
+    const req = makeRequest('OPTIONS', `https://api.${TEST_APP_DOMAIN}/api/oauth/register`, {
       Origin: 'https://claude.com',
       'Access-Control-Request-Method': 'POST',
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.ok(received instanceof Request);
     assert.equal(resp.headers.get('access-control-allow-origin'), '*');
     assert.equal(resp.headers.get('access-control-allow-credentials'), null);
@@ -350,11 +358,11 @@ test('GET to /api/oauth/token from https://claude.ai passes Vercel headers throu
     },
   });
   try {
-    const req = makeRequest('POST', 'https://api.worldmonitor.app/api/oauth/token', {
+    const req = makeRequest('POST', `https://api.${TEST_APP_DOMAIN}/api/oauth/token`, {
       Origin: 'https://claude.ai',
       'Content-Type': 'application/json',
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(resp.status, 200);
     assert.equal(resp.headers.get('access-control-allow-origin'), '*');
     assert.equal(resp.headers.get('access-control-allow-credentials'), null);
@@ -369,10 +377,10 @@ test('502 fallback when origin throws still includes CORS headers', async () => 
   const original = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('origin down'); };
   try {
-    const req = makeRequest('GET', 'https://api.worldmonitor.app/api/health', {
+    const req = makeRequest('GET', `https://api.${TEST_APP_DOMAIN}/api/health`, {
       Origin: KNOWN_GOOD,
     });
-    const resp = await worker.fetch(req);
+    const resp = await worker.fetch(req, TEST_ENV);
     assert.equal(resp.status, 502);
     assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
     assert.equal(resp.headers.get('access-control-allow-origin'), KNOWN_GOOD);

@@ -150,7 +150,7 @@ function keyReq(
 ) {
   const headers = new Headers(extraHeaders);
   headers.set("X-Api-Key", key);
-  return new Request(`https://www.worldmonitor.app${path}`, { method, headers });
+  return new Request(`https://www.example.test${path}`, { method, headers });
 }
 
 const ctx = { waitUntil: () => {} };

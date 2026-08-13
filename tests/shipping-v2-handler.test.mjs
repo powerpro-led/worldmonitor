@@ -22,7 +22,7 @@ const originalEnv = { ...process.env };
 const TEST_RESOLVER_KEY = Symbol.for('worldmonitor.shippingV2.resolveWebhookHostnameForTest');
 
 function makeCtx(headers = {}) {
-  const req = new Request('https://worldmonitor.app/api/v2/shipping/route-intelligence', {
+  const req = new Request('https://example.test/api/v2/shipping/route-intelligence', {
     method: 'GET',
     headers,
   });

@@ -34,6 +34,14 @@ id = "40d42ec8064b4813ac87e61b43fb697f"
 #   "all"       = serve both public tiers.
 # Any miss/stale/invalid/error/timeout falls through to the Vercel/Redis origin (strictly additive).
 # Kill-switch = set back to "off" and redeploy. Once "all" is proven, flip BOOTSTRAP_KV_SHADOW to "0".
+#
+# APP_DOMAIN — the bare host this Worker's CORS allowlist/fallback-origin is derived from (see
+# shared/domain-config.js, imported directly by src/index.js). Left empty here: nothing is
+# currently deployed to this Worker (the [[routes]] binding above is stale, inherited config, not
+# an active deployment), so there is no real domain to bake in. An empty value makes the Worker
+# fall back to local-dev defaults rather than assuming any brand. Set this to the real domain
+# before ever actually deploying this Worker for a live instance.
 [vars]
 BOOTSTRAP_KV_SHADOW = "1"
 BOOTSTRAP_KV_SERVE = "off"
+APP_DOMAIN = ""

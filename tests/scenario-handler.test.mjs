@@ -22,7 +22,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
 function makeCtx(headers = {}) {
-  const req = new Request('https://worldmonitor.app/api/scenario/v1/run-scenario', {
+  const req = new Request('https://example.test/api/scenario/v1/run-scenario', {
     method: 'POST',
     headers,
   });

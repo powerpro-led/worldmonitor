@@ -25,9 +25,9 @@ let anonymousSessionToken = '';
 let handler: (req: Request) => Promise<Response>;
 
 function request(path: string, headers: HeadersInit): Request {
-  return new Request(`https://worldmonitor.app${path}?_debug=1`, {
+  return new Request(`https://example.test${path}?_debug=1`, {
     headers: {
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://example.test',
       ...headers,
     },
   });

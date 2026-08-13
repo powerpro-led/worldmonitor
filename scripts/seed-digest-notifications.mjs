@@ -52,6 +52,7 @@ import { readRawJsonFromUpstash, redisPipeline } from '../api/_upstash-json.js';
 import { classifyFeelGood } from '../server/_shared/feelgood-classifier.js';
 import { classifyEphemeralLiveCoverage } from '../shared/ephemeral-live-classifier.js';
 import { shouldDropOpinionTrack } from './lib/digest-opinion-track-filter.mjs';
+import { resolveAppOrigin } from '../shared/domain-config.js';
 import {
   composeBriefFromDigestStories,
   compareRules,
@@ -179,7 +180,7 @@ function getDigestScoreMin() {
 
 const BRIEF_URL_SIGNING_SECRET = process.env.BRIEF_URL_SIGNING_SECRET ?? '';
 const WORLDMONITOR_PUBLIC_BASE_URL =
-  process.env.WORLDMONITOR_PUBLIC_BASE_URL ?? 'https://worldmonitor.app';
+  process.env.WORLDMONITOR_PUBLIC_BASE_URL ?? resolveAppOrigin(process.env.APP_DOMAIN);
 const BRIEF_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 // Brief story window: derived per-rule from the rule's lastSentAt via
 // digestWindowStartMs, identical to the send-loop window. The previous

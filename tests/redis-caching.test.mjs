@@ -994,7 +994,7 @@ describe('theater posture caching behavior', { concurrency: 1 }, () => {
     };
 
     try {
-      const result = await module.getTheaterPosture({ request: new Request('https://worldmonitor.app/api/military/v1/get-theater-posture') }, {});
+      const result = await module.getTheaterPosture({ request: new Request('https://example.test/api/military/v1/get-theater-posture') }, {});
       assert.equal(openskyFetchCount, 0, 'must not call upstream APIs (Redis-read-only)');
       assert.deepEqual(result, liveData, 'should return live Redis data');
     } finally {
@@ -1041,7 +1041,7 @@ describe('theater posture caching behavior', { concurrency: 1 }, () => {
     };
 
     try {
-      const result = await module.getTheaterPosture({ request: new Request('https://worldmonitor.app/api/military/v1/get-theater-posture') }, {});
+      const result = await module.getTheaterPosture({ request: new Request('https://example.test/api/military/v1/get-theater-posture') }, {});
       assert.deepEqual(result, staleData, 'should return stale cache when upstreams fail');
     } finally {
       cleanup();
@@ -1078,7 +1078,7 @@ describe('theater posture caching behavior', { concurrency: 1 }, () => {
     };
 
     try {
-      const result = await module.getTheaterPosture({ request: new Request('https://worldmonitor.app/api/military/v1/get-theater-posture') }, {});
+      const result = await module.getTheaterPosture({ request: new Request('https://example.test/api/military/v1/get-theater-posture') }, {});
       assert.deepEqual(result, { theaters: [] }, 'should return empty when all tiers exhausted');
     } finally {
       cleanup();
@@ -1109,7 +1109,7 @@ describe('theater posture caching behavior', { concurrency: 1 }, () => {
     };
 
     try {
-      await module.getTheaterPosture({ request: new Request('https://worldmonitor.app/api/military/v1/get-theater-posture') }, {});
+      await module.getTheaterPosture({ request: new Request('https://example.test/api/military/v1/get-theater-posture') }, {});
       assert.equal(cacheWrites.length, 0, 'handler must not write to Redis (read-only)');
     } finally {
       cleanup();

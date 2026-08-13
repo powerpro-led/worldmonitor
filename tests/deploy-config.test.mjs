@@ -18,6 +18,7 @@ import {
   discoverContentCorpusPages,
   injectContentCorpusSitemapBlock,
 } from '../scripts/build-content-corpus-sitemap.mjs';
+import { setTestAppDomain, TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
@@ -271,55 +272,61 @@ describe('crawlable content corpus deployment contracts', () => {
   it('discovers canonical generated corpus pages and validates changelog pagination links', () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'wm-content-corpus-'));
     const publicDir = join(tempRoot, 'public');
+    // resolveSiteOrigin() (build-content-corpus-sitemap.mjs) derives from
+    // APP_DOMAIN, unset = localhost — set it here to match this test's own
+    // fixture canonical hrefs, restored in `finally` so it doesn't leak into
+    // other tests in this file.
+    const previousAppDomain = process.env.APP_DOMAIN;
+    setTestAppDomain();
     try {
       writeFixturePage(
         publicDir,
         'countries/ukraine/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/countries/ukraine/" /><meta name="lastmod" content="2026-07-08" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/countries/ukraine/" /><meta name="lastmod" content="2026-07-08" />`
       );
       writeFixturePage(
         publicDir,
         'chokepoints/suez-canal/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/chokepoints/suez-canal/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/chokepoints/suez-canal/" />`
       );
       writeFixturePage(
         publicDir,
         'crises/ukraine-war/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/crises/ukraine-war/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/crises/ukraine-war/" />`
       );
       writeFixturePage(
         publicDir,
         'tools/natural-hazard-pulse/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/tools/natural-hazard-pulse/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/tools/natural-hazard-pulse/" />`
       );
       writeFixturePage(
         publicDir,
         'reference/changelog/page/1/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/reference/changelog/page/1/" /><link rel="next" href="https://www.worldmonitor.app/reference/changelog/page/2/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/reference/changelog/page/1/" /><link rel="next" href="https://www.${TEST_APP_DOMAIN}/reference/changelog/page/2/" />`
       );
       writeFixturePage(
         publicDir,
         'reference/changelog/page/2/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/reference/changelog/page/2/" /><link rel="prev" href="https://www.worldmonitor.app/reference/changelog/page/1/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/reference/changelog/page/2/" /><link rel="prev" href="https://www.${TEST_APP_DOMAIN}/reference/changelog/page/1/" />`
       );
 
       const pages = discoverContentCorpusPages({ publicDir });
       const locations = pages.map((page) => page.loc).sort();
       assert.deepEqual(locations, [
-        'https://www.worldmonitor.app/reference/changelog/page/1/',
-        'https://www.worldmonitor.app/reference/changelog/page/2/',
-        'https://www.worldmonitor.app/chokepoints/suez-canal/',
-        'https://www.worldmonitor.app/crises/ukraine-war/',
-        'https://www.worldmonitor.app/countries/ukraine/',
-        'https://www.worldmonitor.app/tools/natural-hazard-pulse/',
+        `https://www.${TEST_APP_DOMAIN}/reference/changelog/page/1/`,
+        `https://www.${TEST_APP_DOMAIN}/reference/changelog/page/2/`,
+        `https://www.${TEST_APP_DOMAIN}/chokepoints/suez-canal/`,
+        `https://www.${TEST_APP_DOMAIN}/crises/ukraine-war/`,
+        `https://www.${TEST_APP_DOMAIN}/countries/ukraine/`,
+        `https://www.${TEST_APP_DOMAIN}/tools/natural-hazard-pulse/`,
       ].sort());
 
       const block = buildContentCorpusSitemapBlock(pages);
-      assert.match(block, /<loc>https:\/\/www\.worldmonitor\.app\/countries\/ukraine\/<\/loc>/);
+      assert.match(block, new RegExp(`<loc>https://www\\.${TEST_APP_DOMAIN.replace(/\./g, '\\.')}/countries/ukraine/</loc>`));
       assert.match(block, /<lastmod>2026-07-08<\/lastmod>/);
 
       const injected = injectContentCorpusSitemapBlock(
-        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://www.worldmonitor.app/</loc></url>\n</urlset>\n',
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://www.${TEST_APP_DOMAIN}/</loc></url>\n</urlset>\n`,
         pages
       );
       assert.match(injected, /<!-- content-corpus:start -->[\s\S]*\/countries\/ukraine\/[\s\S]*<!-- content-corpus:end -->/);
@@ -331,7 +338,7 @@ describe('crawlable content corpus deployment contracts', () => {
       writeFixturePage(
         publicDir,
         'reference/changelog/page/3/index.html',
-        '<link rel="canonical" href="https://www.worldmonitor.app/reference/changelog/page/3/" />'
+        `<link rel="canonical" href="https://www.${TEST_APP_DOMAIN}/reference/changelog/page/3/" />`
       );
       assert.throws(
         () => discoverContentCorpusPages({ publicDir }),
@@ -339,6 +346,11 @@ describe('crawlable content corpus deployment contracts', () => {
       );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
+      if (previousAppDomain === undefined) {
+        delete process.env.APP_DOMAIN;
+      } else {
+        process.env.APP_DOMAIN = previousAppDomain;
+      }
     }
   });
 });

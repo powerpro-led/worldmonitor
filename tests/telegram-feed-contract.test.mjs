@@ -14,9 +14,9 @@ function restoreEnv() {
 }
 
 function makeRequest(path = '/api/telegram-feed?limit=50') {
-  return new Request(`https://worldmonitor.app${path}`, {
+  return new Request(`https://example.test${path}`, {
     method: 'GET',
-    headers: { origin: 'https://worldmonitor.app' },
+    headers: { origin: 'https://example.test' },
   });
 }
 

@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 
 import handler from '../api/not-found.ts';
 
-const URL_BASE = 'https://worldmonitor.app';
+const URL_BASE = 'https://example.test';
 
 describe('api/not-found.ts — structured JSON 404 for unmatched /api/* paths', () => {
   it('returns a 404 application/json envelope with code, message, and a resolution hint', async () => {

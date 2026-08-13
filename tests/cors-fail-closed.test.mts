@@ -5,6 +5,14 @@ import { describe, it } from 'node:test';
 import { getCorsHeaders, isAllowedOrigin } from '../server/cors.ts';
 import { isDisallowedOrigin as isDisallowedOriginJs } from '../api/_cors.js';
 import { isAllowedOrigin as isAllowedOriginWorker } from '../workers/api-cors-preflight/src/index.js';
+import { setTestAppDomain, TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
+
+// Safe even though the above are static imports: server/cors.ts and
+// api/_cors.js both read process.env.APP_DOMAIN lazily (per-call, not at
+// module load), so setting it here takes effect for every call below. The
+// Worker's isAllowedOriginWorker has no process.env access at all — it takes
+// the domain as an explicit second argument at each call site instead.
+setTestAppDomain();
 
 // Regression coverage for issue #3705: CORS-header generation errors must
 // fail closed rather than fall back to a wildcard ACAO.
@@ -26,11 +34,11 @@ function stripComments(source: string): string {
 
 describe('cors helper', () => {
   it('returns headers for a well-formed request', () => {
-    const req = new Request('https://worldmonitor.app/x', {
-      headers: { Origin: 'https://worldmonitor.app' },
+    const req = new Request(`https://${TEST_APP_DOMAIN}/x`, {
+      headers: { Origin: `https://${TEST_APP_DOMAIN}` },
     });
     const headers = getCorsHeaders(req);
-    assert.equal(headers['Access-Control-Allow-Origin'], 'https://worldmonitor.app');
+    assert.equal(headers['Access-Control-Allow-Origin'], `https://${TEST_APP_DOMAIN}`);
     assert.match(
       headers['Access-Control-Allow-Headers'],
       /(?:^|,\s*)Idempotency-Key(?:,|$)/,
@@ -83,13 +91,13 @@ describe('isAllowedOrigin — Vercel preview allowlist (eliewm team scope)', () 
   // Origin for the JS twin (api/_cors.js exports isDisallowedOrigin, not the
   // bare predicate) — same allow/deny outcome proves both files stay in sync.
   const allowedByJsTwin = (origin: string) =>
-    !isDisallowedOriginJs(new Request('https://worldmonitor.app/x', { headers: { Origin: origin } }));
+    !isDisallowedOriginJs(new Request(`https://${TEST_APP_DOMAIN}/x`, { headers: { Origin: origin } }));
 
   const ALLOWED = [
     ['git-branch alias URL', 'https://worldmonitor-git-feature-eliewm.vercel.app'],
     ['hash deployment URL', 'https://worldmonitor-abc123def456-eliewm.vercel.app'],
-    ['apex production origin', 'https://worldmonitor.app'],
-    ['production subdomain', 'https://tech.worldmonitor.app'],
+    ['apex production origin', `https://${TEST_APP_DOMAIN}`],
+    ['production subdomain', `https://tech.${TEST_APP_DOMAIN}`],
   ];
 
   const REJECTED = [
@@ -148,7 +156,7 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
   // The api-cors-preflight Worker (workers/api-cors-preflight) short-circuits
   // OPTIONS preflights at the edge, so its allowlist MUST be a superset of
   // api/_cors.js. If the Worker rejects an origin the function would accept,
-  // the preflight echoes the canonical worldmonitor.app fallback and the
+  // the preflight echoes the canonical configured-domain fallback and the
   // browser blocks the request before it reaches Vercel.
   //
   // The Worker's own test (workers/api-cors-preflight/index.test.mjs) lives
@@ -160,12 +168,12 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
   // Localhost/127 are intentionally omitted: they are DEV-only on the function
   // side (NODE_ENV-gated) and never reach the prod-only Worker.
   const fnAllows = (origin: string) =>
-    !isDisallowedOriginJs(new Request('https://worldmonitor.app/x', { headers: { Origin: origin } }));
+    !isDisallowedOriginJs(new Request(`https://${TEST_APP_DOMAIN}/x`, { headers: { Origin: origin } }));
 
   const PROD_ORIGINS = [
-    'https://worldmonitor.app',
-    'https://www.worldmonitor.app',
-    'https://tech.worldmonitor.app',
+    `https://${TEST_APP_DOMAIN}`,
+    `https://www.${TEST_APP_DOMAIN}`,
+    `https://tech.${TEST_APP_DOMAIN}`,
     'https://worldmonitor-git-feature-eliewm.vercel.app',
     'https://worldmonitor-abc123def456-eliewm.vercel.app',
     'tauri://localhost',
@@ -182,9 +190,9 @@ describe('CORS Worker superset invariant — edge allowlist ⊇ function allowli
     it(`Worker allows everything the function allows: ${origin}`, () => {
       if (fnAllows(origin)) {
         assert.equal(
-          isAllowedOriginWorker(origin),
+          isAllowedOriginWorker(origin, TEST_APP_DOMAIN),
           true,
-          `Worker rejects ${origin} that api/_cors.js accepts — its OPTIONS preflight will echo the worldmonitor.app fallback and the browser will block it`,
+          `Worker rejects ${origin} that api/_cors.js accepts — its OPTIONS preflight will echo the configured-domain fallback and the browser will block it`,
         );
       }
     });

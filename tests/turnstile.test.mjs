@@ -22,7 +22,7 @@ test.afterEach(() => {
 
 test('getClientIp ignores an unproven cf-connecting-ip and falls back to x-real-ip (#5235)', () => {
   process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-  const request = new Request('https://worldmonitor.app/api/test', {
+  const request = new Request('https://example.test/api/test', {
     headers: {
       'x-forwarded-for': '198.51.100.8, 203.0.113.10',
       'cf-connecting-ip': '203.0.113.7',
@@ -35,7 +35,7 @@ test('getClientIp ignores an unproven cf-connecting-ip and falls back to x-real-
 
 test('getClientIp ignores cf-connecting-ip when the Cloudflare proof secret is unset (#5235)', () => {
   delete process.env.CF_EDGE_PROOF_SECRET;
-  const request = new Request('https://worldmonitor.app/api/test', {
+  const request = new Request('https://example.test/api/test', {
     headers: {
       'cf-connecting-ip': '203.0.113.7',
       'x-real-ip': '192.0.2.5',
@@ -47,7 +47,7 @@ test('getClientIp ignores cf-connecting-ip when the Cloudflare proof secret is u
 
 test('getClientIp trusts cf-connecting-ip when Cloudflare transit is proven (#5235)', () => {
   process.env.CF_EDGE_PROOF_SECRET = 'edge-secret-xyz';
-  const request = new Request('https://worldmonitor.app/api/test', {
+  const request = new Request('https://example.test/api/test', {
     headers: {
       'cf-connecting-ip': '203.0.113.7',
       'x-real-ip': '192.0.2.5',
@@ -59,7 +59,7 @@ test('getClientIp trusts cf-connecting-ip when Cloudflare transit is proven (#52
 });
 
 test('getClientIp falls back to x-real-ip when cf-connecting-ip is absent', () => {
-  const request = new Request('https://worldmonitor.app/api/test', {
+  const request = new Request('https://example.test/api/test', {
     headers: {
       'x-forwarded-for': '198.51.100.8',
       'x-real-ip': '192.0.2.5',
@@ -73,7 +73,7 @@ test('getClientIp ignores spoofable x-forwarded-for and returns unknown sentinel
   // Direct request bypassing Cloudflare: only x-forwarded-for present.
   // Must NOT be honoured — caller-supplied identity would let an attacker
   // rotate buckets and beat the per-IP rate-limit window.
-  const request = new Request('https://worldmonitor.app/api/test', {
+  const request = new Request('https://example.test/api/test', {
     headers: { 'x-forwarded-for': '198.51.100.8, 203.0.113.10' },
   });
 

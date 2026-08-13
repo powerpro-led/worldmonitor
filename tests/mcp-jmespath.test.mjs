@@ -5,7 +5,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
 const VALID_KEY = 'wm_test_key_123';
-const BASE_URL = 'https://worldmonitor.app/mcp';
+const BASE_URL = 'https://example.test/mcp';
 
 function makeReq(body = null, headers = {}) {
   return new Request(BASE_URL, {
@@ -330,7 +330,7 @@ describe('api/mcp.ts — JMESPath projection (v1.7.0)', () => {
       // drift from SERVER_VERSION; it's now generated in-process on every
       // /.well-known/mcp GET (see buildServerCardPayload in
       // api/mcp/handler.ts), so this fetches the live-generated card instead.
-      const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+      const res = await mod.default(new Request('https://example.test/.well-known/mcp', {
         method: 'GET',
         headers: { Accept: 'application/json' },
       }));

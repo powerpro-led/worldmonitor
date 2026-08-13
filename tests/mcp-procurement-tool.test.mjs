@@ -65,7 +65,7 @@ describe('get_procurement_opportunities MCP tool', () => {
   }
 
   it('is listed and proxies the canonical route with the bounded query budget', async () => {
-    const listed = await mcpHandler(new Request('https://worldmonitor.app/mcp', {
+    const listed = await mcpHandler(new Request('https://example.test/mcp', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     }));

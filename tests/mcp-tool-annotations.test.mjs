@@ -71,7 +71,7 @@ describe('api/mcp.ts — per-tool annotations coverage (v1.7.0)', () => {
   // a future buildPublicTool change that drops a hint fails here, not later
   // in a client-side parser.
   it('tools/list emits all four annotation hints on every tool', async () => {
-    const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+    const res = await mod.default(new Request('https://example.test/mcp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),

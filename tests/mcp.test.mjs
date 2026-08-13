@@ -270,7 +270,7 @@ describe('api/mcp.ts — PRO MCP Server', () => {
   // --- Protocol ---
 
   it('OPTIONS returns 204 with CORS headers', async () => {
-    const req = new Request(BASE_URL, { method: 'OPTIONS', headers: { origin: 'https://worldmonitor.app' } });
+    const req = new Request(BASE_URL, { method: 'OPTIONS', headers: { origin: 'https://example.test' } });
     const res = await handler(req);
     assert.equal(res.status, 204);
     assert.ok(res.headers.get('access-control-allow-methods'));

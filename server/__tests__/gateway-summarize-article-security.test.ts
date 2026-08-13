@@ -71,7 +71,7 @@ function makeRequest(path: string, headers: Record<string, string> = {}, method 
   if (method !== "GET" && method !== "HEAD") {
     init.body = JSON.stringify({ provider: "groq", headlines: ["headline"] });
   }
-  return new Request(`https://www.worldmonitor.app${path}`, {
+  return new Request(`https://www.example.test${path}`, {
     ...init,
   });
 }
@@ -388,7 +388,7 @@ describe("summarize-article gateway spend controls", () => {
     // makeRequest defaults to a brief body, so use a fresh request with the
     // translate mode body for the actual assertion.
     const translate = await makeGateway(calls)(
-      new Request(`https://www.worldmonitor.app${SUMMARIZE_PATH}`, {
+      new Request(`https://www.example.test${SUMMARIZE_PATH}`, {
         method: "POST",
         headers: {
           "X-WorldMonitor-Key": "wms_anonymous_session",

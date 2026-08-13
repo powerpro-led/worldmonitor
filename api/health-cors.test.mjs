@@ -1,5 +1,8 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
+import { setTestAppDomain, TEST_APP_DOMAIN } from '../tests/helpers/domain-config.mjs';
+
+setTestAppDomain();
 
 // Make this suite independent of the ambient environment. The handler reads
 // Redis credentials per-request via getRedisCredentials(); if a developer (or
@@ -16,7 +19,7 @@ for (const k of [
 const { default: handler } = await import('./health.js');
 
 function makePreflight(origin) {
-  return new Request('https://api.worldmonitor.app/api/health?compact=1', {
+  return new Request(`https://api.${TEST_APP_DOMAIN}/api/health?compact=1`, {
     method: 'OPTIONS',
     headers: {
       origin,
@@ -26,20 +29,20 @@ function makePreflight(origin) {
 }
 
 test('health preflight is compatible with credentialed browser fetches', async () => {
-  const resp = await handler(makePreflight('https://www.worldmonitor.app'));
+  const resp = await handler(makePreflight(`https://www.${TEST_APP_DOMAIN}`));
 
   assert.equal(resp.status, 204);
-  assert.equal(resp.headers.get('access-control-allow-origin'), 'https://www.worldmonitor.app');
+  assert.equal(resp.headers.get('access-control-allow-origin'), `https://www.${TEST_APP_DOMAIN}`);
   assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
   assert.equal(resp.headers.get('cache-control'), 'private, no-store, max-age=0');
   assert.equal(resp.headers.get('vary'), 'Origin');
 });
 
 test('health GET response is compatible with credentialed browser fetches', async () => {
-  const resp = await handler(new Request('https://api.worldmonitor.app/api/health?compact=1', {
+  const resp = await handler(new Request(`https://api.${TEST_APP_DOMAIN}/api/health?compact=1`, {
     method: 'GET',
     headers: {
-      origin: 'https://www.worldmonitor.app',
+      origin: `https://www.${TEST_APP_DOMAIN}`,
     },
   }));
 
@@ -51,7 +54,7 @@ test('health GET response is compatible with credentialed browser fetches', asyn
   assert.equal(resp.status, 503);
   const body = await resp.json();
   assert.equal(body.status, 'REDIS_DOWN');
-  assert.equal(resp.headers.get('access-control-allow-origin'), 'https://www.worldmonitor.app');
+  assert.equal(resp.headers.get('access-control-allow-origin'), `https://www.${TEST_APP_DOMAIN}`);
   assert.equal(resp.headers.get('access-control-allow-credentials'), 'true');
   assert.equal(resp.headers.get('cache-control'), 'private, no-store, max-age=0');
   assert.equal(resp.headers.get('vary'), 'Origin');

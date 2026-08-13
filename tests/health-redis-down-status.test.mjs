@@ -23,12 +23,12 @@ const { default: handler } = await import('../api/health.js');
 test('detailed health requires an operator API key before Redis is queried', async () => {
   // Real Request (no Origin header) — the handler reads req.headers.get('origin')
   // via isDisallowedOrigin/getCorsHeaders, so a plain object would crash.
-  const req = new Request('https://api.worldmonitor.app/api/health');
+  const req = new Request('https://api.example.test/api/health');
   const res = await handler(req);
   assert.equal(res.status, 401);
   const body = await res.json();
   assert.equal(body.error, 'API key required');
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
 });
 
 test('the 401 carries an HONEST WWW-Authenticate and points keyless callers at the public compact form', async () => {
@@ -39,7 +39,7 @@ test('the 401 carries an HONEST WWW-Authenticate and points keyless callers at t
   // agents at a flow that cannot succeed. The hint matters because the bare
   // /api/health URL circulated as the advertised status endpoint before #4856
   // repointed the api-catalog/Link headers at ?compact=1.
-  const req = new Request('https://api.worldmonitor.app/api/health');
+  const req = new Request('https://api.example.test/api/health');
   const res = await handler(req);
   assert.equal(res.status, 401);
   const challenge = res.headers.get('WWW-Authenticate');
@@ -52,7 +52,7 @@ test('the 401 carries an HONEST WWW-Authenticate and points keyless callers at t
 });
 
 test('health history requires an operator API key before Redis is queried', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health?history=1');
+  const req = new Request('https://api.example.test/api/health?history=1');
   const res = await handler(req);
   assert.equal(res.status, 401);
   const body = await res.json();
@@ -60,7 +60,7 @@ test('health history requires an operator API key before Redis is queried', asyn
 });
 
 test('detailed health does not expose user-key gateway fallback internals', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health', {
+  const req = new Request('https://api.example.test/api/health', {
     headers: { 'x-worldmonitor-key': 'wm_user_abc123' },
   });
   const res = await handler(req);
@@ -70,7 +70,7 @@ test('detailed health does not expose user-key gateway fallback internals', asyn
 });
 
 test('compact health remains public and REDIS_DOWN returns HTTP 503', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health?compact=1');
+  const req = new Request('https://api.example.test/api/health?compact=1');
   const res = await handler(req);
   assert.equal(res.status, 503);
   const body = await res.json();
@@ -78,11 +78,11 @@ test('compact health remains public and REDIS_DOWN returns HTTP 503', async () =
   assert.ok('checkedAt' in body, 'snapshot must carry checkedAt');
   // No Origin → getCorsHeaders falls back to the canonical app origin (the
   // origin-gated handler does not emit ACAO:* for unknown/absent origins).
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
 });
 
 test('authenticated detailed health can reach the Redis-down probe', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health', {
+  const req = new Request('https://api.example.test/api/health', {
     headers: { 'x-worldmonitor-key': 'test-health-admin-key' },
   });
   const res = await handler(req);
@@ -92,17 +92,17 @@ test('authenticated detailed health can reach the Redis-down probe', async () =>
   assert.ok('checkedAt' in body, 'snapshot must carry checkedAt');
   // No Origin → getCorsHeaders falls back to the canonical app origin (the
   // origin-gated handler does not emit ACAO:* for unknown/absent origins).
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
 });
 
 test('OPTIONS preflight returns 204 (never 503)', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health', { method: 'OPTIONS' });
+  const req = new Request('https://api.example.test/api/health', { method: 'OPTIONS' });
   const res = await handler(req);
   assert.equal(res.status, 204);
 });
 
 test('disallowed Origin is rejected with 403 before any Redis work', async () => {
-  const req = new Request('https://api.worldmonitor.app/api/health', {
+  const req = new Request('https://api.example.test/api/health', {
     headers: { origin: 'https://evil.example.com' },
   });
   const res = await handler(req);

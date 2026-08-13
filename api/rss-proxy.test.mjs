@@ -21,7 +21,7 @@ function restoreEnv() {
   Object.assign(process.env, originalEnv);
 }
 
-const PROXY_ENDPOINT = 'https://api.worldmonitor.app/api/rss-proxy';
+const PROXY_ENDPOINT = 'https://api.example.test/api/rss-proxy';
 
 /**
  * @param {string | null} feedUrl  feed to proxy; `null` omits the `url` param
@@ -32,7 +32,7 @@ const PROXY_ENDPOINT = 'https://api.worldmonitor.app/api/rss-proxy';
  *   empty — the handler distinguishes absent from present-but-wrong.
  */
 function makeRequest(feedUrl, opts = {}) {
-  const { method = 'GET', origin = 'https://worldmonitor.app', apiKey = TEST_KEY } = opts;
+  const { method = 'GET', origin = 'https://example.test', apiKey = TEST_KEY } = opts;
   const url = feedUrl === null
     ? PROXY_ENDPOINT
     : `${PROXY_ENDPOINT}?url=${encodeURIComponent(feedUrl)}`;
@@ -431,7 +431,7 @@ test('returns 429 and skips the feed fetch when the rate limit is exhausted', as
   assert.match(res.headers.get('Retry-After') ?? '', /^\d+$/);
   // The 429 must still carry CORS headers, or the browser client sees an opaque
   // network error instead of a readable rate-limit response.
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
   assert.deepEqual(
     feedCalls(calls).map((c) => c.url),
     [],
@@ -525,7 +525,7 @@ test('answers CORS preflight with 204 and no upstream call', async () => {
   const res = await handler(makeRequest('https://techcrunch.com/feed', { method: 'OPTIONS' }));
 
   assert.equal(res.status, 204);
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
   // Exact match, not a substring — pins the advertised verb set so widening it
   // (e.g. to include POST/PUT/DELETE) can't slip through unnoticed.
   assert.equal(res.headers.get('Access-Control-Allow-Methods'), 'GET, OPTIONS');
@@ -557,7 +557,7 @@ test('rejects a disallowed Origin before auth, method, or fetch', async () => {
   assert.equal(res.status, 403);
   assert.equal((await res.json()).error, 'Origin not allowed');
   // Never echo the attacker origin back.
-  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://example.test');
   assert.deepEqual(calls, []);
 });
 

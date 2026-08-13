@@ -1,0 +1,131 @@
+/**
+ * Single source of truth for deriving domain-dependent values (CORS origin
+ * allowlists, cookie scoping, canonical/www/api origins) from ONE configured
+ * base domain instead of hardcoding a brand name across the codebase.
+ *
+ * This fork ships with NO built-in production domain. When no domain is
+ * configured, every helper here defaults to local dev (`localhost:3000`,
+ * matching vite.config.ts's DEV_PORT default) — never assume any brand is
+ * "the" deployment. Each real deployment (including a future multi-instance
+ * setup) supplies its own domain via configuration.
+ *
+ * Deliberately zero imports and no Node/browser globals (no `process.env`,
+ * no `import.meta.env`) — every caller reads its own raw domain string from
+ * whatever env mechanism *its* runtime has (Node's `process.env` in
+ * api/server, the Cloudflare Worker's `env` binding param, `import.meta.env`
+ * in the browser bundle) and passes it in as a plain string. That's what lets
+ * this one module be: imported directly by server/ (TS build graph),
+ * copy-synced into the unbundled plain-JS api/_cors.js (see
+ * scripts/sync-domain-config.mjs), and bundled into the Cloudflare Worker via
+ * wrangler's esbuild.
+ */
+
+export const DEFAULT_APP_DOMAIN = 'localhost:3000';
+
+/** Strips a leading scheme and trailing slash; '' | undefined -> the local default. */
+export function normalizeDomain(rawDomain) {
+  const trimmed = (rawDomain ?? '').trim();
+  if (!trimmed) return DEFAULT_APP_DOMAIN;
+  return trimmed.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+/** True for `localhost`/`127.0.0.1`, with or without a port. */
+export function isLocalDomain(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  return /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(domain);
+}
+
+/** 'http' for local dev, 'https' for anything else. */
+export function resolveProtocol(rawDomain) {
+  return isLocalDomain(rawDomain) ? 'http' : 'https';
+}
+
+/** The apex origin, e.g. `http://localhost:3000` or `https://example.com`. */
+export function resolveAppOrigin(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  return `${resolveProtocol(domain)}://${domain}`;
+}
+
+/**
+ * The `www.` origin — collapses to the apex origin on localhost, since a
+ * `www.localhost:3000` subdomain doesn't mean anything for local dev.
+ */
+export function resolveWwwOrigin(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
+  return `${resolveProtocol(domain)}://www.${domain}`;
+}
+
+/**
+ * The `api.` origin — collapses to the apex origin on localhost (local
+ * installs serve the API from the same origin; see VITE_WS_API_URL's
+ * documented same-domain-when-empty convention in .env.example).
+ */
+export function resolveApiOrigin(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
+  return `${resolveProtocol(domain)}://api.${domain}`;
+}
+
+/**
+ * The `Set-Cookie: domain=` value for sharing a cookie across every
+ * subdomain of the configured domain — null on localhost, since a
+ * cross-subdomain cookie domain is meaningless there (and per RFC 6265,
+ * browsers won't scope a cookie to `.localhost` sensibly anyway).
+ */
+export function resolveCookieDomain(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return null;
+  return `.${domain}`;
+}
+
+/** Escapes regex metacharacters so a configured domain is safe to embed in a pattern. */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * A `RegExp` matching the configured domain and every subdomain of it
+ * (mirrors the historical `/^https:\/\/(.*\.)?worldmonitor\.app$/` shape),
+ * or null for a local domain — DEV_LOCALHOST_ORIGIN_PATTERNS covers that
+ * case instead, since an https apex/subdomain pattern makes no sense for
+ * `localhost:3000`.
+ */
+export function buildDomainOriginPattern(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return null;
+  const escaped = escapeRegExp(domain);
+  return new RegExp(`^https:\\/\\/(.*\\.)?${escaped}$`);
+}
+
+/** Brand-agnostic origin patterns for the Tauri desktop runtime — unchanged from today's hardcoded list. */
+export const TAURI_ORIGIN_PATTERNS = Object.freeze([
+  /^https?:\/\/tauri\.localhost(:\d+)?$/,
+  /^https?:\/\/[a-z0-9-]+\.tauri\.localhost(:\d+)?$/i,
+  /^tauri:\/\/localhost$/,
+  /^asset:\/\/localhost$/,
+]);
+
+/** Bare localhost/127.0.0.1 origin patterns — brand-agnostic, dev-only. */
+export const DEV_LOCALHOST_ORIGIN_PATTERNS = Object.freeze([
+  /^https?:\/\/localhost(:\d+)?$/,
+  /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+]);
+
+/**
+ * Builds the full CORS origin-allowlist pattern array for the configured
+ * domain: the domain pattern (skipped on localhost) + Tauri origins + any
+ * caller-supplied extra patterns (e.g. a Vercel-preview-deployment pattern,
+ * which is infra-specific, not domain-specific, and stays local to each
+ * caller rather than living in this module) + dev-only localhost patterns
+ * when requested.
+ */
+export function buildAllowedOriginPatterns(rawDomain, { includeDevPatterns = false, extraPatterns = [] } = {}) {
+  const domainPattern = buildDomainOriginPattern(rawDomain);
+  return [
+    ...(domainPattern ? [domainPattern] : []),
+    ...TAURI_ORIGIN_PATTERNS,
+    ...extraPatterns,
+    ...(includeDevPatterns ? DEV_LOCALHOST_ORIGIN_PATTERNS : []),
+  ];
+}

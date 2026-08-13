@@ -97,7 +97,7 @@ function makeGateway(handlerCalls: Record<string, number>) {
 }
 
 function req(path: string, init: RequestInit = {}) {
-  return new Request(`https://www.worldmonitor.app${path}`, init);
+  return new Request(`https://www.example.test${path}`, init);
 }
 
 beforeEach(() => {

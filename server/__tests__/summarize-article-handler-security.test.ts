@@ -16,7 +16,7 @@ function restoreEnv() {
 
 function makeContext(headers: Record<string, string> = {}) {
   return {
-    request: new Request("https://www.worldmonitor.app/api/news/v1/summarize-article", { headers }),
+    request: new Request("https://www.example.test/api/news/v1/summarize-article", { headers }),
     pathParams: {},
     headers,
   };

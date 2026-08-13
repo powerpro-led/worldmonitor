@@ -122,7 +122,7 @@ const activeApiEntitlement = () => ({
 });
 
 function makeBootstrapRequest(headers = {}) {
-  return new Request('https://api.worldmonitor.app/api/bootstrap?keys=marketQuotes', {
+  return new Request('https://api.example.test/api/bootstrap?keys=marketQuotes', {
     method: 'GET',
     headers,
   });
@@ -130,27 +130,27 @@ function makeBootstrapRequest(headers = {}) {
 
 function makeBootstrapRequestWithAllowedOrigin(headers = {}) {
   return makeBootstrapRequest({
-    Origin: 'https://worldmonitor.app',
+    Origin: 'https://example.test',
     ...headers,
   });
 }
 
 function makeWeatherBootstrapRequest(headers = {}) {
-  return new Request('https://api.worldmonitor.app/api/bootstrap?keys=weatherAlerts', {
+  return new Request('https://api.example.test/api/bootstrap?keys=weatherAlerts', {
     method: 'GET',
     headers,
   });
 }
 
 function makeTierBootstrapRequest(tier = 'fast', headers = {}) {
-  return new Request(`https://api.worldmonitor.app/api/bootstrap?tier=${tier}`, {
+  return new Request(`https://api.example.test/api/bootstrap?tier=${tier}`, {
     method: 'GET',
     headers,
   });
 }
 
 function makePublicTierBootstrapRequest(tier = 'fast', headers = {}) {
-  return new Request(`https://api.worldmonitor.app/api/bootstrap?tier=${tier}&public=1`, {
+  return new Request(`https://api.example.test/api/bootstrap?tier=${tier}&public=1`, {
     method: 'GET',
     headers,
   });
@@ -158,7 +158,7 @@ function makePublicTierBootstrapRequest(tier = 'fast', headers = {}) {
 
 function assertSharedCacheHeaders(resp) {
   // Tier responses intentionally avoid public/s-maxage in Cache-Control (CF in
-  // front of api.worldmonitor.app would mispin ACAO) and shield via Vercel's
+  // front of api.example.test would mispin ACAO) and shield via Vercel's
   // CDN-Cache-Control instead.
   assert.ok(resp.headers.get('cdn-cache-control'));
   assert.match(resp.headers.get('cdn-cache-control') || '', /\b(public|s-maxage)\b/i);
@@ -280,7 +280,7 @@ test('HEAD tier bootstrap is not the public path (no unshielded Redis read)', as
   // run the full registry Redis pipeline to build a body it cannot return.
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async (calls) => {
     const resp = await handler(
-      new Request('https://api.worldmonitor.app/api/bootstrap?tier=fast&public=1', { method: 'HEAD' }),
+      new Request('https://api.example.test/api/bootstrap?tier=fast&public=1', { method: 'HEAD' }),
     );
 
     assert.equal(resp.status, 401);
@@ -386,7 +386,7 @@ test('tier bootstrap with extra params is not treated as the public path', async
   // back to key auth (401 here) so we never widen the cacheable key space.
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async () => {
     const resp = await handler(
-      new Request('https://api.worldmonitor.app/api/bootstrap?tier=fast&public=1&keys=marketQuotes', { method: 'GET' }),
+      new Request('https://api.example.test/api/bootstrap?tier=fast&public=1&keys=marketQuotes', { method: 'GET' }),
     );
 
     assert.equal(resp.status, 401);
@@ -410,7 +410,7 @@ test('unknown tier value does not qualify for the public path', async () => {
 // fetched only by the clients that actually turn the layer on.
 
 function makePublicOnDemandRequest(keys = 'cyberThreats', headers = {}) {
-  return new Request(`https://api.worldmonitor.app/api/bootstrap?keys=${keys}&public=1`, {
+  return new Request(`https://api.example.test/api/bootstrap?keys=${keys}&public=1`, {
     method: 'GET',
     headers,
   });

@@ -1,7 +1,6 @@
 import { Panel } from './Panel';
 import { createLazyClient, getRpcBaseUrl } from '@/services/rpc-client';
 import { premiumFetch } from '@/services/premium-fetch';
-import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { subscribeAuthState } from '@/services/auth-state';
 import { onEntitlementChange } from '@/services/entitlements';
@@ -155,16 +154,6 @@ export class RegionalIntelligenceBoard extends Panel {
   private async loadCurrent(): Promise<void> {
     if (!this.element.isConnected) {
       this.runWhenConnected(() => { void this.loadCurrent(); });
-      return;
-    }
-
-    // Skip premium RPCs when this app instance is running inside the /pro
-    // marketing page's live-preview iframe — no Supabase session carries across
-    // that boundary, so every call would 401. The breaker + renderEmpty path
-    // already handles "no data" cases visually; short-circuiting here keeps
-    // the /pro console and Sentry quiet from these expected failures.
-    if (IS_EMBEDDED_PREVIEW) {
-      this.renderEmpty();
       return;
     }
 

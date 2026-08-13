@@ -32,13 +32,13 @@ function readRepoJson(relativePath) {
 describe('security audit baseline', () => {
   it('allows currently baselined high advisories', () => {
     const report = auditReportWith({
-      name: '@clerk/clerk-js',
+      name: 'brace-expansion',
       severity: 'high',
-      title: 'known clerk advisory',
-      url: 'https://github.com/advisories/GHSA-w24r-5266-9c3c',
+      title: 'brace-expansion uncontrolled resource consumption',
+      url: 'https://github.com/advisories/GHSA-mh99-v99m-4gvg',
     });
 
-    assert.deepEqual(collectUnbaselinedFindings(report, 'pro-test/package-lock.json'), []);
+    assert.deepEqual(collectUnbaselinedFindings(report, 'scripts/package-lock.json'), []);
   });
 
   it('ignores moderate production advisories for the high-severity PR gate', () => {
@@ -76,7 +76,6 @@ describe('security audit baseline', () => {
       'consumer-prices-core/package-lock.json',
       'docker/runtime-package-lock.json',
       'package-lock.json',
-      'pro-test/package-lock.json',
       'scripts/package-lock.json',
     ]);
   });
@@ -117,31 +116,8 @@ describe('security audit baseline', () => {
   });
 
   it('flags baseline entries that no longer match any current advisory', () => {
-    // Report carries the two pro-test advisories that ARE present in the current
-    // audit (the clerk advisory + shell-quote); only GHSA-qjx8, which no longer
-    // matches anything, must be flagged stale.
-    const report = {
+    const reportWithBothAdvisories = {
       vulnerabilities: {
-        '@clerk/clerk-js': {
-          name: '@clerk/clerk-js',
-          severity: 'high',
-          via: [{
-            name: '@clerk/clerk-js',
-            severity: 'high',
-            title: 'known clerk advisory',
-            url: 'https://github.com/advisories/GHSA-w24r-5266-9c3c',
-          }],
-        },
-        'shell-quote': {
-          name: 'shell-quote',
-          severity: 'high',
-          via: [{
-            name: 'shell-quote',
-            severity: 'high',
-            title: 'shell-quote DoS',
-            url: 'https://github.com/advisories/GHSA-395f-4hp3-45gv',
-          }],
-        },
         'sharp': {
           name: 'sharp',
           severity: 'high',
@@ -162,24 +138,23 @@ describe('security audit baseline', () => {
             url: 'https://github.com/advisories/GHSA-mh99-v99m-4gvg',
           }],
         },
-        'postcss': {
-          name: 'postcss',
-          severity: 'high',
-          via: [{
-            name: 'postcss',
-            severity: 'high',
-            title: 'PostCSS sourceMappingURL path traversal',
-            url: 'https://github.com/advisories/GHSA-r28c-9q8g-f849',
-          }],
-        },
       },
     };
 
-    // The still-present ids are not reported as stale; GHSA-qjx8 (absent) is.
-    assert.deepEqual(collectStaleBaselineEntries(report, 'pro-test/package-lock.json'), ['GHSA-qjx8-664m-686j']);
-    // Root and scripts baselines are represented, so neither reports a stale entry.
-    assert.deepEqual(collectStaleBaselineEntries(report, 'package-lock.json'), []);
-    assert.deepEqual(collectStaleBaselineEntries(report, 'scripts/package-lock.json'), []);
+    // Both baselines' advisories are present in the current audit, so neither is stale.
+    assert.deepEqual(collectStaleBaselineEntries(reportWithBothAdvisories, 'package-lock.json'), []);
+    assert.deepEqual(collectStaleBaselineEntries(reportWithBothAdvisories, 'scripts/package-lock.json'), []);
+
+    // Once the scripts baseline's advisory no longer shows up in the audit, it's flagged stale.
+    const reportMissingScriptsAdvisory = {
+      vulnerabilities: {
+        'sharp': reportWithBothAdvisories.vulnerabilities.sharp,
+      },
+    };
+    assert.deepEqual(
+      collectStaleBaselineEntries(reportMissingScriptsAdvisory, 'scripts/package-lock.json'),
+      ['GHSA-mh99-v99m-4gvg'],
+    );
   });
 
   it('treats a symlinked entry path as direct invocation (no silent fail-open)', () => {

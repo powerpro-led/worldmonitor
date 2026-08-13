@@ -3,7 +3,6 @@ import { getSignalAggregator } from '@/app/lazy-services';
 import type { CountrySignalCluster } from '@/services/signal-aggregator';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { premiumFetch } from '@/services/premium-fetch';
-import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
 import type { TimelineEvent } from '@/components/CountryTimeline';
 import { CountryTimeline } from '@/components/CountryTimeline';
 import type {
@@ -998,11 +997,6 @@ export class CountryIntelManager implements AppModule {
   }
 
   private fetchProSections(code: string): void {
-    // /pro live-preview iframe can't carry a Supabase session, so every pro
-    // section call would 401. Skip the RPCs entirely so the embedded
-    // preview doesn't spam the parent /pro console with expected failures.
-    if (IS_EMBEDDED_PREVIEW) return;
-
     const rpcBase = getRpcBaseUrl();
     // Pro-section endpoints (national-debt, regional briefs, comtrade flows)
     // are premium-gated — premiumFetch injects the Supabase bearer / API key so

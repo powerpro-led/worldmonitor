@@ -32,10 +32,13 @@ const CANONICAL_FALLBACK = 'https://worldmonitor.app';
 const KNOWN_GOOD = 'https://www.worldmonitor.app';
 const ACAH_EXPECTED = 'Content-Type, Authorization, X-WorldMonitor-Key, X-Api-Key, X-Widget-Key, X-Pro-Key, X-WorldMonitor-Desktop-Timestamp, X-WorldMonitor-Desktop-Signature, Idempotency-Key, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID';
 const ACEH_EXPECTED = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempotency-Key, Idempotent-Replayed, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-WorldMonitor-Bbox, X-WorldMonitor-Bbox-Missing, X-WorldMonitor-Bbox-Invalid, X-Military-Bbox';
-// Must be a superset of every method any api/* route advertises. Notably
-// includes DELETE for api/product-catalog.js — pinning this prevents the
-// regression that PR review caught (Worker omitted DELETE → product-catalog
-// purge preflights silently fail in prod).
+// Must be a superset of every method any api/* route advertises. DELETE was
+// originally added for api/product-catalog.js's purge endpoint — that route
+// is gone (retired 2026-08-13), but DELETE is pinned here rather than
+// dropped, since whether another api/* route still needs it wasn't
+// re-audited (see src/index.js's own comment). Regression this guards:
+// Worker omits a method some route needs → that route's authenticated
+// requests silently fail preflight in prod.
 const ACAM_EXPECTED = 'GET, POST, DELETE, HEAD, OPTIONS';
 
 // --- allowlist coverage ---------------------------------------------------

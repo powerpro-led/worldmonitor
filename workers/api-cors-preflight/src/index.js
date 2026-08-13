@@ -46,8 +46,12 @@ const EXPOSE_HEADERS = 'Mcp-Session-Id, WWW-Authenticate, Retry-After, Idempoten
 // Superset of every method any api/* route advertises. The Worker stamps ONE
 // fixed Allow-Methods on every preflight, so if a route handles DELETE but
 // Allow-Methods omits it, the browser rejects the preflight before the
-// authenticated DELETE can reach Vercel. Current union across api/*:
-//   - api/product-catalog.js handles GET + DELETE (`'GET, DELETE, OPTIONS'`)
+// authenticated DELETE can reach Vercel.
+//   - api/product-catalog.js (the route DELETE was originally added for, a
+//     cache-purge endpoint) was retired 2026-08-13 along with the rest of
+//     the orphaned Dodo pricing-catalog feature — whether any other api/*
+//     route still needs DELETE was not re-audited, so it's left in place
+//     rather than risk silently breaking a preflight this pass didn't check.
 //   - most route handlers respond to GET, POST, HEAD, OPTIONS
 //   - HEAD is technically a "simple method" so browsers don't require it in
 //     Allow-Methods, but listing it costs nothing and avoids a different

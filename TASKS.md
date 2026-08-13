@@ -400,32 +400,191 @@ test-isolation artifact, unrelated to this session**, since the exact same 44/6 
 unmodified baseline; the individual affected files all pass cleanly in isolation (the correct way
 to run them, per how earlier sessions verified too).
 
+## ✅ Resolved 2026-08-13 (eighth session) — 3 of the 4 🆕 items below
+
+Picked the two zero-risk, already-recon'd items first, then got an explicit operator go-ahead on
+the third (`IS_EMBEDDED_PREVIEW`, a feature-removal call per the tracker's standing convention).
+Verified via `npm run typecheck:all` (clean), `node scripts/enforce-sebuf-api-contract.mjs`
+(clean — 130 files/96 manifest entries), `npm run docs:check` (clean — 23 doc claims match code),
+and targeted `npx tsx --test` runs of every affected test file (all pass, no regressions).
+Commits not yet made — pending operator go-ahead alongside the push, per standing convention.
+
+- [x] **`pro-test/package-lock.json` dead baseline entry removed** from
+      `BASELINE_ADVISORIES_BY_LOCKFILE` in `.github/scripts/audit-production-dependencies.mjs`
+      (entry + its 15-line comment block), confirmed dead against the real CI matrix before
+      touching. `tests/security-audit-baseline.test.mjs`'s 4 call sites updated: the two example-key
+      tests now use `'scripts/package-lock.json'` + its real `GHSA-mh99-v99m-4gvg` advisory instead
+      of the deleted pro-test/clerk example; the baseline-keys-list assertion drops the removed key;
+      the stale-entry-detection test was restructured (same logic, no pro-test fixture) into two
+      explicit scenarios — both baselines' advisories present (nothing stale) vs. the scripts
+      advisory missing (flagged stale) — since no remaining real lockfile has more than one baseline
+      entry to demonstrate "some present, some stale" in a single call the old test relied on.
+      8/8 tests pass in the file.
+- [x] **4 dead Convex-specific `ignoreErrors` patterns removed** from `src/bootstrap/
+      sentry-init.ts` (`ConvexError: CONFLICT`, `ConvexError: API_ACCESS_REQUIRED`, the
+      `[CONVEX ...]` connection-lost pattern, the sync-protocol version-mismatch pattern) — exact
+      4-line deletion as scoped, confirmed zero test coverage before removing (`grep -rn
+      "ConvexError\|CONVEX \[AQM\]\|Invalid start version" tests/` empty). Left the other
+      Convex-mentioning comments in the same file untouched (lines ~79, ~136-137, ~575, ~621-623)
+      — those are migration-history/context comments on still-relevant logic, not dead
+      `ignoreErrors` patterns, same distinction the Clerk sweep drew elsewhere. 233/233 tests pass
+      across `sentry-beforesend.test.mjs` + `sentry-defer-replay.test.mts`.
+- [x] **`IS_EMBEDDED_PREVIEW` mechanism removed** (operator go-ahead given explicitly this
+      session) — deleted `src/utils/embedded-preview.ts` outright and its 3 one-line consumer
+      guards + matching imports: `src/app/country-intel.ts` (`fetchProSections`'s early return),
+      `src/components/RegionalIntelligenceBoard.ts` (`loadCurrent`'s early `renderEmpty()`
+      branch), `src/services/trade/index.ts` (2 sites — `fetchTariffTrends` and
+      `fetchComtradeFlows`, one more than the original 4-file/1-line-each estimate since that file
+      had two call sites). Confirmed zero remaining references repo-wide after
+      (`grep -rl IS_EMBEDDED_PREVIEW` clean outside `TASKS.md`'s own history text and
+      `src-tauri/target/` build artifacts). 96/96 tests pass across
+      `regional-intelligence-board.test.mts` + `trade-policy-tariffs.test.mjs` +
+      `country-intel-brief-sources.test.mjs` + `premium-paths-guard.test.mts`.
+
+---
+
+## ✅ Resolved 2026-08-13 (eighth session, later same-day) — the "Dodo" residue sweep
+
+Triaged every file a `grep -rli dodo` (excluding node_modules/dist/git/lockfiles) surfaced (~24
+files, close to the earlier session's ~26 estimate). Most were legitimate migration-history
+comments matching the Clerk sweep's own established pattern — left untouched. 3 zero-risk fixes
+applied directly; one much bigger orphaned-feature cluster found and removed with an explicit
+operator go-ahead (asked via the same "feature-removal needs a nod" convention as
+`IS_EMBEDDED_PREVIEW` above). Verified via `npm run typecheck:all` (clean), `node scripts/
+enforce-sebuf-api-contract.mjs` (clean), `npm run docs:check` (clean), targeted `npx tsx --test`
+runs of every directly-affected test file (all pass), and a full `npm run test:data` `git stash`
+A/B (40 failures both sides, byte-identical failure-name sets except 2 subtests of the
+already-documented flaky `renewable-energy-last-known-good.test.mts` file — reproduced in 3
+isolated re-runs, confirmed unrelated to anything touched this session).
+
+- [x] **3 zero-risk stale-comment/dead-config fixes**: `src/config/panels.ts`'s `isPanelEntitled`
+      comment ("Dodo entitlements unlock all premium panels" → accurate binary-entitlement
+      wording, since Dodo billing tiers don't exist); `tests/browser-bundle-secret-guard.test.mts`'s
+      `CLIENT_ENV_ALLOWLIST` dropped the dead `VITE_DODO_ENVIRONMENT` entry (nothing in `src/`
+      reads it — the client-side pricing page that used to was already deleted); `tests/
+      usage-telemetry-emission.test.mts`'s module header corrected to match the test body's own
+      already-documented FIXME (the bearer-JWT `tier` field is now pinned at 0, a known
+      post-Stage-1 regression — the header previously claimed it was "covered indirectly," which
+      the test directly beneath it disproves).
+
+- [x] **Orphaned "Dodo Product Prices" production seed loop removed from `scripts/ais-relay.cjs`.**
+      `startDodoPriceSeedLoop()` was wired into the real boot sequence and, whenever
+      `DODO_API_KEY` is configured, called the live Dodo Payments API every 6h to build a pricing
+      catalog and write it to Redis key `product-catalog:v2` — confirmed via repo-wide grep that
+      **nothing reads that key anymore**: its sole consumer, `api/product-catalog.js`, and the
+      freshness test the seeder's own comment cited (`tests/product-catalog-freshness.test.mjs`)
+      were both already deleted in an earlier retirement pass, with nothing left behind to clean up
+      the seeder itself. Removed the ~150-line block (constants, `fetchDodoProductPrice`,
+      `seedDodoPrices`, `startDodoPriceSeedLoop`) and its boot-loop call site; `node -c` confirms
+      the file still parses. Also removed the same dead feature's tail:
+        - `middleware.ts`'s `PUBLIC_API_PATHS` entry + comment for `/api/product-catalog` (an inert
+          bot-filter bypass for a route that 404s) and the matching dedicated describe block +
+          `ALLOWED_PATHS` entry in `tests/middleware-bot-gate.test.mts`.
+        - `tests/relay-boot-seed-freshness-guard.test.mjs`'s `DodoPrices` row in `SEEDERS` — the
+          file's own live source-count assertion (`startBootSeedLoop('` occurrences vs.
+          `SEEDERS.length`) self-corrected once both the row and the real call site were gone.
+        - `tests/helpers/runtime-config-panel-harness.mjs`'s `dodo-checkout-stub`/`dodo-empty-stub`
+          modules and the 4 `dodopayments*`/`@dodopayments/*` alias-map entries pointing at them —
+          confirmed dead: the `dodopayments` npm package isn't even in `package.json` anymore, so
+          these aliases could never have resolved a real import even before this fix.
+        - CSP `Permissions-Policy` `payment=(...)` directive in `vercel.json` +
+          `docker/nginx-security-headers.conf` collapsed to `payment=()` (dropped
+          `checkout.dodopayments.com`, `test.checkout.dodopayments.com`, `pay.google.com`,
+          `hooks.stripe.com`, `js.stripe.com` — all 5 were payment-iframe origins with no
+          remaining first-party purpose). Matching `tests/deploy-config.test.mjs:596` hardcoded
+          assertion updated to `'payment=()'`.
+        - **Bonus finding**: the same 3 files' `frame-src` directive (`vercel.json`,
+          `docker/nginx-security-headers.conf`, `docker/nginx.conf`) *also* still allowlisted
+          `pay.google.com`/`hooks.stripe.com`/`js.stripe.com` — missed by the earlier "CSP
+          frame-src Clerk/Dodo cleanup" session because that pass grepped specifically for
+          `clerk|dodopayments`, and these 3 origins match neither string. Dropped from all 3 files;
+          no test hardcoded their presence (the existing `frame-src` tests only assert *absence*
+          of clerk/dodopayments tokens), so nothing else needed updating.
+      **Deliberately left untouched, flagged rather than fixed**: `workers/api-cors-preflight/`'s
+      `ALLOW_METHODS` still includes `DELETE`, originally justified by `api/product-catalog.js`'s
+      purge endpoint. Whether any other live `api/*` route still needs `DELETE` was **not**
+      re-audited this session (a broad grep for real — not vendored-SDK-internal — `DELETE` route
+      registrations across `server/worldmonitor/*/v1/*.ts` and hand-written `api/*.ts` found none,
+      but the generated `api/*/v1/[rpc].js` gateway files were inconclusive within a reasonable
+      search effort) — removing a CORS method without full confidence risks silently breaking a
+      real route's preflight, so it's left in place. Reworded the now-stale citations honestly in
+      3 places instead of silently deleting: `workers/api-cors-preflight/src/index.js`'s own
+      comment, `workers/api-cors-preflight/index.test.mjs`'s `ACAM_EXPECTED` comment, and
+      `tests/cors-preflight-live.test.mjs`'s live-preflight comment. **A future session should
+      re-audit whether `DELETE` can be dropped from `ALLOW_METHODS` now that `api/product-catalog.js`
+      is gone** — flagging here so it isn't lost.
+      **Also noticed, explicitly out of scope, not touched**: `tests/seed-contract-probe.test.mjs`'s
+      "checkPublicBoundary: a transient first-attempt failure on each endpoint recovers on retry"
+      test still simulates a `/api/product-catalog` response and asserts on "both endpoints," but
+      the real `api/seed-contract-probe.ts`'s `BOUNDARY_CHECKS` array already only has one entry
+      (`/api/bootstrap`) — `/api/product-catalog` was removed from the real boundary-check list in
+      an earlier session without the test being updated to match. This is a **pre-existing**
+      staleness unconnected to "Dodo" text specifically (predates this sweep, wasn't caught by its
+      grep), found only incidentally while tracing the product-catalog cluster. The test currently
+      still passes (its `path === '/api/product-catalog'` mock branch is simply unreachable, not
+      failing), so it's low-urgency, but worth a follow-up pass.
+
+- **Left alone, confirmed as legitimate migration-history comments** (same precedent as the Clerk
+  sweep — accurately describe *why* current code looks the way it does, not stale claims about
+  current behavior): `api/widget-agent.ts`, `server/gateway.ts` (×2), `server/_shared/
+  entitlement-check.ts`, `server/_shared/notification-channels.ts`, `scripts/
+  seed-digest-notifications.mjs`, `scripts/check-sentry-coverage.mjs`, `server/__tests__/
+  entitlement-check.test.ts`, `src/components/DeckGLMap.ts`, `src/services/entitlements.ts`,
+  `src/services/trade/index.ts` (the fingerprint-fix history comment — separate from the
+  `IS_EMBEDDED_PREVIEW` guards removed above), `tests/entitlement-transition.test.mts`, `tests/
+  mcp-world-brief-routing.test.mjs`, `tests/mcp.test.mjs`, `tests/notification-relay-ticker-
+  filter.test.mjs`, `tests/premium-paths-guard.test.mts`, `tests/widget-builder.test.mjs`.
+  `tests/seed-contract-transform-regressions.test.mjs`'s `'dodo'`/`'dodo-v1'` sample string values
+  are also fine as-is — illustrative fixture data for a generic envelope-transform test, not a
+  reference to any dead function.
+  Two self-documented, already-flagged (not newly discovered) larger deferred items surfaced while
+  reading `tests/mcp-world-brief-routing.test.mjs` / `tests/mcp.test.mjs`'s own comments: the
+  "dead-but-still-wired-up" `BillingDenialError` passthrough machinery in `api/mcp/dispatch.ts`,
+  `api/mcp/auth.ts`, `api/mcp/billing-denial.ts` — those comments already say "a future cleanup
+  pass should either delete this now-dead machinery or restore its correctness," which is broader
+  Convex/Dodo entitlement-fallback scope than this Dodo-text sweep, not picked up here.
+
+---
+
 ## 🆕 New flagged items surfaced by the sweep — NOT fixed, out of scope for this pass
 
-- [ ] **`.github/scripts/audit-production-dependencies.mjs`'s `'pro-test/package-lock.json'`
-      baseline entry references a directory that no longer exists on disk** (`ls pro-test` →
-      no such file/directory) — unrelated to Clerk specifically; looks like a leftover from the
-      retired "Pro" test-build path (see `public/pro/` mentions in the same file's comments). If
-      this lockfile path is ever audited for real in CI, `readAuditReport`'s `copyFileSync` would
-      throw. Needs its own investigation of what actually calls this script with that path today.
-- [ ] **`src/utils/embedded-preview.ts`'s `IS_EMBEDDED_PREVIEW` mechanism may be entirely dead
-      code.** It exists solely to detect the `/pro` marketing page's live-preview iframe (marker:
-      `?embed=pro-preview`, embedder: `pro-test/src/App.tsx`) — but `pro-test/` doesn't exist on
-      disk (same missing directory as the item above) and the whole `/pro` marketing surface was
-      already retired. If confirmed unreachable, this touches 4 files (`embedded-preview.ts` +
-      3 consumers: `src/app/country-intel.ts`, `src/components/RegionalIntelligenceBoard.ts`,
-      `src/services/trade/index.ts`). Not investigated further — a real feature-removal decision,
-      not a Clerk-cleanup task; flagging for a future session.
-- [ ] **`src/bootstrap/sentry-init.ts` still has 4 dead Convex-specific `ignoreErrors` patterns**
-      (`ConvexError: CONFLICT`, `ConvexError: API_ACCESS_REQUIRED`, the `[CONVEX ...]` connection-
-      lost pattern, the Convex sync-protocol version-mismatch pattern) — same "unreachable now that
-      the SDK is gone" category as the Clerk patterns just removed from this same file, but Convex
-      is a separate retirement (see `retire-convex-saas-complete` memory) and out of scope here.
+- **`pro-test/package-lock.json` dead baseline entry — RESOLVED 2026-08-13 (eighth session)**,
+      see the ✅ section immediately above.
+- **`IS_EMBEDDED_PREVIEW` mechanism — RESOLVED 2026-08-13 (eighth session)**, operator gave an
+      explicit go-ahead when asked; see the ✅ section above this one.
+- **4 dead Convex-specific `ignoreErrors` patterns in `sentry-init.ts` — RESOLVED 2026-08-13
+      (eighth session)**, see the ✅ section above this one.
+- **"Dodo" residue sweep — RESOLVED 2026-08-13 (eighth session)**, see the new ✅ section below
+      ("the Dodo sweep") for the full writeup. Triaged all ~24 files a `grep -rli dodo` surfaced;
+      most were legitimate migration-history comments (left alone). Found and fixed 3 zero-risk
+      stale-comment/dead-config spots directly, plus one much bigger live finding — an orphaned
+      production seed loop in `scripts/ais-relay.cjs` still calling the real Dodo Payments API
+      every 6h for a feature (`api/product-catalog.js`) that was already deleted — removed with
+      explicit operator go-ahead, including its full dead-config tail (middleware bypass, pinning
+      test, dead test-harness stub aliases, and the CSP `Permissions-Policy`/`frame-src`
+      `payment`-related entries in `vercel.json` + both nginx configs, which turned out to include
+      2 more dead origins — `pay.google.com`, `hooks.stripe.com`/`js.stripe.com` — that the earlier
+      Clerk/Dodo `frame-src` cleanup session missed because they don't contain "clerk" or "dodo").
 - [ ] **`server/__tests__/gateway-summarize-article-security.test.ts`'s "active user API keys
       reuse the resolved entitlement and use the principal bucket" test is a newly-confirmed
       pre-existing failure** (expected 200, got 401) — confirmed via `git stash` A/B against the
-      unmodified baseline, unrelated to anything in this session. Add to the ⚪ reference list below
-      as #13 next time that list gets touched.
+      unmodified baseline, unrelated to anything in this session. Already added to the ⚪ reference
+      list below as #13 — not an action item, informational only, do NOT "fix" without first
+      understanding whether it's a real bug (it hasn't been individually investigated beyond the
+      A/B pre-existing-confirmation).
+- [ ] **`workers/api-cors-preflight/`'s `ALLOW_METHODS` may no longer need `DELETE`** now that
+      `api/product-catalog.js` (its original justification) is retired — not re-audited this
+      session, see the Dodo-sweep ✅ section above for what was and wasn't checked. Don't remove
+      without confirming no other live `api/*` route still needs it.
+- [ ] **`tests/seed-contract-probe.test.mjs`'s "checkPublicBoundary...recovers on retry" test
+      still simulates a now-nonexistent `/api/product-catalog` boundary check** — pre-existing
+      staleness, found incidentally during the Dodo sweep (see that section above), currently
+      harmless (the dead mock branch is simply unreachable, not failing) but worth a follow-up.
+
+**Suggested next-session order** (updated 2026-08-13, eighth session — all 4 🆕 items from the
+prior session done, see the ✅ sections above): (1) push `e8d59a7` + `d02f27c` + this session's
+2 commits once the operator confirms (see Housekeeping below); nothing else on this list is
+urgent — the 2 new items just above are low-priority follow-ups, not blockers.
 
 ---
 
@@ -503,9 +662,10 @@ test` path.
 - [x] **The "PRO" internal-branding rename commit (fifth session, 92 files) pushed 2026-08-12** —
       `f233f7c` pushed to `origin/main` on operator's go-ahead at the start of the next session;
       `main`/`origin/main` confirmed in sync.
-- [ ] **The CSP-hash-tooling + settings-copy commit (`e8d59a7`) and the full Clerk-retirement-sweep
-      commit that follows it are NOT yet pushed** — confirm with operator before pushing, per
-      standing repo convention.
+- [ ] **The CSP-hash-tooling + settings-copy commit (`e8d59a7`), the full Clerk-retirement-sweep
+      commit that follows it, and this eighth session's work (the 3 zero-risk 🆕 fixes,
+      `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) are NOT yet pushed** — confirm with
+      operator before pushing, per standing repo convention.
 
 ---
 

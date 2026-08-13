@@ -8,7 +8,6 @@ import { premiumFetch } from '@/services/premium-fetch';
 import { getCurrentAuthUser } from '@/services/auth-provider';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { onEntitlementChange } from '@/services/entitlements';
-import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
 import type { GetTradeRestrictionsResponse, GetTariffTrendsResponse, GetTradeFlowsResponse, GetTradeBarriersResponse, GetCustomsRevenueResponse, ListComtradeFlowsResponse, ComtradeFlowRecord, TradeRestriction, TariffDataPoint, EffectiveTariffRate, TradeFlowRecord, TradeBarrier, CustomsRevenueMonth } from '@/generated/client/worldmonitor/trade/v1/service_client';
 import { createCircuitBreaker } from '@/utils';
 import { isFeatureAvailable } from '../runtime-config';
@@ -131,10 +130,6 @@ export async function fetchTradeRestrictions(countries: string[] = [], limit = 5
 
 export async function fetchTariffTrends(reportingCountry: string, partnerCountry: string, productSector = '', years = 10): Promise<GetTariffTrendsResponse> {
   if (!isFeatureAvailable('wtoTrade')) return emptyTariffs;
-  // /pro live-preview iframe: no Supabase session → guaranteed 401 → breaker
-  // would fall through to emptyTariffs anyway. Short-circuit to silence the
-  // console noise this path causes on the embedding /pro page.
-  if (IS_EMBEDDED_PREVIEW) return emptyTariffs;
   invalidatePremiumBreakersIfIdentityChanged();
   try {
     return await tariffsBreaker.execute(async () => {
@@ -180,8 +175,6 @@ export async function fetchCustomsRevenue(): Promise<GetCustomsRevenueResponse> 
 }
 
 export async function fetchComtradeFlows(): Promise<ListComtradeFlowsResponse> {
-  // /pro live-preview iframe: see fetchTariffTrends comment above.
-  if (IS_EMBEDDED_PREVIEW) return emptyComtrade;
   invalidatePremiumBreakersIfIdentityChanged();
   try {
     return await comtradeBreaker.execute(async () => {

@@ -5,8 +5,9 @@
  *   - domain (must be 'shipping' for /api/v2/shipping/* routes, not 'v2')
  *   - customer_id (must be populated on legacy premium bearer-token success)
  *   - auth_kind (must reflect the resolved identity, not stay 'anon')
- *   - tier (recorded when entitlement-gated routes succeed; covered indirectly
- *     by the legacy bearer success case via the Dodo `tier` branch)
+ *   - tier (recorded when entitlement-gated routes succeed; the bearer-JWT
+ *     success case currently pins tier=0 instead — a known post-Stage-1
+ *     regression, see the FIXME(stage1-supabase-migration) block below)
  *
  * Strategy: enable telemetry (USAGE_TELEMETRY=1 + AXIOM_API_TOKEN=fake), stub
  * globalThis.fetch to intercept the Axiom ingest POST, and pass a real ctx

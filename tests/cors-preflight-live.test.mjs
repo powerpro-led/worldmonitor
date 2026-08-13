@@ -123,10 +123,13 @@ for (const url of ENDPOINTS) {
     }
 
     // Worker's Allow-Methods MUST be a superset of every method any api/*
-    // route advertises. api/product-catalog.js advertises 'GET, DELETE,
-    // OPTIONS' on its preflight, so DELETE belongs in the global Worker list.
-    // Missing it silently breaks browser-origin product-catalog purges in
-    // prod — exactly the regression that PR review caught locally.
+    // route advertises. DELETE was originally required for
+    // api/product-catalog.js's purge preflight; that route is retired
+    // (2026-08-13) but DELETE is left pinned here since another route's
+    // continued need for it wasn't re-audited (see workers/api-cors-
+    // preflight/src/index.js's own comment). Missing a method a route
+    // actually needs silently breaks its browser-origin requests in prod —
+    // exactly the regression that PR review caught locally.
     const acam = (resp.headers.get('access-control-allow-methods') || '')
       .split(',').map((s) => s.trim().toUpperCase());
     for (const required of ['GET', 'POST', 'DELETE', 'OPTIONS']) {

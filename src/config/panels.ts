@@ -1226,7 +1226,7 @@ export function restoreFreeMapPanelAccess(
  */
 export function isPanelEntitled(key: string, config: PanelConfig, isPro = false): boolean {
   if (!config.premium) return true;
-  // Dodo entitlements unlock all premium panels
+  // Any signed-in user (binary entitlement, no billing tiers) unlocks all premium panels
   if (isEntitled()) return true;
   const apiKeyPanels = ['stock-analysis', 'stock-backtest', 'daily-market-brief', 'market-implications', 'regional-intelligence', 'deduction', 'chat-analyst', 'wsb-ticker-scanner', 'trade-policy', 'global-procurement'];
   if (apiKeyPanels.includes(key)) {

@@ -905,11 +905,15 @@ test` path.
       fixes, `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) pushed to `origin/main`
       2026-08-13** — operator go-ahead given; `main`/`origin/main` confirmed in sync
       (`f233f7c..056d990`).
-- [ ] **Ninth session's 2 commits (CORS `DELETE` re-audit, and the larger domain-config Stage 1
-      work) are committed locally but NOT pushed** — both touch `workers/api-cors-preflight/**`,
-      which triggers a real Cloudflare Worker deploy via `.github/workflows/deploy-worker.yml` on
-      push to `main`. Needs an explicit operator go-ahead before pushing, same standing convention
-      as every other session.
+- [ ] **Ninth session's 3 commits are committed locally but NOT pushed** — `5e80a62` (CORS `DELETE`
+      re-audit + stale probe mock), `4ef902a` (docs-only domain-migration scoping in this file),
+      `c62a798` (domain-config Stage 1). Confirmed via `git branch -vv`: `main` is 3 ahead of
+      `origin/main`. `5e80a62` and `c62a798` both touch `workers/api-cors-preflight/**`, which
+      triggers a real Cloudflare Worker deploy via `.github/workflows/deploy-worker.yml` on push to
+      `main` — needs an explicit operator go-ahead before pushing, same standing convention as every
+      other session. (`4ef902a` alone would be safe to push — it's docs-only — but pushing out of
+      order would leave `main` history with the Worker-affecting commits still stacked on top
+      locally; simplest to push all 3 together once given the go-ahead.)
 - [ ] **2 small items noticed during the ninth session's domain-config work, not fixed (flagging,
       not urgent)**: `server/gateway.ts:1304` has an unrelated cosmetic hardcode —
       `planKey && planKey !== 'enterprise' ? 'https://worldmonitor.app/' : undefined` — a redirect

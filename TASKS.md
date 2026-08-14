@@ -15,6 +15,78 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🚧 APPROVED, NOT STARTED — domain-literal eradication + second SaaS-cruft removal pass
+
+**Fourteenth session (2026-08-14), planned via EnterPlanMode with 2 parallel Explore-agent
+inventories + 4 explicit operator decisions, then execution deferred to a fresh session
+("let's transfer to next new session's agent") — READ THIS BEFORE STARTING WORK ON DOMAIN
+LITERALS OR ANY FURTHER SAAS-SURFACE REMOVAL, the decisions below are already made, don't
+re-ask.** Full plan detail lives at `/Users/john/.claude/plans/dreamy-stargazing-dove.md` (local,
+not git-tracked, may not survive to a new machine/session — this TASKS.md entry is the durable
+copy, treat it as authoritative if the two ever disagree).
+
+**Why**: operator looked at the result of the Tauri/CLI/CORS-Worker/agent-discovery removal
+(above) and flagged two more things wrong: (1) 734 hardcoded `worldmonitor.app` literals across
+151 files — should be brand-agnostic/`APP_DOMAIN`-driven throughout, not just the ~16 files
+`scripts/sync-domain-literals.mjs` already covers; (2) more public/growth-product SaaS surface
+remains beyond what prior sessions already cut.
+
+**4 operator decisions already made — do not re-ask, just execute**:
+
+- Story/social-share cards (`api/story.js`, `api/og-story.js`, `src/services/story-renderer.ts`
+  watermark, `StoryModal.ts`) → **REMOVE**.
+- Public no-auth brief links (`api/brief/public/[hash].ts`, its share-URL helper) → **REMOVE**.
+  Keep `api/brief/[userId]/[issueDate].ts` (real signed-in digest delivery, unaffected).
+- `api/ask.ts` (NLWeb endpoint, external-agent tool discovery) → **KEEP**, consistent with the
+  already-kept MCP/A2A/OAuth surface (same shape, just wasn't named explicitly in the earlier
+  decision).
+- Embeddable widget product (`src/embed/`, `embed-main.ts`, `embed.html` Vite entry, "Get embed
+  code" button) → **REMOVE**. Do NOT touch `api/widget-agent.ts` or `public/wm-widget-sandbox.html`
+  — both confirmed unrelated despite the name collision (AI-widget-builder dashboard proxy, and a
+  security-sandbox iframe, respectively — both load-bearing, both KEEP).
+
+**Also approved as part of the same removal pass** (evidence-based, high-confidence, not asked
+as separate questions): `api/download.js` + `DownloadBanner.ts` + the `desktop-updater.ts`
+Tauri-download references (dead — points at deleted Tauri release artifacts);
+`public/sandbox/*.json` and `index.json` and `scripts/generate-sandbox-fixtures.mjs` (public
+API-console demo, zero real callers); `public/agent.txt` + `public/home.md` (bucketed with the
+already-removed `.well-known/*` discovery surface — **but read both files first** to confirm
+`home.md` isn't
+load-bearing homepage copy for the kept core web app before deleting, this one wasn't explicitly
+confirmed by the operator); stale `pro-test/` references in `AGENTS.md` and
+`scripts/translate-locales.mjs`'s dead `--pro-test` flag (the directory itself was already deleted
+pre-tracker, this is just cleanup of dangling mentions).
+
+**Domain-literal eradication scope** (full detail + file-by-file inventory in the plan file):
+real functional gaps to fix individually first (`scripts/ais-relay.cjs` — 18 hits, includes a
+literal CORS allowlist, highest stakes in the whole sweep; `scripts/notification-relay.cjs`;
+`src/bootstrap/web-vitals-utils.ts:65`; HTTP-Referer/User-Agent identity strings in
+`scripts/regional-snapshot/*`/`scripts/china-macro/*`/`scripts/lib/*` — check each target API for
+HDX-HAPI-style brand-substring rejection quirks before migrating, not blind find/replace;
+`docker/Dockerfile` + `docker/docker-entrypoint.sh`; `e2e/*.spec.ts`, which needs a new e2e-side
+`TEST_APP_DOMAIN`-equivalent helper since none exists yet), then the big mechanical sweep (~250+
+hits across ~65 test files bypassing the already-established `tests/helpers/domain-config.mjs`
+pattern — do as a small codemod, not 65 manual edits; explicitly exclude
+`tests/sentry-beforesend.test.mjs` and `tests/variant-meta-index-html-drift.test.mts:21`, both
+deliberately-literal for good reasons). Leave alone: docs prose, `.env.example`,
+`data/resilience-snapshots/*.json` (frozen data-provenance records), and the
+`seed-digest-notifications.mjs` email-template HTML branding (already deferred by a prior
+session as "a separate and sizeable area" — stays deferred).
+
+**Ordering**: do the removal pass first (shrinks the literal-migration surface — e.g.
+`story-renderer.ts`'s literal disappears entirely rather than needing migration), then the
+individual functional-gap fixes, then the mechanical test sweep last.
+
+**Verification**: same discipline as the fourteenth-session removal pass above — typecheck,
+build, docs:check, lint:md, full `test:data`, `git stash` A/B against `HEAD` (currently `e677abb`)
+to separate new regressions from the 8 already-confirmed-pre-existing failures. Nothing gets
+committed or pushed without fresh explicit go-ahead — the current holding pattern (commits
+`30c89d7`/`e677abb` local-only on `main`, GitHub Actions disabled repo-wide for
+`powerpro-led/worldmonitor`) carries forward unchanged; don't push or re-enable Actions as a side
+effect of this work either.
+
+---
+
 ## 🚧 IN PROGRESS — scope-down to VS Code dashboard + data pipeline only
 
 **Operator decision (2026-08-14, twelfth session): this fork's real product is the VS Code

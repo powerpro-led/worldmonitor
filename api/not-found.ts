@@ -17,6 +17,7 @@ export const config = { runtime: 'edge' };
 
 // @ts-expect-error — JS module, no declaration file
 import { getPublicCorsHeaders } from './_cors.js';
+import { resolveAppOrigin } from '../shared/domain-config.js';
 
 export default function handler(req: Request): Response {
   const corsHeaders = getPublicCorsHeaders('GET, POST, OPTIONS');
@@ -33,6 +34,7 @@ export default function handler(req: Request): Response {
     }
   })();
 
+  const openapiUrl = `${resolveAppOrigin(process.env.APP_DOMAIN)}/openapi.yaml`;
   const body = {
     error: {
       code: 'not_found',
@@ -40,9 +42,9 @@ export default function handler(req: Request): Response {
       // No public API-reference doc page exists on this private fork (the
       // Mintlify docs site is gone) — the OpenAPI spec is the sole surviving
       // machine-readable reference.
-      hint: 'Check the endpoint path against the OpenAPI spec at https://worldmonitor.app/openapi.yaml.',
+      hint: `Check the endpoint path against the OpenAPI spec at ${openapiUrl}.`,
     },
-    documentation: 'https://worldmonitor.app/openapi.yaml',
+    documentation: openapiUrl,
   };
 
   return new Response(JSON.stringify(body), {

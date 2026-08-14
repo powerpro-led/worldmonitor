@@ -6,23 +6,27 @@
  * Both derive their `resource`/`issuer` + endpoint origin from the request Host
  * so PRM and AS metadata stay self-consistent per host (apex, www, api, variant
  * subdomains). The Host header is client-controlled, so `resolveMetadataOrigin`
- * validates it against the worldmonitor.app apex + single-level subdomain
+ * validates it against the configured APP_DOMAIN apex + single-level subdomain
  * allowlist and falls back to the apex for anything else. Without this, a
  * spoofed `Host: evil.com` would be reflected into `issuer`/`token_endpoint` —
  * metadata a non-Host-aware downstream cache could serve to an agent, pointing
  * its token exchange at an attacker origin.
  */
+import { normalizeDomain, resolveAppOrigin } from '../shared/domain-config.js';
 
-// apex + exactly one DNS label (www, api, tech, finance, …). Rejects
-// `evil.com`, `worldmonitor.app.evil.com`, `evilworldmonitor.app`, and any
-// host carrying a port.
-const ALLOWED_HOST = /^(?:[a-z0-9-]+\.)?worldmonitor\.app$/;
-const FALLBACK_ORIGIN = 'https://worldmonitor.app';
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export function resolveMetadataOrigin(req: Request): string {
+  const domain = normalizeDomain(process.env.APP_DOMAIN);
+  // apex + exactly one DNS label (www, api, tech, finance, …). Rejects
+  // `evil.com`, `<domain>.evil.com`, `evil<domain>`, and any host carrying a port.
+  const allowedHost = new RegExp(`^(?:[a-z0-9-]+\\.)?${escapeRegExp(domain)}$`);
+  const fallbackOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
   const url = new URL(req.url);
   const host = (req.headers.get('host') ?? url.host).toLowerCase();
-  return ALLOWED_HOST.test(host) ? `https://${host}` : FALLBACK_ORIGIN;
+  return allowedHost.test(host) ? `https://${host}` : fallbackOrigin;
 }
 
 /**

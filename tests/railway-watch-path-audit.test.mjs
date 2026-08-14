@@ -14,7 +14,7 @@ function service({
   rootDirectory = 'scripts',
   startCommand = 'node seed-example.mjs',
   watchPatterns = [],
-  repo = 'koala73/worldmonitor',
+  repo = 'powerpro-led/worldmonitor',
   dockerfilePath,
 } = {}) {
   return {

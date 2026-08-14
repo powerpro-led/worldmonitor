@@ -1,6 +1,7 @@
 import './styles/base-layer.css';
 import './bootstrap/zod-csp';
 import { SITE_VARIANT } from '@/config/variant';
+import { APP_DOMAIN } from '@/config/domain';
 import { installLcpAttributionDebug } from '@/bootstrap/lcp-attribution';
 import { markLcpDebug } from '@/utils/lcp-debug';
 import { enqueueSentryCall, installPreInitErrorQueue, scheduleSentryInit } from '@/bootstrap/sentry-defer';
@@ -76,6 +77,7 @@ function shouldSuppressCspViolation(
   cspConnectSrcAllowsHttps: boolean,
   firstPartyConvexHost: string | null,
   cspMediaSrcAllowsHttps: boolean = false,
+  appDomain: string = APP_DOMAIN,
 ): boolean {
   // Skip non-enforced violations (report-only from dual-CSP interaction).
   if (disposition && disposition !== 'enforce') return true;
@@ -129,15 +131,15 @@ function shouldSuppressCspViolation(
   // ships no http:// subresource loads, and every fetch directive we DO use
   // (connect-src, img-src, script-src, media-src) is set explicitly, so a genuine
   // first-party mixed-content fetch surfaces under its specific directive — never
-  // this default-src fallback. Preserve first-party worldmonitor.app http blocks
+  // this default-src fallback. Preserve first-party APP_DOMAIN http blocks
   // so a real mixed-content regression on our own assets still surfaces
   // (WORLDMONITOR-S0 — http://www.euronews.com article prefetch, 1 user/775 ev).
   if (directive === 'default-src') {
     try {
       const u = new URL(blockedURI);
       if (u.protocol === 'http:'
-          && u.hostname !== 'worldmonitor.app'
-          && !u.hostname.endsWith('.worldmonitor.app')) return true;
+          && u.hostname !== appDomain
+          && !u.hostname.endsWith(`.${appDomain}`)) return true;
     } catch { /* scheme-only values fall through */ }
   }
   // First-party Convex backend: corporate proxies / privacy extensions that mutate the
@@ -158,13 +160,13 @@ function shouldSuppressCspViolation(
   // CloudSOC, school content-filters) can strip both `'self'` and `https:` from img-src
   // in the user's effective policy, causing our own favicon and panel icons to be
   // CSP-blocked even though our policy (`img-src 'self' data: blob: https:`) allows
-  // them. Scope to `worldmonitor.app` and its subdomains — img-src blocks to foreign
+  // them. Scope to APP_DOMAIN and its subdomains — img-src blocks to foreign
   // hosts (a third-party CDN we never load, attacker-controlled host) still surface
   // (WORLDMONITOR-JP). Suffix check uses a leading `.` so lookalikes like
-  // `worldmonitor.app.evil.com` do NOT match.
+  // `<domain>.evil.com` do NOT match.
   //
   // REQUIRE https: protocol — our CSP only allows https: for img-src, so a real
-  // mixed-content regression (`<img src="http://worldmonitor.app/...">`) would be
+  // mixed-content regression (`<img src="http://<domain>/...">`) would be
   // blocked by the browser. Suppressing http: blocks on first-party hosts would mask
   // that regression in Sentry. The `cspConnectSrcAllowsHttps` block above uses the
   // same protocol gate for connect-src.
@@ -172,7 +174,7 @@ function shouldSuppressCspViolation(
     try {
       const url = new URL(blockedURI);
       if (url.protocol === 'https:'
-          && (url.hostname === 'worldmonitor.app' || url.hostname.endsWith('.worldmonitor.app'))) return true;
+          && (url.hostname === appDomain || url.hostname.endsWith(`.${appDomain}`))) return true;
     } catch { /* scheme-only values fall through */ }
   }
   // YouTube IFrame API loader: explicitly allowed by our script-src
@@ -347,6 +349,7 @@ window.addEventListener('securitypolicyviolation', (e) => {
     _cspAllowsHttps,
     _firstPartyConvexHost,
     _cspMediaSrcAllowsHttps,
+    APP_DOMAIN,
   )) return;
   const message = `CSP: ${e.effectiveDirective} blocked ${blocked || '(inline)'}`;
   const extra = {
@@ -392,7 +395,7 @@ initMetaTags();
 
 // In desktop mode, route /api/* calls to the local Tauri sidecar backend.
 installRuntimeFetchPatch();
-// In web production, route RPC calls through api.worldmonitor.app (Cloudflare edge).
+// In web production, route RPC calls through the api. subdomain (Cloudflare edge).
 installWebApiRedirect();
 // Force-reload tabs running a stale bundle (catches the class of bug where
 // users keep a tab open across a wire-shape change). Skips when build-hash

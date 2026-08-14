@@ -28,7 +28,7 @@
         "worldmonitorLocal.repoRoot": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the worldmonitor repo (dist/, src-tauri/sidecar/, api/). Defaults to the first open workspace folder."
+          "description": "Absolute path to the worldmonitor repo (dist/, vscode-extension/sidecar/, api/). Defaults to the first open workspace folder."
         }
       }
     }

@@ -6,6 +6,7 @@ import {
   getLlmAttemptTimeoutMs,
   OPENROUTER_PROVIDER_ROUTING,
 } from '../../scripts/_llm-model-timeouts.mjs';
+import { resolveAppOrigin } from '../../shared/domain-config.js';
 
 export { getLlmAttemptTimeoutMs } from '../../scripts/_llm-model-timeouts.mjs';
 
@@ -109,7 +110,7 @@ export function getProviderCredentials(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://worldmonitor.app',
+        'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN),
         'X-Title': 'World Monitor',
       },
       // Hybrid-reasoning models (DeepSeek V4) reason by default via

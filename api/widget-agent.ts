@@ -23,8 +23,9 @@ import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
 // @ts-expect-error — JS module, no declaration file
 import { timingSafeEqualSecret, timingSafeIncludes } from './_crypto.js';
 import { validateBearerToken } from '../server/auth-session';
+import { resolveProxyOrigin } from '../shared/domain-config.js';
 
-const RELAY_BASE = 'https://proxy.worldmonitor.app';
+const RELAY_BASE = resolveProxyOrigin(process.env.APP_DOMAIN);
 const WIDGET_AGENT_KEY = process.env.WIDGET_AGENT_KEY ?? '';
 const PRO_WIDGET_KEY = process.env.PRO_WIDGET_KEY ?? '';
 const WORLDMONITOR_VALID_KEYS = (process.env.WORLDMONITOR_VALID_KEYS ?? '')

@@ -49,5 +49,3 @@ jobs:
       - run: npm run security:vite-env-secrets
       - name: Markdown lint
         run: npm run lint:md
-      - name: Version sync check
-        run: npm run version:check

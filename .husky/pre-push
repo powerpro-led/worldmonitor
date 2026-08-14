@@ -373,9 +373,6 @@ else
   echo "No proto-related changes, skipping."
 fi
 
-echo "Running version sync check..."
-npm run version:check || exit 1
-
 # Record this tree as gate-green: a re-push of the identical tree (remote-side
 # failure, network blip, commit-message-only amend) skips straight past the
 # tree-dependent checks above. Any content change produces a new tree hash.

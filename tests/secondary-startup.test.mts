@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { dashboardFontFamilies } from '../src/bootstrap/secondary-startup.ts';
 import { scheduleAfterFirstPaint } from '../src/utils/after-paint.ts';
+import { ABACUS_ORIGIN, APP_DOMAIN } from '../src/config/domain.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -164,12 +165,12 @@ describe('deferred Umami loader', () => {
       assert.equal(appendedScripts.length, 1);
       const firstScript = appendedScripts[0]!;
       assert.equal(firstScript.async, true);
-      assert.equal(firstScript.src, 'https://abacus.worldmonitor.app/script.js');
+      assert.equal(firstScript.src, `${ABACUS_ORIGIN}/script.js`);
       assert.equal(firstScript.dataset.websiteId, 'e8800335-c853-46a8-8497-c993ed2f58bc');
       // www MUST stay listed (#4931): the apex 301s to www in production and
       // the tracker's data-domains check is an exact hostname match — without
       // www, analytics on the canonical host are silently disabled.
-      assert.equal(firstScript.dataset.domains, 'worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app');
+      assert.equal(firstScript.dataset.domains, `${APP_DOMAIN},www.${APP_DOMAIN},happy.${APP_DOMAIN}`);
       assert.deepEqual(calls, []);
       firstScript.listeners.get('error')?.();
       assert.equal(firstScript.removed, true);

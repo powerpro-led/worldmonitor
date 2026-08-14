@@ -23,6 +23,7 @@ import { dirname, resolve } from 'node:path';
 import vm from 'node:vm';
 
 import { BASE_URL, HMAC_SECRET } from './helpers/mcp-pro-deps.mjs';
+import { TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const originalFetch = globalThis.fetch;
@@ -422,7 +423,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
     const cspMatch = html.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)">/);
     assert.ok(cspMatch, 'must carry a <meta http-equiv="Content-Security-Policy"> tag');
     const csp = cspMatch[1];
-    assert.match(csp, /connect-src[^;]*worldmonitor\.app/, 'connect-src must include the MCP server origin');
+    assert.match(csp, new RegExp(`connect-src[^;]*${TEST_APP_DOMAIN.replace(/\./g, '\\.')}`), 'connect-src must include the MCP server origin');
     assert.match(csp, /frame-ancestors[^;]*https:\/\/chatgpt\.com/, 'frame-ancestors must include https://chatgpt.com');
     assert.match(csp, /frame-ancestors[^;]*https:\/\/claude\.ai/, 'frame-ancestors must include https://claude.ai');
     assert.match(csp, /form-action\s+'none'/, 'form-action must be scoped');
@@ -436,7 +437,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
     assert.ok(meta?.ui?.csp, 'contents[0]._meta.ui.csp must be present (ext-apps UIResourceMeta)');
     // connectDomains mirrors the HTML meta CSP's connect-src (the MCP origin);
     // the other allowlists stay empty (secure default — app loads nothing external).
-    assert.deepEqual(meta.ui.csp.connectDomains, ['https://worldmonitor.app', 'https://www.worldmonitor.app'],
+    assert.deepEqual(meta.ui.csp.connectDomains, [`https://${TEST_APP_DOMAIN}`, `https://www.${TEST_APP_DOMAIN}`],
       'connectDomains must mirror the HTML connect-src (MCP server origin)');
     assert.deepEqual(meta.ui.csp.resourceDomains, [], 'resourceDomains empty = no external resources');
     assert.deepEqual(meta.ui.csp.frameDomains, [], 'frameDomains empty = no nested frames');
@@ -532,7 +533,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
       assert.ok(cspMatch, `${uri}: must carry a <meta http-equiv CSP> tag`);
       const csp = cspMatch[1];
       assert.match(csp, /default-src\s+'none'/, `${uri}: default-src must be 'none'`);
-      assert.match(csp, /connect-src[^;]*worldmonitor\.app/, `${uri}: connect-src must include the MCP origin`);
+      assert.match(csp, new RegExp(`connect-src[^;]*${TEST_APP_DOMAIN.replace(/\./g, '\\.')}`), `${uri}: connect-src must include the MCP origin`);
       // frame-ancestors in a <meta> CSP is ADVISORY — browsers enforce it only
       // via an HTTP response header, and a ui:// shell is delivered as a
       // JSON-RPC string the host injects into its own sandboxed iframe (no HTTP
@@ -555,7 +556,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
       // Spec _meta.ui.csp must mirror the HTML connect-src and keep the other
       // allowlists empty (the fleet's shared secure default).
       assert.deepEqual(c._meta?.ui?.csp?.connectDomains,
-        ['https://worldmonitor.app', 'https://www.worldmonitor.app'],
+        [`https://${TEST_APP_DOMAIN}`, `https://www.${TEST_APP_DOMAIN}`],
         `${uri}: _meta.ui.csp.connectDomains must mirror the HTML connect-src`);
       assert.deepEqual(c._meta?.ui?.csp?.resourceDomains, [], `${uri}: resourceDomains must be empty`);
       assert.deepEqual(c._meta?.ui?.csp?.frameDomains, [], `${uri}: frameDomains must be empty`);

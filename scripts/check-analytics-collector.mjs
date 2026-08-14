@@ -2,7 +2,7 @@
 
 /**
  * Scheduled liveness probe for the self-hosted Umami analytics collector
- * (`abacus.worldmonitor.app`).
+ * (the `abacus.` subdomain).
  *
  * Why this exists: on 2026-07-20 the collector's Node process OOM-died and
  * Railway neither restarted it nor flipped the deployment off `SUCCESS`, so
@@ -16,8 +16,9 @@
 
 import { realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveAbacusOrigin } from './_domain-config.mjs';
 
-const DEFAULT_COLLECTOR_ORIGIN = 'https://abacus.worldmonitor.app';
+const DEFAULT_COLLECTOR_ORIGIN = resolveAbacusOrigin(process.env.APP_DOMAIN);
 
 /**
  * Cloudflare's WAF 403s a bare `curl/*` User-Agent on this host (verified

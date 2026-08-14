@@ -2,6 +2,7 @@
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import { jsonResponse } from './_json-response.js';
 import { captureSilentError } from './_sentry-edge.js';
+import { resolveAppOrigin } from './_domain-config.js';
 export const config = { runtime: 'edge' };
 
 // Scrape FwdStart newsletter archive and return as RSS
@@ -84,7 +85,7 @@ export default async function handler(req, ctx) {
     <description>Forward-thinking startup and VC news from MENA and beyond</description>
     <language>en-us</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-    <atom:link href="https://worldmonitor.app/api/fwdstart" rel="self" type="application/rss+xml"/>
+    <atom:link href="${resolveAppOrigin(process.env.APP_DOMAIN)}/api/fwdstart" rel="self" type="application/rss+xml"/>
     ${rssItems}
   </channel>
 </rss>`;

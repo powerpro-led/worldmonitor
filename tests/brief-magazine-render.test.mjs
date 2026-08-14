@@ -18,6 +18,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderBriefMagazine } from '../server/_shared/brief-render.js';
 import { BRIEF_ENVELOPE_VERSION } from '../shared/brief-envelope.js';
+import { TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
 
 /**
  * @typedef {import('../shared/brief-envelope.js').BriefEnvelope} BriefEnvelope
@@ -871,14 +872,14 @@ describe('renderBriefMagazine — publicMode', () => {
     assert.ok(html.includes('class="wm-public-strip"'), 'shared-issue strip element emitted');
     // No self-service signup exists on this private fork — the strip
     // links to the homepage, not a dead /pro purchase flow.
-    assert.ok(!html.includes('worldmonitor.app/pro'), 'strip does not link to the defunct /pro page');
+    assert.ok(!html.includes(`${TEST_APP_DOMAIN}/pro`), 'strip does not link to the defunct /pro page');
     assert.ok(html.includes('Get your own'), 'strip CTA text present');
   });
 
   it('attaches ?ref= to public CTAs when refCode is provided', () => {
     const env = envelope();
     const html = renderBriefMagazine(env, { publicMode: true, refCode: 'ABC123' });
-    assert.ok(html.includes('worldmonitor.app?ref=ABC123'), 'refCode appended to the homepage URL');
+    assert.ok(html.includes(`${TEST_APP_DOMAIN}?ref=ABC123`), 'refCode appended to the homepage URL');
   });
 
   it('HTML-escapes a hostile refCode before interpolation', () => {

@@ -19,10 +19,11 @@
  */
 
 import { loadEnvFile, CHROME_UA } from './_seed-utils.mjs';
+import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
-const API_BASE = 'https://api.worldmonitor.app';
+const API_BASE = resolveApiOrigin(process.env.APP_DOMAIN);
 const TIMEOUT = 30_000;
 
 // Defense-in-depth auth — Origin-trust alone broke globally on 2026-05-02
@@ -37,7 +38,7 @@ function warmPingHeaders() {
   const h = {
     'Content-Type': 'application/json',
     'User-Agent': CHROME_UA,
-    Origin: 'https://worldmonitor.app',
+    Origin: resolveAppOrigin(process.env.APP_DOMAIN),
   };
   if (RELAY_API_KEY) h['X-WorldMonitor-Key'] = RELAY_API_KEY;
   return h;

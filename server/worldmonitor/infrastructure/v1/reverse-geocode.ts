@@ -5,9 +5,10 @@ import type {
   ReverseGeocodeResponse,
 } from '../../../../src/generated/server/worldmonitor/infrastructure/v1/service_server';
 import { getCachedJson, setCachedJson } from '../../../_shared/redis';
+import { resolveAppOrigin } from '../../../../shared/domain-config.js';
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/reverse';
-const CHROME_UA = 'WorldMonitor/2.0 (https://worldmonitor.app)';
+const CHROME_UA = `WorldMonitor/2.0 (${resolveAppOrigin(process.env.APP_DOMAIN)})`;
 
 interface ReverseCacheEntry {
   country?: string;

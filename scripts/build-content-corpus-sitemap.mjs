@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveWwwOrigin } from '../shared/domain-config.js';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 // A function, not a module-load-time const: recomputed on every call so a
 // caller (a real `npm run build:content-corpus` invocation, or a test) can

@@ -12,7 +12,7 @@ World Monitor is a real-time global intelligence dashboard built as a TypeScript
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Browser / Desktop                        │
+│                       Browser / VS Code                         │
 │  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────────┐  │
 │  │ DeckGLMap│  │ GlobeMap │  │  Panels    │  │  Workers     │  │
 │  │(deck.gl) │  │(globe.gl)│  │(Panel base)│  │(ML, analysis)│  │
@@ -24,7 +24,7 @@ World Monitor is a real-time global intelligence dashboard built as a TypeScript
            ┌──────────────┼──────────────┐
            │              │              │
     ┌──────▼──────┐ ┌─────▼─────┐ ┌─────▼──────┐
-    │   Vercel    │ │  Railway  │ │   Tauri    │
+    │   Vercel    │ │  Railway  │ │  VS Code   │
     │ Edge Funcs  │ │ AIS Relay │ │  Sidecar   │
     │ + Middleware│ │ + Seeds   │ │ (Node.js)  │
     └──────┬──────┘ └─────┬─────┘ └─────┬──────┘
@@ -56,14 +56,14 @@ World Monitor is a real-time global intelligence dashboard built as a TypeScript
 | Service | Platform | Role |
 |---------|----------|------|
 | SPA + Edge Functions | Vercel | Static files, API endpoints, middleware (bot filtering, social OG) |
-| CORS Preflight Worker | Cloudflare | Edge CORS for `api.worldmonitor.app` — short-circuits OPTIONS, stamps CORS headers on responses |
 | AIS Relay | Railway | WebSocket proxy (AIS stream), seed loops (market, aviation, GPSJAM, risk scores, UCDP, positive events), RSS proxy, OREF polling |
 | Consumer Prices | Railway | Containerized price scrapers (Playwright, per-country baskets) + Redis publisher for the consumer-prices dataset |
 | Redis | Upstash | Cache layer with stampede protection, seed-meta freshness tracking, rate limiting |
-| Desktop App | Tauri 2.x | macOS (ARM64, x64), Windows (x64), Linux (x64, ARM64) with bundled Node.js sidecar |
 | Container Image | GHCR | Multi-arch Docker image (nginx serving built SPA, proxies API to upstream) |
 
-**Source files**: `vercel.json`, `docker/Dockerfile`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`, `workers/api-cors-preflight/wrangler.toml`, `src-tauri/tauri.conf.json`
+**Source files**: `vercel.json`, `docker/Dockerfile`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`
+
+> The Cloudflare CORS Preflight Worker and the Tauri desktop app were retired from this repo (scope-down to VS Code dashboard + data pipeline, see TASKS.md); their source (`workers/api-cors-preflight/`, `src-tauri/`) is gone. The dashboard engine and cloud→local data pipeline live on as the VS Code extension's sidecar (`vscode-extension/sidecar/`).
 
 **Cloudflare zone config (dashboard-managed, NOT in this repo):** the apex `worldmonitor.app` → `www` 301 is a Cloudflare Dynamic Redirect rule ("apex to www (exclude agent-discoverable paths)") whose exemption list is load-bearing: `/.well-known/*`, `/robots.txt`, `/security.txt`, `/mcp`, `/mcp/*`, and `/oauth/*` are served on the apex, never redirected. Dropping the `/mcp*` exemptions breaks every apex-URL MCP client; dropping `/oauth/*` re-breaks OAuth dynamic client registration — a redirected POST becomes a GET and dies with 405 (issue #4938). When editing the rule, mind expression precedence: `and` binds tighter than `or`, so a new exemption must be added as its own `or` term **inside** the `not (…)` group (appending `and not …` after the last term is a silent no-op). `mcp-live-smoke.yml` probes the MCP/OAuth members of this list (`/mcp`, `/.well-known/oauth-authorization-server`, and the OAuth endpoints it declares) every 6 hours and fails on the redirect fingerprint; the `robots.txt` / `security.txt` exemptions are crawler-facing and have no automated probe.
 
@@ -223,25 +223,21 @@ These are the primary seeders. Standalone `seed-*.mjs` scripts on Railway cron a
 
 ---
 
-## 7. Desktop Architecture
+## 7. VS Code Extension & Local Sidecar
 
-### Tauri Shell
-
-Tauri 2.x (Rust) manages the app lifecycle, system tray, and IPC commands:
-
-- **Secret management**: Read/write platform keyring (macOS Keychain, Windows Credential Manager, Linux keyring)
-- **Sidecar control**: Spawn Node.js process, probe port, inject environment variables
-- **Window management**: Three trusted windows (main, settings, live-channels) with Edit menu for macOS clipboard shortcuts
+The Tauri desktop shell (Rust app, system tray, platform keyring IPC) was retired — see TASKS.md's scope-down note. The dashboard engine and cloud→local data pipeline it hosted live on as a VS Code extension instead.
 
 ### Node.js Sidecar
 
-`src-tauri/sidecar/local-api-server.mjs` runs on a dynamic port. It dynamically loads Edge Function handler modules from `api/`, injects secrets from the keyring via environment variables, and monkey-patches `globalThis.fetch` to force IPv4 (Node.js tries IPv6 first, but many government APIs have broken IPv6).
+`vscode-extension/sidecar/local-api-server.mjs` runs on a dynamic port, spawned directly via `process.execPath` (no Rust/IPC layer involved). It dynamically loads Edge Function handler modules from `api/`, and monkey-patches `globalThis.fetch` to force IPv4 (Node.js tries IPv6 first, but many government APIs have broken IPv6).
 
-### Fetch Patching
+### Cloud → Local Data Pipeline
 
-`installRuntimeFetchPatch()` in `src/services/runtime.ts` replaces `window.fetch` on the desktop renderer. All `/api/*` requests route to the sidecar with `Authorization: Bearer <token>` (5-min TTL from Tauri IPC). If the sidecar fails, requests fall back to the cloud API.
+`vscode-extension/sidecar/local-sync.mjs` (`npm run local-sync`) pulls seeded data down from the cloud deployment into the sidecar's local cache, so the VS Code dashboard can render without a live round-trip per panel.
 
-**Source files**: `src-tauri/src/main.rs`, `src-tauri/sidecar/local-api-server.mjs`, `src/services/runtime.ts`, `src/services/tauri-bridge.ts`
+> `src/services/runtime.ts` and `src/services/tauri-bridge.ts` still carry Tauri-IPC feature-detection code (used by ~10 other files) that now has no Tauri shell to detect — harmless (the app already runs standalone in plain browsers, where this code already no-ops), but unpruned. Left alone deliberately: this is application runtime logic, out of scope for the file/config removal pass that retired `src-tauri/` — see TASKS.md.
+
+**Source files**: `vscode-extension/sidecar/local-api-server.mjs`, `vscode-extension/sidecar/local-sync.mjs`
 
 ---
 
@@ -251,16 +247,15 @@ Tauri 2.x (Rust) manages the app lifecycle, system tray, and IPC commands:
 
 ```
 Browser ↔ Vercel Edge ↔ Upstream APIs
-Desktop ↔ Sidecar ↔ Cloud API / Upstream APIs
+VS Code ↔ Sidecar ↔ Cloud API / Upstream APIs
 ```
 
 ### Content Security Policy
 
-Three CSP sources that must stay in sync:
+Two CSP sources that must stay in sync (the third, `src-tauri/tauri.conf.json`, was retired with the Tauri shell — see TASKS.md):
 
-1. `index.html` `<meta>` tag (development, Tauri fallback)
+1. `index.html` `<meta>` tag (development fallback)
 2. `vercel.json` HTTP header (production, overrides meta)
-3. `src-tauri/tauri.conf.json` (desktop)
 
 ### Authentication
 
@@ -274,11 +269,7 @@ API keys are required for non-browser origins. Trusted browser origins (producti
 
 Per-IP sliding window via Upstash with per-endpoint overrides for high-traffic paths.
 
-### Desktop Secret Storage
-
-Secrets are stored in the platform keyring (never plaintext), injected into the sidecar via Tauri IPC, and scoped to an allowlist of environment variable keys.
-
-**Source files**: `middleware.ts`, `vercel.json`, `index.html`, `src-tauri/tauri.conf.json`, `api/_api-key.js`, `server/_shared/rate-limit.ts`
+**Source files**: `middleware.ts`, `vercel.json`, `index.html`, `api/_api-key.js`, `server/_shared/rate-limit.ts`
 
 ---
 
@@ -324,7 +315,7 @@ Every cache write also writes `seed-meta:<key>` with `{ fetchedAt, recordCount }
 
 ### Sidecar and API Tests
 
-`api/*.test.mjs` and `src-tauri/sidecar/*.test.mjs` test CORS handling, YouTube embed proxying, and local API server behavior.
+`api/*.test.mjs` and `vscode-extension/sidecar/*.test.mjs` test CORS handling, YouTube embed proxying, and local API server behavior.
 
 ### End-to-End
 
@@ -343,7 +334,6 @@ Runs before every `git push`:
 3. Edge function esbuild bundle check
 4. Edge function import guardrail test
 5. Markdown lint
-6. Version sync check
 
 **Source files**: `tests/`, `e2e/`, `playwright.config.ts`, `.husky/pre-push`
 
@@ -367,12 +357,8 @@ Runs before every `git push`:
 | `analytics-collector-monitor.yml` | 15-minute cron, manual | Probes the self-hosted Umami collector directly (heartbeat, tracker script, ingest route) and fails when events are being dropped — Railway reported a green deployment through the 4-day #5565 blackout, so deployment status is not trusted here |
 | `contributor-trust.yml` | PR | Gates untrusted first-time-contributor runs |
 | `deploy-gate.yml` | After Test/Typecheck/Security Audit complete | Aggregates required smoke-gate statuses onto the head SHA for branch protection |
-| `deploy-worker.yml` | Push to main (worker paths), manual | Deploys the `api-cors-preflight` Cloudflare Worker |
-| `build-desktop.yml` | Release tag, push, manual | Multi-platform Tauri build, code signing (macOS), AppImage library stripping (Linux), smoke test |
 | `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
-| `test-linux-app.yml` | Manual | Linux AppImage build + headless smoke test with screenshot verification |
 | `nitric-deploy.yml` | Manual | Deploys the backend to GCP (Nitric) — manual-only by design, so unrelated pushes to main never trigger a live infra deploy during this dev phase |
-| `publish-cli.yml` | Push (`cli-v*` tag), manual | Publishes the `worldmonitor` npm package from `cli/` via npm OIDC trusted publishing (dry-run option on manual runs) |
 
 **Source files**: `.github/workflows/`, `.husky/pre-push`. The workflow list is CI-checked against `.github/workflows/*.yml` by `npm run docs:check` — a new workflow file must be added to this table.
 
@@ -385,14 +371,13 @@ Runs before every `git push`:
 ├── api/                    Vercel Edge Functions (self-contained JS)
 │   ├── _*.js               Shared helpers (CORS, rate-limit, API key, relay, Sentry, session)
 │   └── <domain>/           Domain endpoints (aviation/, climate/, conflict/, ...)
-├── cli/                    Official `worldmonitor` npm CLI (zero-dep ESM, MCP-first; published via cli-v* tag)
 ├── consumer-prices-core/   Consumer-price collection service (Playwright scrapers, per-country baskets; Railway/Docker)
 ├── data/                   Static data (telegram channels, OREF threat translations, gamma irradiators)
 ├── deploy/                 Deployment configs (nginx)
 ├── docker/                 Dockerfile + nginx config for Railway
 ├── e2e/                    Playwright E2E specs
 ├── proto/                  Protobuf service definitions (sebuf framework)
-├── public/                 Static assets served as-is (favicons, textures, .well-known agent-skills/MCP)
+├── public/                 Static assets served as-is (favicons, textures, sandbox fixtures)
 ├── scripts/                Seed scripts, build helpers, relay service
 ├── server/                 Server-side code (bundled into Edge Functions)
 │   ├── _shared/            Redis, rate-limit, LLM, caching utilities
@@ -417,8 +402,9 @@ Runs before every `git push`:
 │   ├── types/              TypeScript type definitions
 │   ├── utils/              Shared utilities (circuit-breaker, theme, URL state)
 │   └── workers/            Web Workers (analysis, ML, vector DB)
-├── src-tauri/              Tauri desktop shell (Rust)
-│   └── sidecar/            Node.js sidecar API server
-├── tests/                  Unit/integration tests (node:test)
-└── workers/                Cloudflare Workers (edge CORS preflight for api.worldmonitor.app)
+├── vscode-extension/
+│   └── sidecar/            Node.js sidecar API server (VS Code extension dashboard engine + cloud→local pipeline)
+└── tests/                  Unit/integration tests (node:test)
 ```
+
+`src-tauri/` (Tauri desktop shell), `cli/` (published npm CLI), and `workers/` (Cloudflare CORS preflight worker) were retired — see TASKS.md's scope-down note.

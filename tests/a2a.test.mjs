@@ -7,50 +7,15 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(__filename), '..');
 
-const CARD_PATH = join(ROOT, 'public/.well-known/agent-card.json');
 const VERCEL_JSON_PATH = join(ROOT, 'vercel.json');
 
-const card = JSON.parse(readFileSync(CARD_PATH, 'utf-8'));
 const vercelConfig = JSON.parse(readFileSync(VERCEL_JSON_PATH, 'utf-8'));
 
-// Guards for the A2A surface (orank Identity `a2a-agent-card`): the card at
-// /.well-known/agent-card.json and the JSON-RPC endpoint at /a2a must stay
-// deployable as a pair — a card pointing at a dead endpoint is exactly the
-// phantom-endpoint failure mode the 2026-07 MCP-discovery saga was about.
-describe('a2a: agent card contract', () => {
-  it('carries the required A2A v0.3.0 fields', () => {
-    assert.equal(card.protocolVersion, '0.3.0');
-    assert.ok(card.name && typeof card.name === 'string');
-    assert.ok(card.description && card.description.length > 50, 'description must be substantive');
-    assert.equal(card.url, 'https://www.worldmonitor.app/a2a');
-    assert.equal(card.preferredTransport, 'JSONRPC');
-    assert.ok(card.version && typeof card.version === 'string');
-    assert.ok(Array.isArray(card.defaultInputModes) && card.defaultInputModes.length > 0);
-    assert.ok(Array.isArray(card.defaultOutputModes) && card.defaultOutputModes.length > 0);
-  });
-
-  it('declares capabilities honestly: no streaming, no push notifications, no tasks', () => {
-    assert.equal(card.capabilities.streaming, false);
-    assert.equal(card.capabilities.pushNotifications, false);
-    assert.equal(card.capabilities.stateTransitionHistory, false);
-    assert.equal(card.supportsAuthenticatedExtendedCard, false);
-  });
-
-  it('every skill has id, name, description, and tags', () => {
-    assert.ok(Array.isArray(card.skills) && card.skills.length >= 2);
-    for (const skill of card.skills) {
-      assert.ok(skill.id, 'skill missing id');
-      assert.ok(skill.name, `${skill.id} missing name`);
-      assert.ok(skill.description && skill.description.length > 0, `${skill.id} missing description`);
-      assert.ok(Array.isArray(skill.tags) && skill.tags.length > 0, `${skill.id} missing tags`);
-    }
-  });
-
-  // The old "shares branding with the MCP server card (same icon)" test lived
-  // here — the MCP server card is now generated in-process and doesn't carry
-  // an icon field (see api/mcp/handler.ts's buildServerCardPayload), so
-  // there's nothing left to compare against.
-
+// The static agent-card.json (A2A discovery manifest) was retired along with
+// the rest of the public agent-discovery surface — see TASKS.md. The /a2a
+// JSON-RPC endpoint itself stays live (it's part of the core web app), so its
+// deployability and behavior are still guarded below.
+describe('a2a: deployment wiring', () => {
   it('vercel.json routes /a2a to the endpoint and shields it from the SPA catch-all', () => {
     const rewrite = vercelConfig.rewrites.find((r) => r.source === '/a2a');
     assert.ok(rewrite, 'missing /a2a rewrite');
@@ -194,8 +159,4 @@ describe('a2a: JSON-RPC endpoint', () => {
     assert.deepEqual(suggestTools('what can you give'), []);
   });
 
-  it('card skill ids match the behaviours the endpoint implements', () => {
-    const ids = card.skills.map((s) => s.id).sort();
-    assert.deepEqual(ids, ['check-data-freshness', 'route-to-tool']);
-  });
 });

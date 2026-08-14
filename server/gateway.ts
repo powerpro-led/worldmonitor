@@ -11,6 +11,7 @@
 
 import { createRouter, type RouteDescriptor } from './router';
 import { getCorsHeaders, isDisallowedOrigin, isAllowedOrigin } from './cors';
+import { resolveAppOrigin } from '../shared/domain-config.js';
 import { isPublicSharedRpcRequest } from '../src/shared/public-rpc-cache';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '../src/shared/pro-fresh-rpc';
 // @ts-expect-error — JS module, no declaration file
@@ -1301,7 +1302,7 @@ export function createDomainGateway(
         if (perMinute > 0 && identity) {
           // #4635 — informative 429 upgrade link; omitted for enterprise/top tier.
           const upgradeUrl =
-            planKey && planKey !== 'enterprise' ? 'https://worldmonitor.app/' : undefined;
+            planKey && planKey !== 'enterprise' ? resolveAppOrigin(process.env.APP_DOMAIN) : undefined;
           // 1. Per-minute burst (hard limit).
           const burst = await checkBurst(perMinute, identity);
           if (!burst.ok) {

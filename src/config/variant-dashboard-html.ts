@@ -1,11 +1,19 @@
-import { VARIANT_META, type VariantMeta } from './variant-meta';
+import { buildVariantMeta, type VariantMeta } from './variant-meta';
+import { VARIANT_SLUGS } from '../../shared/domain-config.js';
 
-// Variants that are served from their own worldmonitor.app subdomain by the
-// single web deployment (vercel.json host-based rewrites map
-// <variant>.worldmonitor.app/dashboard → /dashboard-<variant>.html).
-// Desktop/self-host variant builds are NOT in scope — they run
-// htmlVariantPlugin at build time with VITE_VARIANT set.
-export const WEB_DASHBOARD_VARIANTS = ['tech', 'finance', 'commodity', 'happy', 'energy'] as const;
+// This file is Node-only despite living under src/ (only vite.config.ts's
+// build-time plugin and this file's own node:test suite import it — never
+// bundled into the browser app) — the src/ tsconfig doesn't include Node
+// types, so `process` needs a minimal local ambient declaration here.
+declare const process: { env: Record<string, string | undefined> };
+
+// Variants that are served from their own subdomain by the single web
+// deployment (vercel.json host-based rewrites map <variant>.<domain>/dashboard
+// → /dashboard-<variant>.html). Desktop/self-host variant builds are NOT in
+// scope — they run htmlVariantPlugin at build time with VITE_VARIANT set.
+// Re-exports shared/domain-config.js's VARIANT_SLUGS — the single source of
+// truth for the 5 variant slugs, instead of its own independent copy.
+export const WEB_DASHBOARD_VARIANTS = VARIANT_SLUGS;
 
 export function variantDashboardFileName(variant: string): string {
   return `dashboard-${variant}.html`;
@@ -65,13 +73,20 @@ const TWO: CountBounds = { min: 2, max: 2 };
 // hidden <h1>. The Organization/WebSite JSON-LD blocks intentionally keep
 // the World Monitor identity (each variant isPartOf World Monitor — same
 // modelling as the middleware.ts crawler stub).
+/** Escapes regex metacharacters so a configured domain/URL is safe to embed in a pattern. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function renderVariantDashboardHtml(fullDashboardHtml: string, variant: string): string {
-  const meta: VariantMeta | undefined = VARIANT_META[variant];
+  const variantMetaMap = buildVariantMeta(process.env.APP_DOMAIN);
+  const meta: VariantMeta | undefined = variantMetaMap[variant];
   if (!meta || variant === 'full') {
     throw new Error(`[variant-dashboard-html] unknown web dashboard variant "${variant}"`);
   }
   const origin = new URL(meta.url).origin;
   const ogImage = `${origin}/favico/${variant}/og-image.png`;
+  const fullDashboardUrlPattern = escapeRegExp(variantMetaMap.full.url);
 
   let html = fullDashboardHtml;
 
@@ -108,7 +123,7 @@ export function renderVariantDashboardHtml(fullDashboardHtml: string, variant: s
   // preserve the ?lang= suffix per entry.
   html = replaceCounted(
     html,
-    /(<link rel="alternate" hreflang="[^"]+" href=")https:\/\/www\.worldmonitor\.app\/dashboard((?:\?[^"]*)?" \/>)/g,
+    new RegExp(`(<link rel="alternate" hreflang="[^"]+" href=")${fullDashboardUrlPattern}((?:\\?[^"]*)?" \\/>)`, 'g'),
     (_m, a, b) => `${a}${escHtml(meta.url)}${b}`,
     { min: 1, max: 80 },
     'hreflang alternates',

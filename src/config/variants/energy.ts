@@ -1,4 +1,4 @@
-// Energy variant - energy.worldmonitor.app
+// Energy variant - energy.<domain>
 // NOTE: This file is a structured canonical description for reference. The runtime
 // wiring lives in src/config/panels.ts (ENERGY_PANELS, ENERGY_MAP_LAYERS,
 // ENERGY_MOBILE_MAP_LAYERS) — modify both if the variant shape changes. Parallel

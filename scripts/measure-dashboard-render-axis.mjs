@@ -18,6 +18,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const TBT_THRESHOLD_MS = 50;
 const DEFAULT_INTERACTION_VIEWPORT = { width: 390, height: 844 };
@@ -638,7 +639,7 @@ export function compareReports(before, after) {
 
 export function parseArgs(argv) {
   const args = {
-    url: 'https://www.worldmonitor.app/dashboard',
+    url: `${resolveWwwOrigin(process.env.APP_DOMAIN)}/dashboard`,
     settle: 10000,
     width: 1365,
     height: 768,

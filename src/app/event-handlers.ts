@@ -46,7 +46,7 @@ import {
   INTEL_SOURCES,
 } from '@/config';
 import { resolveNewsCategories, enabledNewsCategoryKeys } from '@/config/feed-resolution';
-import { VARIANT_META } from '@/config/variant-meta';
+import { getVariantMetaUrl, VARIANT_SLUGS } from '@/config/domain';
 import { isDesktopRuntime } from '@/services/runtime';
 import {
   MISSION_PRESETS,
@@ -1584,7 +1584,8 @@ export class EventHandlerManager implements AppModule {
       return;
     }
 
-    const target = options.href || VARIANT_META[variant]?.url;
+    const isKnownVariant = variant === 'full' || (VARIANT_SLUGS as readonly string[]).includes(variant);
+    const target = options.href || (isKnownVariant ? getVariantMetaUrl(variant) : undefined);
     if (!target) return;
     try {
       const parsed = new URL(target, window.location.href);

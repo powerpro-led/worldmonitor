@@ -16,6 +16,7 @@
 import { suggestTools } from './_agent-tool-suggest';
 import { PUBLIC_RESOURCE_REGISTRY } from './mcp/resources/index';
 import { ENDPOINT_RATE_POLICIES, checkScopedRateLimit, getClientIp } from '../server/_shared/rate-limit';
+import { resolveAppOrigin, resolveApiOrigin } from '../shared/domain-config.js';
 
 // Re-exported so existing consumers (tests, api/ask.ts historically) keep a
 // stable import surface; the implementation lives in the route-less helper.
@@ -85,21 +86,26 @@ const FRESHNESS_INTENT = /\b(fresh|freshness|stale|staleness|seed|health|uptime|
 const MAX_QUERY_CHARS = 2048;
 const MAX_ECHO_CHARS = 160;
 
-const HOW_TO_CALL = {
-  mcp: {
-    endpoint: 'https://worldmonitor.app/mcp',
-    transport: 'streamable-http',
-    note: "Issue tools/list for the live inventory (anonymous). Data calls need OAuth2 (scope=mcp) or an API key header 'X-WorldMonitor-Key: wm_<40-hex>' — keys are operator-issued, no self-service enrollment on this private fork.",
-  },
-  rest: {
-    base: 'https://api.worldmonitor.app',
-    openapi: 'https://worldmonitor.app/openapi.json',
-  },
-  // No public docs site exists on this private fork (the Mintlify docs site
-  // is gone); point at the live agent-guidance file instead.
-  docs: 'https://worldmonitor.app/agent.txt',
-  agentGuidance: 'https://worldmonitor.app/agent.txt',
-} as const;
+// A function, not a module-load-time const, so it's recomputed per call and
+// picks up APP_DOMAIN changes mid-process (e.g. tests).
+function buildHowToCall() {
+  const appOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
+  return {
+    mcp: {
+      endpoint: `${appOrigin}/mcp`,
+      transport: 'streamable-http',
+      note: "Issue tools/list for the live inventory (anonymous). Data calls need OAuth2 (scope=mcp) or an API key header 'X-WorldMonitor-Key: wm_<40-hex>' — keys are operator-issued, no self-service enrollment on this private fork.",
+    },
+    rest: {
+      base: resolveApiOrigin(process.env.APP_DOMAIN),
+      openapi: `${appOrigin}/openapi.json`,
+    },
+    // No public docs site exists on this private fork (the Mintlify docs site
+    // is gone); point at the live agent-guidance file instead.
+    docs: `${appOrigin}/agent.txt`,
+    agentGuidance: `${appOrigin}/agent.txt`,
+  } as const;
+}
 
 interface MessagePart {
   kind?: string;
@@ -151,18 +157,19 @@ async function handleMessageSend(id: JsonRpcId, params: unknown): Promise<Respon
     }
   }
 
+  const howToCall = buildHowToCall();
   const echoedQuery = text.length > MAX_ECHO_CHARS ? `${text.slice(0, MAX_ECHO_CHARS)}…` : text;
   const lines: string[] = [];
   if (suggestions.length > 0) {
     lines.push(
       `Best-fit WorldMonitor tools for "${echoedQuery}": ${suggestions.map((s) => s.name).join(', ')}.`,
-      `Call them on the MCP server at ${HOW_TO_CALL.mcp.endpoint} (${HOW_TO_CALL.mcp.note})`,
-      `REST equivalents are documented in the OpenAPI spec at ${HOW_TO_CALL.rest.openapi}.`,
+      `Call them on the MCP server at ${howToCall.mcp.endpoint} (${howToCall.mcp.note})`,
+      `REST equivalents are documented in the OpenAPI spec at ${howToCall.rest.openapi}.`,
     );
   } else {
     lines.push(
       'No specific tool matched that request. WorldMonitor covers conflicts, sanctions, country risk, markets, commodities, energy, maritime/aviation activity, chokepoints, cyber threats, natural disasters, forecasts and prediction markets.',
-      `Issue tools/list on ${HOW_TO_CALL.mcp.endpoint} for the full catalog, or start from ${HOW_TO_CALL.agentGuidance}.`,
+      `Issue tools/list on ${howToCall.mcp.endpoint} for the full catalog, or start from ${howToCall.agentGuidance}.`,
     );
   }
   if (freshness !== undefined) {
@@ -175,7 +182,7 @@ async function handleMessageSend(id: JsonRpcId, params: unknown): Promise<Respon
       kind: 'data',
       data: {
         suggestedTools: suggestions,
-        howToCall: HOW_TO_CALL,
+        howToCall,
         ...(freshness !== undefined ? { freshness } : {}),
       },
     },

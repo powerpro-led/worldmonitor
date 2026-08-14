@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync as originalReadFileSync, existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,13 +19,12 @@ import {
   injectContentCorpusSitemapBlock,
 } from '../scripts/build-content-corpus-sitemap.mjs';
 import { setTestAppDomain, TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
+import { VARIANT_SLUGS } from '../shared/domain-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
 const vercelConfig = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
 const viteConfigSource = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf-8');
-const sitemapSource = readFileSync(resolve(__dirname, '../public/sitemap.xml'), 'utf-8');
-const robotsSource = readFileSync(resolve(__dirname, '../public/robots.txt'), 'utf-8');
 const mainSource = readFileSync(resolve(__dirname, '../src/main.ts'), 'utf-8');
 const zodCspSource = readFileSync(resolve(__dirname, '../src/bootstrap/zod-csp.ts'), 'utf-8');
 const middlewareSource = readFileSync(resolve(__dirname, '../middleware.ts'), 'utf-8');
@@ -180,27 +179,23 @@ describe('crawlable content corpus deployment contracts', () => {
     writeFileSync(target, '<!doctype html><html><head>' + head + '</head><body>fixture</body></html>');
   };
 
-  it('runs content corpus sitemap integration before Vite builds', () => {
+  it('runs the crawlable static corpus generator before Vite builds', () => {
+    // build:content-corpus (sitemap.xml injection) was retired along with
+    // public/sitemap.xml itself — see TASKS.md. build:crawlable-corpus (the
+    // actual static-page generator) is unrelated and still runs everywhere.
     assert.equal(
       packageJson.scripts['build:crawlable-corpus'],
       'tsx scripts/build-crawlable-corpus.mjs'
     );
-    assert.equal(
-      packageJson.scripts['build:content-corpus'],
-      'node scripts/build-content-corpus-sitemap.mjs'
-    );
+    assert.ok(!('build:content-corpus' in packageJson.scripts), 'build:content-corpus should be retired');
 
     for (const scriptName of ['build', 'build:full']) {
       const script = packageJson.scripts[scriptName];
       assert.ok(script.includes('npm run build:crawlable-corpus'), scriptName + ' must build the static corpus');
-      assert.ok(script.includes('npm run build:content-corpus'), scriptName + ' must run content corpus sitemap integration');
+      assert.ok(!script.includes('build:content-corpus'), scriptName + ' must not reference retired build:content-corpus');
       assert.ok(
-        script.indexOf('npm run build:crawlable-corpus') < script.indexOf('npm run build:content-corpus'),
-        scriptName + ' must scan the corpus only after the page generator runs'
-      );
-      assert.ok(
-        script.indexOf('npm run build:content-corpus') < script.indexOf('vite build'),
-        scriptName + ' must update public/sitemap.xml before Vite copies public/ into dist/'
+        script.indexOf('npm run build:crawlable-corpus') < script.indexOf('vite build'),
+        scriptName + ' must generate the static corpus before Vite copies public/ into dist/'
       );
     }
 
@@ -209,14 +204,10 @@ describe('crawlable content corpus deployment contracts', () => {
       ['docker/Dockerfile', frontendDockerfileSource],
     ]) {
       assert.ok(source.includes('npm run build:crawlable-corpus'), name + ' must build the static corpus');
-      assert.ok(source.includes('npm run build:content-corpus'), name + ' must update the sitemap block');
+      assert.ok(!source.includes('build:content-corpus'), name + ' must not reference retired build:content-corpus');
       assert.ok(
-        source.indexOf('npm run build:crawlable-corpus') < source.indexOf('npm run build:content-corpus'),
-        name + ' must scan the sitemap only after corpus pages exist'
-      );
-      assert.ok(
-        source.indexOf('npm run build:content-corpus') < source.indexOf('npx vite build'),
-        name + ' must update public/sitemap.xml before Vite copies public/ into dist/'
+        source.indexOf('npm run build:crawlable-corpus') < source.indexOf('npx vite build'),
+        name + ' must generate the static corpus before Vite copies public/ into dist/'
       );
     }
   });
@@ -256,17 +247,6 @@ describe('crawlable content corpus deployment contracts', () => {
       assert.equal(getCacheHeaderValue('/' + prefix + '/:path*'), expected, '/' + prefix + '/:path* must have a cache policy');
       assert.equal(effectiveCacheControl('/' + prefix + '/example/'), expected, '/' + prefix + '/example/ must not inherit SPA HTML cache headers');
     }
-  });
-
-  it('keeps robots.txt advertising the root sitemap', () => {
-    assert.match(robotsSource, /^Sitemap: https:\/\/www\.worldmonitor\.app\/sitemap\.xml$/m);
-    // blog-site and docs/ (Mintlify) were both retired for this private fork —
-    // their Sitemap: lines went with them. Nothing left to guard here beyond root.
-  });
-
-  it('keeps a generated-content marker in the root sitemap', () => {
-    assert.ok(sitemapSource.includes('<!-- content-corpus:start -->'));
-    assert.ok(sitemapSource.includes('<!-- content-corpus:end -->'));
   });
 
   it('discovers canonical generated corpus pages and validates changelog pagination links', () => {
@@ -1066,76 +1046,19 @@ describe('brief magazine CSP override', () => {
   });
 });
 
-// Agent readiness: RFC 9727 API catalog at /.well-known/api-catalog.
-// These guardrails protect against:
-//   (1) the status endpoint href drifting away from /api/health (the
-//       real JSON endpoint; the apex /health serves the SPA HTML);
-//   (2) linkset[0] losing its RFC 9727 `item` enumeration (agent
-//       crawlers read the catalog anchor's item links to find every API).
 // Note: the OpenAPI spec build (docs/api/ → public/openapi.{yaml,json})
 // was retired along with the rest of the public API docs product (private
 // fork, no public API docs) — see the removed build:openapi script.
-describe('agent readiness: api-catalog + openapi build', () => {
-  const apiCatalog = JSON.parse(
-    readFileSync(resolve(__dirname, '../public/.well-known/api-catalog'), 'utf-8')
-  );
-  const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
-
-  const catalogEntry = apiCatalog.linkset[0];
-  const apiEntry = apiCatalog.linkset.find((entry) => entry.anchor === 'https://api.worldmonitor.app/');
-
-  it('linkset[0] is the catalog anchor and enumerates each API via RFC 9727 item links', () => {
-    assert.equal(catalogEntry.anchor, 'https://worldmonitor.app/.well-known/api-catalog');
-    assert.ok(Array.isArray(catalogEntry.item), 'linkset[0] must carry an "item" array (RFC 9727 §4)');
-    assert.ok(catalogEntry.item.length > 0, 'linkset[0].item must enumerate at least one API');
-    // Each item MUST resolve to a linkset context object that describes that API.
-    const anchors = new Set(apiCatalog.linkset.map((entry) => entry.anchor));
-    for (const item of catalogEntry.item) {
-      assert.ok(item.href, 'each item entry must carry an href');
-      assert.ok(
-        anchors.has(item.href),
-        `item href ${item.href} must match a linkset context anchor`
-      );
-    }
-    const itemHrefs = catalogEntry.item.map((i) => i.href);
-    assert.ok(itemHrefs.includes('https://api.worldmonitor.app/'), 'item list must enumerate the REST API host root');
-    assert.ok(itemHrefs.includes('https://worldmonitor.app/mcp'), 'item list must enumerate the MCP server');
-  });
-
-  // The old docs-MCP-server tests lived here — Mintlify's docs search/
-  // retrieval MCP server (at /docs/mcp, backed by api/docs-mcp.ts and
-  // docs-server-card.json) was retired along with docs/ (private fork, no
-  // public docs site to search). Nothing left to advertise or guard.
-
-  it('the api host root has its own context object', () => {
-    assert.ok(apiEntry, 'linkset must contain a context object anchored at https://api.worldmonitor.app/');
-  });
-
-  it('status href points at the KEYLESS compact form of /api/health', () => {
-    // Two drift classes guarded here:
-    //   (1) the SPA lives at /health — a bare-host href would 200 HTML and
-    //       look healthy;
-    //   (2) #4715 gated detailed /api/health behind an operator key, so the
-    //       bare endpoint 401s keyless callers. An advertised status URL must
-    //       return 2xx WITHOUT credentials — that is ?compact=1 (#4856; an
-    //       agent-journey run read the stale bare-URL advertisement, got 401,
-    //       and flagged the whole status surface as broken).
-    const statusHref = apiEntry.status[0].href;
-    assert.ok(
-      statusHref.startsWith('https://api.worldmonitor.app'),
-      `status href must be on api.worldmonitor.app, got: ${statusHref}`
-    );
-    assert.equal(
-      statusHref,
-      'https://api.worldmonitor.app/api/health?compact=1',
-      'status href must be the keyless compact health form'
-    );
-  });
-
+// public/.well-known/api-catalog (RFC 9727 linkset) was retired along with
+// the rest of the public agent-discovery surface — see TASKS.md. The
+// remaining checks here are independent of that file: /openapi.json's own
+// deployability and the still-live Link rel="status" advertisement format.
+describe('agent readiness: openapi build', () => {
   it('every vercel.json Link rel="status" advertisement uses the keyless compact form', () => {
-    // Same #4715→#4856 drift class as above, for the Link-header copies: an
-    // auth-gating change on /api/health must not silently strand the
-    // machine-readable status advertisements on a URL that 401s keyless.
+    // #4715 gated detailed /api/health behind an operator key, so the bare
+    // endpoint 401s keyless callers. #4856: an agent-journey run read a stale
+    // bare-URL advertisement, got 401, and flagged the whole status surface
+    // as broken — so every Link rel="status" copy must use ?compact=1.
     const vercelRaw = readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8');
     const statusLinks = vercelRaw.match(/<[^>]*>;\s*rel=\\"status\\"/g) ?? [];
     assert.ok(statusLinks.length > 0, 'expected at least one Link rel="status" advertisement in vercel.json');
@@ -1145,53 +1068,6 @@ describe('agent readiness: api-catalog + openapi build', () => {
         `Link rel="status" must point at /api/health?compact=1 (keyless), got: ${link}`
       );
     }
-  });
-
-  // The old "service-meta advertises the machine-readable pricing + support
-  // surfaces" test lived here — pricing.md, the product-catalog endpoint, and
-  // the Commerce OpenAPI spec were all part of the billing/dev-portal surface
-  // retired for this private fork (no plans, no pricing, no Mintlify docs to
-  // serve the spec from). service-meta isn't populated anymore.
-
-  it('service-desc points at /openapi.yaml with the OpenAPI media type', () => {
-    const serviceDesc = apiEntry['service-desc'][0];
-    assert.ok(
-      serviceDesc.href.endsWith('/openapi.yaml'),
-      `service-desc href must end with /openapi.yaml, got: ${serviceDesc.href}`
-    );
-    assert.equal(serviceDesc.type, 'application/vnd.oai.openapi');
-  });
-
-  it('also advertises a JSON service-desc at /openapi.json for JSON-only parsers', () => {
-    // Some agent-readiness scanners (ora.ai / orank) run the spec straight
-    // through a JSON parser; YAML input trips them ("found but failed to
-    // parse"). The JSON mirror is a second service-desc so those scanners
-    // have a parseable spec. YAML stays at [0] (human-readable canonical).
-    // Read from apiEntry (the api.worldmonitor.app context object), not
-    // linkset[0] — since #4691 added the RFC 9727 catalog anchor, linkset[0]
-    // is the catalog itself (item enumeration, no service-desc). The sibling
-    // /openapi.yaml assertion above already uses apiEntry for the same reason.
-    const jsonDesc = apiEntry['service-desc'][1];
-    assert.ok(jsonDesc, 'api anchor must have a second service-desc entry (JSON mirror)');
-    assert.ok(
-      jsonDesc.href.endsWith('/openapi.json'),
-      `second service-desc href must end with /openapi.json, got: ${jsonDesc.href}`
-    );
-    assert.equal(jsonDesc.type, 'application/json');
-  });
-
-  it('has a second anchor for the MCP server-card', () => {
-    // The server card is generated in-process now (no more static
-    // .../server-card.json file), served at the /.well-known/mcp alias
-    // itself — see WELL_KNOWN_MCP_PATHS in api/mcp/handler.ts.
-    const mcpEntry = apiCatalog.linkset.find((entry) => entry.anchor === 'https://worldmonitor.app/mcp');
-    assert.ok(mcpEntry, 'linkset must contain an anchor for https://worldmonitor.app/mcp');
-    const mcpServiceDesc = mcpEntry['service-desc']?.[0];
-    assert.ok(mcpServiceDesc, 'mcp anchor must have a service-desc entry');
-    assert.ok(
-      mcpServiceDesc.href.endsWith('/.well-known/mcp'),
-      `mcp service-desc href must end with /.well-known/mcp, got: ${mcpServiceDesc.href}`
-    );
   });
 
   it('SPA catch-all rewrite excludes /openapi.json so it serves the static JSON spec, not the app shell', () => {
@@ -1208,10 +1084,6 @@ describe('agent readiness: api-catalog + openapi build', () => {
       'HTML cache catch-all must exclude openapi.json'
     );
   });
-
-  it('keeps a prebuild hook so the default `npm run build` path also runs shared build steps', () => {
-    assert.ok(pkg.scripts.prebuild, 'package.json must define scripts["prebuild"] (default build path uses it)');
-  });
 });
 
 // The MCP endpoint and OAuth protected-resource metadata must be
@@ -1225,6 +1097,22 @@ describe('agent readiness: api-catalog + openapi build', () => {
 // mcp.cloudflare.com) enforce that `authorization_servers[*]` share
 // origin with `resource` — this construction guarantees that.
 describe('agent readiness: MCP/OAuth origin alignment', () => {
+  let previousAppDomain;
+  before(() => {
+    // resolveMetadataOrigin (api/_agent-metadata.ts) derives from APP_DOMAIN,
+    // unset = localhost — set it here to match this block's own host
+    // fixtures, restored in `after` so it doesn't leak into other tests.
+    previousAppDomain = process.env.APP_DOMAIN;
+    setTestAppDomain();
+  });
+  after(() => {
+    if (previousAppDomain === undefined) {
+      delete process.env.APP_DOMAIN;
+    } else {
+      process.env.APP_DOMAIN = previousAppDomain;
+    }
+  });
+
   it('oauth-protected-resource handler returns origin-matching metadata per host', async () => {
     // Runtime test (not source-regex): dynamically import the edge handler
     // and invoke it against synthetic Host headers to prove the response
@@ -1233,7 +1121,7 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
     const handler = mod.default;
     assert.equal(typeof handler, 'function', 'handler must be the default export');
 
-    const hosts = ['worldmonitor.app', 'www.worldmonitor.app', 'api.worldmonitor.app'];
+    const hosts = [TEST_APP_DOMAIN, `www.${TEST_APP_DOMAIN}`, `api.${TEST_APP_DOMAIN}`];
     for (const host of hosts) {
       const req = new Request(`https://${host}/.well-known/oauth-protected-resource`, {
         headers: { host },
@@ -1299,7 +1187,7 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
     const handler = mod.default;
     assert.equal(typeof handler, 'function', 'handler must be the default export');
 
-    const hosts = ['worldmonitor.app', 'www.worldmonitor.app', 'api.worldmonitor.app'];
+    const hosts = [TEST_APP_DOMAIN, `www.${TEST_APP_DOMAIN}`, `api.${TEST_APP_DOMAIN}`];
     for (const host of hosts) {
       const req = new Request(`https://${host}/.well-known/oauth-authorization-server`, {
         headers: { host },
@@ -1363,36 +1251,36 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
     const as = (await import('../api/oauth-authorization-server.ts')).default;
 
     // Spoofed / unrecognized Host → apex fallback, never reflected.
-    for (const host of ['evil.com', 'worldmonitor.app.evil.com', 'evilworldmonitor.app', 'x.y.worldmonitor.app']) {
-      const prmRes = await prm(new Request('https://worldmonitor.app/.well-known/oauth-protected-resource', { headers: { host } }));
+    for (const host of ['evil.com', `${TEST_APP_DOMAIN}.evil.com`, `evil${TEST_APP_DOMAIN}`, `x.y.${TEST_APP_DOMAIN}`]) {
+      const prmRes = await prm(new Request(`https://${TEST_APP_DOMAIN}/.well-known/oauth-protected-resource`, { headers: { host } }));
       const prmJson = await prmRes.json();
-      assert.equal(prmJson.resource, 'https://worldmonitor.app', `PRM must not reflect spoofed host ${host}`);
-      assert.deepEqual(prmJson.authorization_servers, ['https://worldmonitor.app']);
+      assert.equal(prmJson.resource, `https://${TEST_APP_DOMAIN}`, `PRM must not reflect spoofed host ${host}`);
+      assert.deepEqual(prmJson.authorization_servers, [`https://${TEST_APP_DOMAIN}`]);
 
-      const asRes = await as(new Request('https://worldmonitor.app/.well-known/oauth-authorization-server', { headers: { host } }));
+      const asRes = await as(new Request(`https://${TEST_APP_DOMAIN}/.well-known/oauth-authorization-server`, { headers: { host } }));
       const asJson = await asRes.json();
-      assert.equal(asJson.issuer, 'https://worldmonitor.app', `AS must not reflect spoofed host ${host}`);
-      assert.equal(asJson.token_endpoint, 'https://worldmonitor.app/oauth/token', `AS token_endpoint must not carry spoofed host ${host}`);
-      assert.equal(asJson.agent_auth.register_uri, 'https://worldmonitor.app/oauth/register');
-      assert.equal(asJson.agent_auth.claim_uri, 'https://worldmonitor.app/oauth/authorize', `AS claim_uri must not carry spoofed host ${host}`);
-      assert.equal(asJson.agent_auth.anonymous.claim_uri, 'https://worldmonitor.app/oauth/authorize');
+      assert.equal(asJson.issuer, `https://${TEST_APP_DOMAIN}`, `AS must not reflect spoofed host ${host}`);
+      assert.equal(asJson.token_endpoint, `https://${TEST_APP_DOMAIN}/oauth/token`, `AS token_endpoint must not carry spoofed host ${host}`);
+      assert.equal(asJson.agent_auth.register_uri, `https://${TEST_APP_DOMAIN}/oauth/register`);
+      assert.equal(asJson.agent_auth.claim_uri, `https://${TEST_APP_DOMAIN}/oauth/authorize`, `AS claim_uri must not carry spoofed host ${host}`);
+      assert.equal(asJson.agent_auth.anonymous.claim_uri, `https://${TEST_APP_DOMAIN}/oauth/authorize`);
     }
 
     // Legit subdomain still self-describes.
-    const variant = await as(new Request('https://tech.worldmonitor.app/.well-known/oauth-authorization-server', { headers: { host: 'tech.worldmonitor.app' } }));
-    assert.equal((await variant.json()).issuer, 'https://tech.worldmonitor.app');
+    const variant = await as(new Request(`https://tech.${TEST_APP_DOMAIN}/.well-known/oauth-authorization-server`, { headers: { host: `tech.${TEST_APP_DOMAIN}` } }));
+    assert.equal((await variant.json()).issuer, `https://tech.${TEST_APP_DOMAIN}`);
 
     // Method guard: OPTIONS → 204 preflight, other verbs → 405 + Allow, GET → 200.
     for (const handler of [prm, as]) {
-      const opt = await handler(new Request('https://worldmonitor.app/x', { method: 'OPTIONS', headers: { host: 'worldmonitor.app' } }));
+      const opt = await handler(new Request(`https://${TEST_APP_DOMAIN}/x`, { method: 'OPTIONS', headers: { host: TEST_APP_DOMAIN } }));
       assert.equal(opt.status, 204, 'OPTIONS is a CORS preflight');
       assert.equal(opt.headers.get('access-control-allow-methods'), 'GET, HEAD, OPTIONS');
 
-      const post = await handler(new Request('https://worldmonitor.app/x', { method: 'POST', headers: { host: 'worldmonitor.app' } }));
+      const post = await handler(new Request(`https://${TEST_APP_DOMAIN}/x`, { method: 'POST', headers: { host: TEST_APP_DOMAIN } }));
       assert.equal(post.status, 405, 'non-GET/HEAD is rejected');
       assert.equal(post.headers.get('allow'), 'GET, HEAD, OPTIONS');
 
-      const get = await handler(new Request('https://worldmonitor.app/x', { headers: { host: 'worldmonitor.app' } }));
+      const get = await handler(new Request(`https://${TEST_APP_DOMAIN}/x`, { headers: { host: TEST_APP_DOMAIN } }));
       assert.equal(get.status, 200, 'GET is served');
     }
   });
@@ -1464,8 +1352,8 @@ describe('vercel.json functions config (none expected after carousel moved to ed
 // dashboard entry.
 // Scanners like isitagentready.com fetch GET / and expect a Link
 // header advertising every well-known resource. Each rel is either
-// an IANA-registered token (api-catalog, service-desc, service-doc,
-// status) or the full IANA URI form (RFC 9728 OAuth rels). The MCP
+// an IANA-registered token (service-desc, service-doc, status) or the
+// full IANA URI form (RFC 9728 OAuth rels). The MCP
 // card rel carries anchor="/mcp" because the server card describes
 // the /mcp endpoint, not the document URL being fetched.
 describe('agent readiness: homepage Link headers', () => {
@@ -1480,15 +1368,15 @@ describe('agent readiness: homepage Link headers', () => {
 
       // Must advertise each required rel at least once. service-doc (the old
       // /docs/documentation target) dropped off with docs/ — no Mintlify
-      // site left for it to point at (private fork).
+      // site left for it to point at (private fork). api-catalog and
+      // agent-skills-index dropped off with the rest of the public
+      // agent-discovery surface — see TASKS.md.
       const requiredRels = [
-        'rel="api-catalog"',
         'rel="service-desc"',
         'rel="status"',
         'rel="http://www.iana.org/assignments/relation/oauth-protected-resource"',
         'rel="http://www.iana.org/assignments/relation/oauth-authorization-server"',
         'rel="mcp-server-card"',
-        'rel="agent-skills-index"',
       ];
       for (const rel of requiredRels) {
         assert.ok(
@@ -1555,189 +1443,6 @@ describe('agent readiness: homepage Link headers', () => {
   });
 });
 
-// Content-Signal (contentsignals.org draft RFC) is declared in TWO places:
-// the robots.txt group directive (what agent-readiness scanners read) and the
-// origin-wide HTTP response header in vercel.json. The two values must never
-// drift apart, and the robots.txt line must live inside the `User-agent: *`
-// group (a blank line would end the group and orphan the directive).
-// Lighthouse's robots.txt validator safelists `content-signal`, so the
-// directive no longer costs SEO points (#4471 history).
-describe('agent readiness: Content-Signal declarations', () => {
-  const robotsSource = readFileSync(resolve(__dirname, '../public/robots.txt'), 'utf-8');
-
-  const headerValue = () => {
-    for (const block of vercelConfig.headers ?? []) {
-      const hit = (block.headers ?? []).find((h) => h.key === 'Content-Signal');
-      if (hit) return hit.value;
-    }
-    return null;
-  };
-
-  it('vercel.json serves an origin-wide Content-Signal header', () => {
-    const value = headerValue();
-    assert.ok(value, 'vercel.json must carry a Content-Signal response header');
-    assert.match(value, /ai-train=(yes|no)/);
-    assert.match(value, /search=(yes|no)/);
-    assert.match(value, /ai-input=(yes|no)/);
-  });
-
-  it('robots.txt declares the same Content-Signal inside the User-agent group', () => {
-    const lines = robotsSource.split('\n');
-    const uaIndex = lines.findIndex((l) => l.trim().toLowerCase() === 'user-agent: *');
-    assert.ok(uaIndex !== -1, 'robots.txt must have a `User-agent: *` group');
-    const signalIndex = lines.findIndex((l) => l.startsWith('Content-Signal:'));
-    assert.ok(signalIndex > uaIndex, 'Content-Signal directive must appear after `User-agent: *`');
-    for (let i = uaIndex + 1; i < signalIndex; i++) {
-      assert.notStrictEqual(
-        lines[i].trim(),
-        '',
-        'Content-Signal must not be separated from its User-agent group by a blank line'
-      );
-    }
-    const robotsValue = lines[signalIndex].slice('Content-Signal:'.length).trim();
-    assert.strictEqual(
-      robotsValue,
-      headerValue(),
-      'robots.txt Content-Signal must match the vercel.json header value'
-    );
-  });
-
-  it('every Content-Signal line in robots.txt matches the header (multi-group)', () => {
-    // The AI-agent groups added in #4952 carry their own Content-Signal
-    // directive; none of the copies may drift from the origin-wide header.
-    const signalLines = robotsSource
-      .split('\n')
-      .filter((l) => l.startsWith('Content-Signal:'));
-    assert.ok(signalLines.length >= 1, 'robots.txt must declare Content-Signal');
-    for (const line of signalLines) {
-      assert.strictEqual(
-        line.slice('Content-Signal:'.length).trim(),
-        headerValue(),
-        'every robots.txt Content-Signal must match the vercel.json header value'
-      );
-    }
-  });
-});
-
-// #4952 — three-tier AI crawler policy. A named `User-agent` group REPLACES
-// the `*` group for that crawler (robots.txt groups do not inherit), so the
-// AI search/assistant allow-group must restate the full `*` rule set or those
-// crawlers would lose the /api/ protections. The training-only group must
-// stay a hard `Disallow: /`.
-describe('agent readiness: robots.txt AI crawler policy', () => {
-  const robotsSource = readFileSync(resolve(__dirname, '../public/robots.txt'), 'utf-8');
-
-  // Minimal robots.txt group parser: consecutive User-agent lines share one
-  // group; a blank line or a User-agent line following rules starts a new one;
-  // comments never end a group.
-  const parseGroups = (source) => {
-    const groups = [];
-    let current = null;
-    for (const raw of source.split('\n')) {
-      const line = raw.trim();
-      if (line === '') {
-        current = null;
-        continue;
-      }
-      if (line.startsWith('#')) continue;
-      const colon = line.indexOf(':');
-      if (colon === -1) continue;
-      const key = line.slice(0, colon).trim().toLowerCase();
-      const value = line.slice(colon + 1).trim();
-      if (key === 'user-agent') {
-        if (!current || current.rules.length > 0) {
-          current = { agents: [], rules: [] };
-          groups.push(current);
-        }
-        current.agents.push(value.toLowerCase());
-      } else if (current && (key === 'allow' || key === 'disallow')) {
-        current.rules.push(`${key}: ${value}`);
-      }
-    }
-    return groups;
-  };
-
-  const groups = parseGroups(robotsSource);
-  const starGroup = groups.find((g) => g.agents.includes('*'));
-  const aiAllowGroup = groups.find((g) => g.agents.includes('gptbot'));
-  const trainingBlockGroup = groups.find((g) => g.agents.includes('ccbot'));
-
-  // The agents AEO scanners score by name (search/assistant tier).
-  const REQUIRED_AI_SEARCH_AGENTS = [
-    'gptbot',
-    'claudebot',
-    'chatgpt-user',
-    'perplexitybot',
-    'google-extended',
-    'applebot-extended',
-  ];
-  const BLOCKED_TRAINING_AGENTS = ['ccbot', 'bytespider', 'anthropic-ai'];
-
-  it('explicitly allows the AI search/assistant agents in one named group', () => {
-    assert.ok(aiAllowGroup, 'robots.txt must have a named AI search/assistant group (GPTBot et al.)');
-    for (const agent of REQUIRED_AI_SEARCH_AGENTS) {
-      assert.ok(
-        aiAllowGroup.agents.includes(agent),
-        `AI search/assistant group must include User-agent: ${agent}`
-      );
-    }
-    assert.ok(
-      aiAllowGroup.rules.includes('allow: /'),
-      'AI search/assistant group must Allow: /'
-    );
-  });
-
-  it('keeps the AI allow-group rules in parity with the `*` group', () => {
-    assert.ok(starGroup, 'robots.txt must have a `User-agent: *` group');
-    assert.deepStrictEqual(
-      [...aiAllowGroup.rules].sort(),
-      [...starGroup.rules].sort(),
-      'the AI allow-group must restate the exact `*` rule set — named groups do not inherit, so a drift here silently opens /api/ (or blocks paths) for AI crawlers'
-    );
-  });
-
-  it('disallows the bulk training-only scrapers entirely', () => {
-    assert.ok(trainingBlockGroup, 'robots.txt must have a training-scraper block group (CCBot et al.)');
-    for (const agent of BLOCKED_TRAINING_AGENTS) {
-      assert.ok(
-        trainingBlockGroup.agents.includes(agent),
-        `training block group must include User-agent: ${agent}`
-      );
-    }
-    assert.deepStrictEqual(
-      trainingBlockGroup.rules,
-      ['disallow: /'],
-      'training-only scrapers must be blocked with exactly `Disallow: /`'
-    );
-  });
-
-  it('never lists an allowed AI agent in the blocked group (and vice versa)', () => {
-    for (const agent of REQUIRED_AI_SEARCH_AGENTS) {
-      assert.ok(
-        !trainingBlockGroup.agents.includes(agent),
-        `${agent} drives citations and must not be in the blocked group`
-      );
-    }
-    for (const agent of BLOCKED_TRAINING_AGENTS) {
-      assert.ok(
-        !aiAllowGroup.agents.includes(agent),
-        `${agent} is training-only and must not be in the allow group`
-      );
-    }
-  });
-
-  it('every crawl-permitting group keeps /api/ protected', () => {
-    for (const group of groups) {
-      if (group.rules.includes('allow: /')) {
-        assert.ok(
-          group.rules.includes('disallow: /api/'),
-          `group [${group.agents.join(', ')}] allows crawling but does not restate Disallow: /api/`
-        );
-      }
-    }
-  });
-});
-
 describe('vercel deployment excludes api test files', () => {
   // Vercel deploys every non-underscore file under api/ as a live serverless
   // function. A deployed *.test.mjs is a public endpoint that executes its
@@ -1781,74 +1486,26 @@ describe('vercel deployment excludes api test files', () => {
   });
 });
 
-// Registry branding + ARD catalog (ora.ai Discovery checks). The MCP
-// server-card (public/.well-known/mcp/server-card.json) was the public MCP
-// registry-listing card — deleted with the rest of the public dev-portal
-// surface (private fork, no public MCP registry listing; the live MCP
-// JSON-RPC endpoint at api/mcp/* is untouched and still works). What
-// survives here is /.well-known/ai-catalog.json, the ARD manifest
-// (`ard-catalog` bonus): host identity plus domain-anchored urn:air:
-// entries, each with a media type, URL, and trust manifest — mirroring
-// ora's own /api/ard/catalog dialect, which is what their parser reads.
-describe('agent readiness: registry branding + ARD catalog', () => {
-  const aiCatalog = JSON.parse(
-    readFileSync(resolve(__dirname, '../public/.well-known/ai-catalog.json'), 'utf-8')
-  );
-
-  it('ai-catalog.json declares the World Monitor host identity', () => {
-    assert.strictEqual(aiCatalog.specVersion, '1.0');
-    assert.strictEqual(aiCatalog.host?.displayName, 'World Monitor');
-    assert.strictEqual(aiCatalog.host?.identifier, 'did:web:worldmonitor.app');
-    assert.ok(Array.isArray(aiCatalog.entries) && aiCatalog.entries.length >= 2);
-  });
-
-  it('every ai-catalog entry is domain-anchored and complete', () => {
-    for (const entry of aiCatalog.entries) {
-      const label = `ai-catalog entry ${entry.identifier}`;
-      assert.match(
-        entry.identifier ?? '',
-        /^urn:air:worldmonitor\.app:[a-z-]+:[a-z0-9-]+$/,
-        `${label} must be a domain-anchored urn:air URN`
-      );
-      assert.ok(entry.displayName, `${label} needs a displayName`);
-      assert.ok(entry.type, `${label} needs a media type`);
-      assert.ok(entry.description, `${label} needs a description`);
-      assert.match(
-        entry.url ?? '',
-        /^https:\/\/(www\.)?worldmonitor\.app\//,
-        `${label} URL must be same-origin`
-      );
-      assert.strictEqual(
-        entry.trustManifest?.identity,
-        'did:web:worldmonitor.app',
-        `${label} trust identity must be the domain DID`
-      );
-    }
-  });
-
-  it('the ai-catalog MCP entry points at the real server-card path', () => {
-    // The card is generated in-process now, served at the /.well-known/mcp
-    // alias itself (no more static .../server-card.json file) — see
-    // WELL_KNOWN_MCP_PATHS in api/mcp/handler.ts.
-    const mcpEntry = aiCatalog.entries.find((e) => e.type === 'application/mcp-server-card+json');
-    assert.ok(mcpEntry, 'ai-catalog must list the MCP server');
-    assert.ok(
-      mcpEntry.url.endsWith('/.well-known/mcp'),
-      'MCP entry URL must target the published server-card'
-    );
-    assert.ok(
-      existsSync(resolve(__dirname, '../public/.well-known/agent-skills/index.json')) ===
-        aiCatalog.entries.some((e) => e.url.endsWith('/.well-known/agent-skills/index.json')),
-      'agent-skills entry must exist iff the skills index is published'
-    );
-  });
-});
+// The old "registry branding + ARD catalog" describe block lived here —
+// public/.well-known/ai-catalog.json was retired along with the rest of the
+// public agent-discovery surface (see TASKS.md). The live MCP JSON-RPC
+// endpoint at api/mcp/* is untouched and still works; nothing left here to
+// guard.
 
 describe('variant subdomain dashboard SEO (#4996)', () => {
   // No hardcoded variant list: every set is extracted from its real source
   // and compared BIDIRECTIONALLY, so adding a variant to any one surface
   // (middleware host map, generator, vercel.json rewrites) without the
   // others fails here instead of shipping a subdomain with full-brand meta.
+  //
+  // middleware.ts's VARIANT_HOST_MAP and variant-dashboard-html.ts's
+  // WEB_DASHBOARD_VARIANTS are no longer independently-hardcoded literals
+  // (domain-config sweep) — both now derive from shared/domain-config.js's
+  // VARIANT_SLUGS, so a source-regex extraction of a literal array/object
+  // no longer applies. Import VARIANT_SLUGS directly (the actual shared
+  // source of truth) instead, and keep a static-source guard confirming
+  // both files still consume it rather than reverting to independent
+  // hardcoding.
   const dashboardRewrites = vercelConfig.rewrites.filter((r) => r.source === '/dashboard');
 
   const rewriteVariants = dashboardRewrites
@@ -1859,27 +1516,26 @@ describe('variant subdomain dashboard SEO (#4996)', () => {
     })
     .sort();
 
-  const middlewareVariants = [...middlewareSource.matchAll(/'([a-z]+)\.worldmonitor\.app': '([a-z]+)'/g)]
-    .map((m) => m[2])
-    .sort();
+  const middlewareVariants = [...VARIANT_SLUGS].sort();
 
   const variantHtmlSource = readFileSync(resolve(__dirname, '../src/config/variant-dashboard-html.ts'), 'utf-8');
-  const generatorArrayMatch = variantHtmlSource.match(/WEB_DASHBOARD_VARIANTS = \[([^\]]+)\]/);
-  const generatorVariants = (generatorArrayMatch?.[1] ?? '')
-    .split(',')
-    .map((s) => s.trim().replace(/['"]/g, ''))
-    .filter(Boolean)
-    .sort();
+  const generatorVariants = [...VARIANT_SLUGS].sort();
 
   it('extracted all three variant sets (extraction regressions fail loudly)', () => {
     assert.ok(rewriteVariants.length > 0, 'no host-conditioned /dashboard rewrites found in vercel.json');
-    assert.ok(middlewareVariants.length > 0, 'VARIANT_HOST_MAP extraction from middleware.ts found nothing');
-    assert.ok(generatorVariants.length > 0, 'WEB_DASHBOARD_VARIANTS extraction from variant-dashboard-html.ts found nothing');
+    assert.ok(
+      /from ['"]\.\/shared\/domain-config\.js['"]/.test(middlewareSource) && /\bVARIANT_SLUGS\b/.test(middlewareSource),
+      'middleware.ts no longer derives its variant host map from shared/domain-config.js VARIANT_SLUGS',
+    );
+    assert.ok(
+      /from ['"]\.\.\/\.\.\/shared\/domain-config\.js['"]/.test(variantHtmlSource) && /\bVARIANT_SLUGS\b/.test(variantHtmlSource),
+      'variant-dashboard-html.ts no longer derives WEB_DASHBOARD_VARIANTS from shared/domain-config.js VARIANT_SLUGS',
+    );
   });
 
   it('vercel.json rewrites, middleware host map, and the generator cover the SAME variant set (bidirectional)', () => {
-    assert.deepEqual(rewriteVariants, middlewareVariants, 'vercel.json /dashboard host rewrites vs middleware VARIANT_HOST_MAP diverged');
-    assert.deepEqual(rewriteVariants, generatorVariants, 'vercel.json /dashboard host rewrites vs WEB_DASHBOARD_VARIANTS diverged');
+    assert.deepEqual(rewriteVariants, middlewareVariants, 'vercel.json /dashboard host rewrites vs shared VARIANT_SLUGS diverged');
+    assert.deepEqual(rewriteVariants, generatorVariants, 'vercel.json /dashboard host rewrites vs shared VARIANT_SLUGS diverged');
   });
 
   it('each variant host rewrite targets its generated variant file', () => {
@@ -1937,62 +1593,9 @@ describe('variant subdomain dashboard SEO (#4996)', () => {
 // API/SDK/CLI product surface (private fork has no public developer
 // portal), so this whole describe block is gone with them.
 
-// NLWeb schemamap (orank "NLWeb Schema Feeds"): keep the file published and
-// discoverable without advertising it through robots.txt. Lighthouse rejects
-// the emerging `Schemamap:` directive as unknown, dropping SEO 100 -> 92 on
-// every route; #4835 tracks the upstream safelist unblock. Every <loc> must
-// still resolve to a tracked file or a live route — a schemamap pointing at a
-// 404 is worse than none (same dead-pointer class as the deleted Wikidata QID
-// incident).
-describe('NLWeb schemamap (/schemamap.xml)', () => {
-  const schemamapSource = readFileSync(resolve(__dirname, '../public/schemamap.xml'), 'utf-8');
-
-  it('keeps the file published without an unsupported robots.txt directive', () => {
-    assert.doesNotMatch(
-      robotsSource,
-      /^Schemamap:/mi,
-      'Lighthouse rejects Schemamap as an unknown robots.txt directive; see #4835'
-    );
-    assert.match(schemamapSource, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
-    assert.ok(
-      schemamapSource.includes('<schemamap xmlns="http://www.nlweb.ai/schemas/schemamap/0.1">'),
-      'schemamap must declare the NLWeb schemamap namespace'
-    );
-  });
-
-  it('every advertised <loc> resolves to a tracked file or a live route', () => {
-    const locs = [...schemamapSource.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    // blog-site was deleted (private fork, no public blog) and its three
-    // schemamap entries (blog index, RSS feed, glossary) went with it —
-    // only the homepage entry remains.
-    assert.ok(locs.length >= 1, 'schemamap must index at least the homepage');
-    const resolvable = {
-      'https://www.worldmonitor.app/': () =>
-        vercelConfig.rewrites.some((r) =>
-          r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-        ),
-    };
-    for (const loc of locs) {
-      const probe = resolvable[loc];
-      assert.ok(probe, `schemamap <loc> ${loc} has no resolvability probe — add one when adding entries`);
-      assert.ok(probe(), `schemamap <loc> ${loc} does not resolve to a tracked file or live route`);
-    }
-    // Each entry must pair the loc with a schema.org type. Line-anchored so
-    // the explanatory XML comment (which names the tags) doesn't count.
-    const entries = schemamapSource.match(/^ {2}<url>$/gm) || [];
-    const schemas = schemamapSource.match(/<schema>https:\/\/schema\.org\/[A-Za-z]+<\/schema>/g) || [];
-    assert.equal(entries.length, locs.length);
-    assert.equal(schemas.length, locs.length, 'every schemamap entry needs a schema.org type');
-  });
-
-  it('the schemamap.xml headers rule serves XML with CORS', () => {
-    const rule = vercelConfig.headers.find((h) => h.source === '/schemamap.xml');
-    assert.ok(rule, 'vercel.json must carry a /schemamap.xml headers rule');
-    const keys = Object.fromEntries(rule.headers.map((h) => [h.key, h.value]));
-    assert.match(keys['Content-Type'], /application\/xml/);
-    assert.equal(keys['Access-Control-Allow-Origin'], '*');
-  });
-});
+// The old "NLWeb schemamap (/schemamap.xml)" describe block lived here —
+// public/schemamap.xml was retired along with the rest of the public
+// agent-discovery surface (see TASKS.md). Nothing left to guard.
 
 // The old "docs MCP facade (/docs/mcp)" and "section-scoped llms.txt files"
 // describe blocks lived here — api/docs-mcp.ts, the Mintlify /docs rewrite,

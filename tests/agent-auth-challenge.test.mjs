@@ -1,10 +1,11 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import handler from '../api/agent-auth.ts';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const vercelConfig = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
@@ -13,36 +14,40 @@ const call = (host, init) =>
   handler(new Request('https://' + host + '/agent/auth', { headers: { host }, ...init }));
 
 describe('agent-auth WWW-Authenticate challenge (/agent/auth)', () => {
+  beforeEach(() => {
+    setTestAppDomain();
+  });
+
   it('answers a plain GET with 401 + RFC 9728 WWW-Authenticate pointing at the PRM', async () => {
-    const res = await call('worldmonitor.app', { method: 'GET' });
+    const res = await call(TEST_APP_DOMAIN, { method: 'GET' });
     assert.equal(res.status, 401);
     assert.equal(
       res.headers.get('www-authenticate'),
-      'Bearer realm="worldmonitor", resource_metadata="https://worldmonitor.app/.well-known/oauth-protected-resource"',
+      `Bearer realm="worldmonitor", resource_metadata="https://${TEST_APP_DOMAIN}/.well-known/oauth-protected-resource"`,
     );
     assert.equal(res.headers.get('cache-control'), 'no-store');
     assert.equal(res.headers.get('access-control-allow-origin'), '*');
   });
 
   it('returns a machine-readable body with the auth discovery pointers', async () => {
-    const body = await (await call('worldmonitor.app', { method: 'GET' })).json();
+    const body = await (await call(TEST_APP_DOMAIN, { method: 'GET' })).json();
     assert.equal(body.error, 'unauthorized');
     assert.equal(
       body.resource_metadata,
-      'https://worldmonitor.app/.well-known/oauth-protected-resource',
+      `https://${TEST_APP_DOMAIN}/.well-known/oauth-protected-resource`,
     );
     assert.equal(
       body.authorization_server,
-      'https://worldmonitor.app/.well-known/oauth-authorization-server',
+      `https://${TEST_APP_DOMAIN}/.well-known/oauth-authorization-server`,
     );
     assert.equal(body.skill, undefined, 'no /auth.md walkthrough is published on this fork');
   });
 
   it('derives resource_metadata from the request Host (www stays self-consistent)', async () => {
-    const res = await call('www.worldmonitor.app', { method: 'GET' });
+    const res = await call(`www.${TEST_APP_DOMAIN}`, { method: 'GET' });
     assert.equal(
       res.headers.get('www-authenticate'),
-      'Bearer realm="worldmonitor", resource_metadata="https://www.worldmonitor.app/.well-known/oauth-protected-resource"',
+      `Bearer realm="worldmonitor", resource_metadata="https://www.${TEST_APP_DOMAIN}/.well-known/oauth-protected-resource"`,
     );
   });
 
@@ -50,12 +55,12 @@ describe('agent-auth WWW-Authenticate challenge (/agent/auth)', () => {
     const res = await call('evil.example', { method: 'GET' });
     assert.match(
       res.headers.get('www-authenticate'),
-      /resource_metadata="https:\/\/worldmonitor\.app\/\.well-known\/oauth-protected-resource"/,
+      new RegExp(`resource_metadata="https://${TEST_APP_DOMAIN.replace(/\./g, '\\.')}/\\.well-known/oauth-protected-resource"`),
     );
   });
 
   it('answers CORS preflight', async () => {
-    const res = await call('worldmonitor.app', { method: 'OPTIONS' });
+    const res = await call(TEST_APP_DOMAIN, { method: 'OPTIONS' });
     assert.equal(res.status, 204);
     assert.equal(res.headers.get('access-control-allow-methods'), 'GET, HEAD, POST, OPTIONS');
   });

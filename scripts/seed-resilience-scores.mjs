@@ -15,10 +15,11 @@ import {
   computeIntervals,
   createIntervalDiagnostics,
 } from './_resilience-intervals.mjs';
+import { resolveApiOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
-const API_BASE = process.env.API_BASE_URL || 'https://api.worldmonitor.app';
+const API_BASE = process.env.API_BASE_URL || resolveApiOrigin(process.env.APP_DOMAIN);
 // Normal premium reads/warmups use the standard API key allowlist.
 const WM_KEY = process.env.WORLDMONITOR_API_KEY
   || (process.env.WORLDMONITOR_VALID_KEYS ?? '').split(',').map((k) => k.trim()).filter(Boolean)[0]

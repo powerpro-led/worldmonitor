@@ -64,10 +64,12 @@
 // Usage: node scripts/mcp-live-smoke.mjs
 //   MCP_SMOKE_HOSTS=https://a,https://b  overrides the default host list.
 
-const HOSTS = (process.env.MCP_SMOKE_HOSTS ?? 'https://worldmonitor.app,https://www.worldmonitor.app')
+import { resolveAppOrigin, resolveWwwOrigin, resolveVariantOrigin } from './_domain-config.mjs';
+
+const HOSTS = (process.env.MCP_SMOKE_HOSTS ?? `${resolveAppOrigin(process.env.APP_DOMAIN)},${resolveWwwOrigin(process.env.APP_DOMAIN)}`)
   .split(',').map((h) => h.trim()).filter(Boolean);
 const TIMEOUT_MS = 15_000;
-const USER_AGENT = 'WorldMonitor-MCP-Smoke/1.0 (+https://worldmonitor.app; github-actions)';
+const USER_AGENT = `WorldMonitor-MCP-Smoke/1.0 (+${resolveAppOrigin(process.env.APP_DOMAIN)}; github-actions)`;
 // Fan-out caps: keep the walk inside the shared anon 60/min/IP bucket as the
 // catalogs grow. 6 covers today's full prompt registry and concrete resource
 // list; growth beyond a cap trims coverage (logged), never correctness.
@@ -419,15 +421,16 @@ async function probeDiscovery(host) {
 const VARIANT_HOSTS = (process.env.MCP_SMOKE_VARIANT_HOSTS
   ?? 'tech,finance,commodity,happy,energy')
   .split(',').map((v) => v.trim()).filter(Boolean)
-  .map((v) => `https://${v}.worldmonitor.app`);
+  .map((v) => resolveVariantOrigin(process.env.APP_DOMAIN, v));
 
 async function probeVariantCanonical(host) {
   checks += 1;
   try {
     const { res } = await timedFetch(`${host}/mcp`, { headers: { Accept: 'text/html,*/*' } });
     const location = res.headers.get('location');
-    if (res.status !== 308 || location !== 'https://worldmonitor.app/mcp') {
-      fail(host, 'GET /mcp → apex canonical', `expected 308 → https://worldmonitor.app/mcp, got ${res.status} → ${location}`);
+    const canonicalMcpUrl = `${resolveAppOrigin(process.env.APP_DOMAIN)}/mcp`;
+    if (res.status !== 308 || location !== canonicalMcpUrl) {
+      fail(host, 'GET /mcp → apex canonical', `expected 308 → ${canonicalMcpUrl}, got ${res.status} → ${location}`);
     } else if (!/\bAccept\b(?!-)/i.test(res.headers.get('vary') ?? '')) {
       fail(host, 'GET /mcp → apex canonical', `cacheable 308 lacks "Vary: Accept" (got "${res.headers.get('vary')}")`);
     } else if (!/\bLast-Event-ID\b/i.test(res.headers.get('vary') ?? '')) {
@@ -446,8 +449,9 @@ async function probeVariantCanonical(host) {
       headers: { Accept: 'text/html,*/*' },
     });
     const location = res.headers.get('location');
-    if (res.status !== 308 || location !== 'https://worldmonitor.app/mcp') {
-      fail(host, 'HEAD /mcp → apex canonical', `expected 308 → https://worldmonitor.app/mcp, got ${res.status} → ${location}`);
+    const canonicalMcpUrl = `${resolveAppOrigin(process.env.APP_DOMAIN)}/mcp`;
+    if (res.status !== 308 || location !== canonicalMcpUrl) {
+      fail(host, 'HEAD /mcp → apex canonical', `expected 308 → ${canonicalMcpUrl}, got ${res.status} → ${location}`);
     } else if (!/\bAccept\b(?!-)/i.test(res.headers.get('vary') ?? '')) {
       fail(host, 'HEAD /mcp → apex canonical', `cacheable 308 lacks "Vary: Accept" (got "${res.headers.get('vary')}")`);
     } else if (!/\bLast-Event-ID\b/i.test(res.headers.get('vary') ?? '')) {

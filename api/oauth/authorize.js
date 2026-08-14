@@ -4,23 +4,31 @@ import { getClientIp } from '../_rate-limit.js';
 import { timingSafeIncludes, sha256Hex } from '../_crypto.js';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
+import { normalizeDomain, resolveApiOrigin, resolveAppOrigin, resolveWwwOrigin } from '../_domain-config.js';
 
 export const config = { runtime: 'edge' };
 
 const CODE_TTL_SECONDS = 600;
 const CLIENT_TTL_SECONDS = 90 * 24 * 3600; // 90-day sliding reset
 
-// First-party origin allowlist for the consent POST: the worldmonitor.app apex
-// plus any single-label subdomain (www, api, tech, finance, …), matching the
-// host-derived OAuth metadata (api/_agent-metadata.ts resolveMetadataOrigin).
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// First-party origin allowlist for the consent POST: the configured APP_DOMAIN
+// apex plus any single-label subdomain (www, api, tech, finance, …), matching
+// the host-derived OAuth metadata (api/_agent-metadata.ts resolveMetadataOrigin).
 // The consent page is served host-derived, so its native form submit (action is
-// api.worldmonitor.app) and its JS same-origin fetch both arrive with a
-// first-party Origin — which, before this, only matched api.worldmonitor.app and
+// the api. subdomain) and its JS same-origin fetch both arrive with a
+// first-party Origin — which, before this, only matched the api. subdomain and
 // 403'd the www/apex discovery flow. Foreign origins are still rejected; the
 // single-use CSRF nonce (server-stored, the source of every authoritative value)
 // is the primary protection, this is defense-in-depth. Anchored, so it rejects
-// worldmonitor.app.evil.example, evilworldmonitor.app, and any :port.
-const WM_ORIGIN = /^https:\/\/(?:[a-z0-9-]+\.)?worldmonitor\.app$/;
+// <domain>.evil.example, evil<domain>, and any :port.
+function wmOriginPattern() {
+  const domain = normalizeDomain(process.env.APP_DOMAIN);
+  return new RegExp(`^https:\\/\\/(?:[a-z0-9-]+\\.)?${escapeRegExp(domain)}$`);
+}
 
 let _rl = null;
 function getRatelimit() {
@@ -99,11 +107,13 @@ const GLOBE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" s
 const PAGE_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'X-Frame-Options': 'DENY', 'Cache-Control': 'no-store', 'Pragma': 'no-cache' };
 
 function htmlError(title, detail) {
+  const wwwOrigin = resolveWwwOrigin(process.env.APP_DOMAIN);
+  const domain = normalizeDomain(process.env.APP_DOMAIN);
   return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Error &#x2014; WorldMonitor MCP</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:ui-monospace,'SF Mono','Cascadia Code',monospace;background:#0a0a0a;color:#e8e8e8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem}.wm-logo{display:flex;align-items:center;gap:.5rem;margin-bottom:2rem;text-decoration:none}.wm-logo svg{color:#2d8a6e}.wm-logo-text{font-size:.75rem;color:#555;letter-spacing:.1em;text-transform:uppercase}.card{width:100%;max-width:420px;background:#111;border:1px solid #1e1e1e;padding:2rem}h1{font-size:.95rem;font-weight:600;color:#ef4444;margin-bottom:.75rem;letter-spacing:.02em}p{font-size:.85rem;color:#666;line-height:1.6}.back{display:inline-block;margin-top:1.5rem;font-size:.75rem;color:#444;text-decoration:none;letter-spacing:.03em}.back:hover{color:#888}.footer{margin-top:1.5rem;font-size:.7rem;color:#2a2a2a;text-align:center}.footer a{color:#333;text-decoration:none}.footer a:hover{color:#555}</style></head>
-<body><a href="https://www.worldmonitor.app" class="wm-logo" target="_blank" rel="noopener">${GLOBE_SVG}<span class="wm-logo-text">WorldMonitor MCP</span></a>
+<body><a href="${wwwOrigin}" class="wm-logo" target="_blank" rel="noopener">${GLOBE_SVG}<span class="wm-logo-text">WorldMonitor MCP</span></a>
 <div class="card"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(detail)}</p><a href="javascript:history.back()" class="back">&#8592; go back</a></div>
-<p class="footer"><a href="https://www.worldmonitor.app" target="_blank" rel="noopener">worldmonitor.app</a></p>
+<p class="footer"><a href="${wwwOrigin}" target="_blank" rel="noopener">${domain}</a></p>
 </body></html>`, { status: 400, headers: PAGE_HEADERS });
 }
 
@@ -121,9 +131,12 @@ function htmlError(title, detail) {
 export function consentPage(params, nonce, errorMsg = '') {
   const { client_name, redirect_uri } = params;
   const redirectHost = new URL(redirect_uri).hostname;
+  const appOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
+  const wwwOrigin = resolveWwwOrigin(process.env.APP_DOMAIN);
+  const apiOrigin = resolveApiOrigin(process.env.APP_DOMAIN);
   // U3 contract: bridge URL is apex (no www, no return_to). Apex page reads
   // oauth:nonce:<nonce> itself to recover client metadata + mint a grant.
-  const proCtaHref = `https://worldmonitor.app/mcp-grant?nonce=${encodeURIComponent(nonce)}`;
+  const proCtaHref = `${appOrigin}/mcp-grant?nonce=${encodeURIComponent(nonce)}`;
   return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Authorize &#x2014; WorldMonitor MCP</title>
@@ -162,7 +175,7 @@ button:disabled{opacity:.5;cursor:default}
 .footer a:hover{color:#555}
 </style></head>
 <body>
-<a href="https://www.worldmonitor.app" class="wm-logo" target="_blank" rel="noopener">${GLOBE_SVG}<span class="wm-logo-text">WorldMonitor MCP</span></a>
+<a href="${wwwOrigin}" class="wm-logo" target="_blank" rel="noopener">${GLOBE_SVG}<span class="wm-logo-text">WorldMonitor MCP</span></a>
 <div class="card">
 <div class="client-hd">
 <div class="client-name">${escapeHtml(client_name)} wants access</div>
@@ -180,7 +193,7 @@ button:disabled{opacity:.5;cursor:default}
 <hr>
 <a id="pc" class="pro-cta" href="${escapeHtml(proCtaHref)}">Sign in with WorldMonitor</a>
 <div class="disclosure" id="dt"><a id="tk" role="button" tabindex="0">Use API key instead</a></div>
-<form id="cf" method="POST" action="https://api.worldmonitor.app/oauth/authorize" style="display:none;margin-top:1.25rem">
+<form id="cf" method="POST" action="${apiOrigin}/oauth/authorize" style="display:none;margin-top:1.25rem">
 <input type="hidden" name="_nonce" id="nn" value="${escapeHtml(nonce)}">
 <input type="hidden" name="_js" id="jf" value="">
 <label for="api_key">API Key</label>
@@ -190,7 +203,7 @@ button:disabled{opacity:.5;cursor:default}
 <button type="submit" id="ab">Authorize</button>
 </form>
 </div>
-<p class="footer"><a href="https://www.worldmonitor.app" target="_blank" rel="noopener">worldmonitor.app</a></p>
+<p class="footer"><a href="${wwwOrigin}" target="_blank" rel="noopener">${normalizeDomain(process.env.APP_DOMAIN)}</a></p>
 <script>(function(){function showForm(){var f=document.getElementById('cf');if(f)f.style.display='';var d=document.getElementById('dt');if(d)d.style.display='none';var k=document.getElementById('api_key');if(k){k.required=true;try{k.focus();}catch(e){}}}var em=document.getElementById('ke');if(em&&em.textContent&&em.textContent.length>0){showForm();}if(window.location.hash==='#api-key'){showForm();}var tk=document.getElementById('tk');if(tk){tk.addEventListener('click',function(e){e.preventDefault();showForm();});tk.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();showForm();}});}var cf=document.getElementById('cf');if(cf){cf.addEventListener('submit',function(e){e.preventDefault();var jf=document.getElementById('jf');if(jf)jf.value='1';var b=document.getElementById('ab');b.disabled=true;b.textContent='Authorizing…';var d=new URLSearchParams(new FormData(e.target));fetch('/oauth/authorize',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:d}).then(function(r){var c=r.headers.get('Content-Type')||'';if(c.indexOf('json')>=0)return r.json().then(function(j){if(j.location){window.location.replace(j.location);return;}if(j.error==='invalid_key'){var n=document.getElementById('nn');if(n)n.value=j.nonce||'';var em2=document.getElementById('ke');if(em2){em2.textContent='Invalid API key. Please check and try again.';em2.style.display='';}showForm();}b.disabled=false;b.textContent='Authorize';});return r.text().then(function(h){document.open();document.write(h);document.close();});}).catch(function(){b.disabled=false;b.textContent='Authorize';});});}})();</script>
 </body></html>`, { status: 200, headers: PAGE_HEADERS });
 }
@@ -252,13 +265,13 @@ export default async function handler(req) {
   }
 
   if (method === 'POST') {
-    // Origin validation: allow any first-party worldmonitor.app host (the consent
+    // Origin validation: allow any first-party APP_DOMAIN host (the consent
     // page is served host-derived — apex/www/api/variant — so a same-origin JS
-    // fetch or the native form POST to api.worldmonitor.app arrives with any of
+    // fetch or the native form POST to the api. subdomain arrives with any of
     // those Origins), plus absent origin (server/CLI) and 'null' (WebView with
     // opaque/sandboxed origin). CSRF nonce provides the actual protection.
     const origin = req.headers.get('origin');
-    if (origin && origin !== 'null' && !WM_ORIGIN.test(origin)) {
+    if (origin && origin !== 'null' && !wmOriginPattern().test(origin)) {
       return new Response('Forbidden', { status: 403 });
     }
 

@@ -22,6 +22,7 @@ import {
   ApiError,
   ValidationError,
 } from '../../../../src/generated/server/worldmonitor/batch/v1/service_server';
+import { resolveWwwOrigin } from '../../../../shared/domain-config.js';
 
 export const MAX_BATCH_OPERATIONS = 20;
 export const MAX_OPERATION_ID_LENGTH = 64;
@@ -45,10 +46,11 @@ const FORWARDED_HEADERS = ['authorization', 'x-worldmonitor-key', 'x-api-key', '
 const RPC_PATH_RE = /^\/api\/[a-z][a-z0-9-]*\/v\d+\/[a-z][a-z0-9-]*$/;
 const V2_PATH_RE = /^\/api\/v2\/[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/;
 
-// The Cloudflare WAF in front of api.worldmonitor.app rejects generic
+// The Cloudflare WAF in front of the api. subdomain rejects generic
 // user agents, so sub-requests always carry a descriptive one.
-const DEFAULT_SUB_REQUEST_USER_AGENT =
-  'WorldMonitor-Batch/1.0 (+https://www.worldmonitor.app/openapi.json)';
+function defaultSubRequestUserAgent(): string {
+  return `WorldMonitor-Batch/1.0 (+${resolveWwwOrigin(process.env.APP_DOMAIN)}/openapi.json)`;
+}
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -127,7 +129,7 @@ function buildSubRequestHeaders(inbound: Headers): Headers {
     if (value) headers.set(name, value);
   }
   headers.set('accept', 'application/json');
-  headers.set('user-agent', inbound.get('user-agent') ?? DEFAULT_SUB_REQUEST_USER_AGENT);
+  headers.set('user-agent', inbound.get('user-agent') ?? defaultSubRequestUserAgent());
   headers.set(BATCH_MARKER_HEADER, '1');
   return headers;
 }

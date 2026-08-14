@@ -825,7 +825,7 @@ const COMMODITY_FEEDS: Record<string, Feed[]> = {
   ],
 };
 
-// Energy variant feeds — energy.worldmonitor.app
+// Energy variant feeds — energy.<domain>
 // Keys are matched against panel IDs in src/config/panels.ts ENERGY_PANELS +
 // brief news-category overrides in src/app/data-loader.ts. Keep in sync when
 // ENERGY_PANELS changes.

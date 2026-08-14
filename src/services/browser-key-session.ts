@@ -1,4 +1,5 @@
 import { establishWmKeySession } from '@/services/wm-session';
+import { COOKIE_DOMAIN } from '@/config/domain';
 
 export type BrowserSessionKeyName = 'wm-widget-key' | 'wm-pro-key';
 
@@ -22,7 +23,9 @@ function safeReadableCookieGet(name: BrowserSessionKeyName): string {
 
 function clearLegacyReadableCookie(name: BrowserSessionKeyName): void {
   try {
-    document.cookie = `${name}=; domain=.worldmonitor.app; path=/; max-age=0; SameSite=Lax; Secure`;
+    if (COOKIE_DOMAIN) {
+      document.cookie = `${name}=; domain=${COOKIE_DOMAIN}; path=/; max-age=0; SameSite=Lax; Secure`;
+    }
     document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax; Secure`;
   } catch {
     // ignore

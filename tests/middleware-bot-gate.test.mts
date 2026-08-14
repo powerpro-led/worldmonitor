@@ -14,8 +14,16 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
-import middleware from '../middleware';
+// middleware.ts reads APP_DOMAIN at module-load time (a Vercel Edge Function,
+// where env vars are static per deployment) — set it before the dynamic
+// import below so the module evaluates against TEST_APP_DOMAIN instead of
+// whatever was in the environment when the test process started.
+setTestAppDomain();
+const { default: middleware } = await import('../middleware');
+const APEX = `https://${TEST_APP_DOMAIN}`;
+const WWW = `https://www.${TEST_APP_DOMAIN}`;
 
 const TELEGRAM_BOT_UA = 'TelegramBot (like TwitterBot)';
 const SLACKBOT_UA = 'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)';
@@ -40,7 +48,7 @@ const MALFORMED_CAROUSEL_PATH = '/api/brief/carousel/admin/dashboard';
 function call(pathOrUrl: string, ua: string, headers: Record<string, string> = {}): Response | void {
   const url = pathOrUrl.startsWith('http')
     ? pathOrUrl
-    : `https://www.worldmonitor.app${pathOrUrl}`;
+    : `${WWW}${pathOrUrl}`;
   const req = new Request(url, {
     headers: {
       ...(ua ? { 'user-agent': ua } : {}),
@@ -231,37 +239,37 @@ describe('middleware PUBLIC_API_PATHS — secret-authed internal endpoints bypas
 // still handshake correctly.
 
 describe('middleware /mcp — variant subdomains redirect to apex, POST stays', () => {
-  it('redirects GET /mcp from tech.worldmonitor.app to apex', () => {
-    const res = call('https://tech.worldmonitor.app/mcp', CHROME_UA);
+  it('redirects GET /mcp from the tech variant to apex', () => {
+    const res = call(`https://tech.${TEST_APP_DOMAIN}/mcp`, CHROME_UA);
     assert.ok(res instanceof Response);
     assert.equal(res.status, 308);
-    assert.equal(res.headers.get('location'), 'https://worldmonitor.app/mcp');
+    assert.equal(res.headers.get('location'), `${APEX}/mcp`);
   });
 
-  it('redirects HEAD /mcp from finance.worldmonitor.app to apex', () => {
-    const req = new Request('https://finance.worldmonitor.app/mcp', { method: 'HEAD' });
+  it('redirects HEAD /mcp from the finance variant to apex', () => {
+    const req = new Request(`https://finance.${TEST_APP_DOMAIN}/mcp`, { method: 'HEAD' });
     const res = middleware(req) as Response | void;
     assert.ok(res instanceof Response);
     assert.equal(res.status, 308);
-    assert.equal(res.headers.get('location'), 'https://worldmonitor.app/mcp');
+    assert.equal(res.headers.get('location'), `${APEX}/mcp`);
   });
 
   it('redirects /mcp from every variant subdomain', () => {
     for (const host of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
-      const res = call(`https://${host}.worldmonitor.app/mcp`, CHROME_UA);
+      const res = call(`https://${host}.${TEST_APP_DOMAIN}/mcp`, CHROME_UA);
       assert.ok(res instanceof Response, `${host} must redirect`);
       assert.equal(res.status, 308, `${host} redirect status`);
-      assert.equal(res.headers.get('location'), 'https://worldmonitor.app/mcp', `${host} redirect location`);
+      assert.equal(res.headers.get('location'), `${APEX}/mcp`, `${host} redirect location`);
     }
   });
 
   it('does NOT redirect GET /mcp from apex or www', () => {
-    assert.equal(call('https://worldmonitor.app/mcp', CHROME_UA), undefined);
-    assert.equal(call('https://www.worldmonitor.app/mcp', CHROME_UA), undefined);
+    assert.equal(call(`${APEX}/mcp`, CHROME_UA), undefined);
+    assert.equal(call(`${WWW}/mcp`, CHROME_UA), undefined);
   });
 
   it('does NOT redirect POST /mcp from a variant subdomain (MCP handshake)', () => {
-    const req = new Request('https://tech.worldmonitor.app/mcp', {
+    const req = new Request(`https://tech.${TEST_APP_DOMAIN}/mcp`, {
       method: 'POST',
       headers: { 'user-agent': CHROME_UA, 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
@@ -271,7 +279,7 @@ describe('middleware /mcp — variant subdomains redirect to apex, POST stays', 
   });
 
   it('does NOT redirect OPTIONS /mcp from a variant subdomain', () => {
-    const req = new Request('https://tech.worldmonitor.app/mcp', {
+    const req = new Request(`https://tech.${TEST_APP_DOMAIN}/mcp`, {
       method: 'OPTIONS',
       headers: { 'user-agent': CHROME_UA },
     });
@@ -280,24 +288,24 @@ describe('middleware /mcp — variant subdomains redirect to apex, POST stays', 
   });
 
   it('does NOT redirect variant transport GETs with SSE or replay headers', () => {
-    const mixedCaseSse = new Request('https://tech.worldmonitor.app/mcp', {
+    const mixedCaseSse = new Request(`https://tech.${TEST_APP_DOMAIN}/mcp`, {
       headers: { Accept: 'Text/Event-Stream' },
     });
     assert.equal(middleware(mixedCaseSse), undefined, 'mixed-case SSE Accept must fall through to the transport');
 
-    const replay = new Request('https://tech.worldmonitor.app/mcp', {
+    const replay = new Request(`https://tech.${TEST_APP_DOMAIN}/mcp`, {
       headers: { Accept: 'application/json', 'Last-Event-ID': 'stream:0' },
     });
     assert.equal(middleware(replay), undefined, 'Last-Event-ID replay must stay on the session host');
   });
 
   it('redirects when SSE is explicitly unacceptable', () => {
-    const req = new Request('https://tech.worldmonitor.app/mcp', {
+    const req = new Request(`https://tech.${TEST_APP_DOMAIN}/mcp`, {
       headers: { Accept: 'text/event-stream;q=0, text/html' },
     });
     const res = middleware(req) as Response | void;
     assert.ok(res instanceof Response);
     assert.equal(res.status, 308);
-    assert.equal(res.headers.get('location'), 'https://worldmonitor.app/mcp');
+    assert.equal(res.headers.get('location'), `${APEX}/mcp`);
   });
 });

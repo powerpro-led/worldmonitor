@@ -7,8 +7,9 @@ import {
 } from '../api/mcp.ts';
 import { createMcpToolExecutionContext } from '../api/mcp/downstream.ts';
 import { callBody } from './helpers/mcp-pro-deps.mjs';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
-const CANONICAL_API_ORIGIN = 'https://api.worldmonitor.app';
+const CANONICAL_API_ORIGIN = `https://api.${TEST_APP_DOMAIN}`;
 const ENV_KEY = 'operator_test_key_world_brief';
 const SECRET_QUERY = 'SECRET_QUERY_SENTINEL_5514';
 const SECRET_COOKIE = 'SECRET_COOKIE_SENTINEL_5514';
@@ -16,14 +17,14 @@ const SECRET_GEO_CONTEXT = 'SECRET_GEO_CONTEXT_SENTINEL_5514';
 const SECRET_RESPONSE_DETAIL = 'SECRET_RESPONSE_DETAIL_SENTINEL_5514';
 
 const HOSTS = [
-  { url: 'https://worldmonitor.app/mcp', hostClass: 'apex' },
-  { url: 'https://www.worldmonitor.app/mcp', hostClass: 'www' },
-  { url: 'https://api.worldmonitor.app/api/mcp', hostClass: 'canonical_api' },
-  { url: 'https://tech.worldmonitor.app/mcp', hostClass: 'variant' },
-  { url: 'https://finance.worldmonitor.app/mcp', hostClass: 'variant' },
-  { url: 'https://commodity.worldmonitor.app/mcp', hostClass: 'variant' },
-  { url: 'https://happy.worldmonitor.app/mcp', hostClass: 'variant' },
-  { url: 'https://energy.worldmonitor.app/mcp', hostClass: 'variant' },
+  { url: `https://${TEST_APP_DOMAIN}/mcp`, hostClass: 'apex' },
+  { url: `https://www.${TEST_APP_DOMAIN}/mcp`, hostClass: 'www' },
+  { url: `https://api.${TEST_APP_DOMAIN}/api/mcp`, hostClass: 'canonical_api' },
+  { url: `https://tech.${TEST_APP_DOMAIN}/mcp`, hostClass: 'variant' },
+  { url: `https://finance.${TEST_APP_DOMAIN}/mcp`, hostClass: 'variant' },
+  { url: `https://commodity.${TEST_APP_DOMAIN}/mcp`, hostClass: 'variant' },
+  { url: `https://happy.${TEST_APP_DOMAIN}/mcp`, hostClass: 'variant' },
+  { url: `https://energy.${TEST_APP_DOMAIN}/mcp`, hostClass: 'variant' },
 ];
 
 // env_key is the sole MCP credential class now — the historical user_key/pro
@@ -93,6 +94,7 @@ function downstreamEvents(captured) {
 }
 
 beforeEach(() => {
+  setTestAppDomain();
   process.env.WORLDMONITOR_VALID_KEYS = ENV_KEY;
   process.env.MCP_TELEMETRY = 'true';
   delete process.env.UPSTASH_REDIS_REST_URL;
@@ -260,7 +262,7 @@ describe('get_world_brief canonical sibling routing', () => {
       };
 
       const response = await mcpHandler(
-        requestFor('https://tech.worldmonitor.app/mcp', AUTH_CASE.headers, 200 + index),
+        requestFor(`https://tech.${TEST_APP_DOMAIN}/mcp`, AUTH_CASE.headers, 200 + index),
         makeDeps(),
       );
       assert.equal(response.status, 200, `${scenario.name}: JSON-RPC tool failure status`);

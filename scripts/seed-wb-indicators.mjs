@@ -13,6 +13,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { resolveAppOrigin } from './_domain-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -108,7 +109,7 @@ async function fetchWithRetry(url, attempt = 1) {
   try {
     const resp = await fetch(url, {
       headers: {
-        'User-Agent': 'WorldMonitor-Seed/1.0 (https://worldmonitor.app)',
+        'User-Agent': `WorldMonitor-Seed/1.0 (${resolveAppOrigin(process.env.APP_DOMAIN)})`,
         'Accept': 'application/json',
       },
       signal: AbortSignal.timeout(30_000),

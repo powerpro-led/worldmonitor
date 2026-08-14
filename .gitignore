@@ -96,6 +96,6 @@ tmp/
 .context/
 
 # Local data layer's synced SQLite cache (src-tauri/sidecar/local-sync.mjs output)
-src-tauri/sidecar/local-cache.db
+vscode-extension/sidecar/local-cache.db
 
 playground-pricing.html

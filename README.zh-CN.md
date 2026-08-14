@@ -54,7 +54,6 @@
 - **金融雷达** — 29 家证券交易所、大宗商品、加密货币，以及 7 信号市场综合指标
 - **本地 AI** — 通过 Ollama 运行全部功能，无需 API 密钥
 - **6 个站点变体**，均来自同一代码库（World Monitor、Tech Monitor、Finance Monitor、Commodity Monitor、Happy Monitor、Energy Monitor）
-- **原生桌面应用**（Tauri 2），支持 macOS、Windows 和 Linux
 - **25 种语言**，提供本地语言信息流和 RTL 支持
 
 完整的功能清单、架构、数据源和算法，请参阅**[文档](https://www.worldmonitor.app/docs/zh/documentation)**。
@@ -63,12 +62,11 @@
 
 ## 支持状态
 
-所有站点变体和桌面二进制文件均从同一代码库构建，并通过同一发布流程交付。下表说明维护状态，帮助你判断哪些产品形态可放心依赖。
+所有站点变体均从同一代码库构建，并通过同一发布流程交付。下表说明维护状态，帮助你判断哪些产品形态可放心依赖。
 
 | 产品形态 | 状态 | 说明 |
 |---------|--------|-------|
 | `worldmonitor.app`、`tech.`、`finance.`、`commodity.`、`happy.`、`energy.` | 稳定 | 从本仓库构建的公开部署，持续维护中 |
-| 桌面二进制文件（Windows / macOS Apple Silicon / macOS Intel / Linux AppImage） | 稳定 | 一个可在应用内切换变体的 Tauri 二进制文件；当前 CI 发布目标为 `full` 和 `tech` |
 
 上述任一产品形态的问题都会进入同一待办队列；请查看[问题看板](https://github.com/koala73/worldmonitor/issues)了解当前公开工作。
 
@@ -106,10 +104,9 @@ npm run dev:energy     # energy.worldmonitor.app
 | 类别 | 技术 |
 |----------|-------------|
 | **前端** | Vanilla TypeScript、Vite、globe.gl + Three.js、deck.gl + MapLibre GL |
-| **桌面** | Tauri 2（Rust）与 Node.js sidecar |
 | **AI/ML** | Ollama / Groq / OpenRouter、Transformers.js（浏览器端） |
 | **API 契约** | Protocol Buffers（279 个 proto、35 项服务）、sebuf HTTP 注解 |
-| **部署** | Vercel Edge Functions（60+）、Railway 中继、Tauri、PWA |
+| **部署** | Vercel Edge Functions（60+）、Railway 中继、PWA |
 | **缓存** | Redis（Upstash）、3 层缓存、CDN、service worker |
 
 完整技术栈详情请参阅**[架构文档](https://www.worldmonitor.app/docs/zh/architecture)**。
@@ -121,16 +118,7 @@ npm run dev:energy     # energy.worldmonitor.app
 World Monitor 同时为智能体、脚本和浏览器而构建：
 
 - **MCP Server** — `https://worldmonitor.app/mcp`（Streamable HTTP）。公开提供 `tools/list`；`tools/call` 通过 `X-WorldMonitor-Key` 请求头或 OAuth 进行身份验证。
-- **REST API** — 基础地址为 `https://api.worldmonitor.app`，详见 [OpenAPI 规范](https://worldmonitor.app/openapi.yaml)。
-- **CLI** — 官方 [`worldmonitor`](https://www.npmjs.com/package/worldmonitor) npm 包（源代码位于 [`cli/`](cli/)）：
-
-  ```sh
-  npx worldmonitor tools          # run ad-hoc — list every MCP tool (no key needed)
-  npm install -g worldmonitor     # or install the `worldmonitor` (alias `wm`) command
-  worldmonitor risk IR --api-key wm_xxx
-  ```
-
-智能体发现文件：[智能体技能清单](https://worldmonitor.app/.well-known/agent-skills/index.json) · [API 目录](https://worldmonitor.app/.well-known/api-catalog)。API 密钥由运营方颁发，暂不提供自助申请。
+- **REST API** — 基础地址为 `https://api.worldmonitor.app`，详见 [OpenAPI 规范](https://worldmonitor.app/openapi.yaml)。API 密钥由运营方颁发，暂不提供自助申请。
 
 ---
 

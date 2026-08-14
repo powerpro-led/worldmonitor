@@ -21,10 +21,11 @@
  *
  * Usage:
  *   node scripts/measure-composited-layers.mjs [url] [--cpu 1] [--settle 15000] [--json]
- *   (default url: https://www.worldmonitor.app/dashboard; run against a local
+ *   (default url: derived from APP_DOMAIN; run against a local
  *    `vite preview` build for in-session before/after per #4630 KTD3)
  */
 import { pathToFileURL } from 'node:url';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const DESCRIBE_NODE_CAP = 400;
 const DESCRIBE_NODE_CAP_SKIPPED_SELECTOR = '(describe-cap-skipped)';
@@ -39,7 +40,7 @@ function parsePositiveNumberFlag(name, raw) {
 }
 
 export function parseArgs(argv) {
-  const args = { url: 'https://www.worldmonitor.app/dashboard', cpu: 1, settle: 15000, json: false };
+  const args = { url: `${resolveWwwOrigin(process.env.APP_DOMAIN)}/dashboard`, cpu: 1, settle: 15000, json: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];

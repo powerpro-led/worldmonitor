@@ -25,6 +25,9 @@ import {
   utf8ByteLength,
   buildPublicTool,
 } from '../api/mcp.ts';
+import { resolveAppOrigin } from './_domain-config.mjs';
+
+const MCP_ENDPOINT = `${resolveAppOrigin(process.env.APP_DOMAIN)}/mcp`;
 
 // Re-import the module to reach TOOL_REGISTRY indirectly via the public
 // tools/list call. We don't export TOOL_REGISTRY; the round-trip through
@@ -39,7 +42,7 @@ delete process.env.UPSTASH_REDIS_REST_TOKEN;
 const mcpMod = await import('../api/mcp.ts');
 
 async function fetchToolsList() {
-  const req = new Request('https://worldmonitor.app/mcp', {
+  const req = new Request(MCP_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': 'wm_measure_key' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
@@ -55,7 +58,7 @@ const v15Tools = await fetchToolsList();
 // describe_tool (new in v1.5.0), AND replace each compressed description
 // with the full text by calling describe_tool({tool_name: t.name}).
 async function callDescribeTool(toolName) {
-  const req = new Request('https://worldmonitor.app/mcp', {
+  const req = new Request(MCP_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': 'wm_measure_key' },
     body: JSON.stringify({

@@ -4,6 +4,7 @@
  * Returns HTML with proper og:image and twitter:card meta tags.
  * Twitter/Facebook/LinkedIn crawlers hit this, real users get redirected to the SPA.
  */
+import { resolveAppOrigin } from './_domain-config.js';
 
 const COUNTRY_NAMES = {
   UA: 'Ukraine', RU: 'Russia', CN: 'China', US: 'United States',
@@ -16,7 +17,8 @@ const COUNTRY_NAMES = {
 const BOT_UA = /twitterbot|facebookexternalhit|linkedinbot|slackbot|telegrambot|whatsapp|discordbot|redditbot|googlebot/i;
 
 export default function handler(req, res) {
-  const url = new URL(req.url, 'https://worldmonitor.app');
+  const appOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
+  const url = new URL(req.url, appOrigin);
   const countryCode = (url.searchParams.get('c') || '').toUpperCase();
   const type = url.searchParams.get('t') || 'ciianalysis';
   const ts = url.searchParams.get('ts') || '';
@@ -26,7 +28,7 @@ export default function handler(req, res) {
   const ua = req.headers['user-agent'] || '';
   const isBot = BOT_UA.test(ua);
 
-  const baseUrl = 'https://worldmonitor.app';
+  const baseUrl = appOrigin;
   const spaUrl = `${baseUrl}/?c=${countryCode}&t=${type}${ts ? `&ts=${ts}` : ''}`;
 
   // Real users → redirect to SPA

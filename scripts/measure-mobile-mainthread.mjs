@@ -19,9 +19,10 @@
  *
  * Usage:
  *   node scripts/measure-mobile-mainthread.mjs [url] [--cpu 4] [--settle 15000] [--json]
- *   (default url: https://worldmonitor.app/dashboard)
+ *   (default url: derived from APP_DOMAIN)
  */
 import { pathToFileURL } from 'node:url';
+import { resolveAppOrigin } from './_domain-config.mjs';
 import {
   buildDecomposition,
   computeSelfTimeByName,
@@ -160,7 +161,7 @@ export function attributeDomNodes(counts) {
 }
 
 export function parseArgs(argv) {
-  const args = { url: 'https://worldmonitor.app/dashboard', cpu: 4, settle: 15000, json: false };
+  const args = { url: `${resolveAppOrigin(process.env.APP_DOMAIN)}/dashboard`, cpu: 4, settle: 15000, json: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];

@@ -22,6 +22,7 @@ export const config = { runtime: 'edge' };
 
 // @ts-expect-error — JS module, no declaration file
 import { getCorsHeaders, isDisallowedOrigin } from '../../_cors.js';
+import { resolveAppOrigin, normalizeDomain } from '../../../shared/domain-config.js';
 // @ts-expect-error — JS module, no declaration file
 import { readRawJsonFromUpstash } from '../../_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
@@ -78,7 +79,7 @@ function renderErrorPage(heading: string, body: string): string {
     + '</head><body><div>'
     + `<h1>${heading}</h1>`
     + `<p>${body}</p>`
-    + '<p><a href="https://worldmonitor.app">worldmonitor.app</a></p>'
+    + `<p><a href="${resolveAppOrigin(process.env.APP_DOMAIN)}">${normalizeDomain(process.env.APP_DOMAIN)}</a></p>`
     + '</div></body></html>'
   );
 }

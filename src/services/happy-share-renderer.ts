@@ -6,6 +6,7 @@
 import type { NewsItem } from '@/types';
 import type { HappyContentCategory } from '@/services/positive-classifier';
 import { HAPPY_CATEGORY_LABELS } from '@/services/positive-classifier';
+import { APP_DOMAIN } from '@/config/domain';
 
 const SIZE = 1080;
 const PAD = 80;
@@ -176,7 +177,7 @@ export async function renderHappyShareCard(item: NewsItem): Promise<HTMLCanvasEl
 
   ctx.font = '400 22px Nunito, system-ui, sans-serif';
   ctx.fillStyle = '#A0AEC0';
-  ctx.fillText('happy.worldmonitor.app', PAD, brandY + 34);
+  ctx.fillText(`happy.${APP_DOMAIN}`, PAD, brandY + 34);
 
   return canvas;
 }

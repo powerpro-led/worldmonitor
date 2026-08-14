@@ -5,6 +5,7 @@ import {
   CHINA_COVERAGE_REASON_CODES as REASON,
   chinaCoverageRedisKeys,
 } from './china-coverage-manifest.mjs';
+import { resolveAppOrigin } from './_domain-config.mjs';
 
 const MINUTE_MS = 60_000;
 
@@ -242,7 +243,7 @@ export async function readChinaCoverageInputs(entries = CHINA_COVERAGE_ENTRIES) 
     headers: {
       Authorization: `Bearer ${credentials.token}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'worldmonitor-ops/1.0 (+https://worldmonitor.app)',
+      'User-Agent': `worldmonitor-ops/1.0 (+${resolveAppOrigin(process.env.APP_DOMAIN)})`,
     },
     body: JSON.stringify(chinaCoverageReadCommands(ordered)),
     signal: AbortSignal.timeout(15_000),

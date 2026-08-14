@@ -926,7 +926,7 @@ export class Panel {
     // signInWithGithub() already handles every runtime correctly (web,
     // packaged Tauri, VS Code webview — see its own header comment), so
     // there's no reason to special-case desktop by opening the defunct
-    // worldmonitor.app/pro marketing page instead.
+    // the defunct /pro marketing page instead.
     const ctaBtn = h('button', { type: 'button', className: 'panel-locked-cta' }, t('premium.signIn'));
     ctaBtn.addEventListener('click', () => {
       void signInWithGithub();

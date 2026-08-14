@@ -24,9 +24,10 @@
  *
  * Usage:
  *   node scripts/measure-desktop-mainthread.mjs [url] [--cpu 1] [--settle 15000] [--json]
- *   (default url: https://www.worldmonitor.app/dashboard; --cpu 1 = no throttle, matches Lighthouse desktop)
+ *   (default url: derived from APP_DOMAIN; --cpu 1 = no throttle, matches Lighthouse desktop)
  */
 import { pathToFileURL } from 'node:url';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const TBT_THRESHOLD_MS = 50;
 const TRACE_COMPLETE_TIMEOUT_MS = 30000;
@@ -270,7 +271,7 @@ export function summarizeLongTasks(entries) {
 }
 
 export function parseArgs(argv) {
-  const args = { url: 'https://www.worldmonitor.app/dashboard', cpu: 1, settle: 15000, json: false };
+  const args = { url: `${resolveWwwOrigin(process.env.APP_DOMAIN)}/dashboard`, cpu: 1, settle: 15000, json: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];

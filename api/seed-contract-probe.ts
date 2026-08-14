@@ -27,6 +27,7 @@ import { jsonResponse } from './_json-response.js';
 // @ts-expect-error — JS module, no declaration file
 import { issueSessionToken } from './_session.js';
 import { timingSafeEqual } from '../server/_shared/internal-auth';
+import { resolveAppOrigin } from '../shared/domain-config.js';
 
 type ProbeShape = 'envelope' | 'bare';
 
@@ -228,7 +229,7 @@ export async function checkPublicBoundary(
   try { sessionToken = (await issueSessionToken()).token; } catch { /* no-op */ }
 
   const headers: Record<string, string> = {
-    Origin: 'https://worldmonitor.app',
+    Origin: resolveAppOrigin(process.env.APP_DOMAIN),
     'User-Agent': 'WorldMonitor-SeedContractProbe/1.0',
   };
   if (sessionToken) headers['X-WorldMonitor-Key'] = sessionToken;

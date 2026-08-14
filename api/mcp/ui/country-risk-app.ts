@@ -31,7 +31,11 @@
 // so the inline <script>/<style> deliberately avoid backticks and `${` to
 // keep the outer literal un-escaped and readable.
 
+import { UI_CONNECT_DOMAINS } from './shell';
+
 export const COUNTRY_RISK_UI_PROTOCOL_VERSION = '2026-01-26';
+
+const CONNECT_SRC = UI_CONNECT_DOMAINS.join(' ');
 
 export const COUNTRY_RISK_APP_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -48,7 +52,7 @@ export const COUNTRY_RISK_APP_HTML = `<!DOCTYPE html>
      styles working) rather than '*'. default-src 'none' earns full credit over a
      permissive default. frame-ancestors is advisory in a <meta> CSP (browsers honor
      it only via HTTP header) but the static scanner reads it here. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://worldmonitor.app https://www.worldmonitor.app; frame-ancestors https://chatgpt.com https://claude.ai https://claude.com; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${CONNECT_SRC}; frame-ancestors https://chatgpt.com https://claude.ai https://claude.com; form-action 'none'; base-uri 'none'">
 <title>Country Risk — WorldMonitor</title>
 <style>
   :root {

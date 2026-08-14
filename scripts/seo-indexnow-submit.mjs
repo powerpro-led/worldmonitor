@@ -1,27 +1,33 @@
 #!/usr/bin/env node
 /**
- * Submit all worldmonitor.app URLs to IndexNow after deploy.
+ * Submit all APP_DOMAIN URLs to IndexNow after deploy.
  * Run once after deploying the IndexNow key file:
  *   node scripts/seo-indexnow-submit.mjs
  *
  * IndexNow requires all URLs in one request to share the same host.
  * Submits separate batches per subdomain.
  */
+import { resolveWwwOrigin, resolveVariantOrigin } from './_domain-config.mjs';
 
 const KEY = 'a7f3e9d1b2c44e8f9a0b1c2d3e4f5a6b';
 
+const wwwOrigin = resolveWwwOrigin(process.env.APP_DOMAIN);
 const WWW_URLS = [
-  'https://www.worldmonitor.app/',
+  `${wwwOrigin}/`,
 ];
 
+// NOTE: only 3 of the 5 variant subdomains (not commodity, not energy) — a
+// pre-existing scope oddity carried forward as-is rather than silently
+// "completed" during the domain sweep; see TASKS.md for the flag.
 const BATCHES = [
   {
-    host: 'www.worldmonitor.app',
+    host: new URL(wwwOrigin).host,
     urls: WWW_URLS,
   },
-  { host: 'tech.worldmonitor.app', urls: ['https://tech.worldmonitor.app/'] },
-  { host: 'finance.worldmonitor.app', urls: ['https://finance.worldmonitor.app/'] },
-  { host: 'happy.worldmonitor.app', urls: ['https://happy.worldmonitor.app/'] },
+  ...['tech', 'finance', 'happy'].map((slug) => {
+    const origin = resolveVariantOrigin(process.env.APP_DOMAIN, slug);
+    return { host: new URL(origin).host, urls: [`${origin}/`] };
+  }),
 ];
 
 const ENDPOINTS = [
@@ -38,7 +44,7 @@ async function submit(endpoint, host, urlList) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'User-Agent': 'WorldMonitor-IndexNow/1.0 (+https://www.worldmonitor.app)',
+      'User-Agent': `WorldMonitor-IndexNow/1.0 (+${wwwOrigin})`,
     },
     body: JSON.stringify({ host, key: KEY, keyLocation, urlList }),
   });

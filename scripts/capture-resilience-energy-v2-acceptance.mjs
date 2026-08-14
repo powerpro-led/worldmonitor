@@ -16,6 +16,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 import { execSync } from 'node:child_process';
 import { RESILIENCE_COHORTS } from '../tests/helpers/resilience-cohorts.mts';
 import { MATCHED_PAIRS } from '../tests/helpers/resilience-matched-pairs.mts';
@@ -48,7 +49,7 @@ const GATE_THRESHOLDS = {
   CORE_EXTRACTION_COVERAGE_MIN: 0.80,
 };
 
-const API_BASE = (process.env.API_BASE || 'https://www.worldmonitor.app').replace(/\/$/, '');
+const API_BASE = (process.env.API_BASE || resolveWwwOrigin(process.env.APP_DOMAIN)).replace(/\/$/, '');
 const API_ORIGIN = new URL(API_BASE).origin;
 const USER_AGENT = process.env.USER_AGENT
   || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';

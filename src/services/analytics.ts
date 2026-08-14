@@ -8,23 +8,24 @@
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
 import { subscribeAuthState, type AuthSession } from './auth-state';
 import { getAuthUserCreatedAt } from './auth-provider';
+import { APP_DOMAIN, ABACUS_ORIGIN } from '@/config/domain';
 
-const UMAMI_SCRIPT_SRC = 'https://abacus.worldmonitor.app/script.js';
+const UMAMI_SCRIPT_SRC = `${ABACUS_ORIGIN}/script.js`;
 const UMAMI_WEBSITE_ID = 'e8800335-c853-46a8-8497-c993ed2f58bc';
-// data-domains is temporarily reduced to the worldmonitor.app hosts + happy
-// while upstream Umami issue #4183 (https://github.com/umami-software/umami/issues/4183)
+// data-domains is temporarily reduced to the apex/www hosts + happy while
+// upstream Umami issue #4183 (https://github.com/umami-software/umami/issues/4183)
 // is open — v3.1.0 has a race in prisma.sessionData.updateMany() that returns HTTP 500
 // from /api/send for 4-8% of requests across all listed hosts. Self-hosted Umami has no
 // fix tag yet (master since 2026-04-17 has 22 commits but none touch sessionData). The
 // tracker self-disables when the current hostname isn't in data-domains — the same
-// mechanism that keeps energy.worldmonitor.app silent. Restore tech, finance, and
+// mechanism that keeps the energy variant silent. Restore tech, finance, and
 // commodity once #4183 ships in a tagged release.
 //
-// www.worldmonitor.app MUST be listed alongside the apex (#4931): the apex 301s
-// to www in production, and the tracker's data-domains check is an EXACT
+// The www host MUST be listed alongside the apex (#4931): the apex 301s to
+// www in production, and the tracker's data-domains check is an EXACT
 // hostname match (`!domains.includes(hostname)` → disabled) — with only the
 // apex listed, every event from the canonical host was silently dropped.
-const UMAMI_DOMAINS = 'worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app';
+const UMAMI_DOMAINS = `${APP_DOMAIN},www.${APP_DOMAIN},happy.${APP_DOMAIN}`;
 const UMAMI_QUEUE_LIMIT = 50;
 const UMAMI_LOAD_ATTEMPT_LIMIT = 2;
 const UMAMI_LOAD_RETRY_DELAY_MS = 5_000;

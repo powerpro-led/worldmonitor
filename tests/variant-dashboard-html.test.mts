@@ -5,7 +5,11 @@ import {
   renderVariantDashboardHtml,
   variantDashboardFileName,
 } from '../src/config/variant-dashboard-html';
-import { VARIANT_META } from '../src/config/variant-meta';
+import { buildVariantMeta } from '../src/config/variant-meta';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
+
+setTestAppDomain();
+const VARIANT_META = buildVariantMeta(TEST_APP_DOMAIN);
 
 // Mirrors the exact markup shapes of the BUILT dist/dashboard.html (index.html
 // after htmlVariantPlugin with the full meta): trailing ` />` on metas,
@@ -110,7 +114,7 @@ describe('renderVariantDashboardHtml (#4996)', () => {
       'x-default alternate moves to the variant host',
     );
     assert.ok(
-      html.includes('content="https://tech.worldmonitor.app/favico/tech/og-image.png"'),
+      html.includes(`content="${new URL(tech.url).origin}/favico/tech/og-image.png"`),
       'og/twitter image points at the variant OG asset',
     );
     assert.ok(html.includes('<meta property="og:image:width" content="1200" />'), 'og:image:width untouched');
@@ -128,7 +132,7 @@ describe('renderVariantDashboardHtml (#4996)', () => {
     const org = blocks.find((b) => b['@type'] === 'Organization');
     assert.equal(webApp.name, 'Finance Monitor');
     assert.equal(webApp.url, finance.url);
-    assert.equal(webApp.screenshot, 'https://finance.worldmonitor.app/favico/finance/og-image.png');
+    assert.equal(webApp.screenshot, `${new URL(finance.url).origin}/favico/finance/og-image.png`);
     assert.deepEqual(webApp.featureList, finance.features);
     assert.equal(org.name, 'World Monitor', 'variant isPartOf World Monitor — org identity stays');
     assert.equal(org.url, 'https://www.worldmonitor.app/');

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { resolveWwwOrigin } from '../shared/domain-config.js';
 
 import {
   buildReport,
@@ -459,7 +460,7 @@ describe('measure-dashboard-render-axis reporting', () => {
 describe('measure-dashboard-render-axis parseArgs', () => {
   it('uses desktop dashboard defaults', () => {
     const args = parseArgs(['node', 'script']);
-    assert.equal(args.url, 'https://www.worldmonitor.app/dashboard');
+    assert.equal(args.url, `${resolveWwwOrigin(process.env.APP_DOMAIN)}/dashboard`);
     assert.equal(args.settle, 10000);
     assert.equal(args.width, 1365);
     assert.equal(args.height, 768);

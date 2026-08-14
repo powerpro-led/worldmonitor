@@ -7,14 +7,15 @@
  *   node scripts/validate-seed-migration.mjs [--base-url URL]
  *
  * Requires: Referer header from trusted origin OR X-WorldMonitor-Key header.
- * Uses api.worldmonitor.app by default.
+ * Uses the configured APP_DOMAIN's api. subdomain by default.
  */
+import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 const BASE_URL = process.argv.includes('--base-url')
   ? process.argv[process.argv.indexOf('--base-url') + 1]
-  : 'https://api.worldmonitor.app';
+  : resolveApiOrigin(process.env.APP_DOMAIN);
 
-const ORIGIN = 'https://worldmonitor.app';
+const ORIGIN = resolveAppOrigin(process.env.APP_DOMAIN);
 
 // ========================================================================
 // Test definitions — one per migrated handler

@@ -1,7 +1,7 @@
 /**
  * In-memory TTL + LRU cache for the Tauri sidecar, backed on a miss by a
  * read-only mirror of the local SQLite sync cache
- * (src-tauri/sidecar/local-cache.db's `kv_cache` table, populated by
+ * (vscode-extension/sidecar/local-cache.db's `kv_cache` table, populated by
  * `npm run local-sync` pulling directly from Upstash — see that script's
  * header comment for the full pipeline). Activated only when
  * LOCAL_API_MODE === 'tauri-sidecar'. No top-level side effects; the

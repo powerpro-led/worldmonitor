@@ -1,3 +1,5 @@
+import { buildDomainOriginPattern, resolveAppOrigin } from '../_domain-config.js';
+
 export const config = { runtime: 'edge' };
 
 function parseFlag(value, fallback = '1') {
@@ -10,8 +12,9 @@ function sanitizeVideoId(value) {
   return /^[A-Za-z0-9_-]{11}$/.test(value) ? value : null;
 }
 
+const domainPattern = buildDomainOriginPattern(process.env.APP_DOMAIN);
 const ALLOWED_ORIGINS = [
-  /^https:\/\/(.*\.)?worldmonitor\.app$/,
+  ...(domainPattern ? [domainPattern] : []),
   /^https:\/\/worldmonitor-[a-z0-9-]+-elie-habib-projects\.vercel\.app$/,
   /^https:\/\/worldmonitor-[a-z0-9-]+\.vercel\.app$/,
   /^https?:\/\/localhost(:\d+)?$/,
@@ -40,7 +43,7 @@ function sanitizeAllowedOrigin(raw, fallback, allowList = ALLOWED_ORIGINS) {
 }
 
 function sanitizeOrigin(raw) {
-  return sanitizeAllowedOrigin(raw, 'https://worldmonitor.app', ALLOWED_ORIGINS);
+  return sanitizeAllowedOrigin(raw, resolveAppOrigin(process.env.APP_DOMAIN), ALLOWED_ORIGINS);
 }
 
 function sanitizeParentOrigin(raw, fallback) {

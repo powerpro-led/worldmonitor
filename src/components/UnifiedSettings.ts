@@ -128,7 +128,7 @@ export class UnifiedSettings {
         if (panelItem.dataset.proLocked) {
           // Every signed-in user is fully entitled post-billing-cut — this
           // gate always means signed-out, so sign in rather than open the
-          // defunct worldmonitor.app/pro marketing page.
+          // defunct /pro marketing page.
           void import('@/services/auth-provider')
             .then((m) => m.signInWithGithub())
             .catch(() => {

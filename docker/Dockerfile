@@ -26,9 +26,8 @@ ENV VITE_VARIANT=${VITE_VARIANT}
 ENV VITE_WS_API_URL=${VITE_WS_API_URL}
 
 # Build the crawlable static corpus, then tsc + vite build directly like the
-# sidecar image's builder. `npm run build` would also chain the prebuild
-# openapi/agent-skills generators, which this image skips.
-RUN npm run build:crawlable-corpus && npm run build:content-corpus && npx tsc && npx vite build
+# sidecar image's builder.
+RUN npm run build:crawlable-corpus && npx tsc && npx vite build
 
 
 # Stage 2: Serve the built assets from nginx.

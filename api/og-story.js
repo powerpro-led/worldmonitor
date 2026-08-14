@@ -3,6 +3,7 @@
  * Dynamic OG Image Generator for Story Sharing
  * Returns an SVG image (1200x630) — rich intelligence card for social previews.
  */
+import { resolveAppOrigin, normalizeDomain } from './_domain-config.js';
 
 const COUNTRY_NAMES = {
   UA: 'Ukraine', RU: 'Russia', CN: 'China', US: 'United States',
@@ -31,7 +32,7 @@ function normalizeLevel(rawLevel) {
 }
 
 export default function handler(req, res) {
-  const url = new URL(req.url, 'https://worldmonitor.app');
+  const url = new URL(req.url, resolveAppOrigin(process.env.APP_DOMAIN));
   const countryCode = (url.searchParams.get('c') || '').toUpperCase();
   const type = url.searchParams.get('t') || 'ciianalysis';
   const score = url.searchParams.get('s');
@@ -217,7 +218,7 @@ export default function handler(req, res) {
 
   <!-- URL + date -->
   <text x="60" y="610" font-family="system-ui, sans-serif" font-size="14" fill="#555"
-    >worldmonitor.app · ${dateStr} · Free &amp; open source</text>
+    >${normalizeDomain(process.env.APP_DOMAIN)} · ${dateStr} · Free &amp; open source</text>
 </svg>`;
 
   res.setHeader('Content-Type', 'image/svg+xml');

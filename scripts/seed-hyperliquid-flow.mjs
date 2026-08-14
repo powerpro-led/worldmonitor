@@ -12,6 +12,7 @@
  */
 
 import { loadEnvFile, runSeed, readSeedSnapshot } from './_seed-utils.mjs';
+import { resolveAppOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -201,7 +202,7 @@ export async function fetchHyperliquidMetaAndCtxs(dex = undefined, fetchImpl = f
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'User-Agent': 'WorldMonitor/1.0 (+https://worldmonitor.app)',
+      'User-Agent': `WorldMonitor/1.0 (+${resolveAppOrigin(process.env.APP_DOMAIN)})`,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

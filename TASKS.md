@@ -15,6 +15,140 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🚧 IN PROGRESS — scope-down to VS Code dashboard + data pipeline only
+
+**Operator decision (2026-08-14, twelfth session): this fork's real product is the VS Code
+dashboard + the cloud→local data pipeline. Tauri desktop app, the published CLI, the Cloudflare
+CORS Worker, the static SEO/agent-discovery surface, and most of `.github/workflows/` are NOT
+being kept.** Verified against actual cross-references before agreeing to anything (not just taking
+the premise at face value) — see the table this session worked out:
+
+- **Keep**: `vscode-extension/`, `vscode-extension/sidecar/*` (dashboard engine + the cloud→local
+  pipeline — `local-sync.mjs`), the core web app (`src/`, `api/`, `server/`), generic CI
+  (`test.yml`, `typecheck.yml`, `lint*.yml`, `security-audit.yml`, `proto-check.yml`,
+  `contributor-trust.yml`, `deploy-gate.yml`), and the workflows that watch/deploy the *cloud* side
+  the local sync pulls from (`nitric-deploy.yml`, `seed-freshness-monitor.yml`,
+  `analytics-collector-monitor.yml`, `mcp-live-smoke.yml`, `feed-validation.yml`,
+  `live-api-cache-auth.yml`). `docker-publish.yml` probably keep (publishes the self-hostable
+  server image on release) — not fully confirmed, ask before dropping it.
+- [x] **Remove pass — DONE this session (thirteenth, 2026-08-14), NOT YET COMMITTED/PUSHED.**
+      Deleted exactly the enumerated set: `src-tauri/` (Rust app, all 3 `tauri.*.conf.json`,
+      icons, `sidecar/node/`), `cli/`, `workers/api-cors-preflight/`, `public/.well-known/{agent-
+      card.json, ai-catalog.json, api-catalog, webhook-sample.json, agent-skills/}` (`security.txt`
+      deliberately spared — unrelated RFC 9116 file, not on the list), `public/{sitemap.xml,
+      robots.txt, schemamap.xml}`, and `.github/workflows/{build-desktop,test-linux-app,
+      deploy-worker,publish-cli}.yml`.
+      **This alone would have broken the build/CI** — the real blast radius was bigger than this
+      section's shorthand implied, since it's wired into more than static file references:
+      - `npm run build`'s `prebuild`/`build` chain actively *generated* content into two of the
+        deleted paths (`agent-skills/index.json`, `sitemap.xml`), not just read them — fixed by
+        dropping `build:agent-skills`/`build:content-corpus` from `package.json`'s script graph
+        (`scripts/build-agent-skills-index.mjs` deleted outright; `build-content-corpus-sitemap.mjs`
+        left in place — its exports are still tested by pure-function fixture tests — just unwired
+        from the npm build chain since its real target file is gone).
+      - Both `Dockerfile` and `docker/Dockerfile` directly `RUN npm run build:content-corpus` —
+        would have broken every Docker image build. Fixed.
+      - `.husky/pre-push` (every future local `git push`) and the *kept* `lint-code.yml` CI workflow
+        both unconditionally ran `npm run version:check` (→ `scripts/sync-desktop-version.mjs`,
+        reads `src-tauri/tauri.conf.json`) — would have hard-failed every push/CI run on this repo
+        from now on. Fixed (`sync-desktop-version.mjs` + `desktop-package.mjs` deleted outright,
+        all `desktop:*`/`build:desktop`/`tauri` npm scripts and the `@tauri-apps/cli` devDependency
+        removed — but NOT `build:sidecar-sebuf`/`build:sidecar-handlers`, which the docstrings
+        mislabel "Tauri sidecar" but actually the *kept* `vscode-extension/sidecar/` still needs;
+        added a standalone `build:sidecar-handlers` npm script since it previously only existed
+        inline inside the now-deleted `build:desktop`, which would have stranded it entirely).
+      - `tests/live-news-hls.test.mjs` (a live-channel/HLS test, unrelated in subject) read
+        `src-tauri/tauri.conf.json` at module load — would have crashed the whole file. Fixed by
+        dropping only its two Tauri-CSP assertions; everything else in that file is real and kept.
+      - `scripts/sync-domain-literals.mjs` had `src-tauri/tauri*.conf.json` in its rewrite target
+        list plus an entire Tauri-bundle-identifier substitution subsystem
+        (`TAURI_BUNDLE_ID_BRAND`/`LEGACY_BUNDLE_BRAND`) with zero remaining targets — removed the
+        whole subsystem and the stale `.env.example` entry documenting it.
+      - `vercel.json`: dropped the `/schemamap.xml` and `/.well-known/api-catalog` headers rules
+        and the `api-catalog`/`agent-skills-index` `Link` header rel entries (3 duplicate spots).
+        Left the `.well-known/*` rewrites (`oauth-*`, `mcp`, `http-message-signatures-directory`)
+        and the SPA catch-all's `robots.txt`/`sitemap.xml`/`schemamap.xml`/`.well-known` exclusions
+        untouched — those serve **live** dynamic routes unrelated to the deleted static files
+        (confirmed via `tests/*.test.mjs` triage, not assumption), and removing the catch-all
+        exclusions would have made now-404-correct paths silently serve the dashboard HTML instead.
+      - Tests gutted/updated for the deleted files: `tests/a2a.test.mjs` (kept the live
+        `api/a2a.ts` JSON-RPC endpoint tests, dropped only the agent-card.json-dependent half),
+        `tests/agent-skills-index.test.mjs` (deleted outright — 100% about the deleted dir/script),
+        `tests/deploy-config.test.mjs` (the big one — removed/trimmed ~7 describe blocks tied to
+        `robots.txt`/`sitemap.xml`/`schemamap.xml`/`api-catalog`/`ai-catalog.json`, kept the
+        `variant subdomain dashboard SEO` and crawlable-corpus pure-function blocks, which are
+        unrelated).
+      - Docs updated for accuracy (not CI-enforced, but was live-false otherwise): `ARCHITECTURE.md`
+        (topology diagram/table, CSP source count, CI/CD table, directory tree — flagged
+        `src/services/tauri-bridge.ts`+`runtime.ts` as deliberately-unpruned dead Tauri-IPC
+        feature-detection code, out of scope for a file/config pass), `AGENTS.md`, `README.md` +
+        `README.zh-CN.md` (dropped the CLI section and desktop-app bullets/rows), `CONTRIBUTING.md`.
+      **Verified**: every edited/new script passes `node --check`; `package.json`/`vercel.json`
+      parse as valid JSON; `sync-domain-literals.mjs --check` runs to completion (no crash — the
+      stale-literal report it prints is pre-existing drift from the separate domain-migration work
+      in `domain_migration_scope.md`, not something this pass introduced). Full `npm test`/`npm run
+      build` pass **still pending** — run those before committing.
+      **Not done, deliberately out of scope for this pass**: the `src/services/tauri-bridge.ts` +
+      `runtime.ts` dead-code prune (real app source, not a file/config removal — flagged, not
+      touched), and the `docker-publish.yml` question from the Keep list above (left as keep,
+      per the prior session's "probably keep" note — never asked about dropping it this session).
+
+- [x] **`src-tauri/sidecar/` moved to `vscode-extension/sidecar/` — DONE this session,** ahead of
+      the full removal, since the dashboard engine (`local-api-server.mjs`) and the data pipeline
+      (`local-sync.mjs`) both lived there and needed to survive `src-tauri/`'s eventual deletion.
+      Moved via `git mv` (history preserved for the 4 tracked files) +
+      plain `mv` for `local-cache.db` (gitignored) and `_domain-config.mjs` (untracked, generated).
+      **Deliberately left behind**: `sidecar/node/` (only a `.gitkeep` is tracked — the real binary
+      is downloaded at Tauri-build CI time; the VS Code extension already spawns via
+      `process.execPath`, confirmed it never touches this, so it's genuinely Tauri-only and will go
+      with the rest of `src-tauri/` next session).
+      **7 functional references updated** (verified via a full repo grep for the literal old path,
+      not just the obvious file): `vscode-extension/src/sidecarProcess.ts` (the spawn path
+      itself), root `package.json` (`local-sync` + `test:sidecar` scripts), `.gitignore`,
+      `scripts/sync-domain-config.mjs` (this session's own generated-copy target),
+      `tests/live-news-hls.test.mjs` (cross-checks the sidecar source against `vercel.json`'s and
+      `tauri.conf.json`'s CSP — real coupling, not just a mention), and `src-tauri/tauri.conf.json`'s
+      `bundle.resources` (pointed outward to `../vscode-extension/sidecar/...` so the *still-present*
+      Tauri build doesn't 404 in the interim before next session's removal).
+      **Also caught and fixed a real regression while touching `tauri.conf.json` again**: this
+      session's own earlier fix (`sidecar/_domain-config.mjs` added to `bundle.resources`) had been
+      silently wiped out by a `git checkout HEAD --` run during an unrelated incident-recovery
+      earlier tonight (that fix was never committed, so restoring to `HEAD` quietly reverted it
+      too) — re-added it as part of this move.
+      ~9 doc/comment mentions also updated for consistency (`AGENTS.md`, `ARCHITECTURE.md` — both
+      tree diagrams too, `vscode-extension/README.md`, `vscode-extension/package.json`,
+      `vscode-extension/esbuild.js`, `server/_shared/sidecar-cache.ts`, the moved
+      `local-sync.mjs`'s own self-reference). **Deliberately left alone**: `TASKS.md`'s own older
+      entries (historical record, not rewritten) and `.github/workflows/build-desktop.yml`'s
+      `test -f src-tauri/sidecar/node/node[.exe]` checks (correct as-is — `node/` didn't move).
+      **Verified**: all 3 moved `.mjs` files pass `node --check`; `npm run sync:domain-config:check`
+      clean; `npm run test:sidecar` 217/217 (the previously-flaky port-binding test happened to pass
+      clean this run too); `tests/live-news-hls.test.mjs` 50/50; `vscode-extension`'s own `tsc
+      --noEmit` clean; a final repo-wide grep for the literal old path found zero remaining stale
+      references outside the two intentional exceptions above. **Live-verified too, not just
+      tests** — operator reloaded the actual running dashboard and it loaded correctly after one
+      real deployment gotcha (see next item).
+
+- [x] **Sharp edge hit and fixed while live-verifying the move: `npm run build` alone does NOT
+      update the running extension.** VS Code doesn't load `vscode-extension/dist/` from the repo
+      checkout directly — it runs a separately-*installed* copy at `~/.vscode/extensions/
+      worldmonitor-internal.worldmonitor-local-dashboard-0.1.0/`. Rebuilding the repo's `dist/` and
+      reloading the window still ran the stale (4-days-old, pre-move) installed bundle — confirmed
+      by grepping the installed copy's `dist/extension.js` for the literal old path and finding it.
+      **The actual fix needs both steps**: `npm run package` (runs `vsce package`, produces a fresh
+      `.vsix`) then `code --install-extension <file>.vsix --force` to overwrite the installed copy
+      — `npm run build` is necessary but not sufficient. **Next session should remember this** —
+      any further `vscode-extension/` source changes (including parts of the removal work) need the
+      same package+reinstall cycle to actually take effect for live testing, not just a rebuild.
+      **Minor side effect noticed, not fixed**: packaging now bundles `vscode-extension/sidecar/*`
+      (including the 4.4MB `local-cache.db`) straight into the `.vsix`, since the sidecar physically
+      lives inside `vscode-extension/`'s own folder now (it didn't before this session's move, so
+      this never happened previously). Harmless — the extension reads the sidecar from the live
+      repo checkout at runtime via `repoRoot`, never from its own bundled copy — just wasted package
+      size. Worth a `.vscodeignore` entry excluding `sidecar/` whenever that file is next touched.
+
+---
+
 ## ✅ Resolved 2026-08-13 (ninth session, continued) — Stage 1: env-var-driven domain config
 
 **This is NOT a rename to a new domain — it's the architectural piece that makes a future rename
@@ -122,37 +256,272 @@ domain) are unchanged from before — still nothing to decide there until a doma
 
 ---
 
-## 🅿️ Parked 2026-08-13 (ninth session) — remaining tiers of the full domain migration
+## ✅ Resolved 2026-08-13 (tenth session) — Stage 2: full config-driven domain sweep
 
-**Blocked on operator decisions, not on more investigation.** Operator's stated final goal: this
-fork should stop being reachable at / referencing `worldmonitor.app` in production, on **new
-independent infra** (a separate Vercel project + a separate Cloudflare zone, not repointing the
-current ones) — but **no replacement domain has been chosen yet**. Do not start executing any part
-of this until a domain is picked; the scoping below exists so the actual migration can move fast
-once one is. **Stage 1 (the CORS-allowlist trio + its knock-on fallout) is DONE — see the ✅ section
-immediately above — this section covers what's left (Tiers 2-4 below).**
+**Operator corrected the framing a second time**: a literal domain name was never actually the
+blocker for making code *configurable* — only real infra provisioning (a new Vercel project, a new
+Cloudflare zone, the Tauri bundle identifier, a live mailbox) needs an actual domain decision.
+Everything else — every remaining hardcoded `worldmonitor.app` string in application code, CSP
+configs, and static content — could and should become `APP_DOMAIN`-driven right now, same
+mechanism as Stage 1. Explicit mandate: *"everything must be configurable... if you found something
+need to hardcode in the codebase, that is not good architecture."* Planned via `EnterPlanMode`/
+`ExitPlanMode` (plan saved as `starry-chasing-pinwheel.md`). **135 modified + 4 new files. NOT YET
+COMMITTED** (not merely unpushed — no commit has been made for this work at all; see Housekeeping).
+
+**`shared/domain-config.js` extended**: `VARIANT_SLUGS` (frozen 5-slug array, now the single source
+every variant list converges on instead of independently duplicating), `resolveVariantDomain`/
+`resolveVariantOrigin`/`resolveVariantOrigins`, `resolveAbacusOrigin` (Umami analytics-collector
+subdomain), `resolveSubdomainOrigin` (generic), and 3 CSP-origin builders
+(`buildCspFrameSrcOrigins`/`buildCspFrameAncestorsOrigins`/`buildCspFormActionOrigins` — kept as 3
+named functions rather than one flag-driven function, since the 3 CSP directives use different
+orderings of the same origins). New `src/config/domain.ts` — the single client-side import point,
+wrapping `import.meta.env.VITE_APP_DOMAIN` (itself synthesized in `vite.config.ts`'s `define` block
+from server-side `APP_DOMAIN`) so every browser file imports one place instead of each reading
+`import.meta.env` independently.
+
+- [x] **~20 functional/runtime files wired**: `middleware.ts` (`VARIANT_HOST_MAP`/`VARIANT_OG`/
+      `ALLOWED_HOSTS`/the `/mcp` redirect, all now derived from `VARIANT_SLUGS` instead of hand-
+      mirroring `variant-meta.ts`), `src/config/variant-meta.ts` (removed the static `VARIANT_META`
+      export, added `buildVariantMeta(rawDomain)` factory + `resolveVariantMetaUrl`),
+      `api/mcp/downstream.ts` (`MCP_CANONICAL_API_ORIGIN` const → function, recomputed per call),
+      `src/services/analytics.ts` (`UMAMI_SCRIPT_SRC` → `resolveAbacusOrigin`; preserved
+      `UMAMI_DOMAINS`'s deliberately-reduced apex+www+happy-only subset, a documented
+      upstream-Umami-bug workaround — only the domain string became configurable, not the reduced
+      set itself), `src/bootstrap/debugbear-rum.ts`, `src/services/runtime.ts` (left its
+      pre-existing 3-of-5-variant `APP_HOSTS` gap alone, flagged not silently "completed"),
+      `api/oauth/authorize.js`, `server/_shared/brief-render.js` (found via manual sweep, missed by
+      earlier automated exploration — `renderBackCover`, `UMAMI_LOADER`'s own distinct reduced
+      subset, `publicStripHref`), plus ~10 more single-purpose origin-constant files.
+- [x] **New `scripts/sync-domain-literals.mjs`** — literal-substring substitution (not templating)
+      across 46 static files: CSP configs (`vercel.json`, both nginx confs, `src-tauri/
+      tauri.conf.json`) + SEO/agent-discovery content (25 `SKILL.md` files, `agent-card.json`,
+      `ai-catalog.json`, `api-catalog`, `webhook-sample.json`, 9 `sandbox/*.json` fixtures,
+      `robots.txt`, `schemamap.xml`, `wm-widget-sandbox.html`, `index.html`). True no-op when
+      `APP_DOMAIN=worldmonitor.app` matches the real committed content (verified: `npm run
+      sync:domain-literals:check` passes clean against the repo's actual `.env`-configured domain).
+      **Important limitation, hit twice this session (see below)**: this is a one-time migration
+      tool, not a bidirectional generator — it only replaces occurrences of the literal
+      `worldmonitor.app`, so once a file has been rewritten to some *other* domain, re-running it
+      with `APP_DOMAIN=worldmonitor.app` finds nothing left to substitute and silently reports
+      clean. **The only real revert is `git checkout`, never re-running the script "backwards."**
+- [x] **~29 `scripts/*.mjs` files repointed to a generated local copy**, not a `../shared/` import —
+      discovered mid-session that `scripts/` is deployed standalone to Railway
+      (`rootDirectory: scripts`), so a `../shared/` import resolves fine in dev but crashes at
+      runtime in prod (caught by `tests/nixpacks-seeder-import-graph.test.mjs`/
+      `tests/scripts-railway-nixpacks-no-escape-import.test.mts`). Fixed by extending
+      `scripts/sync-domain-config.mjs` to generate a second copy at `scripts/_domain-config.mjs`
+      (`.mjs`, not `.js` — `scripts/package.json` has no `"type": "module"`, so a plain `.js` copy
+      gets treated as CommonJS by tsx's strict loader) alongside the existing `api/_domain-config.js`.
+- [x] **All remaining server/client files + coupled tests fixed** (~30 test files touched — regex-
+      extraction tests like `csp-filter.test.mjs`/`sentry-beforesend.test.mjs` needed domain values
+      passed as explicit function parameters since `new Function()` reconstruction has no closure
+      over module imports; browser-side tests built expected values from the same resolver the
+      source imports, since `import.meta.env.VITE_APP_DOMAIN` is never populated under plain
+      `tsx --test`).
+
+**2 real, live pre-existing bugs found and fixed along the way, with explicit operator go-ahead
+("Fix now, same session")**:
+- [x] **13+ files hardcoded `koala73/worldmonitor` as the canonical GitHub repo** instead of the
+      real `origin` remote (`powerpro-led/worldmonitor`) — same discrepancy already flagged (not
+      fixed) during Stage 1's Tier-1 scoping (`cli/package.json` was one of the 13, covered by the
+      same fix as the Housekeeping item above). Personal profile links for "Elie Habib"
+      (`github.com/koala73`, a real person, not the repo) were correctly identified and left
+      untouched throughout.
+- [x] **`src/app/desktop-updater.ts`'s `/api/version`/`/api/download` fetch URLs were hardcoded to
+      the `api.worldmonitor.app` subdomain**, but these are plain Vercel functions at same-origin
+      `/api/*` paths, not the sebuf-gateway `api.` subdomain — fixed to use `APP_ORIGIN`. Affects the
+      live desktop auto-updater.
+
+**Verification found and fixed 2 real regressions**, both confirmed via the `git stash` A/B
+methodology (40-failure baseline, compared by failure *name* not count):
+- [x] **`Dockerfile.digest-notifications` was missing `COPY` lines** for the two new domain-config
+      dependency files (`scripts/_domain-config.mjs`, imported by `seed-digest-notifications.mjs`;
+      `shared/domain-config.js`, imported transitively via `brief-render.js`) — guarded by
+      `tests/dockerfile-digest-notifications-imports.test.mjs`, fixed by adding both `COPY` lines.
+- [x] **CSP `script-src` hashes in `vercel.json`/both nginx confs went stale** — an inline
+      `<script>` in one of the 4 hashed HTML entry points changed byte-for-byte during the sweep —
+      fixed via the existing `npm run sync:csp-hashes` (built in an earlier session specifically for
+      this failure mode).
+- Also confirmed via re-run (not a regression, pure environmental flake): `relay /health exposes
+  auth.enabled`/`reports auth.enabled=false when bypass is engaged`
+  (`tests/relay-auth.test.mjs`) — a real `EADDRINUSE` port collision under full-suite concurrency
+  (test spawns a real WebSocket relay on a random port), passes clean in isolation. New to this
+  session's testing but the same flakiness *class* as the already-documented ⚪ #9/#12 below — not
+  added as its own numbered ⚪ entry since it's concurrency/port-timing noise, not a stable
+  reproducible pre-existing name like the others.
+
+**Full verification**: `typecheck:all`, `enforce-sebuf-api-contract.mjs`, `docs:check` clean; all
+sync `--check` scripts clean (`sync:domain-config`, `sync:domain-literals`, `sync:csp-hashes`);
+`npm run test:data` matches the 40-failure baseline exactly by name (zero new regressions, two full
+`git stash` A/B passes run); `npm run test:sidecar` 216/217 (the 1 failure is a live VS Code
+extension sidecar on this dev machine genuinely holding port 46123, unrelated to any code change —
+see [[local_pipeline_and_vscode_dagu_plan]]); a real `wrangler deploy --dry-run` for
+`workers/api-cors-preflight` succeeded (15KB bundle, all bindings resolve); two real `npm run build`
+passes (default `worldmonitor.app` from `.env`, and an explicit `APP_DOMAIN=example.com`) both
+produced correctly domain-propagated `dashboard.html` (canonical/og/preconnect origins actually
+switch with the config, confirmed by direct inspection of the built HTML, not just "didn't crash").
+
+**Deliberately still deferred, unchanged**: real infra provisioning (new domain, Vercel/Cloudflare
+zone, Tauri bundle identifier, live mailbox) — see the 🅿️ Parked section below, now narrowed to just
+this. Docs/README/CI-workflow `koala73` references — deliberately left alone this pass, flagged for
+later. Pushing/committing — see Housekeeping.
+
+---
+
+## ✅ Resolved 2026-08-13 (eleventh session) — Stage 3: the 2 remaining hardcodes made configurable
+
+**Operator pushed back on Stage 2's framing**: the Tauri bundle identifier and the live contact
+mailbox were left as literals with the reasoning "these need an explicit human go/no-go, not a
+default assumption" — operator's response: config-driven and requiring-a-decision aren't mutually
+exclusive; for genuine multi-instance/white-label support (the Stage 1 mandate), both should be
+env-driven too, just with safe defaults so the *existing* instance's behavior doesn't silently
+change. Implemented both, config-only (no infra decision made or needed to land this).
+
+- [x] **Contact mailbox (`shared/hapi-app-identifier.json`'s `email` field) now derives from
+      `APP_DOMAIN`** — added it (and its Railway-mirror copy, `scripts/shared/hapi-app-identifier.json`
+      — required by `tests/scripts-shared-mirror.test.mjs`'s byte-identical check, would have silently
+      desynced otherwise) to `scripts/sync-domain-literals.mjs`'s target-file list; the script's
+      existing bare-hostname substitution rule handles it with zero new logic. Deliberately did NOT
+      touch the sibling `application` field — `scripts/seed-conflict-intel.mjs`'s own comment
+      documents that HDX HAPI 429s any `application` value case-insensitively containing
+      "worldmonitor" (confirmed live by an earlier session's probing), which is exactly why that
+      field already reads `wm-crisis-tracker` instead of the brand name; the same comment confirms
+      the `email` field was separately probe-verified NOT part of that trigger, so deriving it from
+      `APP_DOMAIN` is safe.
+- [x] **The 3 Tauri desktop bundle identifiers made configurable via a new, deliberately separate
+      `TAURI_BUNDLE_ID_BRAND` env var** (`src-tauri/tauri.conf.json`, `tauri.tech.conf.json`,
+      `tauri.finance.conf.json` — the latter two are a second hardcode surface `grep -rli
+      worldmonitor.app` never caught, since their identifiers read `app.worldmonitor.desktop`-style,
+      i.e. the bare brand token without a `.app` suffix, not the literal domain string). NOT tied to
+      `APP_DOMAIN`, on purpose — unlike every other domain-derived value, changing an OS-level bundle
+      identifier makes the OS treat it as a different app, breaking the auto-update chain for
+      everyone with the current app already installed (same "not cosmetic" concern the Parked
+      section's item 5 already flagged). Unset defaults to today's exact literals (verified byte-
+      identical, see below), so setting `APP_DOMAIN` alone can never silently change app identity —
+      an operator has to opt in to a new brand token explicitly and separately, which is the
+      "explicit go/no-go" the earlier session wanted, just now expressed as a second env var instead
+      of a permanent code literal.
+
+**A real close call during verification, caught and fully repaired before handoff — sharpens the
+Stage 2 "one-way-only" warning rather than just repeating it.** Live-testing with
+`APP_DOMAIN=example.com TAURI_BUNDLE_ID_BRAND=examplecorp npm run sync:domain-literals` (to prove the
+substitution actually works) wrote `example.com`/`examplecorp` into all ~46 target files, not just the
+handful being spot-checked — and `git checkout` was only run against 2-4 of them. Because `--check`
+can only detect the ORIGINAL `worldmonitor.app` literal (documented one-way limitation), it reported
+a false-clean "OK" against the still-polluted files — checked, trusted, and moved on. A second
+live-test + partial revert compounded it, and a stray `import()` of the script (to introspect its
+file list) executed its `main()` for real with `APP_DOMAIN` unset, overwriting the 2
+`hapi-app-identifier.json` copies with a `localhost:3000`-derived email. **Net effect: ~46 files sat
+silently polluted for several tool calls before being noticed** by a plain `grep -rl example.com`
+sweep across the actual target-file list — `--check` alone had already given a clean bill of health.
+Fixed via exact reverse-substitution (recomputing the same `[correct, polluted]` pairs the polluting
+run used and replacing polluted→correct token-for-token), NOT `git checkout`, since some of these
+files (`vercel.json` in particular) carry real uncommitted Stage 2 content — a CSP script-hash fix —
+that a blind revert-to-HEAD would have destroyed alongside the pollution. Verified the repair is
+exact, not just plausible, three ways: `APP_DOMAIN=worldmonitor.app npm run sync:domain-literals:check`
+clean (50 files, up from 46 in Stage 2 — +2 Tauri variant confs +2 `hapi-app-identifier.json` copies);
+a full `npm run test:data` re-run landed on exactly the documented 40-failure baseline by name (`readBootstrapTierObject`,
+`Bootstrap endpoint`, `browser bundle secret guard`, `CI workflow coverage`, `Edge Function no node:
+built-ins`, `no non-timing-safe secret comparison`, `Railway service registry coverage` — the known
+pre-existing set, not new content-mismatch failures); `docs:check`, `sync:domain-config:check`, and
+`sync:csp-hashes:check` all clean. **Lesson for next time, sharper than Stage 2's own**: after ANY
+write-mode test run of this script with a non-real `APP_DOMAIN`, `git status --short` the full repo
+(not just the files you meant to touch) before doing anything else — `--check` passing is not proof
+of a clean tree, only proof no `worldmonitor.app` literals remain, which a polluted-to-something-else
+file also satisfies.
+
+**A second, worse near-miss the same session, worth its own entry — `sync-domain-literals.mjs`'s
+substitution is LOSSY for any local (`localhost`-shaped) `APP_DOMAIN`, not just one-way.** Operator
+asked, mid-session, for the local default itself to stop resolving to `worldmonitor.app` ("we are
+not them, use localhost"). Blanking `.env`'s `APP_DOMAIN` and re-running the generator against the
+`localhost:3000` default did NOT just "de-brand" the 48 static target files — `shared/
+domain-config.js`'s documented local-domain collapse (`www.`/`api.`/`abacus.`/every variant
+subdomain all resolve to the same bare apex origin on a local domain, by design, for dev
+convenience) made the generator's domain→literal mapping many-to-one instead of one-to-one for that
+input. Concretely, live-verified before revert: `vercel.json`'s 5 variant-subdomain `Host`-header
+routing rules all collapsed to the identical `tech.localhost:3000`-shaped value (breaking
+tech/finance/commodity/happy/energy routing entirely — a `Host` header matching a literal that no
+real request will ever carry); `public/wm-widget-sandbox.html`'s postMessage origin-allowlist became
+`url.hostname === 'localhost:3000'`, which can never be true since `URL.hostname` never includes a
+port; CSP `frame-src`/`frame-ancestors` degenerated to the same origin repeated 7 times; `did:web:
+localhost:3000` is not valid DID syntax (the port needs percent-encoding). **Then the attempted fix
+compounded it**: reversing the substitution by replacing the polluted value back to its
+pre-substitution counterpart assumes a 1:1 mapping — since the forward mapping had just collapsed 7
+distinct origins into 1, the reverse pass could only recover ONE of them (whichever pair matched
+first in iteration order, `abacus.`), silently overwriting index.html's canonical/OG tags,
+`vercel.json`'s frame-src list, etc. with `abacus.worldmonitor.app` in spots that should have said
+the bare apex, `www.`, `tech.`, etc. — caught only by a full `test:data` re-run showing 56 failures
+instead of the expected 40, not by `--check` (still reported clean) or a spot-check (only spotted
+one broken line, not the systemic mis-restore). **Real fix**: `git diff HEAD` first, to confirm the
+target files are pure literal-substitution content with `HEAD`'s domain-literal portions already
+correct-by-construction (true for 45 of 48; `vercel.json` + both nginx confs additionally carry a
+live, uncommitted CSP-hash fix) — then `git checkout HEAD --` those 45 outright, and for the CSP-hash-
+bearing 3 files, `git checkout HEAD --` first (accepting the temporary loss of the hash fix) followed
+by `npm run sync:csp-hashes` to cleanly reapply it on top of the now-correct content. Verified via a
+full `git diff HEAD` sanity read on `vercel.json` (both the `Host` rules and the CSP directive), the
+same `wm-widget-sandbox.html` grep, `sync:domain-literals:check` + `sync:csp-hashes:check` clean, and
+a full `npm run test:data` back to the 7-category baseline. **`.env`'s `APP_DOMAIN` was restored to
+`worldmonitor.app`, unchanged from before this session** — the operator's actual goal (nothing in the
+*dynamic*/runtime application code defaults to the brand) was already true before this attempt and
+needed no change; only the *static*-file generator was ever a candidate for a `localhost` target, and
+it turns out to have no coherent one for the very files (CSP, host-routing) where the domain has to
+be a real, distinct, addressable value to mean anything. **Lesson**: never point
+`sync-domain-literals.mjs` at a local domain for real — it was designed and tested for "swap one real
+domain literal for another," and both its forward substitution and any hand-rolled reverse of it
+silently corrupt content once genuinely distinct target values collapse to one.
+
+**Still deliberately hardcoded, unchanged**: nothing else identified — the 🅿️ Parked section's
+remaining items (new domain, Vercel project, Cloudflare zone, live mailbox actually receiving mail,
+and now optionally a real `TAURI_BUNDLE_ID_BRAND` value) are all real-world provisioning/product
+decisions, not code. `TAURI_BUNDLE_ID_BRAND`/the mailbox's `APP_DOMAIN`-derived value are both now
+*capable* of following a real domain choice the moment one is made — no further code change needed.
+
+---
+
+## 🅿️ Parked 2026-08-13 (ninth session; narrowed tenth session) — real infra provisioning only
+
+**Blocked on operator decisions, not on more investigation — and now a much smaller list than
+originally scoped.** Operator's stated final goal: this fork should stop being reachable at /
+referencing `worldmonitor.app` in production, on **new independent infra** (a separate Vercel
+project + a separate Cloudflare zone, not repointing the current ones) — but **no replacement
+domain has been chosen yet**. **Stage 1 + Stage 2 + Stage 3 (the CORS-allowlist trio, the full
+codebase/CSP/static-content configurability sweep, and making the Tauri identifier + contact
+mailbox configurable) are DONE — see the three ✅ sections immediately above.** What's left below is
+*only* the handful of things that genuinely require real-world action, not more code — a new Vercel
+project, a new Cloudflare zone, an actual go/no-go + value for the Tauri bundle identifier, and an
+actual working mailbox (items 1-3 and 5-6 in the "Needed before any code changes" list right below).
+The original Tier 2-4 file-count breakdown further down is now **stale/superseded** by Stage 2's
+actual sweep — kept only for historical reference, not as a to-do list.
 
 **Scale**: `grep -rli worldmonitor\.app` (excluding node_modules/dist/git/build artifacts) hit
-**339 files** before Stage 1. That count is now stale in the good direction — Stage 1 (above)
-resolved the CORS trio, `api/wm-session.js`'s cookie-domain hardcode, and ~60 test files' fixture
-usage — but the Tier breakdown and file counts below were captured pre-Stage-1 and haven't been
-re-run; treat them as directional, not exact, until a fresh grep is done.
+**339 files** before Stage 1. That count is now stale in the good direction — Stage 1 resolved the
+CORS trio, `api/wm-session.js`'s cookie-domain hardcode, and ~60 test files' fixture usage; **Stage
+2 (tenth session, see the ✅ section above) resolved effectively everything else that didn't require
+real infra** — the Tier breakdown and file counts immediately below predate both stages and are now
+**superseded/historical**, not a live to-do list; the only genuinely still-open items are the
+infra-provisioning decisions in this "Needed before any code changes" list.
 
 **Needed before any code changes** (operator/infra decisions, not something to guess at):
 1. The new domain name itself (registered + DNS-controllable).
 2. A new Vercel project provisioned under it.
 3. A new Cloudflare zone + Worker route provisioned under it (mirrors the current
    `workers/api-cors-preflight` binding to `api.worldmonitor.app/*`).
-4. Whether the 5 "variant" subdomains (`tech.`/`finance.`/`commodity.`/`happy.`/`energy.
-   worldmonitor.app` — see `src/config/variants/*.ts`, the Tauri CSP's `frame-src`) carry over as
-   the same concept on the new domain, or get dropped/renamed.
-5. Whether the Tauri desktop app's bundle identifier (`app.worldmonitor.desktop` in
-   `src-tauri/tauri.conf.json:6`) changes. **This is not cosmetic** — changing it breaks the
-   auto-update chain for anyone with the app already installed (a new identifier = a new app
-   identity to the OS; existing installs won't silently follow). Needs an explicit go/no-go, not a
-   default assumption either way.
-6. A real, working mailbox on the new domain before cutover — `shared/hapi-app-identifier.json`
-   hardcodes `monitor@worldmonitor.app` as a live contact address, not just a string.
+4. ~~Whether the 5 "variant" subdomains carry over~~ — **moot as a blocking decision now**: Stage 2
+   made every variant subdomain (`tech.`/`finance.`/`commodity.`/`happy.`/`energy.<domain>` —
+   `src/config/variants/*.ts`, the Tauri CSP's `frame-src`) derive from `VARIANT_SLUGS` +
+   `APP_DOMAIN`, so they automatically carry over to whatever domain gets picked with no further
+   code change; still worth an explicit product call on whether to keep/drop/rename individual
+   variants, but that's no longer a domain-migration blocker.
+5. **Code-ready as of Stage 3 (eleventh session), decision itself still open.** Whether the Tauri
+   desktop app's bundle identifier changes is still a real, standalone go/no-go — changing it
+   breaks the auto-update chain for anyone with the app already installed (a new identifier = a new
+   app identity to the OS; existing installs won't silently follow) — but it's no longer a code
+   change to execute once decided: `TAURI_BUNDLE_ID_BRAND` (see the Stage 3 ✅ section above) now
+   drives all 3 `src-tauri/tauri*.conf.json` identifiers, unset = today's exact literals.
+6. **Code-ready as of Stage 3, only the real mailbox itself still needed.** `shared/
+   hapi-app-identifier.json`'s `email` field now derives from `APP_DOMAIN` automatically (Stage 3);
+   what's still missing is a real inbox actually receiving mail at whatever address that resolves
+   to, before cutover.
 7. Whether to fix the `ALLOWED_ORIGIN_PATTERNS`/`PRODUCTION_PATTERNS` **triple-duplication** (hand-
    synced today across `api/_cors.js`, `server/cors.ts`, and `workers/api-cors-preflight/src/
    index.js`, each with a header comment saying "keep in sync") as *part of* the migration —
@@ -905,23 +1274,34 @@ test` path.
       fixes, `IS_EMBEDDED_PREVIEW` removal, and the Dodo sweep) pushed to `origin/main`
       2026-08-13** — operator go-ahead given; `main`/`origin/main` confirmed in sync
       (`f233f7c..056d990`).
-- [ ] **Ninth session's 3 commits are committed locally but NOT pushed** — `5e80a62` (CORS `DELETE`
-      re-audit + stale probe mock), `4ef902a` (docs-only domain-migration scoping in this file),
-      `c62a798` (domain-config Stage 1). Confirmed via `git branch -vv`: `main` is 3 ahead of
-      `origin/main`. `5e80a62` and `c62a798` both touch `workers/api-cors-preflight/**`, which
-      triggers a real Cloudflare Worker deploy via `.github/workflows/deploy-worker.yml` on push to
-      `main` — needs an explicit operator go-ahead before pushing, same standing convention as every
-      other session. (`4ef902a` alone would be safe to push — it's docs-only — but pushing out of
-      order would leave `main` history with the Worker-affecting commits still stacked on top
-      locally; simplest to push all 3 together once given the go-ahead.)
-- [ ] **2 small items noticed during the ninth session's domain-config work, not fixed (flagging,
-      not urgent)**: `server/gateway.ts:1304` has an unrelated cosmetic hardcode —
-      `planKey && planKey !== 'enterprise' ? 'https://worldmonitor.app/' : undefined` — a redirect
-      link, not a CORS/security gate, out of Stage 1's scope; `cli/package.json`'s
-      `repository.url`/`bugs` point at `github.com/koala73/worldmonitor`, which does not match this
-      repo's actual `origin` remote (`github.com/powerpro-led/worldmonitor`) — looks like stale
-      metadata from before this fork existed, unrelated to the domain-config work, noticed
-      incidentally while auditing that same file for domain migration Tier 1.
+- [ ] **Ninth session's 4 commits are committed locally but NOT pushed** (one more than previously
+      recorded — `d6b92cb` was added closing out the ninth session, a docs-only housekeeping-count
+      correction in this file) — `d6b92cb`, `5e80a62` (CORS `DELETE` re-audit + stale probe mock),
+      `4ef902a` (docs-only domain-migration scoping in this file), `c62a798` (domain-config Stage
+      1). Confirmed via `git branch -vv`: `main` is 4 ahead of `origin/main`, **verify this count
+      yourself before trusting it** — it has drifted between sessions before. `5e80a62` and
+      `c62a798` both touch `workers/api-cors-preflight/**`, which triggers a real Cloudflare Worker
+      deploy via `.github/workflows/deploy-worker.yml` on push to `main` — needs an explicit operator
+      go-ahead before pushing, same standing convention as every other session. Simplest to push all
+      4 together once given the go-ahead (pushing the docs-only ones out of order would leave `main`
+      history with the Worker-affecting commits still stacked on top locally).
+- [x] **2 small items noticed during the ninth session's domain-config work — RESOLVED tenth
+      session**, see the Stage 2 ✅ section above: `server/gateway.ts:1304`'s cosmetic hardcode now
+      uses `resolveAppOrigin(process.env.APP_DOMAIN)`; `cli/package.json`'s `repository.url`/`bugs`/
+      `homepage` now point at the real `origin` remote (`github.com/powerpro-led/worldmonitor`).
+- [ ] **Tenth session's entire Stage 2 sweep (135 modified + 4 new files) is UNCOMMITTED** — not
+      merely unpushed, no commit exists for this work yet at all. Needs an explicit decision on
+      commit granularity (one large commit vs. several logical ones — e.g. core module +
+      client-plumbing / functional-code wiring / static-content sync / bugfixes / Dockerfile+CSP
+      regression fixes) before it can even be considered for push. Once committed, it joins the
+      same `workers/`-adjacent push-gate as the items above (`scripts/_domain-config.mjs`
+      generation touches ops scripts deployed to Railway, not Cloudflare, but several touched files
+      — `middleware.ts`, `api/mcp/downstream.ts`, `api/oauth/authorize.js` — are security/CORS/
+      routing-relevant enough to warrant the same explicit-go-ahead treatment as a Worker-touching
+      commit, even though this particular sweep didn't touch `workers/api-cors-preflight/**`
+      itself). **Read the tenth-session ✅ section above in full before touching any of this again**
+      — it documents a sharp edge (`sync-domain-literals.mjs` can only be reverted via `git
+      checkout`, never by re-running itself) that cost real time twice in one session.
 
 ---
 

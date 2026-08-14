@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { GDELT_COUNTRY_NAMES, gdeltSeenDateToIso } from './_conflict-gdelt.mjs';
 import { allSettledWithConcurrency } from './_seed-utils.mjs';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const GDELT_STORAGE_ORIGIN = 'https://storage.googleapis.com/data.gdeltproject.org';
 export const GDELT_MASTER_FILELIST_URL = `${GDELT_STORAGE_ORIGIN}/gdeltv2/masterfilelist.txt`;
@@ -21,7 +22,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 export const GDELT_ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const GDELT_BULK_WORST_NETWORK_MS = REQUEST_TIMEOUT_MS
   * (1 + Math.ceil(RECENT_EXPORT_COUNT / EXPORT_FETCH_CONCURRENCY));
-const USER_AGENT = 'WorldMonitor/1.0 (+https://www.worldmonitor.app)';
+const USER_AGENT = `WorldMonitor/1.0 (+${resolveWwwOrigin(process.env.APP_DOMAIN)})`;
 const MATERIAL_VIOLENCE_ROOT_CODES = new Set(['18', '19', '20']);
 
 // GDELT ActionGeo_CountryCode uses FIPS 10-4 rather than ISO-2.

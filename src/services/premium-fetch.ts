@@ -36,6 +36,7 @@ import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
 import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '@/shared/pro-fresh-rpc';
 import { isDesktopRuntime } from './runtime';
+import { APP_ORIGIN } from '@/config/domain';
 
 /**
  * Test seam — set in unit tests to inject key/token providers without needing
@@ -73,7 +74,7 @@ export function reportServerError(
   if (res.headers.get('X-Wm-Session-Degraded') === '1') return;
   try {
     const href = input instanceof Request ? input.url : String(input);
-    const path = new URL(href, globalThis.location?.href ?? 'https://worldmonitor.app').pathname;
+    const path = new URL(href, globalThis.location?.href ?? APP_ORIGIN).pathname;
     // Cloudflare edge errors (520-527) are CDN<->origin transport failures, not
     // origin application errors — a single one is a transient blip. Capture at
     // `warning` so a sustained outage still escalates by volume without a lone
@@ -103,7 +104,7 @@ function isPremiumRpcTarget(input: RequestInfo | URL, forcePremium = false): boo
   if (forcePremium) return true;
   try {
     const href = input instanceof Request ? input.url : String(input);
-    const path = new URL(href, globalThis.location?.href ?? 'https://worldmonitor.app').pathname;
+    const path = new URL(href, globalThis.location?.href ?? APP_ORIGIN).pathname;
     return PREMIUM_RPC_PATHS.has(path);
   } catch {
     // If we can't parse the URL, fall through to the strict path: keep
@@ -116,7 +117,7 @@ function isPremiumRpcTarget(input: RequestInfo | URL, forcePremium = false): boo
 function isProFreshCacheRpcTarget(input: RequestInfo | URL): boolean {
   try {
     const href = input instanceof Request ? input.url : String(input);
-    const path = new URL(href, globalThis.location?.href ?? 'https://worldmonitor.app').pathname;
+    const path = new URL(href, globalThis.location?.href ?? APP_ORIGIN).pathname;
     return PRO_FRESH_CACHE_RPC_PATHS.has(path);
   } catch {
     return false;

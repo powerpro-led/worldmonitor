@@ -34,7 +34,6 @@ World Monitor is a real-time OSINT dashboard built with **Vanilla TypeScript** (
 | **deck.gl** | WebGL overlay layers (scatterplot, geojson, arcs, heatmaps) |
 | **d3** | Charts, sparklines, and data visualization |
 | **Vercel Edge Functions** | Serverless API gateway |
-| **Tauri v2** | Desktop app (Windows, macOS, Linux) |
 | **Convex** | Minimal backend (beta interest registration only) |
 | **Playwright** | End-to-end and visual regression testing |
 
@@ -69,7 +68,7 @@ Variants share all code but differ in default panels, map layers, and RSS feeds.
 | `proto/` | Protobuf service and message definitions |
 | `data/` | Static JSON datasets |
 | `docs/` | Documentation + generated OpenAPI specs |
-| `src-tauri/` | Tauri v2 Rust app + Node.js sidecar for desktop builds |
+| `vscode-extension/sidecar/` | Node.js sidecar (VS Code extension dashboard engine + cloud→local pipeline) |
 | `e2e/` | Playwright end-to-end tests |
 | `scripts/` | Build and packaging scripts |
 

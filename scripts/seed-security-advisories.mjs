@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { loadEnvFile, loadSharedConfig, CHROME_UA, runSeed } from './_seed-utils.mjs';
+import { resolveProxyOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -37,7 +38,7 @@ const ADVISORY_FEEDS = [
   { name: 'WHO Africa Emergencies', sourceCountry: 'INT', sourceCategory: 'health', url: 'https://www.afro.who.int/rss/emergencies.xml' },
 ];
 
-const RELAY_URL = process.env.RELAY_URL || 'https://proxy.worldmonitor.app';
+const RELAY_URL = process.env.RELAY_URL || resolveProxyOrigin(process.env.APP_DOMAIN);
 
 function parseUsLevel(title) {
   const m = title.match(/Level (\d)/i);

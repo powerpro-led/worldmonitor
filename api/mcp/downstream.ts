@@ -4,16 +4,21 @@ import type {
   McpAuthContext,
   McpToolExecutionContext,
 } from './types';
+import { resolveApiOrigin, resolveVariantDomain, normalizeDomain, VARIANT_SLUGS } from '../../shared/domain-config.js';
 
-export const MCP_CANONICAL_API_ORIGIN = 'https://api.worldmonitor.app';
+/**
+ * The canonical MCP API origin — a function, not a module-level constant, so
+ * it's recomputed per call and picks up APP_DOMAIN changes mid-process (e.g.
+ * tests calling setTestAppDomain()), same reasoning as server/cors.ts.
+ */
+export function resolveMcpCanonicalApiOrigin(): string {
+  return resolveApiOrigin(process.env.APP_DOMAIN);
+}
 
-const VARIANT_HOSTS: ReadonlySet<string> = new Set([
-  'tech.worldmonitor.app',
-  'finance.worldmonitor.app',
-  'commodity.worldmonitor.app',
-  'happy.worldmonitor.app',
-  'energy.worldmonitor.app',
-]);
+function variantHosts(): ReadonlySet<string> {
+  const domain = process.env.APP_DOMAIN;
+  return new Set(VARIANT_SLUGS.map((slug) => resolveVariantDomain(domain, slug)));
+}
 
 const SAFE_GATEWAY_ERROR_CODES: ReadonlySet<string> = new Set([
   'invalid_internal_mcp_signature',
@@ -85,11 +90,12 @@ type DownstreamObservation = {
 
 function classifyMcpInboundHost(hostname: string): McpToolExecutionContext['inboundHostClass'] {
   hostname = hostname.toLowerCase();
-  if (hostname === 'api.worldmonitor.app') return 'canonical_api';
-  if (hostname === 'worldmonitor.app') return 'apex';
-  if (hostname === 'www.worldmonitor.app') return 'www';
-  if (VARIANT_HOSTS.has(hostname)) return 'variant';
-  if (hostname.endsWith('.worldmonitor.app')) return 'worldmonitor_subdomain';
+  const domain = normalizeDomain(process.env.APP_DOMAIN);
+  if (hostname === `api.${domain}`) return 'canonical_api';
+  if (hostname === domain) return 'apex';
+  if (hostname === `www.${domain}`) return 'www';
+  if (variantHosts().has(hostname)) return 'variant';
+  if (hostname.endsWith(`.${domain}`)) return 'worldmonitor_subdomain';
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return 'local';
   if (hostname.endsWith('.vercel.app')) return 'vercel_preview';
   return 'other';
@@ -98,12 +104,14 @@ function classifyMcpInboundHost(hostname: string): McpToolExecutionContext['inbo
 export function createMcpToolExecutionContext(requestUrl: string): McpToolExecutionContext {
   const inbound = new URL(requestUrl);
   const inboundHostClass = classifyMcpInboundHost(inbound.hostname);
+  const domain = normalizeDomain(process.env.APP_DOMAIN);
   const isProductionWorldMonitorHost = (
-    inbound.hostname === 'worldmonitor.app'
-    || inbound.hostname.endsWith('.worldmonitor.app')
+    inbound.hostname === domain
+    || inbound.hostname.endsWith(`.${domain}`)
   );
+  const canonicalApiOrigin = resolveMcpCanonicalApiOrigin();
   const downstreamOrigin = isProductionWorldMonitorHost
-    ? MCP_CANONICAL_API_ORIGIN
+    ? canonicalApiOrigin
     : inbound.origin;
   return {
     inboundHostClass,
@@ -111,8 +119,8 @@ export function createMcpToolExecutionContext(requestUrl: string): McpToolExecut
     // Only the canonical public origin is recorded verbatim. Non-production
     // origins collapse to their bounded host class so preview names, local
     // ports, and self-hosted domains never enter telemetry.
-    downstreamOriginTag: downstreamOrigin === MCP_CANONICAL_API_ORIGIN
-      ? MCP_CANONICAL_API_ORIGIN
+    downstreamOriginTag: downstreamOrigin === canonicalApiOrigin
+      ? canonicalApiOrigin
       : inboundHostClass,
   };
 }

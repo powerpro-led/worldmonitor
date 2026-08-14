@@ -6,7 +6,8 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { brotliCompress } from 'zlib';
 import { promisify } from 'util';
 import pkg from './package.json';
-import { VARIANT_META, type VariantMeta } from './src/config/variant-meta';
+import { buildVariantMeta, type VariantMeta } from './src/config/variant-meta';
+import { resolveProxyOrigin } from './shared/domain-config.js';
 import {
   WEB_DASHBOARD_VARIANTS,
   renderVariantDashboardHtml,
@@ -838,7 +839,8 @@ export default defineConfig(({ mode }) => {
   const isE2E = process.env.VITE_E2E === '1';
   const isDesktopBuild = process.env.VITE_DESKTOP_RUNTIME === '1';
   const activeVariant = process.env.VITE_VARIANT || 'full';
-  const activeMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
+  const variantMetaMap = buildVariantMeta(process.env.APP_DOMAIN);
+  const activeMeta = variantMetaMap[activeVariant] || variantMetaMap.full;
 
   return {
     // Default '/' resolves every root-absolute asset reference (both the
@@ -863,6 +865,12 @@ export default defineConfig(({ mode }) => {
       // detects the marker and skips the comparison so dev tabs don't
       // reload on every focus.
       __BUILD_HASH__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev'),
+      // Synthesizes a client-visible import.meta.env.VITE_APP_DOMAIN from the
+      // server-side APP_DOMAIN env var (not VITE_-prefixed, so it never reaches
+      // the client bundle on its own — see shared/domain-config.js). Keeps
+      // APP_DOMAIN the single operator-facing knob; no separate VITE_APP_DOMAIN=
+      // needed in .env files.
+      'import.meta.env.VITE_APP_DOMAIN': JSON.stringify(process.env.APP_DOMAIN ?? ''),
     },
     plugins: [
       // Emit dist/build-hash.txt with the deployed SHA so the running bundle
@@ -1258,7 +1266,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // Widget agent — forward to Railway relay for SSE streaming
         '/widget-agent': {
-          target: 'https://proxy.worldmonitor.app',
+          target: resolveProxyOrigin(process.env.APP_DOMAIN),
           changeOrigin: true,
         },
         // Yahoo Finance API

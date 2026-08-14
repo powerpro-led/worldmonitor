@@ -1,5 +1,13 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { getSubdomainOrigin } from '@/config/domain';
+
+// Built from the same @/config/domain resolver country-geometry.ts itself
+// uses, rather than a hardcoded literal — import.meta.env.VITE_APP_DOMAIN
+// can't be set to a real value outside an actual Vite context, so both
+// sides must agree on whatever it resolves to here (typically a localhost
+// collapse under plain tsx).
+const COUNTRY_OVERRIDES_URL = `${getSubdomainOrigin('maps')}/country-boundary-overrides.geojson`;
 
 const originalFetch = globalThis.fetch;
 const originalAbortSignalTimeout = AbortSignal.timeout;
@@ -76,7 +84,7 @@ describe('country geometry overrides', () => {
       if (url === '/data/countries.geojson') {
         return Promise.resolve(jsonResponse(makeFeatureCollection(1)));
       }
-      if (url === 'https://maps.worldmonitor.app/country-boundary-overrides.geojson') {
+      if (url === COUNTRY_OVERRIDES_URL) {
         return new Promise((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => {
             overrideAborted = true;
@@ -103,7 +111,7 @@ describe('country geometry overrides', () => {
       if (url === '/data/countries.geojson') {
         return Promise.resolve(jsonResponse(makeFeatureCollection(1)));
       }
-      if (url === 'https://maps.worldmonitor.app/country-boundary-overrides.geojson') {
+      if (url === COUNTRY_OVERRIDES_URL) {
         return Promise.resolve(jsonResponse(makeFeatureCollection(2)));
       }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));

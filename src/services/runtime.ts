@@ -1,5 +1,6 @@
 import { SITE_VARIANT } from '@/config/variant';
 import { getAuthToken } from '@/services/auth-provider';
+import { APP_DOMAIN, APP_ORIGIN, API_ORIGIN } from '@/config/domain';
 
 const ENV = (() => {
   try {
@@ -16,7 +17,7 @@ const ENV = (() => {
 })();
 
 const WS_API_URL = ENV.VITE_WS_API_URL || '';
-const DEFAULT_WEB_API_URL = 'https://api.worldmonitor.app';
+const DEFAULT_WEB_API_URL = API_ORIGIN;
 
 const DEFAULT_REMOTE_HOSTS: Record<string, string> = {
   tech: WS_API_URL,
@@ -126,9 +127,9 @@ export function getApiBaseUrl(): string {
 }
 
 function isWorldMonitorWebHost(hostname: string): boolean {
-  return hostname === 'worldmonitor.app'
-    || hostname === 'www.worldmonitor.app'
-    || hostname.endsWith('.worldmonitor.app');
+  return hostname === APP_DOMAIN
+    || hostname === `www.${APP_DOMAIN}`
+    || hostname.endsWith(`.${APP_DOMAIN}`);
 }
 
 export function getConfiguredWebApiBaseUrl(): string {
@@ -171,7 +172,7 @@ export function getRemoteApiBaseUrl(): string {
   if (fromHosts) return fromHosts;
 
   // Desktop builds may not set VITE_WS_API_URL; default to production.
-  if (isDesktopRuntime()) return 'https://worldmonitor.app';
+  if (isDesktopRuntime()) return APP_ORIGIN;
   return '';
 }
 
@@ -214,11 +215,15 @@ function extractHostnames(...urls: (string | undefined)[]): string[] {
   return hosts;
 }
 
+// NOTE: only 4 of the 5 variant subdomains are listed here (tech, not
+// finance/commodity/happy/energy) — a pre-existing scope oddity carried
+// forward as-is rather than silently "completed" during the domain sweep;
+// see TASKS.md for the flag.
 const APP_HOSTS = new Set([
-  'worldmonitor.app',
-  'www.worldmonitor.app',
-  'tech.worldmonitor.app',
-  'api.worldmonitor.app',
+  APP_DOMAIN,
+  `www.${APP_DOMAIN}`,
+  `tech.${APP_DOMAIN}`,
+  `api.${APP_DOMAIN}`,
   'localhost',
   '127.0.0.1',
   ...extractHostnames(WS_API_URL, ENV.VITE_WS_RELAY_URL),
@@ -228,7 +233,7 @@ function isAppOriginUrl(urlStr: string): boolean {
   try {
     const u = new URL(urlStr);
     const host = u.hostname;
-    return APP_HOSTS.has(host) || host.endsWith('.worldmonitor.app');
+    return APP_HOSTS.has(host) || host.endsWith(`.${APP_DOMAIN}`);
   } catch {
     return false;
   }
@@ -413,7 +418,13 @@ export function installRuntimeFetchPatch(): void {
 
 import { PREMIUM_RPC_PATHS as WEB_PREMIUM_API_PATHS } from '@/shared/premium-paths';
 
-const ALLOWED_REDIRECT_HOSTS = /^https:\/\/([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)*worldmonitor\.app(:\d+)?$/;
+// Domain part only, port stripped (a configured APP_DOMAIN like
+// 'localhost:3000' already carries one) — the pattern's own trailing
+// `(:\d+)?` covers any port on the actual redirect target instead.
+const ALLOWED_REDIRECT_HOST_DOMAIN = APP_DOMAIN.replace(/:\d+$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const ALLOWED_REDIRECT_HOSTS = new RegExp(
+  `^https:\\/\\/([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)*${ALLOWED_REDIRECT_HOST_DOMAIN}(:\\d+)?$`,
+);
 
 function isAllowedRedirectTarget(url: string): boolean {
   try {
@@ -513,7 +524,7 @@ export function installWebApiRedirect(): void {
           return fetchWithRedirectFallback(`${API_BASE}${input}`, input, enriched ? withCredentials(enriched) : withCredentials(init));
         }
         // Absolute URL already targeting the API base (generated clients call fetch
-        // with full URLs like https://api.worldmonitor.app/api/...) — just inject auth.
+        // with full URLs like `${API_BASE}/api/...`) — just inject auth.
         if (input.startsWith(`${API_BASE}/api/`)) {
           const pathAndSearch = input.slice(API_BASE.length);
           const enriched = await enrichInitForPremium(pathAndSearch, init);

@@ -1,5 +1,7 @@
 import { isDesktopRuntime, toApiUrl, toRuntimeUrl } from '../services/runtime';
 import { getPersistentCache, setPersistentCache } from '../services/persistent-cache';
+import { RAW_APP_DOMAIN } from '@/config/domain';
+import { resolveProxyOrigin } from '../../shared/domain-config.js';
 
 const isDev = import.meta.env.DEV;
 const RESPONSE_CACHE_PREFIX = 'api-response:';
@@ -10,7 +12,7 @@ const RSS_DIRECT_TO_RELAY = import.meta.env.VITE_RSS_DIRECT_TO_RELAY === 'true';
 const RSS_PROXY_BASE = isDev
   ? '' // Dev uses Vite's rssProxyPlugin
   : RSS_DIRECT_TO_RELAY
-    ? 'https://proxy.worldmonitor.app'
+    ? resolveProxyOrigin(RAW_APP_DOMAIN)
     : '';
 
 // Widget agent proxy:
@@ -18,7 +20,7 @@ const RSS_PROXY_BASE = isDev
 //   desktop   → relay directly (sidecar buffers arrayBuffer() which destroys SSE streaming)
 //   prod web  → /api/widget-agent (Vercel edge) → validates Supabase JWT or tester keys
 //               then proxies SSE to relay with real server-side keys
-const WIDGET_RELAY_BASE = 'https://proxy.worldmonitor.app';
+const WIDGET_RELAY_BASE = resolveProxyOrigin(RAW_APP_DOMAIN);
 export function widgetAgentUrl(): string {
   if (isDev) return '/widget-agent';
   if (isDesktopRuntime()) return `${WIDGET_RELAY_BASE}/widget-agent`;

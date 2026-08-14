@@ -18,6 +18,7 @@ import {
 } from '../scripts/china-coverage-health.mjs';
 import { chinaCoverageActivationCommand } from '../scripts/seed-china-coverage-health.mjs';
 import { __testing__ as healthTesting } from '../api/health.js';
+import { TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
 
 const NOW = Date.parse('2026-07-13T12:00:00.000Z');
 
@@ -339,7 +340,7 @@ describe('China coverage manifest', () => {
         ]), { status: 200 });
       };
       await assert.rejects(readChinaCoverageInputs([singleEntry()]), /1 command error/);
-      assert.equal(new Headers(requestInit.headers).get('User-Agent'), 'worldmonitor-ops/1.0 (+https://worldmonitor.app)');
+      assert.equal(new Headers(requestInit.headers).get('User-Agent'), `worldmonitor-ops/1.0 (+https://${TEST_APP_DOMAIN})`);
 
       globalThis.fetch = async () => new Response(JSON.stringify([
         { result: '{not-json' },

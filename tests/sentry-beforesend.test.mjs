@@ -4,6 +4,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDebugBearRumScriptFrame } from '../src/bootstrap/debugbear-rum.ts';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
+import { resolveAbacusOrigin } from '../shared/domain-config.js';
+
+setTestAppDomain();
+const TEST_ABACUS_HOSTNAME = new URL(resolveAbacusOrigin(TEST_APP_DOMAIN)).hostname;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -34,15 +39,27 @@ const fnBody = mainSrc.slice(bsStart + 'beforeSend(event) '.length, bsEnd)
   .replace(/<[A-Z]\w*>/g, '');            // generic type params
 
 // Extract the THIRD_PARTY_FETCH_HOST_ALLOWLIST Set so the test harness can evaluate
-// beforeSend with the same allowlist the real module has.
+// beforeSend with the same allowlist the real module has. The real source adds
+// the domain-configured abacus hostname via a separate `.add()` call (not
+// inline in the array literal) specifically so this regex-based extraction
+// doesn't need to resolve the ABACUS_ORIGIN import — the test adds its own
+// domain-configured value below instead (abacusHostname param).
 const tpMatch = mainSrc.match(/const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set\(\[[^\]]*\]\);/);
 assert.ok(tpMatch, 'THIRD_PARTY_FETCH_HOST_ALLOWLIST must be defined in src/bootstrap/sentry-init.ts');
+const allowlistSetup = `${tpMatch[0]}\nTHIRD_PARTY_FETCH_HOST_ALLOWLIST.add(abacusHostname);`;
 
 // Build a callable version. Input: a Sentry-shaped event object. Returns event or null.
+// APP_DOMAIN/abacusHostname mirror the real module's @/config/domain imports —
+// this reconstructed function has no module system, so they're passed in
+// explicitly instead of resolved via import. Parameter case must match the
+// identifier the extracted body actually references (APP_DOMAIN, uppercase).
 // eslint-disable-next-line no-new-func
-const rawBeforeSend = new Function('event', 'isDebugBearRumScriptFrame', `${tpMatch[0]}\n${fnBody}`);
+const rawBeforeSend = new Function(
+  'event', 'isDebugBearRumScriptFrame', 'APP_DOMAIN', 'abacusHostname',
+  `${allowlistSetup}\n${fnBody}`,
+);
 function beforeSend(event) {
-  return rawBeforeSend(event, isDebugBearRumScriptFrame);
+  return rawBeforeSend(event, isDebugBearRumScriptFrame, TEST_APP_DOMAIN, TEST_ABACUS_HOSTNAME);
 }
 
 // Extract the `ignoreErrors` array literal so tests can assert which messages
@@ -260,10 +277,10 @@ describe('dynamic-module-import failures (stale chunk after deploy)', () => {
   // because the old `!hasFirstParty`-only gate let first-party-framed ones
   // through).
   const assetUrlImportErrors = [
-    'Failed to fetch dynamically imported module: https://worldmonitor.app/assets/panels-abc.js',
-    'Failed to fetch dynamically imported module: https://www.worldmonitor.app/assets/index-DSkSc57y.js',
-    'error loading dynamically imported module: https://www.worldmonitor.app/assets/Map-eKJvyIxN.js',
-    'error loading dynamically imported module: https://www.worldmonitor.app/assets/hls-jw_vZdHi.js',
+    `Failed to fetch dynamically imported module: https://${TEST_APP_DOMAIN}/assets/panels-abc.js`,
+    `Failed to fetch dynamically imported module: https://www.${TEST_APP_DOMAIN}/assets/index-DSkSc57y.js`,
+    `error loading dynamically imported module: https://www.${TEST_APP_DOMAIN}/assets/Map-eKJvyIxN.js`,
+    `error loading dynamically imported module: https://www.${TEST_APP_DOMAIN}/assets/hls-jw_vZdHi.js`,
   ];
 
   for (const msg of assetUrlImportErrors) {
@@ -290,7 +307,7 @@ describe('dynamic-module-import failures (stale chunk after deploy)', () => {
 
   it('lets through non-hashed /assets dynamic-import failures even on owned origins', () => {
     const event = makeEvent(
-      'Failed to fetch dynamically imported module: https://worldmonitor.app/assets/runtime.js',
+      `Failed to fetch dynamically imported module: https://${TEST_APP_DOMAIN}/assets/runtime.js`,
       'TypeError',
       [firstPartyFrame()],
     );
@@ -1274,12 +1291,12 @@ describe('`Failed to fetch (abacus.worldmonitor.app)` — Umami beacon (WORLDMON
   ];
 
   it('suppresses the exact WH stack (Umami beacon through an extension fetch wrapper)', () => {
-    assert.equal(beforeSend(makeEvent('Failed to fetch (abacus.worldmonitor.app)', 'TypeError', whStack)), null,
+    assert.equal(beforeSend(makeEvent(`Failed to fetch (${TEST_ABACUS_HOSTNAME})`, 'TypeError', whStack)), null,
       'a dropped Umami analytics beacon is unactionable');
   });
 
   it('suppresses the Firefox host-suffixed phrasing for the same host', () => {
-    const event = makeEvent('NetworkError when attempting to fetch resource. (abacus.worldmonitor.app)', 'TypeError', []);
+    const event = makeEvent(`NetworkError when attempting to fetch resource. (${TEST_ABACUS_HOSTNAME})`, 'TypeError', []);
     assert.equal(beforeSend(event), null, 'host allowlist decides regardless of engine phrasing');
   });
 

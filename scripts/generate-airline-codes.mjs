@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 // OpenFlights airlines.dat is public domain. Update this SHA deliberately when
 // refreshing the generated lookup so the input remains reproducible.
 const SOURCE_URL = 'https://raw.githubusercontent.com/jpatokal/openflights/1d574116457dd4bccf2d3838c4171b7960794dca/data/airlines.dat';
-const USER_AGENT = 'worldmonitor-airline-code-generator (+https://github.com/koala73/worldmonitor)';
+const USER_AGENT = 'worldmonitor-airline-code-generator (+https://github.com/powerpro-led/worldmonitor)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MIN_RETAINED_ENTRY_RATIO = 0.8;
 

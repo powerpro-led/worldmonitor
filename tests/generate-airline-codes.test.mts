@@ -63,7 +63,7 @@ describe('generate-airline-codes', () => {
     const generated = await fs.readFile(targetFile, 'utf8');
     assert.deepEqual(result, { total: 1, added: 0, removed: 2 });
     assert.match(requests[0]?.[0] ?? '', /openflights\/1d574116457dd4bccf2d3838c4171b7960794dca\/data\/airlines\.dat$/);
-    assert.equal(requests[0]?.[1].headers?.['User-Agent'], 'worldmonitor-airline-code-generator (+https://github.com/koala73/worldmonitor)');
+    assert.equal(requests[0]?.[1].headers?.['User-Agent'], 'worldmonitor-airline-code-generator (+https://github.com/powerpro-led/worldmonitor)');
     assert.ok(requests[0]?.[1].signal instanceof AbortSignal);
     assert.match(generated, /const OVERRIDE = \{ KEEP: \{ iata: 'KP', name: 'Keep Airline' \} \};/);
     assert.match(generated, /const GENERATED: Record/);

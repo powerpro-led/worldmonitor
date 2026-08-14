@@ -1,4 +1,5 @@
 import { escapeHtml } from '@/utils/sanitize';
+import { APP_ORIGIN, WWW_ORIGIN, APP_DOMAIN } from '@/config/domain';
 import { renderSVG } from 'uqr';
 import {
   getChannelsData,
@@ -1058,9 +1059,9 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
 
       const onMessage = (e: MessageEvent): void => {
         const trustedOrigin = e.origin === window.location.origin ||
-          e.origin === 'https://worldmonitor.app' ||
-          e.origin === 'https://www.worldmonitor.app' ||
-          e.origin.endsWith('.worldmonitor.app');
+          e.origin === APP_ORIGIN ||
+          e.origin === WWW_ORIGIN ||
+          e.origin.endsWith(`.${APP_DOMAIN}`);
         const fromSlack = slackOAuthPopup !== null && e.source === slackOAuthPopup;
         const fromDiscord = discordOAuthPopup !== null && e.source === discordOAuthPopup;
         if (!trustedOrigin || (!fromSlack && !fromDiscord)) return;

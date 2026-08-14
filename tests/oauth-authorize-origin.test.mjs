@@ -15,10 +15,12 @@
 
 import { strict as assert } from 'node:assert';
 import { before, describe, it } from 'node:test';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
 // Force the rate limiter to no-op (getRatelimit returns null without env) so the
 // handler never makes a network call — the origin gate runs before it anyway.
 before(() => {
+  setTestAppDomain();
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
 });
@@ -28,7 +30,7 @@ const { default: handler } = await import('../api/oauth/authorize.js');
 const postWithOrigin = (origin) => {
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   if (origin !== undefined) headers.origin = origin;
-  return handler(new Request('https://www.worldmonitor.app/oauth/authorize', {
+  return handler(new Request(`https://www.${TEST_APP_DOMAIN}/oauth/authorize`, {
     method: 'POST',
     headers,
     body: '', // no _nonce → 400 "Missing session token" once the origin gate passes
@@ -37,11 +39,11 @@ const postWithOrigin = (origin) => {
 
 describe('OAuth authorize — consent POST origin gate (P1)', () => {
   const firstPartyOrigins = [
-    'https://worldmonitor.app',          // apex — the scanned host, previously 403'd
-    'https://www.worldmonitor.app',      // canonical Vercel host
-    'https://api.worldmonitor.app',      // the only host that worked before
-    'https://tech.worldmonitor.app',     // variant subdomain
-    'https://finance.worldmonitor.app',
+    `https://${TEST_APP_DOMAIN}`,          // apex — the scanned host, previously 403'd
+    `https://www.${TEST_APP_DOMAIN}`,      // canonical Vercel host
+    `https://api.${TEST_APP_DOMAIN}`,      // the only host that worked before
+    `https://tech.${TEST_APP_DOMAIN}`,     // variant subdomain
+    `https://finance.${TEST_APP_DOMAIN}`,
   ];
 
   for (const origin of firstPartyOrigins) {
@@ -66,10 +68,10 @@ describe('OAuth authorize — consent POST origin gate (P1)', () => {
 
   const foreignOrigins = [
     'https://evil.example',
-    'https://worldmonitor.app.evil.example', // suffix attack — must stay anchored
-    'https://evilworldmonitor.app',          // prefix attack — no subdomain dot
-    'http://worldmonitor.app',               // non-https
-    'https://worldmonitor.app:8443',         // port smuggling
+    `https://${TEST_APP_DOMAIN}.evil.example`, // suffix attack — must stay anchored
+    `https://evil${TEST_APP_DOMAIN}`,          // prefix attack — no subdomain dot
+    `http://${TEST_APP_DOMAIN}`,               // non-https
+    `https://${TEST_APP_DOMAIN}:8443`,         // port smuggling
   ];
 
   for (const origin of foreignOrigins) {

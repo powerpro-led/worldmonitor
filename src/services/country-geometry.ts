@@ -1,5 +1,6 @@
 import type { FeatureCollection, Geometry, GeoJsonProperties, Position } from 'geojson';
 import { markLcpDebug } from '@/utils/lcp-debug';
+import { getSubdomainOrigin } from '@/config/domain';
 
 interface IndexedCountryGeometry {
   code: string;
@@ -16,7 +17,7 @@ interface CountryHit {
 const COUNTRY_GEOJSON_URL = '/data/countries.geojson';
 
 /** Optional higher-resolution boundary overrides sourced from Natural Earth (served from R2 CDN). */
-const COUNTRY_OVERRIDES_URL = 'https://maps.worldmonitor.app/country-boundary-overrides.geojson';
+const COUNTRY_OVERRIDES_URL = `${getSubdomainOrigin('maps')}/country-boundary-overrides.geojson`;
 const COUNTRY_OVERRIDE_TIMEOUT_MS = 3_000;
 
 const POLITICAL_OVERRIDES: Record<string, string> = { 'CN-TW': 'TW' };

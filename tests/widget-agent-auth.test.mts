@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it, mock } from 'node:test';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
 const originalWidgetKey = process.env.WIDGET_AGENT_KEY;
 const originalProKey = process.env.PRO_WIDGET_KEY;
@@ -21,12 +22,13 @@ describe('widget-agent unified tester key auth', () => {
   let fetchMock: ReturnType<typeof mock.method<typeof globalThis, 'fetch'>>;
 
   before(async () => {
+    setTestAppDomain();
     process.env.WIDGET_AGENT_KEY = 'server-widget-key';
     process.env.PRO_WIDGET_KEY = 'server-pro-key';
     process.env.WORLDMONITOR_VALID_KEYS = 'browser-test-key';
 
     fetchMock = mock.method(globalThis, 'fetch', () => Promise.resolve(fakeRelayResponse()));
-    ({ default: handler } = await import('../api/widget-agent.ts'));
+    ({ default: handler } = await import(`../api/widget-agent.ts?t=${Date.now()}`));
   });
 
   beforeEach(() => {
@@ -62,7 +64,7 @@ describe('widget-agent unified tester key auth', () => {
     assert.equal(fetchMock.mock.calls.length, 1);
 
     const call = fetchMock.mock.calls[0];
-    assert.equal(call.arguments[0], 'https://proxy.worldmonitor.app/widget-agent');
+    assert.equal(call.arguments[0], `https://proxy.${TEST_APP_DOMAIN}/widget-agent`);
 
     const init = call.arguments[1] as RequestInit;
     const headers = new Headers(init.headers);

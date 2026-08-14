@@ -22,6 +22,7 @@
 //   - Plan: docs/plans/2026-04-17-003-feat-worldmonitor-brief-magazine-plan.md
 
 import { BRIEF_ENVELOPE_VERSION, SUPPORTED_ENVELOPE_VERSIONS } from '../../shared/brief-envelope.js';
+import { resolveAppOrigin, normalizeDomain, resolveAbacusOrigin } from '../../shared/domain-config.js';
 
 /**
  * @typedef {import('../../shared/brief-envelope.js').BriefEnvelope} BriefEnvelope
@@ -726,9 +727,11 @@ function renderBackCover({ tz, pageIndex, totalPages, publicMode, refCode }) {
   // access only) \u2014 the public-view CTA points at the homepage, not a
   // purchase/subscribe flow. refCode is still threaded through for
   // share-attribution analytics even though there's nothing to "convert" to.
+  const appOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
+  const domainLabel = normalizeDomain(process.env.APP_DOMAIN);
   const ctaHref = publicMode
-    ? `https://worldmonitor.app${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`
-    : 'https://worldmonitor.app';
+    ? `${appOrigin}${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`
+    : appOrigin;
   const kicker = publicMode
     ? 'You\u2019re reading a shared brief'
     : 'Thank you for reading';
@@ -737,9 +740,9 @@ function renderBackCover({ tz, pageIndex, totalPages, publicMode, refCode }) {
     : 'End of<br/>Transmission.';
   const metaLeft = publicMode
     ? `<a href="${escapeHtml(ctaHref)}" class="mono back-cta" target="_blank" rel="noopener">Get your own \u2192</a>`
-    : '<span class="mono">worldmonitor.app</span>';
+    : `<span class="mono">${escapeHtml(domainLabel)}</span>`;
   const metaRight = publicMode
-    ? '<span class="mono">worldmonitor.app</span>'
+    ? `<span class="mono">${escapeHtml(domainLabel)}</span>`
     : `<span class="mono">Next brief \u00b7 08:00 ${escapeHtml(tz)}</span>`;
   return (
     '<section class="page cover back">' +
@@ -1227,13 +1230,18 @@ const SHARE_SCRIPT = `<script>
 </script>`;
 
 // Umami analytics loader, mirroring the production snippet in
-// index.html. Hosted magazine pages are served from worldmonitor.app
+// index.html. Hosted magazine pages are served from the configured domain
 // (the auth'd route) and the public-share hash mirror — both within
 // `data-domains`. The `async` script never blocks rendering; if it's
 // blocked by an extension, BRIEF_THREAD_OPEN_SCRIPT silently no-ops.
 // Same data-website-id as the dashboard so events land in the same
 // project — segmentation is via event properties, not website ids.
-const UMAMI_LOADER = '<script async src="https://abacus.worldmonitor.app/script.js" data-website-id="e8800335-c853-46a8-8497-c993ed2f58bc" data-domains="worldmonitor.app,tech.worldmonitor.app,finance.worldmonitor.app,commodity.worldmonitor.app,happy.worldmonitor.app"></script>';
+// NOTE: a deliberately reduced apex+tech+finance+commodity+happy subset
+// (no www, no energy) — independent from src/services/analytics.ts's own
+// reduced set (apex+www+happy); preserved as-is, only the domain itself
+// is made configurable here.
+const UMAMI_DOMAIN = normalizeDomain(process.env.APP_DOMAIN);
+const UMAMI_LOADER = `<script async src="${resolveAbacusOrigin(process.env.APP_DOMAIN)}/script.js" data-website-id="e8800335-c853-46a8-8497-c993ed2f58bc" data-domains="${UMAMI_DOMAIN},tech.${UMAMI_DOMAIN},finance.${UMAMI_DOMAIN},commodity.${UMAMI_DOMAIN},happy.${UMAMI_DOMAIN}"></script>`;
 
 /**
  * U11 telemetry: emit a `brief-thread-open` event whenever a story
@@ -1622,7 +1630,7 @@ export function renderBriefMagazine(envelope, options = {}) {
   // signup exists on this private fork, so there's nothing to
   // subscribe to; the strip just orients a visitor who followed a
   // shared link.
-  const publicStripHref = `https://worldmonitor.app${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`;
+  const publicStripHref = `${resolveAppOrigin(process.env.APP_DOMAIN)}${refCode ? `?ref=${encodeURIComponent(refCode)}` : ''}`;
   const publicStripHtml = publicMode
     ? '<div class="wm-public-strip">'
       + '<span>WorldMonitor Brief \u00b7 shared issue</span>'

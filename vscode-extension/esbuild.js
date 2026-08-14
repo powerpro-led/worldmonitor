@@ -1,7 +1,7 @@
 // Extension-host bundle only — there's no custom webview UI to bundle here.
 // The webview's own content is a tiny inline <iframe> wrapper generated in
 // src/panel.ts; the real dashboard renders over real HTTP, served by
-// local-api-server.mjs's static file route (see src-tauri/sidecar/).
+// local-api-server.mjs's static file route (see vscode-extension/sidecar/).
 const esbuild = require('esbuild');
 const { rmSync } = require('node:fs');
 

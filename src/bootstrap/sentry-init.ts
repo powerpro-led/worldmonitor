@@ -7,6 +7,7 @@
  */
 
 import { isDebugBearRumScriptFrame } from './debugbear-rum';
+import { APP_DOMAIN, ABACUS_ORIGIN } from '@/config/domain';
 
 type SentryNs = typeof import('@sentry/browser');
 
@@ -16,7 +17,7 @@ type SentryNs = typeof import('@sentry/browser');
 // first-party callers that hit the same hosts directly (e.g.
 // `MapContainer.fetchAndApplyRadar` → `api.rainviewer.com`). The set IS the
 // safety: only known third-party hosts are suppressed; first-party fetches
-// to `api.worldmonitor.app` and the self-hosted R2 PMTiles bucket are NOT
+// to the api. subdomain and the self-hosted R2 PMTiles bucket are NOT
 // in the set, so genuine basemap / API regressions still surface.
 const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set([
   'tilecache.rainviewer.com',
@@ -29,33 +30,41 @@ const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set([
   // POSTs field metrics to `data.debugbear.com`; a leaked
   // `NetworkError ... (data.debugbear.com)` / `Failed to fetch (data.debugbear.com)`
   // is a dropped monitoring beacon (adblock / network blip) — invisible to the
-  // user and unactionable. NOT `api.worldmonitor.app` (stays off so real API
+  // user and unactionable. NOT the api. subdomain (stays off so real API
   // regressions surface). WORLDMONITOR-RP.
   'data.debugbear.com',
-  // Self-hosted Umami analytics collector (`src/services/analytics.ts` loads
-  // `abacus.worldmonitor.app/script.js`, whose tracker POSTs events to
-  // `/api/send`). Same disposition as the DebugBear beacon above: a dropped
-  // analytics beacon is invisible to the user and unactionable — typically an
-  // ad-blocker or a fetch-wrapping extension killing the POST. It reaches
-  // Sentry despite the extension gate because the leaked rejection carries our
-  // Vite `window.fetch` trampolines, which make hasFirstParty true. Serves no
-  // product data, so an abacus outage belongs to uptime monitoring, not a
-  // per-user Sentry error. NOT `api.worldmonitor.app` (stays off so real API
-  // regressions surface). WORLDMONITOR-WH/WJ.
-  'abacus.worldmonitor.app',
 ]);
+// Self-hosted Umami analytics collector (`src/services/analytics.ts` loads
+// `<ABACUS_ORIGIN>/script.js`, whose tracker POSTs events to `/api/send`).
+// Same disposition as the DebugBear beacon above: a dropped analytics beacon
+// is invisible to the user and unactionable — typically an ad-blocker or a
+// fetch-wrapping extension killing the POST. It reaches Sentry despite the
+// extension gate because the leaked rejection carries our Vite
+// `window.fetch` trampolines, which make hasFirstParty true. Serves no
+// product data, so an abacus outage belongs to uptime monitoring, not a
+// per-user Sentry error. NOT the api. subdomain (stays off so real API
+// regressions surface). WORLDMONITOR-WH/WJ.
+// Added via .add() (not inline in the array above) so
+// tests/sentry-beforesend.test.mjs's regex-based array extraction — which
+// re-embeds the array literal verbatim to test beforeSend without importing
+// the whole Sentry/App bootstrap — doesn't need to resolve the ABACUS_ORIGIN
+// import; the test adds its own domain-configured value the same way.
+THIRD_PARTY_FETCH_HOST_ALLOWLIST.add(new URL(ABACUS_ORIGIN).hostname);
 
 function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
   const sentryDsn = import.meta.env.VITE_SENTRY_DSN?.trim();
   return {
     dsn: sentryDsn || undefined,
     release: `worldmonitor@${__APP_VERSION__}`,
-    environment: (location.hostname === 'worldmonitor.app' || location.hostname.endsWith('.worldmonitor.app')) ? 'production'
+    environment: (location.hostname === APP_DOMAIN || location.hostname.endsWith(`.${APP_DOMAIN}`)) ? 'production'
       : location.hostname.includes('vercel.app') ? 'preview'
       : 'development',
     enabled: Boolean(sentryDsn) && !location.hostname.startsWith('localhost') && !('__TAURI_INTERNALS__' in window),
+    // NOTE: only 4 of the 5 variant subdomains (not energy) — a pre-existing
+    // scope oddity carried forward as-is rather than silently "completed"
+    // during the domain sweep; see TASKS.md for the flag.
     allowUrls: [
-      /https?:\/\/(www\.|tech\.|finance\.|commodity\.|happy\.)?worldmonitor\.app/,
+      new RegExp(`https?:\\/\\/(${['www', 'tech', 'finance', 'commodity', 'happy'].join('\\.|')}\\.)?${APP_DOMAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
       /https?:\/\/.*\.vercel\.app/,
     ],
     sendDefaultPii: true,
@@ -365,7 +374,7 @@ function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
       // `MapContainer.fetchAndApplyRadar` hitting `api.rainviewer.com`. The
       // host-allowlist set is the load-bearing safety: only known third-party
       // hosts get suppressed; first-party fetch failures (self-hosted R2 PMTiles
-      // bucket, `api.worldmonitor.app`) are intentionally NOT in the set so a
+      // bucket, the api. subdomain) are intentionally NOT in the set so a
       // real basemap / API regression is never silently dropped
       // (WORLDMONITOR-NE/NF, WORLDMONITOR-QG).
       if (isHostScopedFetchFailure) {
@@ -648,8 +657,8 @@ function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
           try {
             const host = new URL(assetUrl).hostname;
             const currentHost = typeof location !== 'undefined' ? location.hostname : '';
-            isOwnedDynamicImportAssetUrl = host === 'worldmonitor.app'
-              || host.endsWith('.worldmonitor.app')
+            isOwnedDynamicImportAssetUrl = host === APP_DOMAIN
+              || host.endsWith(`.${APP_DOMAIN}`)
               || (currentHost.endsWith('.vercel.app') && host === currentHost);
           } catch {
             isOwnedDynamicImportAssetUrl = false;

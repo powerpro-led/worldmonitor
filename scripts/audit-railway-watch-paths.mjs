@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export const REQUIRED_WATCH_PATTERNS = Object.freeze(['scripts/**', 'shared/**']);
 
-const REPOSITORY = 'koala73/worldmonitor';
+const REPOSITORY = 'powerpro-led/worldmonitor';
 const SEED_COMMAND_RE = /^node\s+(?:\.\/)?(?:scripts\/)?(?:seed-[^\s]+|fetch-gpsjam\.mjs|publish-bootstrap-tiers\.mjs)(?:\s|$)/;
 const SEED_DOCKERFILE_RE = /(?:^|\/)Dockerfile\.(?:seed-[^/\s]+|digest-notifications|publish-bootstrap-tiers)$/;
 

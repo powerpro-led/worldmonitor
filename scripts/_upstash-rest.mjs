@@ -5,6 +5,7 @@
  * getter hard-exits when env is missing, while these publishers must
  * skip silently on runs without secrets (local, PRs).
  */
+import { resolveAppOrigin } from './_domain-config.mjs';
 
 /** @returns {{ restUrl: string; token: string } | null} */
 export function getOptionalUpstashCreds() {
@@ -24,7 +25,7 @@ export async function upstashCommand(creds, command) {
     headers: {
       Authorization: `Bearer ${creds.token}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'worldmonitor-ops/1.0 (+https://worldmonitor.app)',
+      'User-Agent': `worldmonitor-ops/1.0 (+${resolveAppOrigin(process.env.APP_DOMAIN)})`,
     },
     body: JSON.stringify(command),
     signal: AbortSignal.timeout(15_000),

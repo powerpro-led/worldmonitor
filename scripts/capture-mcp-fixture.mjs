@@ -27,17 +27,18 @@
  *   - WM_MCP_KEY sends X-WorldMonitor-Key: <key>
  *   - WM_MCP_OAUTH_TOKEN sends Authorization: Bearer <token>
  *
- * Endpoint defaults to https://worldmonitor.app/mcp; override with
+ * Endpoint defaults to the configured APP_DOMAIN's apex + /mcp; override with
  * WM_MCP_ENDPOINT for staging.
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveAppOrigin } from './_domain-config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 const FIXTURES_DIR = resolve(ROOT, 'tests/fixtures/jmespath-samples');
-const ENDPOINT = process.env.WM_MCP_ENDPOINT ?? 'https://worldmonitor.app/mcp';
+const ENDPOINT = process.env.WM_MCP_ENDPOINT ?? `${resolveAppOrigin(process.env.APP_DOMAIN)}/mcp`;
 const API_KEY = process.env.WM_MCP_KEY;
 const OAUTH_TOKEN = process.env.WM_MCP_OAUTH_TOKEN;
 

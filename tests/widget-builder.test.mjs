@@ -778,11 +778,13 @@ describe('proxy routing — widgetAgentUrl', () => {
     );
   });
 
-  it('widgetAgentUrl targets proxy.worldmonitor.app (not toRuntimeUrl)', () => {
-    // The URL may be in a constant above the function; search the whole file
+  it('widgetAgentUrl targets the proxy. subdomain (not toRuntimeUrl)', () => {
+    // The URL may be in a constant above the function; search the whole file.
+    // Domain-config sweep: the literal was replaced with a
+    // resolveProxyOrigin(...) call — assert on that instead of a hardcoded host.
     assert.ok(
-      proxy.includes('proxy.worldmonitor.app'),
-      'Must target proxy.worldmonitor.app directly (sidecar destroys SSE via arrayBuffer)',
+      proxy.includes('resolveProxyOrigin('),
+      'Must target the proxy. subdomain directly (sidecar destroys SSE via arrayBuffer)',
     );
     // Verify the function itself does not use toRuntimeUrl
     const fnIdx = proxy.indexOf('function widgetAgentUrl');
@@ -794,14 +796,14 @@ describe('proxy routing — widgetAgentUrl', () => {
     );
   });
 
-  it('vite.config.ts proxies /widget-agent to proxy.worldmonitor.app', () => {
+  it('vite.config.ts proxies /widget-agent to the proxy. subdomain', () => {
     assert.ok(
       vite.includes('/widget-agent'),
       'vite.config.ts must have proxy entry for /widget-agent',
     );
     assert.ok(
-      vite.includes('proxy.worldmonitor.app'),
-      'Vite proxy target must be proxy.worldmonitor.app',
+      vite.includes('resolveProxyOrigin('),
+      'Vite proxy target must derive from resolveProxyOrigin (shared/domain-config.js)',
     );
   });
 

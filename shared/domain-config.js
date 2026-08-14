@@ -129,3 +129,101 @@ export function buildAllowedOriginPatterns(rawDomain, { includeDevPatterns = fal
     ...(includeDevPatterns ? DEV_LOCALHOST_ORIGIN_PATTERNS : []),
   ];
 }
+
+/**
+ * The 5 "variant" (sector-focused) subdomains this fork can serve
+ * (tech./finance./commodity./happy./energy.<domain>) — the single source
+ * every variant-host list (dashboard routing, CSP, OG metadata, analytics
+ * allowlists) should derive from instead of hand-duplicating the slug list.
+ */
+export const VARIANT_SLUGS = Object.freeze(['tech', 'finance', 'commodity', 'happy', 'energy']);
+
+/**
+ * A variant's bare hostname, e.g. `tech.example.com` — collapses to the
+ * apex domain on localhost, same reasoning as resolveWwwOrigin/resolveApiOrigin
+ * (a `tech.localhost:3000` subdomain doesn't mean anything for local dev).
+ */
+export function resolveVariantDomain(rawDomain, slug) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return domain;
+  return `${slug}.${domain}`;
+}
+
+/** A variant's full origin, e.g. `https://tech.example.com`. */
+export function resolveVariantOrigin(rawDomain, slug) {
+  const domain = normalizeDomain(rawDomain);
+  return `${resolveProtocol(domain)}://${resolveVariantDomain(domain, slug)}`;
+}
+
+/** `{ tech: 'https://tech.example.com', finance: ..., ... }` for all 5 slugs, in VARIANT_SLUGS order. */
+export function resolveVariantOrigins(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  return Object.fromEntries(VARIANT_SLUGS.map((slug) => [slug, resolveVariantOrigin(domain, slug)]));
+}
+
+/**
+ * The `abacus.` origin — this fork's self-hosted Umami analytics collector
+ * subdomain. Same local-dev collapse-to-apex behavior as api/www; whether
+ * analytics is disabled entirely in dev is a separate concern for the
+ * caller, not something this module decides.
+ */
+export function resolveAbacusOrigin(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
+  return `${resolveProtocol(domain)}://abacus.${domain}`;
+}
+
+/**
+ * The `proxy.` origin — the Railway-hosted widget-agent SSE relay subdomain
+ * (api/widget-agent.ts, vite.config.ts's dev-server proxy). Same local-dev
+ * collapse-to-apex behavior as the other named-subdomain resolvers.
+ */
+export function resolveProxyOrigin(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
+  return `${resolveProtocol(domain)}://proxy.${domain}`;
+}
+
+/**
+ * Generic named-subdomain origin resolver (e.g. `status.`, `maps.`) — the
+ * primitive resolveAbacusOrigin/resolveProxyOrigin/resolveApiOrigin/
+ * resolveWwwOrigin are all thin wrappers over. Same local-dev
+ * collapse-to-apex convention.
+ */
+export function resolveSubdomainOrigin(rawDomain, subdomain) {
+  const domain = normalizeDomain(rawDomain);
+  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
+  return `${resolveProtocol(domain)}://${subdomain}.${domain}`;
+}
+
+/**
+ * Domain-derived CSP origin lists for the `frame-src`/`frame-ancestors`/
+ * `form-action` directives. Deliberately three small named functions
+ * instead of one flag-driven builder: the three directives use different
+ * orderings of the same underlying origins (frame-src puts the apex right
+ * after www/before variants; frame-ancestors puts it last, after variants),
+ * so hiding that in flag combinations would be less legible than just
+ * writing each order out. Callers splice these into their own static
+ * third-party allowlist (youtube, cloudflare, vercel.live, ...), which
+ * stays local to each config file since it's infra-specific, not
+ * domain-specific — same division of responsibility as buildAllowedOriginPatterns's extraPatterns.
+ */
+export function buildCspFrameSrcOrigins(rawDomain) {
+  const domain = normalizeDomain(rawDomain);
+  const variants = resolveVariantOrigins(domain);
+  return [resolveWwwOrigin(domain), resolveAppOrigin(domain), ...VARIANT_SLUGS.map((slug) => variants[slug])];
+}
+
+export function buildCspFrameAncestorsOrigins(rawDomain, { includeVariants = true } = {}) {
+  const domain = normalizeDomain(rawDomain);
+  const variants = resolveVariantOrigins(domain);
+  return [
+    resolveWwwOrigin(domain),
+    ...(includeVariants ? VARIANT_SLUGS.map((slug) => variants[slug]) : []),
+    resolveAppOrigin(domain),
+  ];
+}
+
+export function buildCspFormActionOrigins(rawDomain) {
+  return [resolveApiOrigin(rawDomain)];
+}

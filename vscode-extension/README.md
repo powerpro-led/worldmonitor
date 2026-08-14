@@ -10,10 +10,10 @@ reinvented UI.
 1. **The real app is built once** (`VITE_DESKTOP_RUNTIME=1 npm run
    build:desktop` from the repo root) — this produces `dist/`, the exact
    same production bundle the desktop app ships, byte-for-byte.
-2. **A local sidecar server** (`src-tauri/sidecar/local-api-server.mjs`, a
+2. **A local sidecar server** (`vscode-extension/sidecar/local-api-server.mjs`, a
    plain Node script — no Rust/Tauri involved) serves that build's `/api/*`
    calls from a local SQLite mirror of the real data
-   (`src-tauri/sidecar/local-cache.db`), not live Upstash. This extension
+   (`vscode-extension/sidecar/local-cache.db`), not live Upstash. This extension
    spawns it in `LOCAL_API_MODE=tauri-sidecar` mode and never sets
    `LOCAL_API_CLOUD_FALLBACK=true`, so it structurally never proxies to
    `api.worldmonitor.app` for the domains this dashboard reads.
@@ -63,7 +63,7 @@ portwatch, risk, rss, forecast) — chosen by live-sampling the actual
 Upstash store, not guessed. Everything else in the real app's UI still
 renders (it's the same UI), but panels outside these domains will show
 empty/loading state rather than fabricated data, since their backing keys
-aren't in the mirror. `src-tauri/sidecar/local-sync.mjs`'s header comment
+aren't in the mirror. `vscode-extension/sidecar/local-sync.mjs`'s header comment
 has the full list and the reasoning for what's excluded (internal
 bookkeeping keys with zero display value, confirmed by direct inspection).
 

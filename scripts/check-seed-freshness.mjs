@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { fileURLToPath } from 'node:url';
+import { resolveApiOrigin } from './_domain-config.mjs';
 
-const DEFAULT_HEALTH_URL = 'https://api.worldmonitor.app/api/health?compact=1';
+const DEFAULT_HEALTH_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/health?compact=1`;
 
 export function validateCompactHealthPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {

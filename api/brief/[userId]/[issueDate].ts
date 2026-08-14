@@ -28,6 +28,7 @@ import { renderBriefMagazine } from '../../../server/_shared/brief-render.js';
 // @ts-expect-error — JS module, no declaration file
 import { readRawJsonFromUpstash, redisPipeline } from '../../_upstash-json.js';
 import { verifyBriefToken, BriefUrlError } from '../../../server/_shared/brief-url';
+import { resolveAppOrigin } from '../../../shared/domain-config.js';
 import {
   BRIEF_PUBLIC_POINTER_PREFIX,
   buildPublicBriefUrl,
@@ -75,7 +76,7 @@ function renderErrorPage(heading: string, body: string): string {
     + '</head><body><div>'
     + `<h1>${heading}</h1>`
     + `<p>${body}</p>`
-    + '<p><a href="https://worldmonitor.app">Return to WorldMonitor</a></p>'
+    + `<p><a href="${resolveAppOrigin(process.env.APP_DOMAIN)}">Return to WorldMonitor</a></p>`
     + '</div></body></html>'
   );
 }

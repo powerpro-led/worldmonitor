@@ -14,6 +14,7 @@
 
 import { suggestTools } from './_agent-tool-suggest';
 import { ENDPOINT_RATE_POLICIES, checkScopedRateLimit, getClientIp } from '../server/_shared/rate-limit';
+import { normalizeDomain, resolveAppOrigin, resolveWwwOrigin } from '../shared/domain-config.js';
 
 export const config = { runtime: 'edge' };
 
@@ -31,12 +32,6 @@ const RATE_LIMIT_MAX = RATE_LIMIT_POLICY.limit;
 const RATE_LIMIT_WINDOW = RATE_LIMIT_POLICY.window;
 
 const NLWEB_VERSION = '0.1';
-const SITE = 'worldmonitor.app';
-// No public per-tool doc page exists on this private fork (the Mintlify docs
-// site is gone); point at the live agent-guidance file instead, which lists
-// every tool and how to call them.
-const TOOLS_DOC_URL = 'https://worldmonitor.app/agent.txt';
-const MCP_ENDPOINT = 'https://worldmonitor.app/mcp';
 const MAX_QUERY_CHARS = 2048;
 
 const CORS_HEADERS: Record<string, string> = {
@@ -66,12 +61,21 @@ function buildMeta(responseType: string): { response_type: string; version: stri
 }
 
 export function buildResults(query: string): NlwebResult[] {
+  const site = normalizeDomain(process.env.APP_DOMAIN);
+  const appOrigin = resolveAppOrigin(process.env.APP_DOMAIN);
+  const wwwOrigin = resolveWwwOrigin(process.env.APP_DOMAIN);
+  // No public per-tool doc page exists on this private fork (the Mintlify docs
+  // site is gone); point at the live agent-guidance file instead, which lists
+  // every tool and how to call them.
+  const toolsDocUrl = `${appOrigin}/agent.txt`;
+  const mcpEndpoint = `${appOrigin}/mcp`;
+
   const suggestions = suggestTools(query);
   const maxScore = suggestions[0]?.score ?? 1;
   const results: NlwebResult[] = suggestions.map((s) => ({
-    url: TOOLS_DOC_URL,
+    url: toolsDocUrl,
     name: s.name,
-    site: SITE,
+    site,
     score: Number((s.score / maxScore).toFixed(3)),
     description: s.description,
     schema_object: {
@@ -79,19 +83,19 @@ export function buildResults(query: string): NlwebResult[] {
       '@type': 'WebAPI',
       name: s.name,
       description: s.description,
-      documentation: TOOLS_DOC_URL,
+      documentation: toolsDocUrl,
       // The actionable endpoint: call the tool via MCP tools/call.
-      url: MCP_ENDPOINT,
-      provider: { '@type': 'Organization', name: 'World Monitor', url: 'https://www.worldmonitor.app' },
+      url: mcpEndpoint,
+      provider: { '@type': 'Organization', name: 'World Monitor', url: wwwOrigin },
     },
   }));
   if (results.length === 0) {
     // Honest fallback: point the asker at the discovery surfaces instead of
     // fabricating a match.
     results.push({
-      url: 'https://worldmonitor.app/agent.txt',
+      url: toolsDocUrl,
       name: 'World Monitor agent guidance (agent.txt)',
-      site: SITE,
+      site,
       score: 0,
       description:
         'No specific tool matched that query. World Monitor covers conflicts, sanctions, country risk, markets, commodities, energy, maritime/aviation activity, chokepoints, cyber threats, natural disasters, forecasts and prediction markets — start from the agent guidance, or issue tools/list on the MCP server for the full catalog.',
@@ -99,7 +103,7 @@ export function buildResults(query: string): NlwebResult[] {
         '@context': 'https://schema.org',
         '@type': 'WebSite',
         name: 'World Monitor',
-        url: 'https://www.worldmonitor.app',
+        url: wwwOrigin,
       },
     });
   }

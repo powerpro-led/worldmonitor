@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(__filename), '..');
@@ -17,13 +18,14 @@ describe('nlweb: /ask endpoint', () => {
   let handler;
 
   before(async () => {
+    setTestAppDomain();
     const mod = await import(`../api/ask.ts?t=${Date.now()}`);
     handler = mod.default;
   });
 
   function post(body, headers = {}) {
     return handler(
-      new Request('https://worldmonitor.app/ask', {
+      new Request(`https://${TEST_APP_DOMAIN}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
         body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -45,7 +47,7 @@ describe('nlweb: /ask endpoint', () => {
       for (const field of ['url', 'name', 'site', 'score', 'description', 'schema_object']) {
         assert.ok(field in r, `result missing ${field}`);
       }
-      assert.equal(r.site, 'worldmonitor.app');
+      assert.equal(r.site, TEST_APP_DOMAIN);
     }
   });
 
@@ -59,7 +61,7 @@ describe('nlweb: /ask endpoint', () => {
     const res = await post({ query: 'zzzqx unmatchable gibberish' });
     const body = await res.json();
     assert.equal(body.results.length, 1);
-    assert.equal(body.results[0].url, 'https://worldmonitor.app/agent.txt');
+    assert.equal(body.results[0].url, `https://${TEST_APP_DOMAIN}/agent.txt`);
     assert.equal(body.results[0].score, 0);
   });
 
@@ -86,7 +88,7 @@ describe('nlweb: /ask endpoint', () => {
     for (const req of [
       post({ query: 'conflict events', streaming: true }),
       post({ query: 'conflict events' }, { Accept: 'text/event-stream' }),
-      handler(new Request('https://worldmonitor.app/ask?query=markets&prefer.streaming=true', { method: 'GET' })),
+      handler(new Request(`https://${TEST_APP_DOMAIN}/ask?query=markets&prefer.streaming=true`, { method: 'GET' })),
     ]) {
       const res = await req;
       assert.match(res.headers.get('Content-Type'), /text\/event-stream/);
@@ -104,7 +106,7 @@ describe('nlweb: /ask endpoint', () => {
   });
 
   it('GET with ?query= works for simple probes', async () => {
-    const res = await handler(new Request('https://worldmonitor.app/ask?query=sanctions', { method: 'GET' }));
+    const res = await handler(new Request(`https://${TEST_APP_DOMAIN}/ask?query=sanctions`, { method: 'GET' }));
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.ok(body._meta.response_type);
@@ -113,7 +115,7 @@ describe('nlweb: /ask endpoint', () => {
 
   it('form-encoded POST bodies are accepted', async () => {
     const res = await handler(
-      new Request('https://worldmonitor.app/ask', {
+      new Request(`https://${TEST_APP_DOMAIN}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'query=energy+intelligence',
@@ -131,16 +133,16 @@ describe('nlweb: /ask endpoint', () => {
     assert.ok(body._meta.response_type, 'usage envelope must stay _meta-conformant');
     assert.deepEqual(body.results, []);
     assert.match(body.message, /query/);
-    const bareGet = await handler(new Request('https://worldmonitor.app/ask', { method: 'GET' }));
+    const bareGet = await handler(new Request(`https://${TEST_APP_DOMAIN}/ask`, { method: 'GET' }));
     assert.equal(bareGet.status, 200);
     const bad = await post('{not json');
     assert.equal(bad.status, 400);
   });
 
   it('unsupported methods → 405; OPTIONS → 204 with CORS', async () => {
-    const del = await handler(new Request('https://worldmonitor.app/ask', { method: 'DELETE' }));
+    const del = await handler(new Request(`https://${TEST_APP_DOMAIN}/ask`, { method: 'DELETE' }));
     assert.equal(del.status, 405);
-    const options = await handler(new Request('https://worldmonitor.app/ask', { method: 'OPTIONS' }));
+    const options = await handler(new Request(`https://${TEST_APP_DOMAIN}/ask`, { method: 'OPTIONS' }));
     assert.equal(options.status, 204);
     assert.equal(options.headers.get('Access-Control-Allow-Origin'), '*');
   });

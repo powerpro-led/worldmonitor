@@ -9,10 +9,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { VARIANT_META } from '../src/config/variant-meta';
+import { buildVariantMeta } from '../src/config/variant-meta';
 
 const indexHtml = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8');
-const full = VARIANT_META.full;
+// index.html's checked-in canonical/og/twitter URLs reflect this repo's real
+// configured domain (.env's APP_DOMAIN=worldmonitor.app, matching the
+// currently-deployed content per the domain-config sweep) — override
+// test:data's ambient APP_DOMAIN=example.test for this comparison so it's
+// checked against the domain the file was actually generated for, same
+// reasoning as tests/agent-skills-index.test.mjs's index.json check.
+const full = buildVariantMeta('worldmonitor.app').full;
 
 function extract(label: string, pattern: RegExp): string {
   const m = indexHtml.match(pattern);

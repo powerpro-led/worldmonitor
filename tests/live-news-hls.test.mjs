@@ -12,16 +12,14 @@ const readSrc = (relPath) => readFileSync(resolve(root, relPath), 'utf-8');
 const liveNewsSrc = readSrc('src/components/LiveNewsPanel.ts');
 const liveNewsSvc = readSrc('src/services/live-news.ts');
 const youtubeApi = readSrc('api/youtube/live.js');
-const sidecarSrc = readSrc('src-tauri/sidecar/local-api-server.mjs');
+const sidecarSrc = readSrc('vscode-extension/sidecar/local-api-server.mjs');
 const vercelConfig = JSON.parse(readSrc('vercel.json'));
-const tauriConfig = JSON.parse(readSrc('src-tauri/tauri.conf.json'));
 
 const globalCsp = vercelConfig.headers
   .find((entry) => entry.source.includes('?!docs|embed'))
   ?.headers
   ?.find((header) => header.key === 'Content-Security-Policy')
   ?.value ?? '';
-const tauriCsp = tauriConfig.app.security.csp;
 const getCspDirective = (csp, directive) =>
   csp.match(new RegExp(`${directive}\\s+([^;]+)`))?.[1]?.split(/\s+/) ?? [];
 
@@ -451,21 +449,8 @@ describe('CSP configuration', () => {
       'web CSP media-src must allow HTTPS for direct HLS CDN streams');
   });
 
-  it('Tauri CSP frame-src allows localhost sidecar iframe origins', () => {
-    const frameSrc = getCspDirective(tauriCsp, 'frame-src');
-    assert.ok(frameSrc.includes('http://127.0.0.1:*'),
-      'Tauri CSP frame-src must allow 127.0.0.1 sidecar iframe origins');
-    assert.ok(frameSrc.includes('http://localhost:*'),
-      'Tauri CSP frame-src must allow localhost sidecar iframe origins');
-  });
-
-  it('Tauri CSP media-src allows localhost sidecar and HTTPS HLS media', () => {
-    const mediaSrc = getCspDirective(tauriCsp, 'media-src');
-    assert.ok(mediaSrc.includes('https:'),
-      'Tauri CSP media-src must allow HTTPS for direct HLS CDN streams');
-    assert.ok(mediaSrc.includes('http://127.0.0.1:*'),
-      'Tauri CSP media-src must allow 127.0.0.1 sidecar media origins');
-    assert.ok(mediaSrc.includes('http://localhost:*'),
-      'Tauri CSP media-src must allow localhost sidecar media origins');
-  });
+  // The old "Tauri CSP frame-src/media-src allows localhost sidecar origins"
+  // checks lived here, against src-tauri/tauri.conf.json's CSP — retired
+  // along with the Tauri desktop shell (see TASKS.md). The VS Code
+  // extension's sidecar doesn't route through a Tauri WebView CSP.
 });

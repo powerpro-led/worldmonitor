@@ -25,6 +25,7 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -214,7 +215,7 @@ function validateIndexLanguageMetadata(stats, html = read('index.html')) {
 // crashing the whole gate. Returns null only when the value is not a URL at all.
 function hrefSearchParams(href) {
   try {
-    return new URL(href, 'https://www.worldmonitor.app').searchParams;
+    return new URL(href, resolveWwwOrigin(process.env.APP_DOMAIN)).searchParams;
   } catch {
     return null;
   }

@@ -13,12 +13,13 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveWwwOrigin } from './_domain-config.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DEFAULT_ROOT = resolve(__dirname, '..');
 const DEFAULT_OUT_DIR = join(DEFAULT_ROOT, 'public');
-const DEFAULT_BASE_URL = 'https://www.worldmonitor.app';
+const DEFAULT_BASE_URL = resolveWwwOrigin(process.env.APP_DOMAIN);
 const RESILIENCE_SNAPSHOT_PATH = 'data/resilience-snapshots/resilience-ranking-2026-05-28.json';
 const COUNTRY_NAMES_PATH = 'shared/country-names.json';
 const CHOKEPOINT_REGISTRY_PATH = 'src/config/chokepoint-registry.ts';

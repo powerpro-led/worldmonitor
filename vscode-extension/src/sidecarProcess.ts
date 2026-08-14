@@ -103,8 +103,8 @@ export class SidecarProcess {
 
   private start(): void {
     if (this.proc) return;
-    const sidecarScript = path.join(this.repoRoot, 'src-tauri', 'sidecar', 'local-api-server.mjs');
-    const sqlitePath = path.join(this.repoRoot, 'src-tauri', 'sidecar', 'local-cache.db');
+    const sidecarScript = path.join(this.repoRoot, 'vscode-extension', 'sidecar', 'local-api-server.mjs');
+    const sqlitePath = path.join(this.repoRoot, 'vscode-extension', 'sidecar', 'local-cache.db');
     this.outputChannel.appendLine(`[sidecar] starting: node ${sidecarScript}`);
     this.outputChannel.appendLine(`[sidecar] LOCAL_SQLITE_PATH=${sqlitePath}`);
 

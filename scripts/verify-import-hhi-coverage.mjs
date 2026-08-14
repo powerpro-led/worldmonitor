@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { getRedisCredentials, loadEnvFile, readSeedSnapshot } from './_seed-utils.mjs';
+import { resolveApiOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'resilience:recovery:import-hhi:v1';
 const SEED_META_KEY = 'seed-meta:resilience:recovery:import-hhi';
 const DEFAULT_REPORTERS = ['AE', 'RU', 'NO', 'CH'];
-const API_BASE = process.env.API_BASE_URL || 'https://api.worldmonitor.app';
+const API_BASE = process.env.API_BASE_URL || resolveApiOrigin(process.env.APP_DOMAIN);
 const REDIS_ONLY = process.env.IMPORT_HHI_VERIFY_REDIS_ONLY === '1';
 const WM_KEY = process.env.WORLDMONITOR_API_KEY
   || (process.env.WORLDMONITOR_VALID_KEYS ?? '').split(',').map(k => k.trim()).filter(Boolean)[0]

@@ -25,6 +25,7 @@ import { describe, it, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderBriefMagazine } from '../server/_shared/brief-render.js';
 import { BRIEF_ENVELOPE_VERSION } from '../shared/brief-envelope.js';
+import { TEST_APP_DOMAIN } from './helpers/domain-config.mjs';
 
 // ---------------------------------------------------------------------------
 // Envelope fixture (mirrors brief-magazine-render.test.mjs)
@@ -225,7 +226,7 @@ describe('brief-render — U11 source-link stamping', () => {
       'tracker pins source: magazine',
     );
     assert.ok(
-      html.includes('https://abacus.worldmonitor.app/script.js'),
+      html.includes(`https://abacus.${TEST_APP_DOMAIN}/script.js`),
       'umami loader script tag is emitted in the head',
     );
   });

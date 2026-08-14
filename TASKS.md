@@ -31,7 +31,8 @@ the premise at face value) — see the table this session worked out:
   `analytics-collector-monitor.yml`, `mcp-live-smoke.yml`, `feed-validation.yml`,
   `live-api-cache-auth.yml`). `docker-publish.yml` probably keep (publishes the self-hostable
   server image on release) — not fully confirmed, ask before dropping it.
-- [x] **Remove pass — DONE this session (thirteenth, 2026-08-14), NOT YET COMMITTED/PUSHED.**
+- [x] **Remove pass — DONE thirteenth session (2026-08-14), COMMITTED fourteenth session, NOT
+      YET PUSHED — see the fourteenth-session handoff bullet below for current state.**
       Deleted exactly the enumerated set: `src-tauri/` (Rust app, all 3 `tauri.*.conf.json`,
       icons, `sidecar/node/`), `cli/`, `workers/api-cors-preflight/`, `public/.well-known/{agent-
       card.json, ai-catalog.json, api-catalog, webhook-sample.json, agent-skills/}` (`security.txt`
@@ -86,12 +87,51 @@ the premise at face value) — see the table this session worked out:
       **Verified**: every edited/new script passes `node --check`; `package.json`/`vercel.json`
       parse as valid JSON; `sync-domain-literals.mjs --check` runs to completion (no crash — the
       stale-literal report it prints is pre-existing drift from the separate domain-migration work
-      in `domain_migration_scope.md`, not something this pass introduced). Full `npm test`/`npm run
-      build` pass **still pending** — run those before committing.
+      in `domain_migration_scope.md`, not something this pass introduced). `npm run typecheck`,
+      `npm run build`, `npm run docs:check`, and `npm run lint:md` all pass clean. Full `npm run
+      test:data` (13,876 tests) run twice — before and after fixes — via a `git stash` A/B against
+      unmodified `HEAD`: found 2 real regressions this pass caused (`tests/cli-package.test.mjs` and
+      `tests/agent-skills-index.test.mjs`, both 100% about deleted code — deleted outright) plus one
+      more file needing surgery (`tests/cors-fail-closed.test.mts` — trimmed the Worker-only
+      `describe` block and the Worker entry from its `TWINS` parity array, kept the rest, which
+      tests the still-live `server/cors.ts`/`api/_cors.js` twins). The remaining 8 named failures
+      (`readBootstrapTierObject`, `Bootstrap endpoint`, `browser bundle secret guard`, `CI workflow
+      coverage`, `Edge Function no node: built-ins`, `no non-timing-safe secret comparison`,
+      `Railway service registry coverage`, `renewable energy last-known-good recovery`) fail
+      identically on unmodified `HEAD` — confirmed pre-existing, not this pass's concern.
       **Not done, deliberately out of scope for this pass**: the `src/services/tauri-bridge.ts` +
       `runtime.ts` dead-code prune (real app source, not a file/config removal — flagged, not
       touched), and the `docker-publish.yml` question from the Keep list above (left as keep,
       per the prior session's "probably keep" note — never asked about dropping it this session).
+
+- [x] **Fourteenth session (2026-08-14) — committed, push deliberately deferred, GitHub Actions
+      disabled repo-wide, both on explicit operator instruction. READ THIS FIRST if you're picking
+      up cold.**
+      Committed the full thirteenth-session removal pass (above) together with the prior sessions'
+      already-verified-but-still-uncommitted domain-config sweep (Stage 2/3 below) as a single
+      commit — **`30c89d7`** on local `main`, since the two bodies of work had already accumulated
+      interleaved in the same uncommitted working tree (many of the same files touched by both;
+      a clean line-level split wasn't practical without risky hunk-by-hunk surgery). `main` is now
+      **5 commits ahead of `origin/main`, 0 behind**.
+      **Push attempted, hit a transient `git push` failure** (`Error in the HTTP2 framing layer`,
+      then `Empty reply from server` on retry with `http.version=HTTP/1.1`) — before it could be
+      isolated as transient-vs-real, the operator said **"push later"** — so the commit is
+      deliberately sitting local-only. Don't assume the HTTP2 error is still live; just retry
+      `git push origin main` (plain, no special flags) when told to push, and re-diagnose only if
+      it still fails.
+      **GitHub Actions disabled repo-wide** for `powerpro-led/worldmonitor` (operator: *"we need to
+      stop all github actions for now since we are currently on big refactor"*) via `gh api -X PUT
+      repos/powerpro-led/worldmonitor/actions/permissions -F enabled=false` (note `-F` not `-f` —
+      the endpoint wants a typed boolean, `-f` sends a string and 422s). Verified via a follow-up
+      GET: `{"enabled":false,...}`. This is a single account-level switch — blocks every trigger
+      (push, PR, manual dispatch, and all cron schedules: `seed-freshness-monitor.yml`/
+      `analytics-collector-monitor.yml` every 15 min, `mcp-live-smoke.yml`/`live-api-cache-auth.yml`
+      every 6 hr, `security-audit.yml`/`feed-validation.yml` daily) — not a per-workflow disable.
+      Checked `gh run list` first: nothing was in-flight, so nothing needed cancelling.
+      **Both the push and re-enabling Actions need fresh explicit operator go-ahead** — do not do
+      either unprompted just because this note exists. To re-enable: `gh api -X PUT
+      repos/powerpro-led/worldmonitor/actions/permissions -F enabled=true` (restores default `"all"`
+      `allowed_actions`; re-verify with a GET after).
 
 - [x] **`src-tauri/sidecar/` moved to `vscode-extension/sidecar/` — DONE this session,** ahead of
       the full removal, since the dashboard engine (`local-api-server.mjs`) and the data pipeline

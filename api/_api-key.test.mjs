@@ -2,6 +2,8 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { TEST_APP_DOMAIN } from '../tests/helpers/domain-config.mjs';
+
 const SECRET = 'test-secret-must-be-at-least-32-chars-long-xxx';
 const ENTERPRISE_KEY = 'enterprise-test-key-123';
 process.env.WM_SESSION_SECRET = SECRET;
@@ -17,13 +19,13 @@ function makeReq({ origin, referer, secFetchSite, key, cookie } = {}) {
   if (secFetchSite) headers.set('sec-fetch-site', secFetchSite);
   if (key) headers.set('x-worldmonitor-key', key);
   if (cookie) headers.set('cookie', cookie);
-  return new Request('https://api.worldmonitor.app/api/test', { headers });
+  return new Request(`https://api.${TEST_APP_DOMAIN}/api/test`, { headers });
 }
 
 // ── #3541 regression: header-only signals must NEVER pass ──────────────────
 
 test('#3541: forged Referer alone is rejected', async () => {
-  const r = await validateApiKey(makeReq({ referer: 'https://worldmonitor.app/' }));
+  const r = await validateApiKey(makeReq({ referer: `https://${TEST_APP_DOMAIN}/` }));
   assert.equal(r.valid, false);
   assert.equal(r.required, true);
 });
@@ -33,15 +35,15 @@ test('#3541: forged Sec-Fetch-Site: same-origin alone is rejected (this was the 
   assert.equal(r.valid, false);
 });
 
-test('#3541: forged Origin: https://worldmonitor.app alone is rejected (no key, no session)', async () => {
-  const r = await validateApiKey(makeReq({ origin: 'https://worldmonitor.app' }));
+test('#3541: forged Origin alone is rejected (no key, no session)', async () => {
+  const r = await validateApiKey(makeReq({ origin: `https://${TEST_APP_DOMAIN}` }));
   assert.equal(r.valid, false);
 });
 
 test('#3541: combined forged Origin + Sec-Fetch-Site + Referer all together is still rejected', async () => {
   const r = await validateApiKey(makeReq({
-    origin: 'https://worldmonitor.app',
-    referer: 'https://worldmonitor.app/',
+    origin: `https://${TEST_APP_DOMAIN}`,
+    referer: `https://${TEST_APP_DOMAIN}/`,
     secFetchSite: 'same-origin',
   }));
   assert.equal(r.valid, false);
@@ -185,7 +187,7 @@ test('wm_-prefixed user key returns required:true / valid:false so gateway can f
 
 test('getHeaderApiKey centralizes X-WorldMonitor-Key and X-Api-Key aliases', () => {
   assert.equal(getHeaderApiKey(makeReq({ key: 'canonical-key' })), 'canonical-key');
-  const req = new Request('https://api.worldmonitor.app/api/test', {
+  const req = new Request(`https://api.${TEST_APP_DOMAIN}/api/test`, {
     headers: { 'X-Api-Key': 'alias-key' },
   });
   assert.equal(getHeaderApiKey(req), 'alias-key');

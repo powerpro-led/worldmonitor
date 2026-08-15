@@ -2,9 +2,14 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
 import handler from './report.js';
+import { TEST_APP_DOMAIN } from '../../tests/helpers/domain-config.mjs';
+
+// Pre-escaped for embedding in a regex (new RegExp(...), not a /.../ literal
+// — forward slashes need no escaping there, only the dot does).
+const ESCAPED_TEST_APP_DOMAIN = TEST_APP_DOMAIN.replace(/\./g, '\\.');
 
 function makeReportRequest({ body, contentType = 'application/reports+json' } = {}) {
-  return new Request('https://worldmonitor.app/api/security/report', {
+  return new Request(`https://${TEST_APP_DOMAIN}/api/security/report`, {
     method: 'POST',
     headers: { 'content-type': contentType },
     body: body ?? JSON.stringify([]),
@@ -24,7 +29,7 @@ test('security report endpoint accepts Reporting API batches and redacts URLs in
       {
         type: 'coep',
         age: 10,
-        url: 'https://tech.worldmonitor.app/panel?token=secret',
+        url: `https://tech.${TEST_APP_DOMAIN}/panel?token=secret`,
         body: {
           type: 'corp-not-same-origin',
           disposition: 'reporting',
@@ -39,7 +44,7 @@ test('security report endpoint accepts Reporting API batches and redacts URLs in
   assert.equal(response.status, 204);
   assert.equal(logs.length, 1);
   assert.match(logs[0], /\[security\/report\]/);
-  assert.match(logs[0], /"urlOrigin":"https:\/\/tech\.worldmonitor\.app"/);
+  assert.match(logs[0], new RegExp(`"urlOrigin":"https://tech\\.${ESCAPED_TEST_APP_DOMAIN}"`));
   assert.match(logs[0], /"blockedURLOrigin":"https:\/\/cdn\.example\.test"/);
   assert.doesNotMatch(logs[0], /token=secret|private=true/);
 });
@@ -53,7 +58,7 @@ test('security report endpoint accepts Reporting API single-report content type'
 });
 
 test('security report endpoint rejects unsupported methods', async () => {
-  const response = await handler(new Request('https://worldmonitor.app/api/security/report'));
+  const response = await handler(new Request(`https://${TEST_APP_DOMAIN}/api/security/report`));
   assert.equal(response.status, 405);
 });
 

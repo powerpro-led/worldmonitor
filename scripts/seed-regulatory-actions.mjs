@@ -2,7 +2,7 @@
 // @ts-check
 
 import { pathToFileURL } from 'node:url';
-import { CHROME_UA, loadEnvFile, runSeed } from './_seed-utils.mjs';
+import { CHROME_UA, loadEnvFile, loadSharedConfig, runSeed } from './_seed-utils.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -10,7 +10,9 @@ const CANONICAL_KEY = 'regulatory:actions:v1';
 const FEED_TIMEOUT_MS = 15_000;
 const TTL_SECONDS = 21600;
 const XML_ACCEPT = 'application/atom+xml, application/rss+xml, application/xml, text/xml, */*';
-const SEC_USER_AGENT = 'WorldMonitor/2.0 (monitor@worldmonitor.app)';
+// Same contact address as shared/hapi-app-identifier.json's `email` field —
+// read from there instead of a second hardcoded copy, so the two can't drift.
+const SEC_USER_AGENT = `WorldMonitor/2.0 (${loadSharedConfig('hapi-app-identifier.json').email})`;
 const DEFAULT_FETCH = (...args) => globalThis.fetch(...args);
 const HIGH_KEYWORDS = [
   'enforcement', 'charges', 'charged', 'fraud', 'failure', 'failed bank',

@@ -29,6 +29,11 @@ const ctx = vm.createContext({
   CHROME_UA: 'Mozilla/5.0 (test)',
   loadEnvFile: () => {},
   runSeed: async () => {},
+  // Mirrors _seed-utils.mjs's loadSharedConfig — reads the real shared/ JSON
+  // rather than stubbing a fake value, so SEC_USER_AGENT's contact address
+  // stays in sync with shared/hapi-app-identifier.json without this test
+  // needing its own copy of that value.
+  loadSharedConfig: (filename) => JSON.parse(readFileSync(`shared/${filename}`, 'utf8')),
 });
 
 vm.runInContext(pureSrc, ctx);

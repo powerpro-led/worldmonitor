@@ -15,35 +15,79 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — fifteenth-session handoff
+## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — sixteenth-session update
 
-**Every `worldmonitor.app` literal that CODE can fix without a real-world decision is already
-fixed, committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately
-below for the full writeup.** What's left is exactly **7 files**, and none of them can be
-"continued" with more code work — they're blocked on the operator picking a real replacement
-domain first. Confirm the current list before doing anything by running
-`npm run sync:domain-literals:check` — as of this handoff it reports:
+**Sixteenth session (2026-08-15) re-verified this cold against a raw `grep -rli worldmonitor\.app`
+(55 files, 384 hits — matches what a plain editor search shows) after the operator flagged it as
+"still many hardcoded strings."** Confirmed `npm run sync:domain-literals:check` still reports
+exactly the same tracked files as the fifteenth session, and hand-categorized the other ~47 files:
+they're comments/docs/READMEs describing the still-real, still-live `worldmonitor.app` deployment,
+or test fixtures pinned to the currently-configured real domain — not overlooked hardcodes. **One
+real gap found and closed (tracking only):** `public/.well-known/security.txt` hardcodes a live
+contact email + canonical URL — same "needs a real mailbox on the new domain" category as
+`shared/hapi-app-identifier.json` below — but was never in this list or in
+`scripts/sync-domain-literals.mjs`'s target list. Added below as an 8th tracked file. **Also fixed
+this session, no domain decision needed:** that same file's two GitHub security-advisory links
+pointed at `github.com/eliehabib/worldmonitor` — a third variant of the recurring wrong-GitHub-org
+mismatch (see the `koala73/worldmonitor` fix in `domain_migration_scope.md`) — corrected to the real
+origin `github.com/powerpro-led/worldmonitor`.
+
+**Second pass, same session, operator asked to "reduce hardcoding" in the ~47 non-blocked files —
+found 2 real runtime hardcodes (not just prose) and fixed both, no domain decision needed:**
+`scripts/seed-digest-notifications.mjs` had 3 domain literals actually shipped in production email
+content (the `RESEND_FROM_BRIEF`-unset fallback sender address, the plain-text digest's dashboard
+footer line, and 2 URLs in the HTML template's logo image + "Open Dashboard"/domain footer links) —
+all now derive from `./_domain-config.mjs` (`resolveAppOrigin`/`resolveWwwOrigin`/`normalizeDomain`),
+reusing that file's existing import rather than adding a duplicate one from `../shared/domain-config.js`
+(caught a `SyntaxError: already declared` on the first attempt — this file already imported
+`resolveAppOrigin` from the generated `scripts/_domain-config.mjs` copy for an unrelated feature).
+`scripts/seed-regulatory-actions.mjs`'s `SEC_USER_AGENT` (sent as a real header to SEC EDGAR) had its
+own separately-hardcoded copy of the contact email instead of reading `shared/hapi-app-identifier.json`
+via `loadSharedConfig`, the pattern `scripts/seed-conflict-intel.mjs` already established — switched
+it to that, so the two can't drift. Fixing this broke `tests/regulatory-seed-unit.test.mjs` (it
+`vm.runInContext`-evaluates the seeder's source with a hand-curated stub global list that didn't
+include the newly-needed `loadSharedConfig`) — fixed by adding a faithful stub to that test's context
+(reads the real `shared/` JSON, not a fake value). Verified: `node --test` on all digest/regulatory/
+Dockerfile-import-closure suites (114 tests) + `sync:domain-config:check` + `sync:domain-literals:check`
+all pass/clean. The remaining ~45 files in the original 55-file list were re-confirmed as prose/docs/
+test fixtures with no functional coupling to the domain (traced the actual logic under test in each
+category, not just grepped) — not further touched.
+
+All of the above uncommitted, on top of the existing 2 unpushed commits — pushing held for explicit
+go-ahead per this file's own established discipline.
+
+**Every `worldmonitor.app` literal that CODE can fix without a real-world decision is fixed,
+committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately below for
+the full writeup.** What's left is **8 files**, and none of them can be "continued" with more code
+work — they're blocked on the operator picking a real replacement domain first. Confirm the current
+list before doing anything by running `npm run sync:domain-literals:check` (reports 7 of the 8 —
+`security.txt` isn't wired into that tool yet, tracked here by hand) plus a manual check of
+`public/.well-known/security.txt`:
 
 - `vercel.json`, `docker/nginx-security-headers.conf`, `docker/nginx.conf` — CSP `frame-src`/
   `frame-ancestors`/`form-action` directives and routing config.
 - `public/wm-widget-sandbox.html`, `index.html` — static HTML with inline domain references.
 - `shared/hapi-app-identifier.json`, `scripts/shared/hapi-app-identifier.json` — contact-email
   identifier (Railway-mirror pair, must stay byte-identical to each other).
+- `public/.well-known/security.txt` — contact `mailto:` + `Canonical:` URL; needs a real mailbox on
+  the new domain before cutover, same precondition as the hapi-app-identifier pair above.
 
 **Why these specifically can't move without an operator decision**: `scripts/sync-domain-literals.mjs`
-is the tool that rewrites all 7 in one pass, but it does a literal find-and-replace of the *current*
-hardcoded domain for a *new* one you supply via `APP_DOMAIN` — there is no "new" domain to supply
-yet. See the 🅿️ Parked section further down this file (real infra provisioning: new domain name,
-Vercel project, Cloudflare zone, live mailbox) for the exact list of what has to happen first, and
+is the tool that rewrites the 7 it knows about in one pass, but it does a literal find-and-replace of
+the *current* hardcoded domain for a *new* one you supply via `APP_DOMAIN` — there is no "new" domain
+to supply yet (and `security.txt` would need adding to its target list whenever that happens). See
+the 🅿️ Parked section further down this file (real infra provisioning: new domain name, Vercel
+project, Cloudflare zone, live mailbox) for the exact list of what has to happen first, and
 `domain_migration_scope.md` (Claude memory) for **two separate documented incidents** where running
 this script against a non-real placeholder domain silently corrupted ~46-50 files in ways that
 `--check` couldn't detect and a blind `git checkout` couldn't safely undo. **Do not run
 `sync-domain-literals` against anything other than a real, operator-confirmed domain.**
 
 If the operator has a real domain to give you, the path is: set `APP_DOMAIN` to it, run
-`npm run sync:domain-literals`, verify with `npm run sync:domain-literals:check` (should report
-clean), then run the full verification bar from the ✅ Resolved entry below before committing. If
-they don't have one yet, there's nothing left to do on this initiative except ask.
+`npm run sync:domain-literals`, hand-fix `security.txt`'s two remaining literals, verify with
+`npm run sync:domain-literals:check` (should report clean) plus a manual re-grep of `security.txt`,
+then run the full verification bar from the ✅ Resolved entry below before committing. If they don't
+have one yet, there's nothing left to do on this initiative except ask.
 
 ---
 

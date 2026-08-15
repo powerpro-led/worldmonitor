@@ -53,8 +53,21 @@ all pass/clean. The remaining ~45 files in the original 55-file list were re-con
 test fixtures with no functional coupling to the domain (traced the actual logic under test in each
 category, not just grepped) — not further touched.
 
-All of the above uncommitted, on top of the existing 2 unpushed commits — pushing held for explicit
-go-ahead per this file's own established discipline.
+All of the above committed (`7ac325d`), plus a third small commit (`49bb2a1`, a stale comment in
+`Dockerfile.digest-notifications` describing the now-fixed `seed-digest-notifications.mjs` default —
+no behavior change) — pushing held per operator request ("push later").
+
+**Third pass, same session — operator asked to "continue" the cleanup again.** Did a deeper re-check
+of every one of the ~44 still-remaining files (not a re-grep — traced the actual runtime path for
+each, e.g. read `api/latest-brief.ts`'s `publicBaseUrl()` fallback, `oauth-authorization-server.ts`'s
+per-request metadata construction) specifically hunting for a repeat of the seed-digest-notifications
+pattern (real logic hiding behind a wall of comments). **Found nothing else** — every remaining
+occurrence is either inert prose (docs/READMEs/comments truthfully describing the still-real,
+still-live `worldmonitor.app` deployment) or a test-fixture URL string the code under test never
+actually compares against `APP_DOMAIN` (verified by reading the assertions, not assuming). **This
+initiative has no more mechanical/code work left**: what remains is either (a) the 8 files blocked on
+an operator-supplied real domain, or (b) rewriting true, accurate prose in docs/READMEs to be less
+specific about the current deployment — a content decision, not a bug fix, not done without asking.
 
 **Every `worldmonitor.app` literal that CODE can fix without a real-world decision is fixed,
 committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately below for

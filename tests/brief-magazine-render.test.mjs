@@ -772,7 +772,7 @@ describe('renderBriefMagazine — source link (v2)', () => {
 });
 
 describe('renderBriefMagazine — Share button (non-public views)', () => {
-  const SHARE_URL = 'https://worldmonitor.app/api/brief/public/abcDEF012345';
+  const SHARE_URL = 'https://example.test/api/brief/public/abcDEF012345';
 
   it('renders a Share button with data-share-url and issue date', () => {
     const env = envelope();
@@ -834,7 +834,7 @@ describe('renderBriefMagazine — publicMode', () => {
     const env = envelope();
     const html = renderBriefMagazine(env, {
       publicMode: true,
-      shareUrl: 'https://worldmonitor.app/api/brief/public/abcDEF012345',
+      shareUrl: 'https://example.test/api/brief/public/abcDEF012345',
     });
     assert.ok(!html.includes('class="wm-share"'), 'share button absent on public');
     assert.ok(

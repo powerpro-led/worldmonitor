@@ -183,7 +183,6 @@
     "settings": "การตั้งค่า",
     "sources": "แหล่งข้อมูล",
     "copyLink": "คัดลอกลิงก์",
-    "downloadApp": "ดาวน์โหลดแอป",
     "fullscreen": "เต็มจอ",
     "pinMap": "ปักหมุดแผนที่ไว้ด้านบน",
     "selectRegion": "เลือกภูมิภาค",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "เศรษฐกิจและการค้า",
     "panelCatHappyNews": "ข่าวดี",
     "panelCatHappyPlanet": "โลกและการให้กำลังใจ",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "ข่าวสด",
@@ -542,35 +541,12 @@
       "sectorCascade": "ผลกระทบลูกโซ่ภาคส่วน",
       "militarySurge": "การเพิ่มขึ้นทางทหาร"
     },
-    "story": {
-      "generating": "กำลังสร้างเรื่องราว...",
-      "close": "ปิด",
-      "shareTitle": "แชร์เรื่องราว",
-      "save": "บันทึก",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "ลิงก์",
-      "saved": "บันทึกแล้ว!",
-      "copied": "คัดลอกแล้ว!",
-      "opening": "กำลังเปิด...",
-      "error": "ไม่สามารถสร้างเรื่องราวได้"
-    },
     "mobileWarning": {
       "title": "มุมมองมือถือ",
       "description": "คุณกำลังดูเวอร์ชันมือถือแบบย่อที่เน้นภูมิภาค MENA พร้อมเลเยอร์สำคัญที่เปิดใช้งาน",
       "tip": "เคล็ดลับ: ใช้ปุ่มดู (GLOBAL/US/MENA) เพื่อสลับภูมิภาค แตะเครื่องหมายเพื่อดูรายละเอียด",
       "dontShowAgain": "ไม่แสดงอีก",
       "gotIt": "เข้าใจแล้ว"
-    },
-    "downloadBanner": {
-      "description": "ประสิทธิภาพระดับเนทีฟ, การจัดเก็บคีย์ในเครื่องที่ปลอดภัย, ไทล์แผนที่ออฟไลน์",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "แสดงทุกแพลตฟอร์ม",
-      "showLess": "แสดงน้อยลง"
     },
     "runtimeConfig": {
       "title": "การกำหนดค่าเดสก์ท็อป",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "แชร์ลิงก์",
-      "shareStory": "แชร์เรื่องราว",
       "printPdf": "พิมพ์ / PDF",
       "exportData": "ส่งออกข้อมูล"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "ความขัดแย้ง",
     "security": "กิจกรรมทางทหาร",
     "information": "ข้อมูล",
-    "shareStory": "แชร์เรื่องราว",
     "exportImage": "ส่งออกรูปภาพ",
     "exportPdf": "ส่งออก PDF",
     "new": "ใหม่",

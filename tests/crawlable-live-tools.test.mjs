@@ -675,7 +675,7 @@ describe('crawlable live intelligence view models', () => {
     const originalFetch = globalThis.fetch;
     const originalWindow = globalThis.window;
     globalThis.window = {
-      location: { href: 'https://www.worldmonitor.app/tools/natural-hazard-pulse/?country=NO' },
+      location: { href: 'https://www.example.test/tools/natural-hazard-pulse/?country=NO' },
       history: {
         replaceState(_state, _title, url) {
           replacedUrls.push(url);

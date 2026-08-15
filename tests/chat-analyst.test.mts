@@ -661,9 +661,9 @@ describe('api/chat-analyst handler — edge wiring + pre-auth gates', () => {
 
   it('returns 204 with CORS on OPTIONS preflight (no secrets / no Redis)', async () => {
     const { default: handler } = await import('../api/chat-analyst.ts');
-    const req = new Request('https://api.worldmonitor.app/api/chat-analyst', {
+    const req = new Request('https://api.example.test/api/chat-analyst', {
       method: 'OPTIONS',
-      headers: { origin: 'https://worldmonitor.app' },
+      headers: { origin: 'https://example.test' },
     });
     const res = await handler(req);
     assert.equal(res.status, 204);
@@ -673,9 +673,9 @@ describe('api/chat-analyst handler — edge wiring + pre-auth gates', () => {
 
   it('returns 405 on disallowed methods', async () => {
     const { default: handler } = await import('../api/chat-analyst.ts');
-    const req = new Request('https://api.worldmonitor.app/api/chat-analyst', {
+    const req = new Request('https://api.example.test/api/chat-analyst', {
       method: 'GET',
-      headers: { origin: 'https://worldmonitor.app' },
+      headers: { origin: 'https://example.test' },
     });
     const res = await handler(req);
     assert.equal(res.status, 405);

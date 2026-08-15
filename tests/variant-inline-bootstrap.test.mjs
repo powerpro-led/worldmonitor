@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
 const vercelConfig = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
 const csp = vercelConfig.headers
-  .find((entry) => entry.source === '/((?!docs|embed|embed\\.html).*)')
+  .find((entry) => entry.source === '/((?!docs).*)')
   ?.headers
   ?.find((header) => header.key === 'Content-Security-Policy')
   ?.value ?? '';
@@ -20,7 +20,7 @@ describe('variant inline bootstrap', () => {
     for (const variant of ['happy', 'tech', 'finance', 'commodity', 'energy']) {
       assert.ok(
         indexHtml.includes(`h.startsWith('${variant}.'))v='${variant}'`),
-        `index.html inline bootstrap must set data-variant for ${variant}.worldmonitor.app`,
+        `index.html inline bootstrap must set data-variant for ${variant}.example.test`,
       );
     }
   });

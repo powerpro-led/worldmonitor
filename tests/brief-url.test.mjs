@@ -164,12 +164,12 @@ describe('signBriefUrl', () => {
     const url = await signBriefUrl({
       userId: USER_ID,
       issueDate: ISSUE_DATE,
-      baseUrl: 'https://worldmonitor.app',
+      baseUrl: 'https://example.test',
       secret: SECRET,
     });
     assert.match(
       url,
-      new RegExp(`^https://worldmonitor\\.app/api/brief/${USER_ID}/${ISSUE_DATE}\\?t=[A-Za-z0-9_-]{43}$`),
+      new RegExp(`^https://example\\.test/api/brief/${USER_ID}/${ISSUE_DATE}\\?t=[A-Za-z0-9_-]{43}$`),
     );
   });
 
@@ -177,10 +177,10 @@ describe('signBriefUrl', () => {
     const url = await signBriefUrl({
       userId: USER_ID,
       issueDate: ISSUE_DATE,
-      baseUrl: 'https://worldmonitor.app/',
+      baseUrl: 'https://example.test/',
       secret: SECRET,
     });
-    assert.ok(url.startsWith('https://worldmonitor.app/api/brief/'));
+    assert.ok(url.startsWith('https://example.test/api/brief/'));
     assert.ok(!url.includes('.app//api/'));
   });
 
@@ -191,7 +191,7 @@ describe('signBriefUrl', () => {
     const url = await signBriefUrl({
       userId: 'user_abc-123',
       issueDate: ISSUE_DATE,
-      baseUrl: 'https://worldmonitor.app',
+      baseUrl: 'https://example.test',
       secret: SECRET,
     });
     assert.ok(url.includes('/brief/user_abc-123/'));

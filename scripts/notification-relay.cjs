@@ -22,6 +22,7 @@ const {
 // HTTP actions. See scripts/lib/{alert-rules-fetch,notification-channels-fetch}.cjs.
 const { fetchEnabledRules } = require('./lib/alert-rules-fetch.cjs');
 const { fetchChannelsForUser, deactivateChannel } = require('./lib/notification-channels-fetch.cjs');
+const { resolveAppOrigin, normalizeDomain } = require('./_domain-config.cjs');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
-const RESEND_FROM = process.env.RESEND_FROM_EMAIL ?? 'WorldMonitor <alerts@worldmonitor.app>';
+const RESEND_FROM = process.env.RESEND_FROM_EMAIL ?? `WorldMonitor <alerts@${normalizeDomain(process.env.APP_DOMAIN)}>`;
 // When QUIET_HOURS_BATCH_ENABLED=0, treat batch_on_wake as critical_only.
 // Useful during relay rollout to disable queued batching before drainBatchOnWake is fully tested.
 const QUIET_HOURS_BATCH_ENABLED = process.env.QUIET_HOURS_BATCH_ENABLED !== '0';
@@ -145,7 +146,7 @@ async function drainHeldForUser(userId, variant, allowedChannelTypes) {
   for (const ev of events) {
     lines.push(`[${(ev.severity ?? 'high').toUpperCase()}] ${ev.payload?.title ?? ev.eventType}`);
   }
-  lines.push('', 'View full dashboard → worldmonitor.app');
+  lines.push('', `View full dashboard → ${normalizeDomain(process.env.APP_DOMAIN)}`);
   const text = lines.join('\n');
   const subject = `WorldMonitor — ${events.length} held alert${events.length !== 1 ? 's' : ''}`;
 
@@ -175,7 +176,7 @@ async function drainHeldForUser(userId, variant, allowedChannelTypes) {
         ok = await sendWebPush(userId, ch, {
           title: `WorldMonitor · ${events.length} held alert${events.length === 1 ? '' : 's'}`,
           body: subject,
-          url: 'https://worldmonitor.app/',
+          url: `${resolveAppOrigin(process.env.APP_DOMAIN)}/`,
           tag: `quiet_hours_batch:${userId}`,
           eventType: 'quiet_hours_batch',
         });
@@ -494,7 +495,7 @@ function ensureVapidConfigured(client) {
   if (webpushConfigured) return true;
   const pub = process.env.VAPID_PUBLIC_KEY;
   const priv = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || 'mailto:support@worldmonitor.app';
+  const subject = process.env.VAPID_SUBJECT || `mailto:support@${normalizeDomain(process.env.APP_DOMAIN)}`;
   if (!pub || !priv) {
     if (!webpushConfigWarned) {
       console.warn('[relay] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set — web_push deliveries disabled');
@@ -529,7 +530,7 @@ async function sendWebPush(userId, subscription, payload) {
   const body = JSON.stringify({
     title: payload.title || 'WorldMonitor',
     body: payload.body || '',
-    url: payload.url || 'https://worldmonitor.app/',
+    url: payload.url || `${resolveAppOrigin(process.env.APP_DOMAIN)}/`,
     tag: payload.tag || 'worldmonitor-generic',
     eventType: payload.eventType,
   });
@@ -860,7 +861,7 @@ async function processWelcome(event) {
     await sendWebPush(userId, ch, {
       title: 'WorldMonitor connected',
       body: "You'll receive alerts here when events match your sensitivity settings.",
-      url: 'https://worldmonitor.app/',
+      url: `${resolveAppOrigin(process.env.APP_DOMAIN)}/`,
       tag: `channel_welcome:${userId}`,
       eventType: 'channel_welcome',
     });
@@ -1136,7 +1137,7 @@ async function processEvent(event) {
           // of the formatted text as the body; the click URL points
           // at the event's link if present, else the dashboard.
           const firstLine = (deliveryText || '').split('\n')[1] || '';
-          const eventUrl = event.payload?.link || event.payload?.url || 'https://worldmonitor.app/';
+          const eventUrl = event.payload?.link || event.payload?.url || `${resolveAppOrigin(process.env.APP_DOMAIN)}/`;
           await sendWebPush(rule.userId, ch, {
             title: event.payload?.title || event.eventType || 'WorldMonitor',
             body: firstLine,

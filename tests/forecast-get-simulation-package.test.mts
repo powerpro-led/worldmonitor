@@ -6,7 +6,7 @@ const originalEnv = { ...process.env };
 
 function makeCtx() {
   return {
-    request: new Request('https://worldmonitor.app/api/forecast/v1/get-simulation-package'),
+    request: new Request('https://example.test/api/forecast/v1/get-simulation-package'),
     pathParams: {},
     headers: {},
   };

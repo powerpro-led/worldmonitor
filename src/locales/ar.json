@@ -248,7 +248,6 @@
     "panelCatCentralBanks": "البنوك المركزية والاقتصاد",
     "panelCatDeals": "الصفقات والمؤسسات",
     "panelCatGulfMena": "الخليج والشرق الأوسط",
-    "downloadApp": "تحميل التطبيق",
     "selectRegion": "اختر المنطقة",
     "cached": "مخزن مؤقتاً",
     "unavailable": "غير متوفر",
@@ -261,7 +260,7 @@
     "panelCatCommodityEcon": "الاقتصاد والتجارة",
     "panelCatHappyNews": "أخبار إيجابية",
     "panelCatHappyPlanet": "الكوكب والعطاء",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "أخبار مباشرة",
@@ -550,35 +549,12 @@
       "sectorCascade": "تأثير متتالي قطاعي",
       "militarySurge": "طفرة عسكرية"
     },
-    "story": {
-      "generating": "جارٍ إنشاء القصة...",
-      "close": "إغلاق",
-      "shareTitle": "مشاركة القصة",
-      "save": "حفظ",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "رابط",
-      "saved": "تم الحفظ!",
-      "copied": "تم النسخ!",
-      "opening": "جارٍ الفتح...",
-      "error": "فشل في إنشاء القصة."
-    },
     "mobileWarning": {
       "title": "عرض الهاتف المحمول",
       "description": "أنت تشاهد نسخة مبسطة للهاتف المحمول تركز على منطقة الشرق الأوسط وشمال أفريقيا مع تفعيل الطبقات الأساسية.",
       "tip": "نصيحة: استخدم أزرار العرض (عالمي/أمريكا/الشرق الأوسط) للتبديل بين المناطق. انقر على العلامات لعرض التفاصيل.",
       "dontShowAgain": "لا تعرض مجدداً",
       "gotIt": "حسناً"
-    },
-    "downloadBanner": {
-      "description": "أداء أصلي، تخزين آمن للمفاتيح محلياً، خرائط غير متصلة.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "عرض جميع المنصات",
-      "showLess": "عرض أقل"
     },
     "runtimeConfig": {
       "title": "تهيئة سطح المكتب",
@@ -987,7 +963,6 @@
       "emojiKeyNaval": "الأصول البحرية"
     },
     "countryBrief": {
-      "shareStory": "مشاركة القصة",
       "printPdf": "طباعة / PDF",
       "exportData": "تصدير البيانات",
       "shareLink": "مشاركة الرابط"
@@ -3094,7 +3069,6 @@
     "conflict": "نزاع",
     "security": "نشاط عسكري",
     "information": "معلومات",
-    "shareStory": "مشاركة القصة",
     "exportImage": "تصدير صورة",
     "exportPdf": "تصدير PDF",
     "new": "جديد",

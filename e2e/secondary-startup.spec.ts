@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 
+// abacus.example.test matches tests/helpers/domain-config.mjs's TEST_APP_DOMAIN
+// and playwright.config.ts's webServer APP_DOMAIN — the dev server this spec
+// runs against resolves its Umami analytics origin to abacus.example.test.
 const SECONDARY_STARTUP_REQUEST =
-  /(?:abacus\.worldmonitor\.app\/script\.js|fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
+  /(?:abacus\.example\.test\/script\.js|fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
 
 test.describe('secondary startup work', () => {
   test.beforeEach(async ({ page }) => {
@@ -52,7 +55,7 @@ test.describe('secondary startup work', () => {
     await page.evaluate(() => {
       (window as unknown as { __wmRunDeferredIdle?: () => void }).__wmRunDeferredIdle?.();
     });
-    await expect.poll(() => secondaryRequests.some((url) => url.includes('abacus.worldmonitor.app/script.js'))).toBe(true);
+    await expect.poll(() => secondaryRequests.some((url) => url.includes('abacus.example.test/script.js'))).toBe(true);
     expect(secondaryRequests.some((url) => url.includes('www.youtube.com/iframe_api'))).toBe(false);
   });
 });

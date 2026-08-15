@@ -183,7 +183,6 @@
     "settings": "AYARLAR",
     "sources": "KAYNAKLAR",
     "copyLink": "Baglanti Kopyala",
-    "downloadApp": "Uygulamayı İndir",
     "fullscreen": "Tam Ekran",
     "pinMap": "Haritayi uste sabitle",
     "selectRegion": "Bölge Seçin",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "Ekonomi & Ticaret",
     "panelCatHappyNews": "İyi Haberler",
     "panelCatHappyPlanet": "Gezegen & Hayırseverlik",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Canli Haberler",
@@ -542,35 +541,12 @@
       "sectorCascade": "Sektor Domino Etkisi",
       "militarySurge": "Askeri Yiginak"
     },
-    "story": {
-      "generating": "Hikaye olusturuluyor...",
-      "close": "Kapat",
-      "shareTitle": "Hikayeyi paylas",
-      "save": "Kaydet",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Baglanti",
-      "saved": "Kaydedildi!",
-      "copied": "Kopyalandi!",
-      "opening": "Aciliyor...",
-      "error": "Hikaye olusturulamadi."
-    },
     "mobileWarning": {
       "title": "Mobil Gorunum",
       "description": "Temel katmanlar aktif olarak MENA bolgesine odaklanan basitlestirilmis bir mobil surumu goruntuluyorsunuz.",
       "tip": "Ipucu: Bolgeler arasi gecis icin gorunum dugmelerini (KURESEL/ABD/MENA) kullaniniz. Detaylar icin isaretcilere dokunun.",
       "dontShowAgain": "Bir daha gosterme",
       "gotIt": "Anladim"
-    },
-    "downloadBanner": {
-      "description": "Yerel performans, guvenli anahtar depolama, cevrimdisi harita deseni.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Tum platformlari goster",
-      "showLess": "Daha az goster"
     },
     "runtimeConfig": {
       "title": "Masaustu Yapilandirmasi",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "Bağlantıyı paylaş",
-      "shareStory": "Hikayeyi paylas",
       "printPdf": "Yazdir / PDF",
       "exportData": "Verileri disari aktar"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "Catisma",
     "security": "Askeri faaliyet",
     "information": "Bilgi",
-    "shareStory": "Hikayeyi paylas",
     "exportImage": "Gorsel Disari Aktar",
     "exportPdf": "PDF Dışa Aktar",
     "new": "YENI",

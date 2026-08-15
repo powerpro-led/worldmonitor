@@ -28,7 +28,7 @@ describe('publicRpcFetch', () => {
       return new Response('{}', { status: 200 });
     }) as typeof fetch;
 
-    await publicRpcFetch('https://api.worldmonitor.app/api/news/v1/list-feed-digest?variant=full&lang=en', {
+    await publicRpcFetch('https://api.example.test/api/news/v1/list-feed-digest?variant=full&lang=en', {
       credentials: 'include',
       headers: {
         Authorization: 'Bearer secret',
@@ -56,7 +56,7 @@ describe('publicRpcFetch', () => {
     }) as typeof fetch;
 
     await assert.rejects(
-      publicRpcFetch('https://api.worldmonitor.app/api/intelligence/v1/get-risk-scores'),
+      publicRpcFetch('https://api.example.test/api/intelligence/v1/get-risk-scores'),
       /not an allowlisted public RPC/,
     );
     assert.equal(calls, 0);

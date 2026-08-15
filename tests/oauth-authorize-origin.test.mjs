@@ -3,9 +3,9 @@
  *
  * The OAuth discovery metadata (PRM/AS) and the /agent/auth challenge are all
  * host-derived, so an agent can be pointed at the apex OR www OR api consent
- * page. Previously the POST handler accepted only Origin=https://api.worldmonitor.app
+ * page. Previously the POST handler accepted only Origin=https://api.example.test
  * and 403'd every other first-party host, dead-ending the www/apex flow. The gate
- * now accepts any worldmonitor.app apex/subdomain origin (foreign origins still
+ * now accepts any example.test apex/subdomain origin (foreign origins still
  * 403). The CSRF nonce remains the real protection.
  *
  * The origin check is the FIRST statement in the POST branch (before rate-limit

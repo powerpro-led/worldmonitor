@@ -1,3 +1,5 @@
+import { resolveAppOrigin } from '../_domain-config.mjs';
+
 export const NBS_CALENDAR_INDEX_URL = 'https://www.stats.gov.cn/english/PressRelease/ReleaseCalendar/';
 export const CHINAMONEY_LPR_URL = 'https://www.chinamoney.com.cn/chinese/bklpr/?tab=2';
 export const CHINAMONEY_LPR_NOTICE_API = 'https://www.chinamoney.com.cn/ags/ms/cm-s-notice-query/contentsinshorttime';
@@ -143,7 +145,7 @@ function requiredSourceError(prefix, reason) {
 
 async function fetchText(fetchFn, url) {
   const response = await fetchFn(url, {
-    headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'WorldMonitor/2.10 (+https://worldmonitor.app)' },
+    headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': `WorldMonitor/2.10 (+${resolveAppOrigin(process.env.APP_DOMAIN)})` },
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw Object.assign(new Error(`HTTP_${response.status}`), { status: response.status });
@@ -156,7 +158,7 @@ async function fetchChinaMoneyNotices(fetchFn) {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      'User-Agent': 'WorldMonitor/2.10 (+https://worldmonitor.app)',
+      'User-Agent': `WorldMonitor/2.10 (+${resolveAppOrigin(process.env.APP_DOMAIN)})`,
     },
     body: new URLSearchParams({ channelId: CHINAMONEY_LPR_CHANNEL_ID, pageSize: '24', pageNo: '1' }).toString(),
     signal: AbortSignal.timeout(20_000),

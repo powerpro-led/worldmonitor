@@ -183,7 +183,6 @@
     "settings": "設定",
     "sources": "ソース",
     "copyLink": "リンクをコピー",
-    "downloadApp": "アプリをダウンロード",
     "fullscreen": "全画面",
     "pinMap": "マップを上部に固定",
     "selectRegion": "地域を選択",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "経済・貿易",
     "panelCatHappyNews": "ニュース",
     "panelCatHappyPlanet": "地球・社会貢献",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "ライブニュース",
@@ -542,35 +541,12 @@
       "sectorCascade": "セクターカスケード",
       "militarySurge": "軍事活動急増"
     },
-    "story": {
-      "generating": "ストーリーを生成中...",
-      "close": "閉じる",
-      "shareTitle": "ストーリーを共有",
-      "save": "保存",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "リンク",
-      "saved": "保存済！",
-      "copied": "コピー済！",
-      "opening": "開いています...",
-      "error": "ストーリーの生成に失敗。"
-    },
     "mobileWarning": {
       "title": "モバイル表示",
       "description": "MENA地域に焦点を当てた簡易モバイル版を表示中です。必須レイヤーが有効になっています。",
       "tip": "ヒント: ビューボタン（GLOBAL/US/MENA）で地域を切り替えられます。マーカーをタップすると詳細が表示されます。",
       "dontShowAgain": "今後表示しない",
       "gotIt": "了解"
-    },
-    "downloadBanner": {
-      "description": "ネイティブパフォーマンス、安全なローカルキー保存、オフラインマップタイル。",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "全プラットフォームを表示",
-      "showLess": "折りたたむ"
     },
     "runtimeConfig": {
       "title": "デスクトップ設定",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "リンクを共有",
-      "shareStory": "ストーリーを共有",
       "printPdf": "印刷 / PDF",
       "exportData": "データをエクスポート"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "紛争",
     "security": "軍事活動",
     "information": "情報",
-    "shareStory": "ストーリーを共有",
     "exportImage": "画像をエクスポート",
     "exportPdf": "PDFエクスポート",
     "new": "NEW",

@@ -109,11 +109,11 @@ describe('widget-agent relay — security', () => {
   it('SSRF guard — allowlist is checked before any fetch call in tool loop', () => {
     const allowlistCheck = relay.indexOf('isWidgetEndpointAllowed(endpoint)');
     assert.ok(allowlistCheck !== -1, 'isWidgetEndpointAllowed() check missing in tool loop');
-    // The fetch call to api.worldmonitor.app must come AFTER the check
-    const fetchCallIdx = relay.indexOf("'https://api.worldmonitor.app'", allowlistCheck);
+    // The fetch call's base-URL construction must come AFTER the check
+    const fetchCallIdx = relay.indexOf('resolveApiOrigin(process.env.APP_DOMAIN)', allowlistCheck);
     assert.ok(
       fetchCallIdx > allowlistCheck,
-      'fetch() to api.worldmonitor.app must appear after allowlist check',
+      'fetch() base-URL construction must appear after allowlist check',
     );
   });
 
@@ -233,7 +233,7 @@ describe('widget-agent relay — security', () => {
     const corsBlock = relay.slice(widgetCorsIdx, widgetCorsIdx + 600);
     // Must NOT define a hardcoded origins array for this specific route
     assert.ok(
-      !corsBlock.includes("['https://worldmonitor.app'"),
+      !corsBlock.includes("['https://example.test'"),
       'Do NOT hardcode origins for /widget-agent — reuse getCorsOrigin()',
     );
     // Must reference corsOrigin variable (set by getCorsOrigin earlier)
@@ -1302,6 +1302,11 @@ describe('PRO widget — store and sanitizer', () => {
   });
 
   it('widget sandbox allows approved Vercel previews and rejects lookalike origins', () => {
+    // Literal 'worldmonitor.app' deliberately not migrated to TEST_APP_DOMAIN
+    // here — this asserts on public/wm-widget-sandbox.html's REAL committed
+    // source, which is itself still a hardcoded-literal file (parked, real-
+    // infra-provisioning scope — see TASKS.md). Migrate this assertion only
+    // alongside that file, not before.
     assert.ok(
       sandbox.includes("url.hostname === 'worldmonitor.app'")
         && sandbox.includes("url.hostname.endsWith('.worldmonitor.app')"),
@@ -1341,7 +1346,7 @@ describe('PRO widget — store and sanitizer', () => {
     assert.equal(matchesAllowedTeam('worldmonitor-feature-attacker.vercel.app'), false);
     assert.equal(matchesAllowedTeam('worldmonitor-git-feature-eliewm.vercel.app.evil.com'), false);
     assert.equal(matchesAllowedTeam('worldmonitor-feature-xeliewm.vercel.app'), false);
-    assert.equal(matchesAllowedTeam('evilworldmonitor.app'), false);
+    assert.equal(matchesAllowedTeam('evilexample.test'), false);
     // The retired personal scope (worldmonitor-*-elie-<hash>) must no longer match.
     assert.equal(matchesAllowedTeam('worldmonitor-feature-elie-abc123.vercel.app'), false);
     // A teammate slug added to the list must extend coverage WITHOUT

@@ -48,12 +48,12 @@ describe('scripts/lib/brief-url-sign parity with server/_shared/brief-url', () =
     const url = await signUrlScripts({
       userId: USER_ID,
       issueDate: ISSUE_DATE,
-      baseUrl: 'https://worldmonitor.app',
+      baseUrl: 'https://example.test',
       secret: SECRET,
     });
     assert.match(
       url,
-      new RegExp(`^https://worldmonitor\\.app/api/brief/${USER_ID}/${ISSUE_DATE}\\?t=[A-Za-z0-9_-]{43}$`),
+      new RegExp(`^https://example\\.test/api/brief/${USER_ID}/${ISSUE_DATE}\\?t=[A-Za-z0-9_-]{43}$`),
     );
   });
 

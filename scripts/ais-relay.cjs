@@ -36,6 +36,7 @@ const {
 const { maintainClosedMarketEquityKeys: maintainClosedMarketEquityKeysWithDeps } = require('./shared/closed-market-equity-maintenance.cjs');
 const { getUsEquitySession, isMultiMarketEquityTradingDay } = require('./shared/market-hours.cjs');
 const { mergeLastGoodQuotes, planYahooRefresh } = require('./shared/market-quote-refresh.cjs');
+const { buildAllowedOriginPatterns, resolveAppOrigin, resolveApiOrigin, normalizeDomain } = require('./_domain-config.cjs');
 const chinaCountryStockIndexHelpersPromise = import('./_country-stock-index.mjs');
 const parseProxyUrl = parseProxyConfig;
 
@@ -441,7 +442,7 @@ function upstashSetNx(key, value, ttlSeconds) {
 // ─────────────────────────────────────────────────────────────
 // Boot-seed freshness guard
 //
-// ais-relay is a long-running HTTP service on proxy.worldmonitor.app that
+// ais-relay is a long-running HTTP service on the proxy.<APP_DOMAIN> subdomain that
 // Railway recycles frequently (deploys, crashes, OOM). Every seed loop fires an
 // IMMEDIATE seed on boot and then schedules a setInterval at its real cadence —
 // but the process is usually recycled long before that interval elapses, so the
@@ -3726,7 +3727,7 @@ const CLASSIFY_LLM_PROVIDERS = [
     envKey: 'OPENROUTER_API_KEY',
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
     model: 'deepseek/deepseek-v4-flash',
-    headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://worldmonitor.app', 'X-Title': 'World Monitor', 'User-Agent': CHROME_UA }),
+    headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN), 'X-Title': 'World Monitor', 'User-Agent': CHROME_UA }),
     extraBody: { reasoning: { enabled: false } },
     timeout: 30000,
   },
@@ -3806,7 +3807,7 @@ async function classifyFetchLlm(titles) {
 let classifyInFlight = false;
 
 async function seedClassifyForVariant(variant, seenTitles) {
-  const digestUrl = `https://api.worldmonitor.app/api/news/v1/list-feed-digest?variant=${variant}&lang=en`;
+  const digestUrl = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/news/v1/list-feed-digest?variant=${variant}&lang=en`;
   let digest;
   try {
     const resp = await new Promise((resolve, reject) => {
@@ -4037,7 +4038,7 @@ async function startClassifySeedLoop() {
 // so service statuses are always cached (TTL is 30 min).
 // ─────────────────────────────────────────────────────────────
 const SERVICE_STATUSES_SEED_INTERVAL_MS = 15 * 60 * 1000; // 15 min (TTL/2)
-const SERVICE_STATUSES_RPC_URL = 'https://api.worldmonitor.app/api/infrastructure/v1/list-service-statuses';
+const SERVICE_STATUSES_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/list-service-statuses`;
 
 async function seedServiceStatuses() {
   try {
@@ -4602,9 +4603,9 @@ function startTheaterPostureSeedLoop() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Warm-ping shared auth — relay → api.worldmonitor.app
+// Warm-ping shared auth — relay → the api.<APP_DOMAIN> subdomain
 //
-// All warm-pings call api.worldmonitor.app/api/* edge functions. These are
+// All warm-pings call api.<APP_DOMAIN>/api/* edge functions. These are
 // non-premium but NOT anonymous: in normal traffic they require a browser
 // session token or an API key. Origin-trust used to satisfy them, but the
 // gateway dropped all Origin/Referer trust in the #3541 hardening — Origin
@@ -4637,7 +4638,7 @@ if (!RELAY_API_KEY) {
 function warmPingHeaders(extra = {}) {
   const h = {
     'User-Agent': CHROME_UA,
-    Origin: 'https://worldmonitor.app',
+    Origin: resolveAppOrigin(process.env.APP_DOMAIN),
     ...extra,
   };
   if (RELAY_API_KEY) h['X-WorldMonitor-Key'] = RELAY_API_KEY;
@@ -4652,7 +4653,7 @@ function warmPingHeaders(extra = {}) {
 // keeps CDN caching from hiding the handler from the warm-ping loop.
 // ─────────────────────────────────────────────────────────────
 const CII_WARM_PING_INTERVAL_MS = 8 * 60 * 1000; // 8 min (live cache TTL is 10 min)
-const CII_RPC_URL = 'https://api.worldmonitor.app/api/intelligence/v1/get-risk-scores';
+const CII_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/intelligence/v1/get-risk-scores`;
 
 function ciiWarmPingUrl() {
   return `${CII_RPC_URL}?_wm_warm_ping=${Date.now()}`;
@@ -4688,7 +4689,7 @@ function startCiiWarmPingLoop() {
 // Interval matches health.js maxStaleMin (60 min) with a 2× margin.
 // ─────────────────────────────────────────────────────────────
 const CHOKEPOINT_WARM_PING_INTERVAL_MS = 30 * 60 * 1000; // 30 min
-const CHOKEPOINT_RPC_URL = 'https://api.worldmonitor.app/api/supply-chain/v1/get-chokepoint-status';
+const CHOKEPOINT_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/supply-chain/v1/get-chokepoint-status`;
 
 async function seedChokepointWarmPing() {
   try {
@@ -4723,7 +4724,7 @@ function startChokepointWarmPingLoop() {
 // seed-meta on every live fetch; we just need to call it regularly.
 // ─────────────────────────────────────────────────────────────
 const CABLE_HEALTH_WARM_PING_INTERVAL_MS = 30 * 60 * 1000; // 30 min
-const CABLE_HEALTH_RPC_URL = 'https://api.worldmonitor.app/api/infrastructure/v1/get-cable-health';
+const CABLE_HEALTH_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/get-cable-health`;
 
 async function seedCableHealthWarmPing() {
   try {
@@ -6081,7 +6082,7 @@ async function writeSocialVelocityHealthyMeta(recordCount) {
 async function fetchRedditHot(subreddit, failures = []) {
   const { ok, status, posts, source } = await fetchRedditHotListing(subreddit, {
     limit: 25,
-    legacyUserAgent: 'WorldMonitor/1.0 (contact: info@worldmonitor.app)',
+    legacyUserAgent: `WorldMonitor/1.0 (contact: info@${normalizeDomain(process.env.APP_DOMAIN)})`,
   });
   if (!ok) {
     const failure = `r/${subreddit} HTTP ${status} (${source})`;
@@ -8680,7 +8681,7 @@ function handleWorldBankRequest(req, res) {
   const request = https.get(wbUrl, {
     headers: {
       'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (compatible; WorldMonitor/1.0; +https://worldmonitor.app)',
+      'User-Agent': `Mozilla/5.0 (compatible; WorldMonitor/1.0; +${resolveAppOrigin(process.env.APP_DOMAIN)})`,
     },
     timeout: 15000,
   }, (response) => {
@@ -9409,26 +9410,20 @@ function handleNotamProxyRequest(req, res) {
   });
 }
 
-// CORS origin allowlist — only our domains can use this relay
-const ALLOWED_ORIGINS = [
-  'https://worldmonitor.app',
-  'https://tech.worldmonitor.app',
-  'https://finance.worldmonitor.app',
-  'http://localhost:5173',   // Vite dev
-  'http://localhost:5174',   // Vite dev alt port
-  'http://localhost:4173',   // Vite preview
-  'https://localhost',       // Tauri desktop
-  'tauri://localhost',       // Tauri iOS/macOS
-];
+// CORS origin allowlist — only our domains can use this relay. Derived from
+// APP_DOMAIN (unset = local dev, never a brand default — see
+// shared/domain-config.js). includeDevPatterns is unconditional (not gated
+// on NODE_ENV) to match this relay's pre-existing always-on localhost
+// allowance — DEV_LOCALHOST_ORIGIN_PATTERNS' optional-port regex already
+// covers the Vite dev/alt/preview ports (5173/5174/4173) without listing
+// them individually, and TAURI_ORIGIN_PATTERNS covers the desktop origins.
+function getAllowedOriginPatterns() {
+  return buildAllowedOriginPatterns(process.env.APP_DOMAIN, { includeDevPatterns: true });
+}
 
 function getCorsOrigin(req) {
   const origin = req.headers.origin || '';
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  // Wildcard: any *.worldmonitor.app subdomain (for variant subdomains)
-  try {
-    const url = new URL(origin);
-    if (url.hostname.endsWith('.worldmonitor.app') && url.protocol === 'https:') return origin;
-  } catch { /* invalid origin — fall through */ }
+  if (origin && getAllowedOriginPatterns().some((pattern) => pattern.test(origin))) return origin;
   // Optional: allow Vercel preview deployments when explicitly enabled.
   if (ALLOW_VERCEL_PREVIEW_ORIGINS && origin.endsWith('.vercel.app')) return origin;
   return '';
@@ -11043,7 +11038,7 @@ async function handleWidgetAgentRequest(req, res) {
           }
 
           try {
-            const url = new URL(endpoint, 'https://api.worldmonitor.app');
+            const url = new URL(endpoint, resolveApiOrigin(process.env.APP_DOMAIN));
             for (const [k, v] of Object.entries(params)) {
               url.searchParams.set(k, String(v));
             }

@@ -112,15 +112,15 @@ describe('pageFromIndex', () => {
 });
 
 describe('carouselUrlsFrom', () => {
-  const magazine = 'https://www.worldmonitor.app/api/brief/user_abc/2026-04-18-0800?t=XXX';
+  const magazine = 'https://www.example.test/api/brief/user_abc/2026-04-18-0800?t=XXX';
 
   it('derives three signed carousel URLs from a valid magazine URL', () => {
     const urls = carouselUrlsFrom(magazine);
     assert.ok(urls);
     assert.equal(urls.length, 3);
-    assert.equal(urls[0], 'https://www.worldmonitor.app/api/brief/carousel/user_abc/2026-04-18-0800/0?t=XXX');
-    assert.equal(urls[1], 'https://www.worldmonitor.app/api/brief/carousel/user_abc/2026-04-18-0800/1?t=XXX');
-    assert.equal(urls[2], 'https://www.worldmonitor.app/api/brief/carousel/user_abc/2026-04-18-0800/2?t=XXX');
+    assert.equal(urls[0], 'https://www.example.test/api/brief/carousel/user_abc/2026-04-18-0800/0?t=XXX');
+    assert.equal(urls[1], 'https://www.example.test/api/brief/carousel/user_abc/2026-04-18-0800/1?t=XXX');
+    assert.equal(urls[2], 'https://www.example.test/api/brief/carousel/user_abc/2026-04-18-0800/2?t=XXX');
   });
 
   it('preserves origin (localhost, preview deploys, etc.)', () => {
@@ -129,20 +129,20 @@ describe('carouselUrlsFrom', () => {
   });
 
   it('returns null for a URL without a token', () => {
-    assert.equal(carouselUrlsFrom('https://worldmonitor.app/api/brief/user_a/2026-04-18-0800'), null);
+    assert.equal(carouselUrlsFrom('https://example.test/api/brief/user_a/2026-04-18-0800'), null);
   });
 
   it('returns null when the path is not the magazine route', () => {
-    assert.equal(carouselUrlsFrom('https://worldmonitor.app/dashboard?t=X'), null);
-    assert.equal(carouselUrlsFrom('https://worldmonitor.app/api/other/path/2026-04-18-0800?t=X'), null);
+    assert.equal(carouselUrlsFrom('https://example.test/dashboard?t=X'), null);
+    assert.equal(carouselUrlsFrom('https://example.test/api/other/path/2026-04-18-0800?t=X'), null);
   });
 
   it('returns null when the slot is date-only (no HHMM suffix)', () => {
-    assert.equal(carouselUrlsFrom('https://worldmonitor.app/api/brief/user_a/2026-04-18?t=X'), null);
+    assert.equal(carouselUrlsFrom('https://example.test/api/brief/user_a/2026-04-18?t=X'), null);
   });
 
   it('returns null when slot is not YYYY-MM-DD-HHMM', () => {
-    assert.equal(carouselUrlsFrom('https://worldmonitor.app/api/brief/user_a/today?t=X'), null);
+    assert.equal(carouselUrlsFrom('https://example.test/api/brief/user_a/today?t=X'), null);
   });
 
   it('returns null on garbage input without throwing', () => {

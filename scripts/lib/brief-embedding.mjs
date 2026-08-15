@@ -30,6 +30,7 @@ import {
 } from './brief-dedup-consts.mjs';
 import { stripSourceSuffix } from './brief-dedup-jaccard.mjs';
 import { defaultRedisPipeline } from './_upstash-pipeline.mjs';
+import { resolveAppOrigin } from '../_domain-config.mjs';
 
 export class EmbeddingProviderError extends Error {
   constructor(message, { status, cause } = {}) {
@@ -151,7 +152,7 @@ async function callEmbeddingsApi({ fetchImpl, apiKey, missingTitles, timeoutMs }
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://worldmonitor.app',
+        'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN),
         'X-Title': 'World Monitor',
         'User-Agent': 'worldmonitor-digest/1.0',
       },

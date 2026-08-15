@@ -7,19 +7,7 @@ import { APP_ORIGIN } from '@/config/domain';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
 
-interface DesktopRuntimeInfo {
-  os: string;
-  arch: string;
-}
-
 type UpdaterOutcome = 'no_update' | 'update_available' | 'open_failed' | 'fetch_failed';
-type DesktopBuildVariant = 'full' | 'tech' | 'finance';
-
-const DESKTOP_BUILD_VARIANT: DesktopBuildVariant = (
-  import.meta.env.VITE_VARIANT === 'tech' || import.meta.env.VITE_VARIANT === 'finance'
-    ? import.meta.env.VITE_VARIANT
-    : 'full'
-);
 
 export class DesktopUpdater implements AppModule {
   private ctx: AppContext;
@@ -65,10 +53,6 @@ export class DesktopUpdater implements AppModule {
     logger('[updater]', outcome, context);
   }
 
-  private getDesktopBuildVariant(): DesktopBuildVariant {
-    return DESKTOP_BUILD_VARIANT;
-  }
-
   private async checkForUpdate(): Promise<void> {
     try {
       const res = await fetch(`${APP_ORIGIN}/api/version`, {
@@ -102,7 +86,7 @@ export class DesktopUpdater implements AppModule {
         : 'https://github.com/powerpro-led/worldmonitor/releases/latest';
       this.logUpdaterOutcome('update_available', { current, remote, dismissed: false });
       trackUpdateShown(current, remote);
-      await this.showUpdateToast(remote, releaseUrl);
+      this.showUpdateToast(remote, releaseUrl);
     } catch (error) {
       this.logUpdaterOutcome('fetch_failed', {
         error: error instanceof Error ? error.message : String(error),
@@ -122,52 +106,10 @@ export class DesktopUpdater implements AppModule {
     return false;
   }
 
-  private mapDesktopDownloadPlatform(os: string, arch: string): string | null {
-    const normalizedOs = os.toLowerCase();
-    const normalizedArch = arch.toLowerCase()
-      .replace('amd64', 'x86_64')
-      .replace('x64', 'x86_64')
-      .replace('arm64', 'aarch64');
-
-    if (normalizedOs === 'windows') {
-      return normalizedArch === 'x86_64' ? 'windows-msi' : null;
-    }
-
-    if (normalizedOs === 'macos' || normalizedOs === 'darwin') {
-      if (normalizedArch === 'aarch64') return 'macos-arm64';
-      if (normalizedArch === 'x86_64') return 'macos-x64';
-      return null;
-    }
-
-    if (normalizedOs === 'linux') {
-      if (normalizedArch === 'x86_64') return 'linux-appimage';
-      if (normalizedArch === 'aarch64') return 'linux-appimage-arm64';
-      return null;
-    }
-
-    return null;
-  }
-
-  private async resolveUpdateDownloadUrl(releaseUrl: string): Promise<string> {
-    try {
-      const runtimeInfo = await invokeTauri<DesktopRuntimeInfo>('get_desktop_runtime_info');
-      const platform = this.mapDesktopDownloadPlatform(runtimeInfo.os, runtimeInfo.arch);
-      if (platform) {
-        const variant = this.getDesktopBuildVariant();
-        return `${APP_ORIGIN}/api/download?platform=${platform}&variant=${variant}`;
-      }
-    } catch {
-      // Silent fallback to release page when desktop runtime info is unavailable.
-    }
-    return releaseUrl;
-  }
-
-  private async showUpdateToast(version: string, releaseUrl: string): Promise<void> {
+  private showUpdateToast(version: string, releaseUrl: string): void {
     const existing = document.querySelector<HTMLElement>('.update-toast');
     if (existing?.dataset.version === version) return;
     existing?.remove();
-
-    const url = await this.resolveUpdateDownloadUrl(releaseUrl);
 
     const toast = document.createElement('div');
     toast.className = 'update-toast';
@@ -200,12 +142,12 @@ export class DesktopUpdater implements AppModule {
       if (action === 'download') {
         trackUpdateClicked(version);
         if (this.ctx.isDesktopApp) {
-          void invokeTauri<void>('open_url', { url }).catch((error) => {
-            this.logUpdaterOutcome('open_failed', { url, error: error instanceof Error ? error.message : String(error) });
-            window.open(url, '_blank', 'noopener,noreferrer');
+          void invokeTauri<void>('open_url', { url: releaseUrl }).catch((error) => {
+            this.logUpdaterOutcome('open_failed', { url: releaseUrl, error: error instanceof Error ? error.message : String(error) });
+            window.open(releaseUrl, '_blank', 'noopener,noreferrer');
           });
         } else {
-          window.open(url, '_blank', 'noopener,noreferrer');
+          window.open(releaseUrl, '_blank', 'noopener,noreferrer');
         }
         dismissToast();
       } else if (action === 'dismiss') {

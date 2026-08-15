@@ -19,7 +19,6 @@ const SOCIAL_PREVIEW_UA =
 const AI_CRAWLER_UA =
   /gptbot|claudebot|ccbot|google-extended|perplexitybot|anthropic-ai|bytespider|cohere-ai|youbot|applebot-extended|amazonbot/i;
 
-const SOCIAL_PREVIEW_PATHS = new Set(['/api/story', '/api/og-story']);
 const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRange', 'layers'] as const;
 
 // Paths that bypass bot/script UA filtering below. Each must carry its own
@@ -315,11 +314,6 @@ ${(['tech', 'finance', 'commodity', 'happy'] as const)
     if (SOCIAL_IMAGE_UA.test(ua)) {
       return;
     }
-  }
-
-  // Allow social preview bots on exact OG routes only
-  if (SOCIAL_PREVIEW_UA.test(ua) && SOCIAL_PREVIEW_PATHS.has(path)) {
-    return;
   }
 
   // Public endpoints bypass all bot filtering

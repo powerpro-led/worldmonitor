@@ -75,11 +75,8 @@ import {
   trackMapViewChange,
   trackMapLayerToggle,
   trackPanelToggled,
-  trackDownloadClicked,
   trackGateHit,
 } from '@/services/analytics';
-import { detectPlatform, allButtons, buttonsForPlatform } from '@/components/DownloadBanner';
-import type { Platform } from '@/components/DownloadBanner';
 import { invokeTauri } from '@/services/tauri-bridge';
 import { getCachedGpsInterference } from '@/services/gps-interference';
 import { dataFreshness } from '@/services/data-freshness';
@@ -93,7 +90,6 @@ import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
 import { escapeHtml } from '@/utils/sanitize';
-import { buildEmbedIframeSnippet, buildEmbedMapUrl, type EmbedVariant } from '@/embed/embed-url';
 import { createSettingsButton } from '@/components/settings-button';
 
 function readStorageValue(key: string): string | null {
@@ -214,8 +210,6 @@ export class EventHandlerManager implements AppModule {
   private boundTvKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundFocalPointsReadyHandler: (() => void) | null = null;
   private boundThemeChangedHandler: (() => void) | null = null;
-  private boundDropdownClickHandler: ((e: MouseEvent) => void) | null = null;
-  private boundDropdownKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundMapResizeMoveHandler: ((e: MouseEvent) => void) | null = null;
   private boundMapEndResizeHandler: (() => void) | null = null;
   private boundMapResizeVisChangeHandler: (() => void) | null = null;
@@ -231,7 +225,6 @@ export class EventHandlerManager implements AppModule {
   private boundNotifyForCountryHandler: ((e: Event) => void) | null = null;
   private boundMissionOutsideHandler: ((e: MouseEvent) => void) | null = null;
   private boundMissionKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
-  private boundEmbedModalKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private missionPresetPopover: HTMLElement | null = null;
   private missionDataRefreshTimer: number | null = null;
   private proGateUnsubscribers: Array<() => void> = [];
@@ -349,7 +342,6 @@ export class EventHandlerManager implements AppModule {
   }
 
   destroy(): void {
-    this.closeEmbedDialog();
     this.debouncedUrlSync.cancel();
     this.debouncedWebcamReload.cancel();
     if (this.boundFullscreenHandler) {
@@ -401,14 +393,6 @@ export class EventHandlerManager implements AppModule {
     if (this.boundThemeChangedHandler) {
       window.removeEventListener('theme-changed', this.boundThemeChangedHandler);
       this.boundThemeChangedHandler = null;
-    }
-    if (this.boundDropdownClickHandler) {
-      document.removeEventListener('click', this.boundDropdownClickHandler);
-      this.boundDropdownClickHandler = null;
-    }
-    if (this.boundDropdownKeydownHandler) {
-      document.removeEventListener('keydown', this.boundDropdownKeydownHandler);
-      this.boundDropdownKeydownHandler = null;
     }
     if (this.boundMapResizeMoveHandler) {
       document.removeEventListener('mousemove', this.boundMapResizeMoveHandler);
@@ -525,13 +509,6 @@ export class EventHandlerManager implements AppModule {
         this.setCopyLinkFeedback(button, 'Copy failed');
       }
     });
-
-    document.getElementById('embedLinkBtn')?.addEventListener('click', () => {
-      this.openEmbedDialog();
-    });
-
-    this.initDownloadDropdown();
-    this.initFooterDownload();
 
     this.boundStorageHandler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEYS.panels && e.newValue) {
@@ -1310,106 +1287,6 @@ export class EventHandlerManager implements AppModule {
     });
   }
 
-  private getEmbedUrl(): string | null {
-    if (!this.ctx.map) return null;
-    const state = this.ctx.map.getState();
-    return buildEmbedMapUrl(`${window.location.origin}/embed`, {
-      layers: state.layers,
-      center: this.ctx.map.getCenter(),
-      zoom: state.zoom,
-      theme: getCurrentTheme(),
-      variant: SITE_VARIANT as EmbedVariant,
-    });
-  }
-
-  private openEmbedDialog(): void {
-    const embedUrl = this.getEmbedUrl();
-    if (!embedUrl) return;
-    const snippet = buildEmbedIframeSnippet(embedUrl);
-    this.closeEmbedDialog();
-
-    const overlay = document.createElement('div');
-    overlay.className = 'embed-modal-overlay active';
-    overlay.id = 'embedModalOverlay';
-    overlay.setAttribute('role', 'presentation');
-
-    const dialog = document.createElement('div');
-    dialog.className = 'embed-modal';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-labelledby', 'embedModalTitle');
-
-    const header = document.createElement('div');
-    header.className = 'embed-modal-header';
-    const title = document.createElement('h2');
-    title.id = 'embedModalTitle';
-    title.textContent = 'Embed this map';
-    const closeButton = document.createElement('button');
-    closeButton.className = 'embed-modal-close';
-    closeButton.type = 'button';
-    closeButton.setAttribute('aria-label', 'Close embed dialog');
-    closeButton.textContent = 'x';
-    header.append(title, closeButton);
-
-    const preview = document.createElement('iframe');
-    preview.className = 'embed-preview-frame';
-    preview.title = 'World Monitor live map preview';
-    preview.loading = 'lazy';
-    preview.referrerPolicy = 'strict-origin-when-cross-origin';
-    preview.src = embedUrl;
-
-    const label = document.createElement('label');
-    label.className = 'embed-snippet-label';
-    label.htmlFor = 'embedSnippetTextarea';
-    label.textContent = 'Iframe snippet';
-
-    const textarea = document.createElement('textarea');
-    textarea.className = 'embed-snippet-textarea';
-    textarea.id = 'embedSnippetTextarea';
-    textarea.readOnly = true;
-    textarea.value = snippet;
-
-    const actions = document.createElement('div');
-    actions.className = 'embed-modal-actions';
-    const copyButton = document.createElement('button');
-    copyButton.className = 'embed-copy-btn';
-    copyButton.type = 'button';
-    copyButton.textContent = 'Copy snippet';
-    actions.append(copyButton);
-
-    dialog.append(header, preview, label, textarea, actions);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    closeButton.addEventListener('click', () => this.closeEmbedDialog());
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) this.closeEmbedDialog();
-    });
-    copyButton.addEventListener('click', async () => {
-      try {
-        await this.copyToClipboard(snippet);
-        copyButton.textContent = 'Copied!';
-      } catch (error) {
-        console.warn('Failed to copy embed snippet:', error);
-        copyButton.textContent = 'Copy failed';
-      }
-    });
-    this.boundEmbedModalKeydownHandler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') this.closeEmbedDialog();
-    };
-    document.addEventListener('keydown', this.boundEmbedModalKeydownHandler);
-    textarea.focus();
-    textarea.select();
-  }
-
-  private closeEmbedDialog(): void {
-    document.getElementById('embedModalOverlay')?.remove();
-    if (this.boundEmbedModalKeydownHandler) {
-      document.removeEventListener('keydown', this.boundEmbedModalKeydownHandler);
-      this.boundEmbedModalKeydownHandler = null;
-    }
-  }
-
   private async copyToClipboard(text: string): Promise<void> {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -1423,109 +1300,6 @@ export class EventHandlerManager implements AppModule {
     textarea.select();
     document.execCommand('copy');
     document.body.removeChild(textarea);
-  }
-
-  private platformLabel(p: Platform): string {
-    switch (p) {
-      case 'macos-arm64': return '\uF8FF Silicon';
-      case 'macos-x64': return '\uF8FF Intel';
-      case 'macos': return '\uF8FF macOS';
-      case 'windows': return 'Windows';
-      case 'linux': return 'Linux';
-      default: return t('header.downloadApp');
-    }
-  }
-
-  private initDownloadDropdown(): void {
-    const btn = document.getElementById('downloadBtn');
-    const dropdown = document.getElementById('downloadDropdown');
-    const label = document.getElementById('downloadBtnLabel');
-    if (!btn || !dropdown) return;
-
-    const platform = detectPlatform();
-    if (label) label.textContent = this.platformLabel(platform);
-
-    const primary = buttonsForPlatform(platform);
-    const all = allButtons();
-    const others = all.filter(b => !primary.some(p => p.href === b.href));
-
-    const renderDropdown = () => {
-      const primaryHtml = primary.map(b =>
-        `<a class="dl-dd-btn ${b.cls} primary" href="${b.href}">${b.label}</a>`
-      ).join('');
-      const othersHtml = others.map(b =>
-        `<a class="dl-dd-btn ${b.cls}" href="${b.href}">${b.label}</a>`
-      ).join('');
-
-      setTrustedHtml(dropdown, trustedHtml(`
-        <div class="dl-dd-tagline">${t('modals.downloadBanner.description')}</div>
-        <div class="dl-dd-buttons">${primaryHtml}</div>
-        ${others.length ? `<button class="dl-dd-toggle" id="dlDdToggle">${t('modals.downloadBanner.showAllPlatforms')}</button>
-        <div class="dl-dd-others" id="dlDdOthers">${othersHtml}</div>` : ''}
-      `, "legacy direct innerHTML migration"));
-
-      dropdown.querySelectorAll<HTMLAnchorElement>('.dl-dd-btn').forEach(a => {
-        a.addEventListener('click', (e) => {
-          e.preventDefault();
-          const plat = new URL(a.href, location.origin).searchParams.get('platform') || 'unknown';
-          trackDownloadClicked(plat);
-          window.open(a.href, '_blank', 'noopener,noreferrer');
-          dropdown.classList.remove('open');
-        });
-      });
-
-      const toggle = dropdown.querySelector('#dlDdToggle');
-      const othersEl = dropdown.querySelector('#dlDdOthers') as HTMLElement | null;
-      if (toggle && othersEl) {
-        toggle.addEventListener('click', () => {
-          const showing = othersEl.classList.toggle('show');
-          toggle.textContent = showing
-            ? t('modals.downloadBanner.showLess')
-            : t('modals.downloadBanner.showAllPlatforms');
-        });
-      }
-    };
-
-    renderDropdown();
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dropdown.classList.toggle('open');
-    });
-
-    this.boundDropdownClickHandler = (e: MouseEvent) => {
-      if (!dropdown.contains(e.target as Node) && !btn.contains(e.target as Node)) {
-        dropdown.classList.remove('open');
-      }
-    };
-    document.addEventListener('click', this.boundDropdownClickHandler);
-
-    this.boundDropdownKeydownHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dropdown.classList.remove('open');
-    };
-    document.addEventListener('keydown', this.boundDropdownKeydownHandler);
-  }
-
-  private initFooterDownload(): void {
-    const mount = document.getElementById('footerDownloadMount');
-    if (!mount) return;
-    const platform = detectPlatform();
-    const primary = buttonsForPlatform(platform);
-    const btn = primary[0];
-    if (!btn) return;
-    const a = document.createElement('a');
-    a.href = btn.href;
-    a.textContent = t('header.downloadApp');
-    a.className = 'site-footer-download-link';
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      const plat = new URL(btn.href, location.origin).searchParams.get('platform') || 'unknown';
-      trackDownloadClicked(plat);
-      window.open(btn.href, '_blank', 'noopener,noreferrer');
-    });
-    mount.replaceWith(a);
   }
 
   private setCopyLinkFeedback(button: HTMLElement | null, message: string): void {

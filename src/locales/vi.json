@@ -183,7 +183,6 @@
     "settings": "CÀI ĐẶT",
     "sources": "NGUỒN",
     "copyLink": "Sao chép Liên kết",
-    "downloadApp": "Tải ứng dụng",
     "fullscreen": "Toàn màn hình",
     "pinMap": "Ghim bản đồ lên đầu",
     "selectRegion": "Chọn khu vực",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "Kinh tế & Thương mại",
     "panelCatHappyNews": "Tin tốt",
     "panelCatHappyPlanet": "Hành tinh & Trao tặng",
-    "embed": "Nhúng"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Tin tức Trực tiếp",
@@ -542,35 +541,12 @@
       "sectorCascade": "Hiệu ứng Domino Ngành",
       "militarySurge": "Gia tăng Quân sự"
     },
-    "story": {
-      "generating": "Đang tạo bài viết...",
-      "close": "Đóng",
-      "shareTitle": "Chia sẻ bài viết",
-      "save": "Lưu",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Liên kết",
-      "saved": "Đã lưu!",
-      "copied": "Đã sao chép!",
-      "opening": "Đang mở...",
-      "error": "Không thể tạo bài viết."
-    },
     "mobileWarning": {
       "title": "Giao diện Di động",
       "description": "Bạn đang xem phiên bản di động đơn giản hóa tập trung vào khu vực MENA với các lớp thiết yếu.",
       "tip": "Mẹo: Sử dụng các nút xem (TOÀN CẦU/MỸ/MENA) để chuyển khu vực. Chạm vào điểm đánh dấu để xem chi tiết.",
       "dontShowAgain": "Không hiển thị lại",
       "gotIt": "Đã hiểu"
-    },
-    "downloadBanner": {
-      "description": "Hiệu suất gốc, lưu trữ khóa cục bộ an toàn, bản đồ ngoại tuyến.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Hiện tất cả nền tảng",
-      "showLess": "Thu gọn"
     },
     "runtimeConfig": {
       "title": "Cấu hình Desktop",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "Chia sẻ liên kết",
-      "shareStory": "Chia sẻ bài viết",
       "printPdf": "In / PDF",
       "exportData": "Xuất dữ liệu"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "Xung đột",
     "security": "Hoạt động quân sự",
     "information": "Thông tin",
-    "shareStory": "Chia sẻ bài viết",
     "exportImage": "Xuất Hình ảnh",
     "exportPdf": "Xuất PDF",
     "new": "MỚI",

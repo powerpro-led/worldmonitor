@@ -171,13 +171,13 @@ describe('validateBearerToken (Supabase HS256)', () => {
   it('extracts email and name from user_metadata (GitHub identity)', async () => {
     const token = await signToken({
       sub: 'user-prefill',
-      email: 'operator@worldmonitor.app',
+      email: 'operator@example.test',
       user_metadata: { full_name: 'Operator Name', user_name: 'operator-gh' },
     });
 
     const result = await validateBearerToken(token);
     assert.equal(result.valid, true);
-    assert.equal(result.email, 'operator@worldmonitor.app');
+    assert.equal(result.email, 'operator@example.test');
     assert.equal(result.name, 'Operator Name', 'full_name takes priority over user_name');
   });
 
@@ -236,17 +236,17 @@ describe('CORS origin matching (convex/http.ts)', () => {
   }
 
   const TRUSTED = [
-    'https://worldmonitor.app',
-    '*.worldmonitor.app',
+    'https://example.test',
+    '*.example.test',
     'http://localhost:3000',
   ];
 
   it('allows exact match', () => {
-    assert.equal(allowedOrigin('https://worldmonitor.app', TRUSTED), 'https://worldmonitor.app');
+    assert.equal(allowedOrigin('https://example.test', TRUSTED), 'https://example.test');
   });
 
   it('allows wildcard subdomain', () => {
-    const origin = 'https://preview-xyz.worldmonitor.app';
+    const origin = 'https://preview-xyz.example.test';
     assert.equal(allowedOrigin(origin, TRUSTED), origin);
   });
 
@@ -259,7 +259,7 @@ describe('CORS origin matching (convex/http.ts)', () => {
   });
 
   it('blocks partial domain match', () => {
-    assert.equal(allowedOrigin('https://attackerworldmonitor.app', TRUSTED), null);
+    assert.equal(allowedOrigin('https://attackerexample.test', TRUSTED), null);
   });
 
   it('returns null for null origin -- no ACAO header emitted', () => {

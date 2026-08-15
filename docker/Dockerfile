@@ -19,8 +19,12 @@ RUN npm ci --include=dev --ignore-scripts
 
 # Build-time configuration. Pass via --build-arg. Other VITE_* vars (e.g. VITE_PMTILES_URL)
 # can be added here or via --build-arg for custom builds; see .env.example for the full list.
+# VITE_WS_API_URL empty (not a worldmonitor.app default) matches .env.example's
+# documented same-origin-when-empty convention (src/services/runtime.ts
+# getApiBaseUrl() falls back to a relative path, which this image's own nginx
+# already proxies to API_UPSTREAM below).
 ARG VITE_VARIANT=full
-ARG VITE_WS_API_URL=https://api.worldmonitor.app
+ARG VITE_WS_API_URL=
 
 ENV VITE_VARIANT=${VITE_VARIANT}
 ENV VITE_WS_API_URL=${VITE_WS_API_URL}
@@ -35,13 +39,15 @@ FROM nginx:alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e
 
 WORKDIR /usr/share/nginx/html
 
-ENV API_UPSTREAM=https://api.worldmonitor.app
+# No baked-in API_UPSTREAM default — this fork has no public backend at any
+# fixed domain to silently proxy to. docker-entrypoint.sh derives it from
+# APP_DOMAIN at container start if not set explicitly, or fails loudly
+# rather than guessing a brand.
 
 # Copy built assets, nginx template (API_UPSTREAM substituted at startup), and entrypoint.
 COPY --from=builder /app/dist/ ./
 COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY docker/nginx-security-headers.conf /etc/nginx/security_headers.conf
-COPY docker/nginx-embed-security-headers.conf /etc/nginx/embed_security_headers.conf
 COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

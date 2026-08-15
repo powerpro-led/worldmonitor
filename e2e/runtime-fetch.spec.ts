@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+// 'example.test' below matches tests/helpers/domain-config.mjs's TEST_APP_DOMAIN
+// and playwright.config.ts's webServer APP_DOMAIN — the dev server this spec
+// runs against resolves its cloud API origin to api.example.test, so these
+// literals must track that, not the real brand. Hardcoded directly (not
+// imported) because these strings live inside page.evaluate() callbacks,
+// which Playwright serializes as source and re-executes in the browser —
+// a Node-side import wouldn't survive that boundary.
 test.describe('desktop runtime routing guardrails', () => {
   test('detectDesktopRuntime covers packaged tauri hosts', async ({ page }) => {
     await page.goto('/tests/runtime-harness.html');
@@ -53,8 +60,8 @@ test.describe('desktop runtime routing guardrails', () => {
           hasTauriGlobals: false,
           userAgent: 'Mozilla/5.0',
           locationProtocol: 'https:',
-          locationHost: 'worldmonitor.app',
-          locationOrigin: 'https://worldmonitor.app',
+          locationHost: 'example.test',
+          locationOrigin: 'https://example.test',
         }),
       };
     });
@@ -95,10 +102,10 @@ test.describe('desktop runtime routing guardrails', () => {
 
         calls.push(url);
 
-        if (url.includes('worldmonitor.app/api/fred-data')) {
+        if (url.includes('example.test/api/fred-data')) {
           return responseJson({ observations: [{ value: '321.5' }] }, 200);
         }
-        if (url.includes('worldmonitor.app/api/stablecoin-markets')) {
+        if (url.includes('example.test/api/stablecoin-markets')) {
           return responseJson({ stablecoins: [{ symbol: 'USDT' }] }, 200);
         }
 
@@ -160,8 +167,8 @@ test.describe('desktop runtime routing guardrails', () => {
     expect(result.stableStatus).toBe(200);
     expect(result.stableSymbol).toBe('USDT');
 
-    expect(result.calls.some((url) => url.includes('worldmonitor.app/api/fred-data'))).toBe(true);
-    expect(result.calls.some((url) => url.includes('worldmonitor.app/api/stablecoin-markets'))).toBe(true);
+    expect(result.calls.some((url) => url.includes('example.test/api/fred-data'))).toBe(true);
+    expect(result.calls.some((url) => url.includes('example.test/api/stablecoin-markets'))).toBe(true);
     expect(result.proxiedPaths.some((path) => path.startsWith('/api/fred-data'))).toBe(true);
     expect(result.proxiedPaths.some((path) => path.startsWith('/api/stablecoin-markets'))).toBe(true);
   });
@@ -237,8 +244,8 @@ test.describe('desktop runtime routing guardrails', () => {
     expect(result.validateError).toContain('native proxy rejected /api/local-validate-secret');
     expect(result.proxiedPaths).toContain('/api/local-env-update');
     expect(result.proxiedPaths).toContain('/api/local-validate-secret');
-    expect(result.calls.some((url) => url.includes('worldmonitor.app/api/local-env-update'))).toBe(false);
-    expect(result.calls.some((url) => url.includes('worldmonitor.app/api/local-validate-secret'))).toBe(false);
+    expect(result.calls.some((url) => url.includes('example.test/api/local-env-update'))).toBe(false);
+    expect(result.calls.some((url) => url.includes('example.test/api/local-validate-secret'))).toBe(false);
   });
 
   test('runtime fetch patch preserves Request abort signals', async ({ page }) => {
@@ -355,67 +362,6 @@ test.describe('desktop runtime routing guardrails', () => {
     expect(result.reloadCountBeforeClear).toBe(1);
     expect(result.reloadCountAfterClear).toBe(2);
     expect(result.storedValue).toBe('1');
-  });
-
-  test('update badge picks architecture-correct desktop download url', async ({ page }) => {
-    await page.goto('/tests/runtime-harness.html');
-
-    const result = await page.evaluate(async () => {
-      const { DesktopUpdater } = await import('/src/app/desktop-updater.ts');
-      const globalWindow = window as unknown as {
-        __TAURI__?: { core?: { invoke?: (command: string) => Promise<unknown> } };
-      };
-      const previousTauri = globalWindow.__TAURI__;
-      const releaseUrl = 'https://github.com/powerpro-led/worldmonitor/releases/latest';
-
-      const updaterProto = DesktopUpdater.prototype as unknown as {
-        resolveUpdateDownloadUrl: (releaseUrl: string) => Promise<string>;
-        mapDesktopDownloadPlatform: (os: string, arch: string) => string | null;
-        getDesktopBuildVariant: () => 'full' | 'tech' | 'finance';
-      };
-      const fakeApp = {
-        mapDesktopDownloadPlatform: updaterProto.mapDesktopDownloadPlatform,
-        getDesktopBuildVariant: () => 'full' as const,
-      };
-
-      try {
-        globalWindow.__TAURI__ = {
-          core: {
-            invoke: async (command: string) => {
-              if (command !== 'get_desktop_runtime_info') throw new Error(`Unexpected command: ${command}`);
-              return { os: 'macos', arch: 'aarch64' };
-            },
-          },
-        };
-        const macArm = await updaterProto.resolveUpdateDownloadUrl.call(fakeApp, releaseUrl);
-
-        globalWindow.__TAURI__ = {
-          core: {
-            invoke: async () => ({ os: 'windows', arch: 'amd64' }),
-          },
-        };
-        const windowsX64 = await updaterProto.resolveUpdateDownloadUrl.call(fakeApp, releaseUrl);
-
-        globalWindow.__TAURI__ = {
-          core: {
-            invoke: async () => ({ os: 'linux', arch: 'x86_64' }),
-          },
-        };
-        const linuxFallback = await updaterProto.resolveUpdateDownloadUrl.call(fakeApp, releaseUrl);
-
-        return { macArm, windowsX64, linuxFallback };
-      } finally {
-        if (previousTauri === undefined) {
-          delete globalWindow.__TAURI__;
-        } else {
-          globalWindow.__TAURI__ = previousTauri;
-        }
-      }
-    });
-
-    expect(result.macArm).toBe('https://worldmonitor.app/api/download?platform=macos-arm64&variant=full');
-    expect(result.windowsX64).toBe('https://worldmonitor.app/api/download?platform=windows-exe&variant=full');
-    expect(result.linuxFallback).toBe('https://github.com/powerpro-led/worldmonitor/releases/latest');
   });
 
   test('MapContainer paints a mobile shell before heavy map renderer resources', async ({ page }) => {
@@ -1661,7 +1607,7 @@ test.describe('desktop runtime routing guardrails', () => {
 
         calls.push(url);
 
-        if (url.includes('worldmonitor.app/api/fred-data')) {
+        if (url.includes('example.test/api/fred-data')) {
           return responseJson({ observations: [{ value: '999' }] }, 200);
         }
         return responseJson({ ok: true }, 200);
@@ -1691,7 +1637,7 @@ test.describe('desktop runtime routing guardrails', () => {
           fetchError = err instanceof Error ? err.message : String(err);
         }
 
-        const cloudCalls = calls.filter(u => u.includes('worldmonitor.app'));
+        const cloudCalls = calls.filter(u => u.includes('example.test'));
 
         return {
           fetchError,
@@ -1742,13 +1688,13 @@ test.describe('desktop runtime routing guardrails', () => {
 
         calls.push(url);
 
-        if (url.includes('worldmonitor.app') && init?.headers) {
+        if (url.includes('example.test') && init?.headers) {
           const h = new Headers(init.headers);
           const wmKey = h.get('X-WorldMonitor-Key');
           if (wmKey) capturedHeaders['X-WorldMonitor-Key'] = wmKey;
         }
 
-        if (url.includes('worldmonitor.app/api/market/v1/test')) {
+        if (url.includes('example.test/api/market/v1/test')) {
           return responseJson({ quotes: [] }, 200);
         }
         return responseJson({ ok: true }, 200);
@@ -1780,7 +1726,7 @@ test.describe('desktop runtime routing guardrails', () => {
         return {
           status: response.status,
           hasQuotes: Array.isArray(body.quotes),
-          cloudCalls: calls.filter(u => u.includes('worldmonitor.app')).length,
+          cloudCalls: calls.filter(u => u.includes('example.test')).length,
           wmKeyHeader: capturedHeaders['X-WorldMonitor-Key'] || null,
           proxiedPaths,
         };

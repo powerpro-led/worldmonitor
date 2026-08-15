@@ -17,7 +17,7 @@ describe('VITE secret environment guard (#5213)', () => {
       'VITE_AISSTREAM_API_KEY=secret',
       'VITE_ACLED_ACCESS_TOKEN=secret',
       'VITE_VAPID_PUBLIC_KEY=public',
-      'VITE_WS_API_URL=https://api.worldmonitor.app',
+      'VITE_WS_API_URL=https://api.example.test',
     ].join('\n'));
     assert.deepEqual(found, ['VITE_ACLED_ACCESS_TOKEN', 'VITE_AISSTREAM_API_KEY']);
   });
@@ -32,7 +32,7 @@ describe('VITE secret environment guard (#5213)', () => {
       /VITE_CLOUDFLARE_API_TOKEN/,
     );
 
-    writeFileSync(join(root, '.env.example'), 'VITE_WS_API_URL=https://api.worldmonitor.app\n');
+    writeFileSync(join(root, '.env.example'), 'VITE_WS_API_URL=https://api.example.test\n');
     const warnings = [];
     assert.doesNotThrow(() => runViteEnvSecretGuard(root, {
       trackedEnvFiles: ['.env.example'],

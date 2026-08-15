@@ -8,7 +8,7 @@ const originalEnv = { ...process.env };
 const REDIS_KEY = 'forecast:predictions:v2';
 
 function makeCtx() {
-  const req = new Request('https://worldmonitor.app/api/forecast/v1/get-forecasts');
+  const req = new Request('https://example.test/api/forecast/v1/get-forecasts');
   return { request: req, pathParams: {}, headers: {} };
 }
 

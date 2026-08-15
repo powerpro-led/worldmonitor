@@ -183,7 +183,6 @@
     "settings": "ΡΥΘΜΙΣΕΙΣ",
     "sources": "ΠΗΓΕΣ",
     "copyLink": "Αντιγραφή Συνδέσμου",
-    "downloadApp": "Λήψη εφαρμογής",
     "fullscreen": "Πλήρης Οθόνη",
     "pinMap": "Καρφίτσωμα χάρτη στην κορυφή",
     "selectRegion": "Επιλογή περιοχής",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "Οικονομία & Εμπόριο",
     "panelCatHappyNews": "Καλές Ειδήσεις",
     "panelCatHappyPlanet": "Πλανήτης & Δωρεές",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Ζωντανές Ειδήσεις",
@@ -542,35 +541,12 @@
       "sectorCascade": "Αλυσιδωτή Αντίδραση Τομέα",
       "militarySurge": "Στρατιωτική Κλιμάκωση"
     },
-    "story": {
-      "generating": "Δημιουργία ιστορίας...",
-      "close": "Κλείσιμο",
-      "shareTitle": "Κοινοποίηση ιστορίας",
-      "save": "Αποθήκευση",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Σύνδεσμος",
-      "saved": "Αποθηκεύτηκε!",
-      "copied": "Αντιγράφηκε!",
-      "opening": "Άνοιγμα...",
-      "error": "Αποτυχία δημιουργίας ιστορίας."
-    },
     "mobileWarning": {
       "title": "Προβολή Κινητού",
       "description": "Βλέπετε μια απλοποιημένη έκδοση κινητού εστιασμένη στην περιοχή MENA με ενεργοποιημένα τα βασικά επίπεδα.",
       "tip": "Συμβουλή: Χρησιμοποιήστε τα κουμπιά προβολής (GLOBAL/US/MENA) για εναλλαγή περιοχών. Πατήστε δείκτες για λεπτομέρειες.",
       "dontShowAgain": "Να μην εμφανιστεί ξανά",
       "gotIt": "Κατάλαβα"
-    },
-    "downloadBanner": {
-      "description": "Εγγενής απόδοση, ασφαλής τοπική αποθήκευση κλειδιών, offline πλακίδια χάρτη.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Εμφάνιση όλων των πλατφορμών",
-      "showLess": "Εμφάνιση λιγότερων"
     },
     "runtimeConfig": {
       "title": "Ρύθμιση Desktop",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "Κοινοποίηση συνδέσμου",
-      "shareStory": "Κοινοποίηση ιστορίας",
       "printPdf": "Εκτύπωση / PDF",
       "exportData": "Εξαγωγή δεδομένων"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "Σύγκρουση",
     "security": "Στρατιωτική δραστηριότητα",
     "information": "Πληροφορίες",
-    "shareStory": "Κοινοποίηση ιστορίας",
     "exportImage": "Εξαγωγή Εικόνας",
     "exportPdf": "Εξαγωγή PDF",
     "new": "ΝΕΟ",

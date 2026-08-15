@@ -5,7 +5,7 @@ import { getClientIp as getServerClientIp } from '../server/_shared/client-ip.ts
 import { getClientIp as getApiClientIp } from '../api/_client-ip.js';
 
 function makeRequest(proof: string): Request {
-  return new Request('https://worldmonitor.app/api/test', {
+  return new Request('https://example.test/api/test', {
     headers: {
       'cf-connecting-ip': '203.0.113.7',
       'x-real-ip': '192.0.2.5',

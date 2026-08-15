@@ -187,7 +187,6 @@
     "settings": "НАСТРОЙКИ",
     "sources": "ИСТОЧНИКИ",
     "copyLink": "Копировать ссылку",
-    "downloadApp": "Скачать приложение",
     "fullscreen": "Полный экран",
     "pinMap": "Закрепить карту сверху",
     "selectRegion": "Выбрать регион",
@@ -257,7 +256,7 @@
     "panelCatCommodityEcon": "Экономика и торговля",
     "panelCatHappyNews": "Хорошие новости",
     "panelCatHappyPlanet": "Планета и благотворительность",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Новости в реальном времени",
@@ -546,35 +545,12 @@
       "sectorCascade": "Секторный каскад",
       "militarySurge": "Военный всплеск"
     },
-    "story": {
-      "generating": "Генерация сюжета...",
-      "close": "Закрыть",
-      "shareTitle": "Поделиться сюжетом",
-      "save": "Сохранить",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Ссылка",
-      "saved": "Сохранено!",
-      "copied": "Скопировано!",
-      "opening": "Открытие...",
-      "error": "Не удалось сгенерировать сюжет."
-    },
     "mobileWarning": {
       "title": "Мобильный вид",
       "description": "Вы просматриваете упрощённую мобильную версию, сфокусированную на регионе БВСА с основными слоями.",
       "tip": "Совет: используйте кнопки переключения вида (ГЛОБАЛЬНЫЙ/США/БВСА) для смены регионов. Нажмите на маркеры для подробностей.",
       "dontShowAgain": "Больше не показывать",
       "gotIt": "Понятно"
-    },
-    "downloadBanner": {
-      "description": "Нативная производительность, безопасное локальное хранение ключей, офлайн-карты.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Все платформы",
-      "showLess": "Свернуть"
     },
     "runtimeConfig": {
       "title": "Настройки рабочего стола",
@@ -1027,7 +1003,6 @@
     },
     "countryBrief": {
       "shareLink": "Поделиться ссылкой",
-      "shareStory": "Поделиться сюжетом",
       "printPdf": "Печать / PDF",
       "exportData": "Экспорт данных"
     },
@@ -3060,7 +3035,6 @@
     "conflict": "Конфликт",
     "security": "Военная активность",
     "information": "Информация",
-    "shareStory": "Поделиться сюжетом",
     "exportImage": "Экспорт изображения",
     "exportPdf": "Экспорт PDF",
     "new": "НОВОЕ",

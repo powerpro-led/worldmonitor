@@ -50,20 +50,20 @@ describe('internal auth timing-safe comparison (#4679)', () => {
     try {
       delete process.env.WM_TEST_INTERNAL_AUTH_SECRET;
       const missingSecret = await authenticateInternalRequest(
-        new Request('https://worldmonitor.app/api/test', { headers: { Authorization: 'Bearer anything' } }),
+        new Request('https://example.test/api/test', { headers: { Authorization: 'Bearer anything' } }),
         'WM_TEST_INTERNAL_AUTH_SECRET',
       );
       assert.equal(missingSecret?.status, 401);
 
       process.env.WM_TEST_INTERNAL_AUTH_SECRET = 'shared-secret';
       const wrong = await authenticateInternalRequest(
-        new Request('https://worldmonitor.app/api/test', { headers: { Authorization: 'Bearer wrong-secret' } }),
+        new Request('https://example.test/api/test', { headers: { Authorization: 'Bearer wrong-secret' } }),
         'WM_TEST_INTERNAL_AUTH_SECRET',
       );
       assert.equal(wrong?.status, 401);
 
       const ok = await authenticateInternalRequest(
-        new Request('https://worldmonitor.app/api/test', { headers: { Authorization: 'Bearer shared-secret' } }),
+        new Request('https://example.test/api/test', { headers: { Authorization: 'Bearer shared-secret' } }),
         'WM_TEST_INTERNAL_AUTH_SECRET',
       );
       assert.equal(ok, null);

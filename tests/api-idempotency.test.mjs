@@ -13,11 +13,11 @@ function restoreEnv() {
 }
 
 function makeRequest(body = JSON.stringify({ action: 'write' })) {
-  return new Request('https://worldmonitor.app/api/test-write', {
+  return new Request('https://example.test/api/test-write', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Origin: 'https://worldmonitor.app',
+      Origin: 'https://example.test',
     },
     body,
   });

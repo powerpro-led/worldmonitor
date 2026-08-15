@@ -17,7 +17,7 @@ describe('lcp attribution helpers', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
-        location: { href: 'https://worldmonitor.app/dashboard' },
+        location: { href: 'https://example.test/dashboard' },
         get sessionStorage() { throw new Error('storage blocked'); },
         get localStorage() { throw new Error('storage blocked'); },
       },
@@ -70,12 +70,12 @@ describe('lcp attribution helpers', () => {
 
   it('redacts query strings from resource URLs', () => {
     assert.equal(
-      __testing__.sanitizeResourceUrl('https://api.worldmonitor.app/api/bootstrap?tier=fast&wms=secret#frag'),
-      'https://api.worldmonitor.app/api/bootstrap?[redacted]',
+      __testing__.sanitizeResourceUrl('https://api.example.test/api/bootstrap?tier=fast&wms=secret#frag'),
+      'https://api.example.test/api/bootstrap?[redacted]',
     );
     assert.equal(
-      __testing__.sanitizeResourceUrl('https://worldmonitor.app/data/countries-110m.json'),
-      'https://worldmonitor.app/data/countries-110m.json',
+      __testing__.sanitizeResourceUrl('https://example.test/data/countries-110m.json'),
+      'https://example.test/data/countries-110m.json',
     );
   });
 
@@ -100,7 +100,7 @@ describe('lcp attribution helpers', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
-        location: { href: 'https://worldmonitor.app/dashboard?wm_lcp_debug=1' },
+        location: { href: 'https://example.test/dashboard?wm_lcp_debug=1' },
         sessionStorage: { getItem: () => null },
         localStorage: { getItem: () => null },
       },
@@ -117,7 +117,7 @@ describe('lcp attribution helpers', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
-        location: { href: 'https://worldmonitor.app/dashboard?wm_lcp_text=1' },
+        location: { href: 'https://example.test/dashboard?wm_lcp_text=1' },
         sessionStorage: { getItem: () => null },
         localStorage: { getItem: () => null },
       },

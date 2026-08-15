@@ -17,7 +17,7 @@ export const PRO_USER_ID = 'user_pro_xyz';
 export const PRO_TOKEN_ID = 'k57mcptokenid';
 export const PRO_BEARER = 'pro-bearer-uuid';
 export const HMAC_SECRET = 'test-secret-mcp-internal-32-bytes-1234';
-export const BASE_URL = 'https://worldmonitor.app/mcp';
+export const BASE_URL = 'https://example.test/mcp';
 
 /**
  * In-memory pipeline stub over INCR / DECR / EXPIRE. The counter is the

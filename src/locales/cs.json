@@ -244,7 +244,6 @@
     "panelCatCentralBanks": "Centrální banky a ekonomika",
     "panelCatDeals": "Transakce a instituce",
     "panelCatGulfMena": "Záliv a MENA",
-    "downloadApp": "Stáhnout aplikaci",
     "selectRegion": "Vybrat region",
     "cached": "ULOŽENO V MEZIPAMĚTI",
     "unavailable": "NEDOSTUPNÉ",
@@ -257,7 +256,7 @@
     "panelCatCommodityEcon": "Ekonomika a obchod",
     "panelCatHappyNews": "Dobré zprávy",
     "panelCatHappyPlanet": "Planeta a dárcovství",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Živé zprávy",
@@ -546,35 +545,12 @@
       "sectorCascade": "Sektorová kaskáda",
       "militarySurge": "Vojenský nárůst"
     },
-    "story": {
-      "generating": "Generuji příběh...",
-      "close": "Zavřít",
-      "shareTitle": "Sdílet příběh",
-      "save": "Uložit",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Odkaz",
-      "saved": "Uloženo!",
-      "copied": "Zkopírováno!",
-      "opening": "Otevírám...",
-      "error": "Nepodařilo se vygenerovat příběh."
-    },
     "mobileWarning": {
       "title": "Mobilní zobrazení",
       "description": "Prohlížíte si zjednodušenou mobilní verzi zaměřenou na region MENA se základními vrstvami.",
       "tip": "Tip: K přepínání regionů použijte tlačítka zobrazení (GLOBÁLNÍ/USA/MENA). Klepnutím na značky zobrazíte podrobnosti.",
       "dontShowAgain": "Příště nezobrazovat",
       "gotIt": "Rozumím"
-    },
-    "downloadBanner": {
-      "description": "Nativní výkon, bezpečné lokální uložení klíčů, offline mapové podklady.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Zobrazit všechny platformy",
-      "showLess": "Zobrazit méně"
     },
     "runtimeConfig": {
       "title": "Konfigurace desktopu",
@@ -1014,7 +990,6 @@
       "emojiKeyNaval": "Námořní prostředky"
     },
     "countryBrief": {
-      "shareStory": "Sdílet příběh",
       "printPdf": "Tisk / PDF",
       "exportData": "Exportovat data",
       "shareLink": "Sdílet odkaz"
@@ -3060,7 +3035,6 @@
     "conflict": "Konflikt",
     "security": "Vojenská aktivita",
     "information": "Informace",
-    "shareStory": "Sdílet příběh",
     "exportImage": "Exportovat obrázek",
     "exportPdf": "Exportovat PDF",
     "new": "NOVÉ",

@@ -185,7 +185,6 @@
     "settings": "SETĂRI",
     "sources": "SURSE",
     "copyLink": "Link",
-    "downloadApp": "Descărcați aplicația",
     "fullscreen": "Ecran complet",
     "pinMap": "Fixați harta în partea de sus",
     "selectRegion": "Selectare regiune",
@@ -255,7 +254,7 @@
     "panelCatCommodityEcon": "Economie și comerț",
     "panelCatHappyNews": "Știri bune",
     "panelCatHappyPlanet": "Planetă și donații",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Știri Live",
@@ -544,35 +543,12 @@
       "sectorCascade": "Cascadă sectorială",
       "militarySurge": "Creștere militară"
     },
-    "story": {
-      "generating": "Se generează articolul...",
-      "close": "Închide",
-      "shareTitle": "Partajează articolul",
-      "save": "Salvează",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Link",
-      "saved": "Salvat!",
-      "copied": "Copiat!",
-      "opening": "Deschidere...",
-      "error": "Nu s-a generat povestea."
-    },
     "mobileWarning": {
       "title": "Vizualizare mobil",
       "description": "Vizionați o versiune mobilă simplificată axată pe regiunea MENA, cu straturi esențiale activate.",
       "tip": "Sfat: Utilizați butoanele de vizualizare (GLOBAL/US/MENA) pentru a comuta între regiuni. Atingeți marcatorii pentru a vedea detaliile.",
       "dontShowAgain": "Nu mai afișa",
       "gotIt": "Am înțeles"
-    },
-    "downloadBanner": {
-      "description": "Performanță nativă, stocare locală securizată a cheilor, piese de hartă offline.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Afișați toate platformele",
-      "showLess": "Arată mai puțin"
     },
     "runtimeConfig": {
       "title": "Configurare desktop",
@@ -1025,7 +1001,6 @@
     },
     "countryBrief": {
       "shareLink": "Distribuie linkul",
-      "shareStory": "Distribuie povestea",
       "printPdf": "Imprimare / PDF",
       "exportData": "Exportați datele"
     },
@@ -3042,7 +3017,6 @@
     "conflict": "Conflict",
     "security": "Activitate militară",
     "information": "Informații",
-    "shareStory": "Distribuie povestea",
     "exportImage": "Exportați imaginea",
     "exportPdf": "Export PDF",
     "new": "NOU",

@@ -128,7 +128,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
       // export TOOL_REGISTRY-like access by calling buildPublicTool indirectly.
       // We need TOOL_REGISTRY here for tests; export it temporarily via
       // module internals.
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
@@ -296,7 +296,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     });
 
     it('describe_tool(get_country_risk) carries the same _meta.ui linkage (uncompressed path)', async () => {
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({
@@ -316,7 +316,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
   // ============================================================
   describe('tools/list compression + describe_tool RPC', () => {
     async function getToolsList() {
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
@@ -326,7 +326,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     }
 
     async function callDescribeTool(tool_name) {
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({
@@ -405,7 +405,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     // U4: Version bump + SERVER_INSTRUCTIONS + server-card sync
     // ============================================================
     it('serverInfo.version === "1.15.0"', async () => {
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } } }),
@@ -415,7 +415,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     });
 
     it('initialize.result.instructions mentions describe_tool AND the TOOL_DESCRIPTION_MAX_BYTES cap value', async () => {
-      const res = await mod.default(new Request('https://worldmonitor.app/mcp', {
+      const res = await mod.default(new Request('https://example.test/mcp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WorldMonitor-Key': VALID_KEY },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } } }),
@@ -435,7 +435,7 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     // TOOL_LIST_RESPONSE/TOOL_REGISTRY, on every /.well-known/mcp GET. These
     // tests now fetch that live-generated card instead of a static file.
     async function fetchServerCard() {
-      const res = await mod.default(new Request('https://worldmonitor.app/.well-known/mcp', {
+      const res = await mod.default(new Request('https://example.test/.well-known/mcp', {
         method: 'GET',
         headers: { Accept: 'application/json' },
       }));

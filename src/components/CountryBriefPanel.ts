@@ -192,7 +192,6 @@ export interface CountryBriefPanel {
   getTimelineMount(): HTMLElement | null;
   readonly signal: AbortSignal;
   onClose(cb: () => void): void;
-  setShareStoryHandler(handler: (code: string, name: string) => void): void;
   setExportImageHandler(handler: (code: string, name: string) => void): void;
   updateBrief(data: CountryIntelData): void;
   updateNews(headlines: NewsItem[]): void;

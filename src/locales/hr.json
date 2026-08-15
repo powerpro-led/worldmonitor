@@ -262,7 +262,6 @@
     "settings": "POSTAVKE",
     "sources": "IZVORI",
     "copyLink": "Poveznica",
-    "downloadApp": "Preuzmi aplikaciju",
     "fullscreen": "Cijeli zaslon",
     "pinMap": "Učvrsti kartu na vrh",
     "selectRegion": "Odaberi regiju",
@@ -333,7 +332,7 @@
     "panelCatCommodityEcon": "Ekonomija i trgovina",
     "panelCatHappyNews": "Dobre vijesti",
     "panelCatHappyPlanet": "Planet i pomoć",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Vijesti uživo",
@@ -626,37 +625,12 @@
       "sectorCascade": "Kaskada Sektora",
       "militarySurge": "Vojni Porast"
     },
-    "story": {
-      "generating": "Generisanje priče...",
-      "close": "Zatvori",
-      "shareTitle": "Deli priču",
-      "save": "Spremi",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Veza",
-      "saved": "Spremljeno!",
-      "copied": "Kopirano!",
-      "opening": "Otvaranje...",
-      "error": "Neuspelo generisanje priče."
-    },
     "mobileWarning": {
       "title": "Mobilni Pregled",
       "description": "Gledate pojednostavljenu mobilnu verziju fokusirano na MENA regiju sa omogućenim bitnim slojevima.",
       "tip": "Savet: Koristite dugmadi za prikaz (GLOBAL/US/MENA) da biste promenili regije. Dodirnite oznake za detalje.",
       "dontShowAgain": "Ne prikazuj ponovo",
       "gotIt": "Razumem"
-    },
-    "downloadBanner": {
-      "title": "Dostupna Deskto Verzija",
-      "description": "Prirodne performanse, sigurna lokalna skladišta ključeva, offline prikaz mapa.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Prikaži sve platforme",
-      "showLess": "Prikaži manje",
-      "dismiss": "Otpusti"
     },
     "runtimeConfig": {
       "title": "Konfiguracija Desktop-a",
@@ -1274,7 +1248,6 @@
     },
     "countryBrief": {
       "shareLink": "Dijeli vezu",
-      "shareStory": "Dijeli priču",
       "printPdf": "Ispiši / PDF",
       "exportData": "Izvezi podatke",
       "sourceRef": "Izvor [{{n}}]"
@@ -3301,7 +3274,6 @@
     "conflict": "Sukob",
     "security": "Vojna aktivnost",
     "information": "Informacija",
-    "shareStory": "Dijeli vijest",
     "exportImage": "Preuzmi sliku",
     "exportPdf": "Preuzmi PDF",
     "new": "NOVO",

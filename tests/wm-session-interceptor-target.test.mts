@@ -6,7 +6,7 @@
 //   wired its `apiOrigin` to `getApiBaseUrl()`. That helper returns the
 //   empty string for non-desktop runtimes, so on production browsers the
 //   interceptor's cross-origin match path was silently a no-op. Every
-//   absolute fetch URL like `https://api.worldmonitor.app/api/bootstrap`
+//   absolute fetch URL like `https://api.example.test/api/bootstrap`
 //   slipped through unwrapped, no `X-WorldMonitor-Key` header was attached,
 //   and the gateway returned `{"error":"API key required"}` → 401 on
 //   every browser endpoint.
@@ -18,7 +18,7 @@
 //
 // What this test pins:
 //   - The relative `/api/...` path is intercepted regardless of apiOrigin.
-//   - The absolute `https://api.worldmonitor.app/api/...` path IS intercepted
+//   - The absolute `https://api.example.test/api/...` path IS intercepted
 //     when apiOrigin is the canonical origin (the post-fix behaviour).
 //   - The same absolute path is NOT intercepted when apiOrigin is empty
 //     (the pre-fix bug — explicit anti-regression).
@@ -37,7 +37,7 @@ import path from 'node:path';
 
 import { isApiCallTarget } from '../src/services/wm-session.ts';
 
-const CANONICAL_ORIGIN = 'https://api.worldmonitor.app';
+const CANONICAL_ORIGIN = 'https://api.example.test';
 
 describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
   it('matches a relative /api/ path even when apiOrigin is empty', () => {
@@ -49,18 +49,18 @@ describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
 
   it('REGRESSION: matches absolute URLs to the canonical API origin', () => {
     // The exact failure mode PR #3574 fixed. `panels-*.js` builds full URLs
-    // because `worldmonitor.app` and `api.worldmonitor.app` are different
+    // because `example.test` and `api.example.test` are different
     // subdomains; the interceptor must catch them by origin.
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/api/bootstrap', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/api/bootstrap', CANONICAL_ORIGIN),
       true,
     );
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/api/market/v1/list-crypto-quotes', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/api/market/v1/list-crypto-quotes', CANONICAL_ORIGIN),
       true,
     );
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/api/economic/v1/get-fred-series-batch', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/api/economic/v1/get-fred-series-batch', CANONICAL_ORIGIN),
       true,
     );
   });
@@ -72,7 +72,7 @@ describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
     // interceptor saw the SAME empty-string apiOrigin and silently no-op'd
     // every cross-origin call. The bug manifested as universal 401s.
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/api/bootstrap', ''),
+      isApiCallTarget('https://api.example.test/api/bootstrap', ''),
       false,
       'with empty apiOrigin the matcher CANNOT recognize absolute API URLs — '
         + 'this is exactly why getApiBaseUrl() (which returns empty for browsers) '
@@ -91,7 +91,7 @@ describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
       false,
     );
     assert.equal(
-      isApiCallTarget('https://clerk.worldmonitor.app/v1/client', CANONICAL_ORIGIN),
+      isApiCallTarget('https://clerk.example.test/v1/client', CANONICAL_ORIGIN),
       false,
     );
     // /api/ that is hosted on a non-API origin must not be intercepted.
@@ -105,30 +105,30 @@ describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
     // PR #3575 review finding. A naive `url.startsWith(apiOrigin)` matches
     // ANY hostname that begins with the canonical-origin string — which
     // includes attacker-controlled subdomains like:
-    //   `https://api.worldmonitor.app.evil.example/api/bootstrap`
-    // The actual hostname there is `api.worldmonitor.app.evil.example`, NOT
+    //   `https://api.example.test.evil.example/api/bootstrap`
+    // The actual hostname there is `api.example.test.evil.example`, NOT
     // ours. Without strict origin parsing the interceptor would attach the
     // wms_ token, sending it to the attacker. Pin both shapes documented in
     // the review note.
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app.evil.example/api/bootstrap', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test.evil.example/api/bootstrap', CANONICAL_ORIGIN),
       false,
-      'host suffix attack: api.worldmonitor.app.evil.example must NOT be treated as our origin',
+      'host suffix attack: api.example.test.evil.example must NOT be treated as our origin',
     );
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app@evil.example/api/bootstrap', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test@evil.example/api/bootstrap', CANONICAL_ORIGIN),
       false,
-      'userinfo attack: api.worldmonitor.app@evil.example must resolve to host=evil.example, NOT our origin',
+      'userinfo attack: api.example.test@evil.example must resolve to host=evil.example, NOT our origin',
     );
     // Variant: a port appended to the canonical hostname is a different origin.
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app:8443/api/bootstrap', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test:8443/api/bootstrap', CANONICAL_ORIGIN),
       false,
       'a different port is a different origin per RFC 6454',
     );
     // Variant: http (not https) is a different origin.
     assert.equal(
-      isApiCallTarget('http://api.worldmonitor.app/api/bootstrap', CANONICAL_ORIGIN),
+      isApiCallTarget('http://api.example.test/api/bootstrap', CANONICAL_ORIGIN),
       false,
       'protocol downgrade is a different origin — never attach token over plain http',
     );
@@ -140,15 +140,15 @@ describe('wm-session interceptor URL matcher (PR #3574 regression)', () => {
     // (static assets, _next/, healthcheck, etc.) doesn't need it and we
     // shouldn't broadcast the token there.
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/_next/static/chunks/foo.js', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/_next/static/chunks/foo.js', CANONICAL_ORIGIN),
       false,
     );
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/health', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/health', CANONICAL_ORIGIN),
       false,
     );
     assert.equal(
-      isApiCallTarget('https://api.worldmonitor.app/', CANONICAL_ORIGIN),
+      isApiCallTarget('https://api.example.test/', CANONICAL_ORIGIN),
       false,
     );
   });

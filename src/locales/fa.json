@@ -253,8 +253,6 @@
     "settings": "SETTINGS",
     "sources": "SOURCES",
     "copyLink": "Link",
-    "embed": "Embed",
-    "downloadApp": "Download App",
     "fullscreen": "Fullscreen",
     "pinMap": "Pin map to top",
     "selectRegion": "Select Region",
@@ -321,7 +319,8 @@
     "panelCatMining": "Mining & Supply Chain",
     "panelCatCommodityEcon": "Economy & Trade",
     "panelCatHappyNews": "Good News",
-    "panelCatHappyPlanet": "Planet & Giving"
+    "panelCatHappyPlanet": "Planet & Giving",
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Live News",
@@ -610,35 +609,12 @@
       "sectorCascade": "Sector Cascade",
       "militarySurge": "Military Surge"
     },
-    "story": {
-      "generating": "Generating story...",
-      "close": "Close",
-      "shareTitle": "Share story",
-      "save": "Save",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Link",
-      "saved": "Saved!",
-      "copied": "Copied!",
-      "opening": "Opening...",
-      "error": "Failed to generate story."
-    },
     "mobileWarning": {
       "title": "Mobile View",
       "description": "You're viewing a simplified mobile version focused on MENA region with essential layers enabled.",
       "tip": "Tip: Use the view buttons (GLOBAL/US/MENA) to switch regions. Tap markers to see details.",
       "dontShowAgain": "Don't show again",
       "gotIt": "Got it"
-    },
-    "downloadBanner": {
-      "description": "Native performance, secure local key storage, offline map tiles.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Show all platforms",
-      "showLess": "Show less"
     },
     "runtimeConfig": {
       "title": "Desktop Configuration",
@@ -1163,7 +1139,6 @@
     },
     "countryBrief": {
       "shareLink": "Share link",
-      "shareStory": "Share story",
       "printPdf": "Print / PDF",
       "exportData": "Export data"
     },
@@ -3092,7 +3067,6 @@
     "conflict": "Conflict",
     "security": "Mil. Activity",
     "information": "Information",
-    "shareStory": "Share story",
     "exportImage": "Export Image",
     "exportPdf": "Export PDF",
     "new": "NEW",

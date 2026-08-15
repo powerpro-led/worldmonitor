@@ -242,7 +242,6 @@
     "panelCatCentralBanks": "Banche Centrali & Economia",
     "panelCatDeals": "Operazioni & Istituzionale",
     "panelCatGulfMena": "Golfo & MENA",
-    "downloadApp": "Scarica l'app",
     "selectRegion": "Seleziona regione",
     "cached": "IN CACHE",
     "unavailable": "NON DISPONIBILE",
@@ -255,7 +254,7 @@
     "panelCatCommodityEcon": "Economia e Commercio",
     "panelCatHappyNews": "Buone Notizie",
     "panelCatHappyPlanet": "Pianeta e Beneficenza",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Notizie in diretta",
@@ -544,35 +543,12 @@
       "newsCorrelation": "CORRELAZIONE DI NOTIZIE",
       "viewOnMap": "Visualizza sulla mappa"
     },
-    "story": {
-      "generating": "Generazione della storia...",
-      "save": "Salva",
-      "whatsapp": "Whatsapp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Collegamento",
-      "saved": "Salvato!",
-      "copied": "Copiato!",
-      "opening": "Apertura...",
-      "error": "Impossibile generare la storia.",
-      "shareTitle": "Condividi la storia",
-      "close": "Chiudi"
-    },
     "mobileWarning": {
       "title": "Visualizzazione mobile",
       "description": "Stai visualizzando una versione mobile semplificata focalizzata sulla regione MENA con i livelli essenziali abilitati.",
       "tip": "Suggerimento: utilizzare i pulsanti di visualizzazione (GLOBAL/US/MENA) per cambiare regione. Tocca gli indicatori per visualizzare i dettagli.",
       "dontShowAgain": "Non mostrare più",
       "gotIt": "Fatto"
-    },
-    "downloadBanner": {
-      "description": "Prestazioni native, archiviazione sicura delle chiavi locali, riquadri della mappa offline.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Mostra tutte le piattaforme",
-      "showLess": "Mostra meno"
     },
     "runtimeConfig": {
       "title": "Configurazione del desktop",
@@ -1135,7 +1111,6 @@
       "sortRelevance": "Rilevanza"
     },
     "countryBrief": {
-      "shareStory": "Condividi la storia",
       "printPdf": "Stampa/PDF",
       "exportData": "Esporta dati",
       "shareLink": "Condividi link"
@@ -3042,7 +3017,6 @@
     "conflict": "Conflitto",
     "security": "Attività militare",
     "information": "Informazione",
-    "shareStory": "Condividi storia",
     "selectAll": "Seleziona tutto",
     "selectNone": "Deseleziona tutto",
     "new": "NUOVO",

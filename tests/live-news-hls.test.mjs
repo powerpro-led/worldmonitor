@@ -16,7 +16,7 @@ const sidecarSrc = readSrc('vscode-extension/sidecar/local-api-server.mjs');
 const vercelConfig = JSON.parse(readSrc('vercel.json'));
 
 const globalCsp = vercelConfig.headers
-  .find((entry) => entry.source.includes('?!docs|embed'))
+  .find((entry) => entry.source.includes('?!docs)'))
   ?.headers
   ?.find((header) => header.key === 'Content-Security-Policy')
   ?.value ?? '';

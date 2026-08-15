@@ -293,15 +293,6 @@
       "dontShowAgain": "Niet meer laten zien",
       "gotIt": "Ik heb het"
     },
-    "downloadBanner": {
-      "description": "Native prestaties, veilige lokale sleutelopslag, offline kaarttegels.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Toon alle platforms",
-      "showLess": "Laat minder zien"
-    },
     "runtimeConfig": {
       "title": "Desktopconfiguratie",
       "alertTitle": {
@@ -408,20 +399,6 @@
         "nuclear": "Nabij nucleair",
         "port": "Havens"
       }
-    },
-    "story": {
-      "shareTitle": "Deel verhaal",
-      "close": "Dichtbij",
-      "generating": "Verhaal genereren...",
-      "save": "Opslaan",
-      "whatsapp": "WhatsAppen",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Link",
-      "error": "Kan verhaal niet genereren.",
-      "saved": "Opgeslagen!",
-      "copied": "Gekopieerd!",
-      "opening": "Opening..."
     },
     "settingsWindow": {
       "invokeFail": "Kan {{command}} niet uitvoeren. Controleer het bureaubladlogboek.",
@@ -728,7 +705,6 @@
       "sortRelevance": "Relevantie"
     },
     "countryBrief": {
-      "shareStory": "Deel verhaal",
       "printPdf": "Afdrukken / PDF",
       "exportData": "Gegevens exporteren",
       "shareLink": "Link delen"
@@ -2765,7 +2741,6 @@
     "conflict": "Conflict",
     "security": "Militaire activiteit",
     "information": "Informatie",
-    "shareStory": "Verhaal delen",
     "selectAll": "Selecteer Alles",
     "selectNone": "Selecteer Geen",
     "new": "NIEUW",
@@ -2847,7 +2822,6 @@
     "panelCatCentralBanks": "Centrale Banken & Economie",
     "panelCatDeals": "Deals & Institutioneel",
     "panelCatGulfMena": "Golf & MENA",
-    "downloadApp": "App downloaden",
     "selectRegion": "Regio kiezen",
     "cached": "OPGESLAGEN",
     "unavailable": "NIET BESCHIKBAAR",
@@ -2860,7 +2834,7 @@
     "panelCatCommodityEcon": "Economie & Handel",
     "panelCatHappyNews": "Goed Nieuws",
     "panelCatHappyPlanet": "Planeet & Geven",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "countryBrief": {
     "identifying": "Land identificeren...",

@@ -183,7 +183,6 @@
     "settings": "设置",
     "sources": "数据源",
     "copyLink": "复制链接",
-    "downloadApp": "下载应用",
     "fullscreen": "全屏",
     "pinMap": "将地图固定到顶部",
     "selectRegion": "选择地区",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "经济与贸易",
     "panelCatHappyNews": "好消息",
     "panelCatHappyPlanet": "地球与慈善",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "实时新闻",
@@ -542,35 +541,12 @@
       "sectorCascade": "板块级联",
       "militarySurge": "军事活动激增"
     },
-    "story": {
-      "generating": "正在生成报道...",
-      "close": "关闭",
-      "shareTitle": "分享报道",
-      "save": "保存",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "链接",
-      "saved": "已保存！",
-      "copied": "已复制！",
-      "opening": "正在打开...",
-      "error": "生成报道失败。"
-    },
     "mobileWarning": {
       "title": "移动端视图",
       "description": "您正在查看针对中东北非地区优化的简化移动版本，已启用基本图层。",
       "tip": "提示：使用视图按钮（全球/美国/中东北非）切换区域。点击标记查看详情。",
       "dontShowAgain": "不再显示",
       "gotIt": "知道了"
-    },
-    "downloadBanner": {
-      "description": "原生性能，安全的本地密钥存储，离线地图切片。",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "显示所有平台",
-      "showLess": "收起"
     },
     "runtimeConfig": {
       "title": "桌面端配置",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "分享链接",
-      "shareStory": "分享报道",
       "printPdf": "打印 / PDF",
       "exportData": "导出数据"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "冲突",
     "security": "军事活动",
     "information": "信息",
-    "shareStory": "分享报道",
     "exportImage": "导出图片",
     "exportPdf": "导出 PDF",
     "new": "新",

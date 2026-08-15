@@ -121,7 +121,7 @@ describe('deferred Sentry replay event shaping', () => {
       installPreInitErrorQueue();
       listeners.get('error')?.({
         message: 'gap boom',
-        filename: 'https://worldmonitor.app/assets/main.js',
+        filename: 'https://example.test/assets/main.js',
         lineno: 10,
         colno: 20,
         error: queuedError,
@@ -209,7 +209,7 @@ describe('deferred Sentry replay event shaping', () => {
       }
       listener({
         message: 'latest startup failure',
-        filename: 'https://worldmonitor.app/assets/main.js',
+        filename: 'https://example.test/assets/main.js',
         lineno: 1,
         colno: 1,
         error: latestError,

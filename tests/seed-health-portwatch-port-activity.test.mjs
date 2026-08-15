@@ -75,7 +75,7 @@ function installSeedHealthPipelineMock(portwatchRecordCount, { missingPortwatchM
 }
 
 async function readSeedHealth() {
-  const req = new Request('https://api.worldmonitor.app/api/seed-health', {
+  const req = new Request('https://api.example.test/api/seed-health', {
     headers: { 'X-WorldMonitor-Key': 'test-key' },
   });
   const res = await handler(req);

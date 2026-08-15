@@ -28,14 +28,12 @@ import {
 } from '@/services/country-geometry';
 import { getCountryData, TIER1_COUNTRIES, type CountryScore } from '@/services/country-instability';
 import { getCachedCountryScore, normalizeCiiCountryCode } from '@/services/cached-risk-scores';
-import { dataFreshness } from '@/services/data-freshness';
 import { fetchCountryMarkets } from '@/services/prediction';
 import { collectStoryData } from '@/services/story-data';
-// StoryModal is lazy-imported at its call site (below), and its render path
-// lazy-imports story-renderer, so both stay off the eager boot graph.
-// renderStoryToCanvas was already made dynamic in #4486; #4571 closes the
-// remaining StoryModal eager edge. The modal opens on user interaction
-// (post-paint), so the import() latency is hidden.
+// story-renderer is lazy-imported at its call site (setExportImageHandler,
+// below) so it stays off the eager boot graph — renderStoryToCanvas was
+// already made dynamic in #4486. The Export Image button opens it on user
+// interaction (post-paint), so the import() latency is hidden.
 
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
@@ -221,13 +219,6 @@ export class CountryIntelManager implements AppModule {
     const { CountryDeepDivePanel } = await import('@/components/CountryDeepDivePanel');
     if (this.ctx.isDestroyed || !this.ctx.map) return false;
     this.ctx.countryBriefPage = new CountryDeepDivePanel(this.ctx.map);
-    this.ctx.countryBriefPage.setShareStoryHandler((code, name) => {
-      this.ctx.countryBriefPage?.hide();
-      void this.openCountryStory(code, name).catch((err) => {
-        console.error('[CountryStory] Failed to open story:', err);
-        this.showToast('Country story failed to open. Please try again.');
-      });
-    });
     this.ctx.countryBriefPage.setExportImageHandler(async (code, name) => {
       try {
         const aggregator = await getSignalAggregator();
@@ -1742,29 +1733,6 @@ export class CountryIntelManager implements AppModule {
     if (severity === 'high') return 'high';
     if (severity === 'medium') return 'medium';
     return 'low';
-  }
-
-  async openCountryStory(code: string, name: string): Promise<void> {
-    if (!dataFreshness.hasSufficientData() || this.ctx.latestClusters.length === 0) {
-      this.showToast('Data still loading — try again in a moment');
-      return;
-    }
-    const posturePanel = this.ctx.panels['strategic-posture'] as StrategicPosturePanel | undefined;
-    const postures = posturePanel?.getPostures() || [];
-    const aggregator = await getSignalAggregator();
-    const signals = await this.getCountrySignals(code, name);
-    const cluster = aggregator.getCountryClusters().find(c => c.country === code);
-    const regional = aggregator.getRegionalConvergence().filter(r => r.countries.includes(code));
-    const convergence = cluster ? {
-      score: cluster.convergenceScore,
-      signalTypes: [...cluster.signalTypes],
-      regionalDescriptions: regional.map(r => r.description),
-    } : null;
-    const data = collectStoryData(code, name, this.ctx.latestClusters, postures, this.ctx.latestPredictions, signals, convergence);
-    // await (not void) so a chunk-load failure rejects openCountryStory's promise and
-    // reaches the caller's existing .catch() toast handler (country-intel.ts:205).
-    const { openStoryModal } = await import('@/components/StoryModal');
-    openStoryModal(data);
   }
 
   showToast(msg: string): void {

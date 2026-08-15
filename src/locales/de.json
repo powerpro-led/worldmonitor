@@ -240,7 +240,6 @@
     "panelCatCentralBanks": "Zentralbanken & Wirtschaft",
     "panelCatDeals": "Deals & Institutionell",
     "panelCatGulfMena": "Golf & MENA",
-    "downloadApp": "App herunterladen",
     "selectRegion": "Region wählen",
     "cached": "ZWISCHENGESPEICHERT",
     "unavailable": "NICHT VERFÜGBAR",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "Wirtschaft & Handel",
     "panelCatHappyNews": "Gute Nachrichten",
     "panelCatHappyPlanet": "Planet & Spenden",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Live-Nachrichten",
@@ -542,35 +541,12 @@
       "newsCorrelation": "NACHRICHTENKORRELATION",
       "viewOnMap": "Auf der Karte anzeigen"
     },
-    "story": {
-      "generating": "Geschichte generieren...",
-      "save": "Speichern",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Link",
-      "saved": "Gespeichert!",
-      "copied": "Kopiert!",
-      "opening": "Öffnung...",
-      "error": "Die Story konnte nicht generiert werden.",
-      "shareTitle": "Geschichte teilen",
-      "close": "Schließen"
-    },
     "mobileWarning": {
       "title": "Mobile Ansicht",
       "description": "Sie sehen eine vereinfachte mobile Version mit Schwerpunkt auf der MENA-Region mit aktivierten wesentlichen Ebenen.",
       "tip": "Tipp: Verwenden Sie die Ansichtsschaltflächen (GLOBAL/US/MENA), um die Region zu wechseln. Tippen Sie auf Markierungen, um Details anzuzeigen.",
       "dontShowAgain": "Nicht mehr anzeigen",
       "gotIt": "Habe es"
-    },
-    "downloadBanner": {
-      "description": "Native Leistung, sichere lokale Schlüsselspeicherung, Offline-Kartenkacheln.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Alle Plattformen anzeigen",
-      "showLess": "Weniger anzeigen"
     },
     "runtimeConfig": {
       "title": "Desktop-Konfiguration",
@@ -1133,7 +1109,6 @@
       "sortRelevance": "Relevanz"
     },
     "countryBrief": {
-      "shareStory": "Geschichte teilen",
       "printPdf": "Drucken / PDF",
       "exportData": "Daten exportieren",
       "shareLink": "Link teilen"
@@ -3024,7 +2999,6 @@
     "conflict": "Konflikt",
     "security": "Militäraktivität",
     "information": "Information",
-    "shareStory": "Geschichte teilen",
     "selectAll": "Wählen Sie „Alle“ aus",
     "selectNone": "Wählen Sie „Keine“ aus",
     "new": "NEU",

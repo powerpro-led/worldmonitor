@@ -408,7 +408,6 @@ export function trackApiKeysSnapshot(): void {}
 export function trackUpdateShown(_current: string, _remote: string): void {}
 export function trackUpdateClicked(_version: string): void {}
 export function trackUpdateDismissed(_version: string): void {}
-export function trackDownloadBannerDismissed(): void {}
 
 // ---------------------------------------------------------------------------
 // Search
@@ -538,10 +537,6 @@ export function trackWebcamRegionFiltered(region: string): void {
 // ---------------------------------------------------------------------------
 // Downloads / banners / findings
 // ---------------------------------------------------------------------------
-
-export function trackDownloadClicked(platform: string): void {
-  track('download-clicked', { platform });
-}
 
 export function trackCriticalBannerAction(action: string, theaterId: string): void {
   track('critical-banner', { action, theaterId });

@@ -70,7 +70,7 @@ describe('parseMapUrlState chokepoint param', () => {
 });
 
 describe('buildMapUrl expanded param', () => {
-  const base = 'https://worldmonitor.app/dashboard';
+  const base = 'https://example.test/dashboard';
   const baseState = {
     view: 'global' as const,
     zoom: 2,
@@ -107,7 +107,7 @@ describe('buildMapUrl expanded param', () => {
 });
 
 describe('expanded param round-trip', () => {
-  const base = 'https://worldmonitor.app/dashboard';
+  const base = 'https://example.test/dashboard';
   const baseState = {
     view: 'global' as const,
     zoom: 2,

@@ -183,7 +183,6 @@
     "settings": "설정",
     "sources": "소스",
     "copyLink": "링크 복사",
-    "downloadApp": "앱 다운로드",
     "fullscreen": "전체 화면",
     "pinMap": "지도를 상단에 고정",
     "selectRegion": "지역 선택",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "경제 & 무역",
     "panelCatHappyNews": "좋은 소식",
     "panelCatHappyPlanet": "지구 & 기부",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "실시간 뉴스",
@@ -542,35 +541,12 @@
       "sectorCascade": "섹터 연쇄",
       "militarySurge": "군사 급증"
     },
-    "story": {
-      "generating": "스토리 생성 중...",
-      "close": "닫기",
-      "shareTitle": "스토리 공유",
-      "save": "저장",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "링크",
-      "saved": "저장됨!",
-      "copied": "복사됨!",
-      "opening": "열기 중...",
-      "error": "스토리 생성에 실패했습니다."
-    },
     "mobileWarning": {
       "title": "모바일 화면",
       "description": "MENA 지역에 초점을 맞춘 필수 레이어가 활성화된 간소화된 모바일 버전을 보고 있습니다.",
       "tip": "팁: 보기 버튼(GLOBAL/US/MENA)을 사용하여 지역을 전환하세요. 마커를 탭하면 상세 정보를 볼 수 있습니다.",
       "dontShowAgain": "다시 표시하지 않기",
       "gotIt": "확인"
-    },
-    "downloadBanner": {
-      "description": "네이티브 성능, 안전한 로컬 키 저장, 오프라인 지도 타일.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "모든 플랫폼 보기",
-      "showLess": "접기"
     },
     "runtimeConfig": {
       "title": "데스크톱 구성",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "링크 공유",
-      "shareStory": "기사 공유",
       "printPdf": "인쇄 / PDF",
       "exportData": "데이터 내보내기"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "분쟁",
     "security": "군사 활동",
     "information": "정보",
-    "shareStory": "기사 공유",
     "exportImage": "이미지 내보내기",
     "exportPdf": "PDF 내보내기",
     "new": "신규",

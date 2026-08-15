@@ -1115,7 +1115,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
   // live-generated card instead of reading public/.well-known/mcp/server-card.json.
   // -------------------------------------------------------------------------
   it('generated server card advertises resources: true (matches the wire capability)', async () => {
-    const res = await handler(new Request('https://worldmonitor.app/.well-known/mcp', {
+    const res = await handler(new Request('https://example.test/.well-known/mcp', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     }));

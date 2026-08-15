@@ -134,7 +134,7 @@ function runPrepaintBootScript(mapCollapsed) {
       getItem: (key) => storage.get(key) ?? null,
       removeItem: (key) => storage.delete(key),
     },
-    location: { hostname: 'www.worldmonitor.app' },
+    location: { hostname: 'www.example.test' },
     window,
   });
 

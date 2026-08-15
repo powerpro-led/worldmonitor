@@ -36,12 +36,12 @@ const DEFERRED_NPM_LIB_CHUNKS = ['satellite.es', 'confetti.module'];
 const DEFERRED_CHECKOUT_CHUNKS = ['widget-sanitizer'];
 // Enrichment SERVICE tail deferred off the eager boot graph (#4486 — service-graph
 // split, Phase A). Each runs only AFTER first paint — correlation-engine.run() is
-// post-loadAllData fire-and-forget; story-renderer fires on story-modal open — so its
-// bytes belong in a lazy chunk, NOT eager main. A re-added static import (App.ts for
-// correlation-engine; country-intel/StoryModal for story-renderer) would re-eagerise
-// it and fail this guard. correlation-engine gets its name from a manualChunks naming
-// rule (dir-index would otherwise emit an ambiguous `index-*.js`); story-renderer
-// (single file) names itself.
+// post-loadAllData fire-and-forget; story-renderer fires when the country brief's
+// Export Image button is clicked — so its bytes belong in a lazy chunk, NOT eager
+// main. A re-added static import (App.ts for correlation-engine; country-intel for
+// story-renderer) would re-eagerise it and fail this guard. correlation-engine gets
+// its name from a manualChunks naming rule (dir-index would otherwise emit an
+// ambiguous `index-*.js`); story-renderer (single file) names itself.
 const DEFERRED_SERVICE_CHUNKS = [
   'correlation-engine',
   'story-renderer',

@@ -183,7 +183,6 @@
     "settings": "НАСТРОЙКИ",
     "sources": "ИЗТОЧНИЦИ",
     "copyLink": "Връзка",
-    "downloadApp": "Изтегли приложение",
     "fullscreen": "Цял екран",
     "pinMap": "Закрепи карта на върха",
     "selectRegion": "Избор на регион",
@@ -253,7 +252,7 @@
     "panelCatCommodityEcon": "Економија & Трговија",
     "panelCatHappyNews": "Добри Вести",
     "panelCatHappyPlanet": "Планета & Давање",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Живи новини",
@@ -542,35 +541,12 @@
       "sectorCascade": "Каскада на сектора",
       "militarySurge": "Военен скок"
     },
-    "story": {
-      "generating": "Генериране на история...",
-      "close": "Затвори",
-      "shareTitle": "Дели история",
-      "save": "Запази",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Връзка",
-      "saved": "Запазено!",
-      "copied": "Копирано!",
-      "opening": "Отваряне...",
-      "error": "Неуспешно генериране на история."
-    },
     "mobileWarning": {
       "title": "Преглед на мобилното",
       "description": "Преглеждате опростена мобилна версия, фокусирана на региона MENA с активирани основни слои.",
       "tip": "Съвет: Използвайте бутоните за преглед (ГЛОБАЛНО/САЩ/MENA), за да превключвате региони. Докоснете маркери, за да видите детайли.",
       "dontShowAgain": "Не показвай отново",
       "gotIt": "Разбра"
-    },
-    "downloadBanner": {
-      "description": "Собствена производителност, безопасно локално съхранение на ключове, офлайн плочки на карта.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Показване на всички платформи",
-      "showLess": "Показване на по-малко"
     },
     "runtimeConfig": {
       "title": "Конфигурация на десктоп",
@@ -1023,7 +999,6 @@
     },
     "countryBrief": {
       "shareLink": "Споделяне на връзка",
-      "shareStory": "Дели история",
       "printPdf": "Печат / PDF",
       "exportData": "Експортирай данни"
     },
@@ -3024,7 +2999,6 @@
     "conflict": "Конфликт",
     "security": "Военна активност",
     "information": "Информация",
-    "shareStory": "Дели история",
     "exportImage": "Експортирай изображение",
     "exportPdf": "Експортирай PDF",
     "new": "НОВО",

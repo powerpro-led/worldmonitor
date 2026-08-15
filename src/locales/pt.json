@@ -293,15 +293,6 @@
       "dontShowAgain": "Não mostre novamente",
       "gotIt": "Entendi"
     },
-    "downloadBanner": {
-      "description": "Desempenho nativo, armazenamento seguro de chaves locais, blocos de mapas off-line.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Mostrar todas as plataformas",
-      "showLess": "Mostrar menos"
-    },
     "runtimeConfig": {
       "title": "Configuração da área de trabalho",
       "alertTitle": {
@@ -408,20 +399,6 @@
         "nuclear": "Nuclear próximo",
         "port": "Portos"
       }
-    },
-    "story": {
-      "shareTitle": "Compartilhar história",
-      "close": "Fechar",
-      "generating": "Gerando história...",
-      "save": "Salvar",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Link",
-      "error": "Falha ao gerar história.",
-      "saved": "Salvo!",
-      "copied": "Copiado!",
-      "opening": "Abertura..."
     },
     "settingsWindow": {
       "invokeFail": "Falha ao executar {{command}}. Verifique o log da área de trabalho.",
@@ -728,7 +705,6 @@
       "sortRelevance": "Relevância"
     },
     "countryBrief": {
-      "shareStory": "Compartilhar história",
       "printPdf": "Imprimir / PDF",
       "exportData": "Exportar dados",
       "shareLink": "Partilhar ligação"
@@ -2781,7 +2757,6 @@
     "conflict": "Conflito",
     "security": "Atividade militar",
     "information": "Informação",
-    "shareStory": "Compartilhar história",
     "selectAll": "Selecionar tudo",
     "selectNone": "Selecione Nenhum",
     "new": "NOVO",
@@ -2863,7 +2838,6 @@
     "panelCatCentralBanks": "Bancos Centrais & Economia",
     "panelCatDeals": "Negócios & Institucional",
     "panelCatGulfMena": "Golfo & MENA",
-    "downloadApp": "Transferir app",
     "selectRegion": "Selecionar região",
     "cached": "EM CACHE",
     "unavailable": "INDISPONÍVEL",
@@ -2876,7 +2850,7 @@
     "panelCatCommodityEcon": "Economia & Comércio",
     "panelCatHappyNews": "Boas Notícias",
     "panelCatHappyPlanet": "Planeta & Doações",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "countryBrief": {
     "identifying": "Identificando país...",

@@ -253,7 +253,6 @@
     "settings": "सेटिंग्स",
     "sources": "सूत्र",
     "copyLink": "लिंक",
-    "downloadApp": "ऐप डाउनलोड करें",
     "fullscreen": "फुलस्क्रीन",
     "pinMap": "मैप को ऊपर पिन करें",
     "selectRegion": "क्षेत्र चुनें",
@@ -321,7 +320,7 @@
     "panelCatCommodityEcon": "अर्थव्यवस्था और व्यापार",
     "panelCatHappyNews": "अच्छी खबरें",
     "panelCatHappyPlanet": "प्लैनेट और दान",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "ताजा खबरें",
@@ -610,35 +609,12 @@
       "sectorCascade": "क्षेत्रीय प्रभाव",
       "militarySurge": "सेनाओं की बढ़त"
     },
-    "story": {
-      "generating": "कहानी बना रहे हैं...",
-      "close": "बंद करें",
-      "shareTitle": "कहानी शेयर करें",
-      "save": "सहेजें",
-      "whatsapp": "व्हाट्सएप",
-      "twitter": "X",
-      "linkedin": "लिंक्डइन",
-      "copyLink": "लिंक",
-      "saved": "सहेजा गया!",
-      "copied": "कॉपी किया गया!",
-      "opening": "खुल रहा है...",
-      "error": "कहानी बनाने में असफल।"
-    },
     "mobileWarning": {
       "title": "मोबाइल दृश्य",
       "description": "आप MENA क्षेत्र पर केंद्रित सरल मोबाइल संस्करण देख रहे हैं जिसमें जरूरी लेयर्स चालू हैं।",
       "tip": "सूचना: क्षेत्र बदलने के लिए व्यू बटन (GLOBAL/US/MENA) का उपयोग करें। विवरण देखने के लिए मार्कर पर टैप करें।",
       "dontShowAgain": "फिर न दिखाएं",
       "gotIt": "समझ गया"
-    },
-    "downloadBanner": {
-      "description": "नैटिव प्रदर्शन, सुरक्षित लोकल की स्टोरेज, ऑफलाइन मैप टाइल्स।",
-      "macSilicon": "macOS (एप्पल सिलिकॉन)",
-      "macIntel": "macOS (इंटेल)",
-      "windows": "विंडोज (.exe)",
-      "linux": "लिनक्स (.AppImage)",
-      "showAllPlatforms": "सभी प्लेटफॉर्म दिखाएं",
-      "showLess": "कम दिखाएं"
     },
     "runtimeConfig": {
       "title": "डेस्कटॉप कॉन्फ़िगरेशन",
@@ -1163,7 +1139,6 @@
     },
     "countryBrief": {
       "shareLink": "लिंक साझा करें",
-      "shareStory": "कहानी साझा करें",
       "printPdf": "प्रिंट / पीडीएफ",
       "exportData": "डेटा निर्यात करें"
     },
@@ -3092,7 +3067,6 @@
     "conflict": "संघर्ष",
     "security": "सैन्य गतिविधि",
     "information": "जानकारी",
-    "shareStory": "कहानी साझा करें",
     "exportImage": "छवि निर्यात करें",
     "exportPdf": "PDF निर्यात करें",
     "new": "नया",

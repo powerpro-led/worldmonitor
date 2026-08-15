@@ -13,7 +13,7 @@ const root = resolve(__dirname, '..');
 const indexHtml = readFileSync(resolve(root, 'index.html'), 'utf8');
 const vercelConfig = JSON.parse(readFileSync(resolve(root, 'vercel.json'), 'utf8'));
 const dashboardCsp = vercelConfig.headers
-  .find((entry: { source: string }) => entry.source === '/((?!docs|embed|embed\\.html).*)')
+  .find((entry: { source: string }) => entry.source === '/((?!docs).*)')
   ?.headers
   ?.find((header: { key: string }) => header.key === 'Content-Security-Policy')
   ?.value ?? '';

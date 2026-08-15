@@ -2,7 +2,7 @@
 /**
  * Backfill missing locale strings using Claude Haiku as the translator.
  *
- * - Source of truth: src/locales/en.json (or pro-test/src/locales/en.json with --pro-test)
+ * - Source of truth: src/locales/en.json
  * - Diffs each non-English locale against EN, sends only the missing keys
  *   in batches to Claude, deep-merges the response back into the locale file.
  * - Preserves i18next interpolation tokens (`{{name}}`, `<strong>`, emoji,
@@ -12,7 +12,6 @@
  * Usage:
  *   ANTHROPIC_API_KEY=sk-ant-... node scripts/translate-locales.mjs
  *   ANTHROPIC_API_KEY=sk-ant-... node scripts/translate-locales.mjs --only=fr,de
- *   ANTHROPIC_API_KEY=sk-ant-... node scripts/translate-locales.mjs --pro-test
  *   node scripts/translate-locales.mjs --dry-run    # just report the gap
  *
  * Cost: ~8.3K strings × 20 locales backfill ≈ ~$3 on claude-haiku-4-5.
@@ -24,11 +23,10 @@ import { Anthropic } from '@anthropic-ai/sdk';
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
-const proTest = args.has('--pro-test');
 const onlyArg = [...args].find(a => a.startsWith('--only='));
 const onlyLocales = onlyArg ? onlyArg.slice('--only='.length).split(',') : null;
 
-const ROOT = proTest ? 'pro-test/src/locales' : 'src/locales';
+const ROOT = 'src/locales';
 const LOCALES = ['ar', 'bg', 'cs', 'de', 'el', 'es', 'fa', 'fr', 'hi', 'hr', 'hu', 'it', 'ja', 'ko', 'nl', 'pl', 'pt', 'ro', 'ru', 'sv', 'th', 'tr', 'vi', 'zh'];
 const LANG_NAMES = {
   ar: 'Arabic', bg: 'Bulgarian', cs: 'Czech', de: 'German', el: 'Greek',
@@ -261,13 +259,8 @@ async function main() {
 
   for (const loc of targets) {
     const locPath = path.join(ROOT, `${loc}.json`);
-    // Skip locales that don't exist in the active root. The unified LOCALES
-    // list serves both the main app (src/locales/) and the pro-test bundle
-    // (pro-test/src/locales/), but the two roots are independent — a locale
-    // added to main may not yet have a pro-test counterpart. Skip silently
-    // so --pro-test and default modes both work without a placeholder file
-    // (placeholders trigger the pro-bundle freshness hook because they
-    // change the lazy-loaded chunk graph).
+    // Skip locales that don't exist under src/locales/ — defensive only,
+    // LOCALES should stay in sync with the files actually committed there.
     if (!existsSync(locPath)) {
       console.log(`[${loc}] (no file at ${locPath}; skipping)`);
       continue;

@@ -242,7 +242,6 @@
     "panelCatCentralBanks": "Banques Centrales & Économie",
     "panelCatDeals": "Transactions & Institutionnel",
     "panelCatGulfMena": "Golfe & MENA",
-    "downloadApp": "Télécharger l'appli",
     "selectRegion": "Sélectionner la région",
     "cached": "MISE EN CACHE",
     "unavailable": "INDISPONIBLE",
@@ -255,7 +254,7 @@
     "panelCatCommodityEcon": "Économie & Commerce",
     "panelCatHappyNews": "Bonnes Nouvelles",
     "panelCatHappyPlanet": "Planète & Solidarité",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Actualités en direct",
@@ -544,35 +543,12 @@
       "newsCorrelation": "CORRÉLATION D'ACTUALITÉS",
       "viewOnMap": "Voir sur la carte"
     },
-    "story": {
-      "generating": "Génération de l'histoire...",
-      "save": "Sauvegarder",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Lien",
-      "saved": "Sauvegardé !",
-      "copied": "Copié !",
-      "opening": "Ouverture...",
-      "error": "Échec de la génération.",
-      "shareTitle": "Partager l'histoire",
-      "close": "Fermer"
-    },
     "mobileWarning": {
       "title": "Vue Mobile",
       "description": "Vous consultez une version mobile simplifiée centrée sur la région MENA avec les couches essentielles activées.",
       "tip": "Astuce : Utilisez les boutons de vue (GLOBAL/US/MENA) pour changer de région. Appuyez sur les marqueurs pour voir les détails.",
       "dontShowAgain": "Ne plus afficher",
       "gotIt": "Compris"
-    },
-    "downloadBanner": {
-      "description": "Performance native, stockage local sécurisé des clés, cartes hors ligne.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Afficher toutes les plateformes",
-      "showLess": "Afficher moins"
     },
     "runtimeConfig": {
       "title": "Configuration Bureau",
@@ -981,7 +957,6 @@
       "emojiKeyNaval": "Actifs navals"
     },
     "countryBrief": {
-      "shareStory": "Partager l'article",
       "printPdf": "Imprimer / PDF",
       "exportData": "Exporter les données",
       "shareLink": "Partager le lien"
@@ -3037,7 +3012,6 @@
     "conflict": "Conflit",
     "security": "Activité militaire",
     "information": "Information",
-    "shareStory": "Partager le sujet",
     "exportImage": "Exporter l'image",
     "exportPdf": "Exporter PDF",
     "selectAll": "Sélectionner tout",

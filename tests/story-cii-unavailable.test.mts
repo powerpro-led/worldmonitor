@@ -34,7 +34,8 @@ describe('story CII unavailable state', () => {
       .replace(
         "import { getLocale, t } from './i18n';",
         "const getLocale = () => 'en-US'; const t = (key: string) => key === 'common.unavailable' ? 'UNAVAILABLE' : key;",
-      );
+      )
+      .replace("import { APP_DOMAIN } from '@/config/domain';", "const APP_DOMAIN = 'example.test';");
     const { renderStoryToCanvas } = await importSource(source) as {
       renderStoryToCanvas: (data: ReturnType<typeof emptyStory>) => Promise<unknown>;
     };
@@ -69,21 +70,5 @@ describe('story CII unavailable state', () => {
     assert.ok(!drawnText.includes('/100'));
     assert.ok(!drawnText.includes('NORMAL'));
     assert.ok(!drawnText.some(text => text.includes('STABLE')));
-  });
-
-  it('marks every share template unavailable without claiming score, level, or trend', async () => {
-    const source = readFileSync(resolve(root, 'src/services/story-share.ts'), 'utf8')
-      .replace("import type { StoryData } from './story-data';", '')
-      .replace("import { toFlagEmoji } from '@/utils/country-flag';", "const toFlagEmoji = () => '';" )
-      .replace("import { getCanonicalApiOrigin } from '@/services/runtime';", "const getCanonicalApiOrigin = () => 'https://worldmonitor.app';");
-    const { shareTexts } = await importSource(source) as {
-      shareTexts: Record<string, (data: ReturnType<typeof emptyStory>) => string>;
-    };
-
-    for (const [platform, template] of Object.entries(shareTexts)) {
-      const text = template(emptyStory());
-      assert.match(text, /unavailable/i, `${platform} must disclose unavailable CII`);
-      assert.doesNotMatch(text, /N\/A\/100|0\/100|\bstable\b|\bnormal\b/i, `${platform} must not fabricate CII semantics`);
-    }
   });
 });

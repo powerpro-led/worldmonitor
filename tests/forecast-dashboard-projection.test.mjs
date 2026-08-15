@@ -101,7 +101,7 @@ test('tolerates malformed payloads rather than publishing garbage', () => {
 // tick fell through to this RPC — and it had no CDN shield: ~17.5k uncached origin reads
 // per day of a 188 KB payload. Shield the ONE unfiltered shape the dashboard sends.
 test('the unfiltered forecast feed has a CDN-shielded public shape', () => {
-  const base = 'https://api.worldmonitor.app/api/forecast/v1/get-forecasts';
+  const base = 'https://api.example.test/api/forecast/v1/get-forecasts';
 
   assert.equal(isPublicSharedRpcRequest(`${base}?public=1`, 'GET'), true);
   // Vercel's [rpc].ts router echoes the matched segment into the query (#5285) — the

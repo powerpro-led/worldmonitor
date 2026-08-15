@@ -33,7 +33,7 @@
 // its actual job (retiring the old brand, once, when a real domain is
 // picked) but means --check is not a substitute for re-running this script
 // by hand after any future APP_DOMAIN change.
-import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -55,12 +55,7 @@ const repoRoot = path.resolve(scriptDir, '..');
 // (shared/domain-config.js included) never has to.
 const LEGACY_DOMAIN = 'worldmonitor.app';
 
-async function buildTargetFiles() {
-  const sandboxDir = path.join(repoRoot, 'public/sandbox');
-  const sandboxFiles = (await readdir(sandboxDir))
-    .filter((name) => name.endsWith('.json'))
-    .map((name) => path.join('public/sandbox', name));
-
+function buildTargetFiles() {
   return [
     // CSP configs — literal domain tokens mixed with static third-party origins.
     'vercel.json',
@@ -79,7 +74,6 @@ async function buildTargetFiles() {
     // contain the literal `worldmonitor.app`.
     'shared/hapi-app-identifier.json',
     'scripts/shared/hapi-app-identifier.json',
-    ...sandboxFiles,
   ];
 }
 
@@ -115,7 +109,7 @@ function applySubstitutions(source, substitutions) {
 async function main() {
   const rawDomain = process.env.APP_DOMAIN;
   const substitutions = buildSubstitutions(rawDomain);
-  const targetFiles = await buildTargetFiles();
+  const targetFiles = buildTargetFiles();
 
   const results = [];
   for (const file of targetFiles) {

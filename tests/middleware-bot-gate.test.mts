@@ -232,7 +232,7 @@ describe('middleware PUBLIC_API_PATHS — secret-authed internal endpoints bypas
 });
 
 // ── /mcp variant-subdomain canonicalization ──────────────────────────────────
-// The MCP endpoint's canonical URL is apex (`https://worldmonitor.app/mcp`).
+// The MCP endpoint's canonical URL is apex (`https://example.test/mcp`).
 // GET/HEAD requests from variant subdomains are redirected there so discovery
 // signals don't fragment across tech/finance/etc. POST/OPTIONS continue to the
 // /api/mcp rewrite unchanged so MCP clients configured against a variant host

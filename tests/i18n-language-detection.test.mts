@@ -10,14 +10,14 @@ import { readQueryLanguage, stripQueryLanguage } from '../src/utils/i18n-url.ts'
 
 describe('readQueryLanguage — wmQuery detector lookup', () => {
   it('returns the lang param for a shareable/SEO language URL', () => {
-    assert.equal(readQueryLanguage('https://www.worldmonitor.app/dashboard?lang=fa'), 'fa');
-    assert.equal(readQueryLanguage('https://www.worldmonitor.app/dashboard?foo=1&lang=hr'), 'hr');
+    assert.equal(readQueryLanguage('https://www.example.test/dashboard?lang=fa'), 'fa');
+    assert.equal(readQueryLanguage('https://www.example.test/dashboard?foo=1&lang=hr'), 'hr');
   });
 
   it('returns undefined (fall through to next detector) when lang is absent or empty', () => {
-    assert.equal(readQueryLanguage('https://www.worldmonitor.app/dashboard'), undefined);
-    assert.equal(readQueryLanguage('https://www.worldmonitor.app/dashboard?lang='), undefined);
-    assert.equal(readQueryLanguage('https://www.worldmonitor.app/dashboard?other=x'), undefined);
+    assert.equal(readQueryLanguage('https://www.example.test/dashboard'), undefined);
+    assert.equal(readQueryLanguage('https://www.example.test/dashboard?lang='), undefined);
+    assert.equal(readQueryLanguage('https://www.example.test/dashboard?other=x'), undefined);
   });
 
   it('returns undefined instead of throwing on an unparseable URL', () => {
@@ -30,20 +30,20 @@ describe('readQueryLanguage — wmQuery detector lookup', () => {
 describe('stripQueryLanguage — explicit-choice reload guard', () => {
   it('removes the lang param so a stale ?lang does not out-rank the saved choice on reload', () => {
     assert.equal(
-      stripQueryLanguage('https://www.worldmonitor.app/dashboard?lang=fa'),
-      'https://www.worldmonitor.app/dashboard',
+      stripQueryLanguage('https://www.example.test/dashboard?lang=fa'),
+      'https://www.example.test/dashboard',
     );
   });
 
   it('preserves every other query param and the hash', () => {
     assert.equal(
-      stripQueryLanguage('https://www.worldmonitor.app/dashboard?view=map&lang=de&zoom=3#panel'),
-      'https://www.worldmonitor.app/dashboard?view=map&zoom=3#panel',
+      stripQueryLanguage('https://www.example.test/dashboard?view=map&lang=de&zoom=3#panel'),
+      'https://www.example.test/dashboard?view=map&zoom=3#panel',
     );
   });
 
   it('returns the URL unchanged when there is no lang param', () => {
-    const href = 'https://www.worldmonitor.app/dashboard?view=map';
+    const href = 'https://www.example.test/dashboard?view=map';
     assert.equal(stripQueryLanguage(href), href);
   });
 

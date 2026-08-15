@@ -432,7 +432,6 @@ async function loadEventHandlerManager(): Promise<EventHandlerManagerCtor> {
       export function trackMapViewChange(...args) { push('trackMapViewChange', args); }
       export function trackMapLayerToggle(...args) { push('trackMapLayerToggle', args); }
       export function trackPanelToggled(...args) { push('trackPanelToggled', args); }
-      export function trackDownloadClicked(...args) { push('trackDownloadClicked', args); }
       export function trackGateHit(...args) { push('trackGateHit', args); }
       export function trackPanelResized(...args) { push('trackPanelResized', args); }
     `],
@@ -482,7 +481,6 @@ async function loadEventHandlerManager(): Promise<EventHandlerManagerCtor> {
     ['@/components/WidgetChatModal', 'export function openWidgetChatModal(){}'],
     ['@/components/McpDataPanel', 'export class McpDataPanel { constructor(spec){ this.spec = spec; } getElement(){ return document.createElement("div"); } }'],
     ['@/components/McpConnectModal', 'export function openMcpConnectModal(){}'],
-    ['@/components/DownloadBanner', 'export function detectPlatform(){ return "web"; } export const allButtons = []; export function buttonsForPlatform(){ return []; }'],
     ['@/components/UnifiedSettings', 'export class UnifiedSettings { refreshPanelToggles(){} open(){} }'],
     ['@/components/AuthLauncher', 'export class AuthLauncher { open(){} close(){} destroy(){} }'],
     ['@/components/AuthHeaderWidget', 'export class AuthHeaderWidget { constructor(){} getElement(){ return document.createElement("div"); } }'],

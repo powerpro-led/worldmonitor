@@ -263,7 +263,7 @@ API keys are required for non-browser origins. Trusted browser origins (producti
 
 ### Bot Protection
 
-`middleware.ts` filters automated traffic: blocks known crawler user-agents on API and asset paths, allows social preview bots (Twitter, Facebook, LinkedIn, Telegram, Discord) on story and OG endpoints.
+`middleware.ts` filters automated traffic: blocks known crawler user-agents on API and asset paths, allows social preview bots (Twitter, Facebook, LinkedIn, Telegram, Discord) on OG image endpoints and the brief carousel route.
 
 ### Rate Limiting
 
@@ -377,7 +377,7 @@ Runs before every `git push`:
 ├── docker/                 Dockerfile + nginx config for Railway
 ├── e2e/                    Playwright E2E specs
 ├── proto/                  Protobuf service definitions (sebuf framework)
-├── public/                 Static assets served as-is (favicons, textures, sandbox fixtures)
+├── public/                 Static assets served as-is (favicons, textures)
 ├── scripts/                Seed scripts, build helpers, relay service
 ├── server/                 Server-side code (bundled into Edge Functions)
 │   ├── _shared/            Redis, rate-limit, LLM, caching utilities
@@ -392,7 +392,6 @@ Runs before every `git push`:
 │   ├── config/             Variant, panel, layer, market configurations
 │   ├── data/               Static JSON datasets (conservation, renewable, happiness)
 │   ├── e2e/                Map test harnesses (consumed by Playwright specs)
-│   ├── embed/              Embeddable widget loader
 │   ├── generated/          Proto-generated client/server stubs (DO NOT EDIT)
 │   ├── locales/            i18n translation files
 │   ├── services/           Business logic organized by domain

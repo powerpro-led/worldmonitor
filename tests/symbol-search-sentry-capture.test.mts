@@ -51,7 +51,7 @@ after(() => {
 
 function makeReq(q = 'nvidia'): Request {
   return new Request(
-    `https://worldmonitor.app/api/symbol-search?q=${encodeURIComponent(q)}`,
+    `https://example.test/api/symbol-search?q=${encodeURIComponent(q)}`,
     { headers: { 'X-WorldMonitor-Key': TEST_KEY } },
   );
 }

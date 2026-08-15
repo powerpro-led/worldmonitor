@@ -1,6 +1,6 @@
 // Boot-seed freshness guard — behavioral + wiring regression tests.
 //
-// ais-relay is recycled frequently on proxy.worldmonitor.app. Every seed loop
+// ais-relay is recycled frequently on proxy.example.test. Every seed loop
 // fires an IMMEDIATE seed on boot and then schedules a setInterval at its real
 // cadence — but the process is usually recycled long before that interval
 // elapses, so the boot seed is the de-facto scheduler. During a reboot storm

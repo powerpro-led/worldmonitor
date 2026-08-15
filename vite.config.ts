@@ -1086,7 +1086,6 @@ export default defineConfig(({ mode }) => {
         },
         input: {
           main: resolve(__dirname, 'index.html'),
-          embed: resolve(__dirname, 'embed.html'),
           settings: resolve(__dirname, 'settings.html'),
           liveChannels: resolve(__dirname, 'live-channels.html'),
         },
@@ -1217,6 +1216,16 @@ export default defineConfig(({ mode }) => {
             const rpcClientMatch = id.match(/\/src\/generated\/client\/worldmonitor\/(.+)\/service_client\.ts$/);
             if (rpcClientMatch) {
               return `rpc-client-${rpcClientMatch[1].replace(/_/g, '-').replace(/\//g, '-')}`;
+            }
+            // pro-fresh-rpc.ts's RPC-path Set is eager (premium-fetch.ts imports it
+            // statically, unconditionally), so it does NOT belong in a deferred/lazy
+            // chunk — but its literal path strings coincide with the eager-chunk
+            // guard's GENERATED_RPC_ENDPOINT_MARKERS substrings. Left unassigned, a
+            // single-entry build (post-#4571 embed.html removal) inlines it straight
+            // into main.js and trips that guard on a false positive. Giving it a
+            // stable name keeps it out of main.js's own bytes without making it lazy.
+            if (id.endsWith('/src/shared/pro-fresh-rpc.ts')) {
+              return 'pro-fresh-rpc';
             }
             // Co-locate the deck.gl renderer with the deck vendor chunk so
             // onlyExplicitManualChunks cannot split deck's transitive deps

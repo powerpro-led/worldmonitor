@@ -1,54 +1,12 @@
 import { SITE_VARIANT } from '@/config/variant';
 import { buildVariantMeta } from '@/config/variant-meta';
-import { getCanonicalApiOrigin } from '@/services/runtime';
 import { RAW_APP_DOMAIN } from '@/config/domain';
-
-interface StoryMeta {
-  countryCode: string;
-  countryName: string;
-  ciiScore?: number;
-  ciiLevel?: string;
-  trend?: string;
-  type: 'ciianalysis' | 'crisisalert' | 'dailybrief' | 'marketfocus';
-}
 
 const variantMetaMap = buildVariantMeta(RAW_APP_DOMAIN);
 const variantMeta = variantMetaMap[SITE_VARIANT] ?? variantMetaMap.full;
 const CANONICAL_URL = variantMeta.url;
 const PUBLIC_ORIGIN = new URL(variantMeta.url).origin;
-const API_ORIGIN = getCanonicalApiOrigin();
 const DEFAULT_IMAGE = `${PUBLIC_ORIGIN}/favico/${SITE_VARIANT === 'full' ? '' : SITE_VARIANT + '/'}og-image.png`;
-
-export function updateMetaTagsForStory(meta: StoryMeta): void {
-  const { countryCode, countryName, ciiScore, ciiLevel, trend, type } = meta;
-
-  const title = `${countryName} Intelligence Brief | ${variantMeta.siteName}`;
-  const description = generateDescription(ciiScore, ciiLevel, trend, type, countryName);
-  const storyUrl = `${API_ORIGIN}/api/story?c=${countryCode}&t=${type}`;
-  let imageUrl = `${API_ORIGIN}/api/og-story?c=${countryCode}&t=${type}`;
-  if (ciiScore !== undefined) imageUrl += `&s=${ciiScore}`;
-  if (ciiLevel) imageUrl += `&l=${ciiLevel}`;
-
-  setMetaTag('title', title);
-  setMetaTag('description', description);
-  setCanonicalLink(storyUrl);
-
-  setMetaTag('og:title', title);
-  setMetaTag('og:description', description);
-  setMetaTag('og:url', storyUrl);
-  setMetaTag('og:image', imageUrl);
-
-  setMetaTag('twitter:title', title);
-  setMetaTag('twitter:description', description);
-  setMetaTag('twitter:url', storyUrl);
-  setMetaTag('twitter:image', imageUrl);
-
-  try {
-    sessionStorage.setItem('storyMeta', JSON.stringify(meta));
-  } catch {
-    // Story metadata remains correct for the current document without persistence.
-  }
-}
 
 export function resetMetaTags(): void {
   document.title = variantMeta.title;
@@ -64,44 +22,6 @@ export function resetMetaTags(): void {
   setMetaTag('twitter:description', variantMeta.description);
   setMetaTag('twitter:url', CANONICAL_URL);
   setMetaTag('twitter:image', DEFAULT_IMAGE);
-
-  try {
-    sessionStorage.removeItem('storyMeta');
-  } catch {
-    // Resetting the current document must not depend on storage availability.
-  }
-}
-
-function generateDescription(
-  score?: number,
-  level?: string,
-  trend?: string,
-  type?: string,
-  countryName?: string
-): string {
-  const parts: string[] = [];
-
-  if (score !== undefined && level) {
-    parts.push(`${countryName} has an instability score of ${score}/100 (${level})`);
-  }
-
-  if (trend) {
-    const trendText = trend === 'rising' ? 'trending upward' : trend === 'falling' ? 'trending downward' : 'stable';
-    parts.push(`Risk is ${trendText}`);
-  }
-
-  const typeDescriptions: Record<string, string> = {
-    ciianalysis: 'Full intelligence analysis with military posture and prediction markets',
-    crisisalert: 'Crisis-focused briefing with convergence alerts',
-    dailybrief: 'AI-synthesized daily briefing of top stories',
-    marketfocus: 'Prediction market probabilities and market-moving events',
-  };
-
-  if (type && typeDescriptions[type]) {
-    parts.push(typeDescriptions[type]);
-  }
-
-  return `${variantMeta.siteName} ${parts.join('. ')}. Free, open-source geopolitical intelligence.`;
 }
 
 function setMetaTag(property: string, content: string): void {
@@ -126,43 +46,4 @@ function setCanonicalLink(href: string): void {
     document.head.appendChild(link);
   }
   link.setAttribute('href', href);
-}
-
-export function parseStoryParams(url: URL): StoryMeta | null {
-  const countryCode = url.searchParams.get('c');
-  const type = url.searchParams.get('t') || 'ciianalysis';
-
-  if (!countryCode || !/^[A-Z]{2,3}$/i.test(countryCode)) return null;
-
-  const validTypes: StoryMeta['type'][] = ['ciianalysis', 'crisisalert', 'dailybrief', 'marketfocus'];
-  const safeType: StoryMeta['type'] = validTypes.includes(type as StoryMeta['type'])
-    ? (type as StoryMeta['type'])
-    : 'ciianalysis';
-
-  const countryNames: Record<string, string> = {
-    UA: 'Ukraine', RU: 'Russia', CN: 'China', US: 'United States',
-    IR: 'Iran', IL: 'Israel', TW: 'Taiwan', KP: 'North Korea',
-    SA: 'Saudi Arabia', TR: 'Turkey', PL: 'Poland', DE: 'Germany',
-    FR: 'France', GB: 'United Kingdom', IN: 'India', PK: 'Pakistan',
-    SY: 'Syria', YE: 'Yemen', MM: 'Myanmar', VE: 'Venezuela',
-  };
-
-  return {
-    countryCode: countryCode.toUpperCase(),
-    countryName: countryNames[countryCode.toUpperCase()] || countryCode.toUpperCase(),
-    type: safeType,
-  };
-}
-
-export function initMetaTags(): void {
-  const url = new URL(window.location.href);
-
-  if (url.pathname === '/story' || url.searchParams.has('c')) {
-    const params = parseStoryParams(url);
-    if (params) {
-      updateMetaTagsForStory(params);
-    }
-  } else {
-    resetMetaTags();
-  }
 }

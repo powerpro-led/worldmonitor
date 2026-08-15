@@ -387,7 +387,7 @@ describe('resilience validation artifacts', () => {
 
     const artifact = buildAcceptanceArtifact({
       generatedAt: '2026-06-03T12:00:00.000Z',
-      baseUrl: 'https://www.worldmonitor.app',
+      baseUrl: 'https://www.example.test',
       baselineSnapshotPath: resolve(snapshotDir, 'resilience-ranking-live-pre-repair-2026-04-22.json'),
       baselineSnapshot,
       postFlipSnapshotPath: resolve(snapshotDir, 'resilience-ranking-live-post-pr1-2026-06-03.json'),

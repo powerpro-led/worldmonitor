@@ -8,7 +8,7 @@ const originalEnv = { ...process.env };
 const REDIS_KEY = 'forecast:scorecard:v1';
 
 function makeCtx() {
-  const req = new Request('https://worldmonitor.app/api/forecast/v1/get-forecast-scorecard');
+  const req = new Request('https://example.test/api/forecast/v1/get-forecast-scorecard');
   return { request: req, pathParams: {}, headers: {} };
 }
 

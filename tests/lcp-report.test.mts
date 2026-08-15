@@ -20,7 +20,7 @@ test('reportLcpMetric reports LCP value, target, phase sub-parts, and form facto
     rating: 'needs-improvement',
     attribution: {
       target: 'main.hero>h1',
-      url: 'https://worldmonitor.app/assets/hero.webp?token=secret',
+      url: 'https://example.test/assets/hero.webp?token=secret',
       timeToFirstByte: 421.3,
       resourceLoadDelay: 83.6,
       resourceLoadDuration: 1170.8,
@@ -35,7 +35,7 @@ test('reportLcpMetric reports LCP value, target, phase sub-parts, and form facto
   assert.equal(ctx.tags.formFactor, 'desktop');
   assert.equal(ctx.extra.value, 3876, 'LCP value rounded');
   assert.equal(ctx.extra.elementTarget, 'main.hero>h1');
-  assert.equal(ctx.extra.url, 'https://worldmonitor.app/assets/hero.webp?[redacted]');
+  assert.equal(ctx.extra.url, 'https://example.test/assets/hero.webp?[redacted]');
   assert.equal(ctx.extra.timeToFirstByte, 421);
   assert.equal(ctx.extra.resourceLoadDelay, 84);
   assert.equal(ctx.extra.resourceLoadDuration, 1171);

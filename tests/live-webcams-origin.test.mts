@@ -5,13 +5,13 @@ import { isAllowedWebcamEmbedMessageOrigin } from '../src/components/_live-webca
 
 describe('LiveWebcamsPanel postMessage origin guard', () => {
   it('accepts YouTube iframe API messages from the iframe embed origin', () => {
-    const src = 'https://www.youtube.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://worldmonitor.app';
+    const src = 'https://www.youtube.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://example.test';
 
     assert.equal(isAllowedWebcamEmbedMessageOrigin('https://www.youtube.com', src), true);
   });
 
   it('accepts YouTube nocookie messages only when the iframe uses nocookie', () => {
-    const src = 'https://www.youtube-nocookie.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://worldmonitor.app';
+    const src = 'https://www.youtube-nocookie.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://example.test';
 
     assert.equal(isAllowedWebcamEmbedMessageOrigin('https://www.youtube-nocookie.com', src), true);
     assert.equal(isAllowedWebcamEmbedMessageOrigin('https://www.youtube.com', src), false);
@@ -24,7 +24,7 @@ describe('LiveWebcamsPanel postMessage origin guard', () => {
   });
 
   it('rejects same-window messages after a child frame navigates to an unexpected origin', () => {
-    const originalSrc = 'https://www.youtube.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://worldmonitor.app';
+    const originalSrc = 'https://www.youtube.com/embed/e34xb-Fbl0U?enablejsapi=1&origin=https://example.test';
 
     assert.equal(isAllowedWebcamEmbedMessageOrigin('https://evil.example', originalSrc), false);
     assert.equal(isAllowedWebcamEmbedMessageOrigin('https://www.youtube.com.evil.example', originalSrc), false);

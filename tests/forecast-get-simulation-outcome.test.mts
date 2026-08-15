@@ -24,7 +24,7 @@ const LATEST_KEY = 'forecast:simulation-outcome:latest';
 const QUEUE_KEY = 'forecast:simulation-task-queue:v1';
 
 function makeCtx() {
-  const req = new Request('https://worldmonitor.app/api/forecast/v1/get-simulation-outcome');
+  const req = new Request('https://example.test/api/forecast/v1/get-simulation-outcome');
   return { request: req, pathParams: {}, headers: {} };
 }
 

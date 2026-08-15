@@ -345,28 +345,6 @@
       "owner": "@SebastienMelki",
       "removal_issue": null
     },
-
-    {
-      "path": "api/download.js",
-      "category": "non-json",
-      "reason": "Binary file download (zip/csv/xlsx). Content-Type is not application/json.",
-      "owner": "@SebastienMelki",
-      "removal_issue": null
-    },
-    {
-      "path": "api/og-story.js",
-      "category": "non-json",
-      "reason": "Open Graph preview image (PNG via @vercel/og). Binary response.",
-      "owner": "@SebastienMelki",
-      "removal_issue": null
-    },
-    {
-      "path": "api/story.js",
-      "category": "non-json",
-      "reason": "Rendered HTML story page for social embeds — response is text/html, not JSON.",
-      "owner": "@SebastienMelki",
-      "removal_issue": null
-    },
     {
       "path": "api/youtube/embed.js",
       "category": "non-json",
@@ -557,20 +535,6 @@
       "path": "api/latest-brief.ts",
       "category": "deferred",
       "reason": "Returns the current user's latest brief. Auth-gated, validates a Supabase session bearer; migrating requires modeling Brief in proto and auth context in handler. Deferred to brief/v1 service.",
-      "owner": "@SebastienMelki",
-      "removal_issue": "TBD"
-    },
-    {
-      "path": "api/brief/share-url.ts",
-      "category": "deferred",
-      "reason": "Creates a shareable public URL for a brief. Part of the brief/v1 service work.",
-      "owner": "@SebastienMelki",
-      "removal_issue": "TBD"
-    },
-    {
-      "path": "api/brief/public/[hash].ts",
-      "category": "deferred",
-      "reason": "Resolves a share hash to public-safe brief JSON. Part of the brief/v1 service work; dynamic path segment needs proto path-param modeling.",
       "owner": "@SebastienMelki",
       "removal_issue": "TBD"
     },

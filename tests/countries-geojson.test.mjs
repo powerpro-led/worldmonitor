@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-const COUNTRY_GEOJSON_URL = 'https://maps.worldmonitor.app/countries.geojson';
+const COUNTRY_GEOJSON_URL = 'https://maps.example.test/countries.geojson';
 
 let features;
 let fetchError;

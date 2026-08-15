@@ -26,7 +26,7 @@ import {
 import type { FetchLike } from '../server/worldmonitor/batch/v1/execute-batch.ts';
 import { installRedis } from './helpers/fake-upstash-redis.mts';
 
-const ORIGIN = 'https://www.worldmonitor.app';
+const ORIGIN = 'https://www.example.test';
 
 function makeCtx(headers: Record<string, string> = {}) {
   const request = new Request(`${ORIGIN}/api/batch/v1/execute`, {
@@ -260,7 +260,7 @@ describe('batch gateway access', () => {
 
     const gateway = createDomainGateway(generated.createBatchServiceRoutes(batchHandler, serverOptions));
     const res = await gateway(
-      new Request('https://www.worldmonitor.app/api/batch/v1/execute', {
+      new Request('https://www.example.test/api/batch/v1/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ operations: [{ id: 'a', path: '/api/market/v1/get-fear-greed-index' }] }),

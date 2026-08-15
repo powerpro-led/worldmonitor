@@ -115,7 +115,7 @@ function installFetchMock(options: FetchMockOptions = {}) {
 }
 
 function requestFor(path: string): Request {
-  return new Request(`https://worldmonitor.app${path}`);
+  return new Request(`https://example.test${path}`);
 }
 
 function ctxFor(request: Request) {
@@ -253,7 +253,7 @@ describe('aviation cache poison prevention', () => {
     const gateway = createDomainGateway(createAviationServiceRoutes(aviationHandler, serverOptions));
 
     const response = await gateway(new Request(
-      'https://worldmonitor.app/api/aviation/v1/list-airport-flights?airport=FFF&limit=30&_debug=1',
+      'https://example.test/api/aviation/v1/list-airport-flights?airport=FFF&limit=30&_debug=1',
       { headers: { 'X-WorldMonitor-Key': 'test-key' } },
     ));
     const body = await response.json() as { source?: string; flights?: unknown[] };

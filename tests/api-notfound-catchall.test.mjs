@@ -25,7 +25,7 @@ describe('api/[...notfound].ts — filesystem catch-all replaces the shadowing r
   });
 
   it('returns the structured JSON 404 envelope for an unmatched path', async () => {
-    const res = catchAll(new Request('https://worldmonitor.app/api/seismology/v1/list-earthquakes', { method: 'GET' }));
+    const res = catchAll(new Request('https://example.test/api/seismology/v1/list-earthquakes', { method: 'GET' }));
     assert.equal(res.status, 404);
     const body = await res.json();
     assert.equal(body.error?.code, 'not_found');

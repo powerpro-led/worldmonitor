@@ -75,7 +75,7 @@ describe('resilience runtime manifest', () => {
       },
     }, { keepVercelEnv: true });
 
-    const request = new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest');
+    const request = new Request('https://example.test/api/resilience/v1/get-runtime-manifest');
     const response = await modules.getResilienceRuntimeManifest({ request } as never);
 
     assert.equal(response.manifestVersion, 4);
@@ -116,7 +116,7 @@ describe('resilience runtime manifest', () => {
     installRedis({}, { keepVercelEnv: true });
 
     const response = await modules.getResilienceRuntimeManifest({
-      request: new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest'),
+      request: new Request('https://example.test/api/resilience/v1/get-runtime-manifest'),
     } as never);
 
     assert.equal(response.deployedCommitSha, '');
@@ -150,7 +150,7 @@ describe('resilience runtime manifest', () => {
     }, { keepVercelEnv: true });
 
     const response = await modules.getResilienceRuntimeManifest({
-      request: new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest'),
+      request: new Request('https://example.test/api/resilience/v1/get-runtime-manifest'),
     } as never);
 
     assert.deepEqual(response.intervals, {
@@ -178,7 +178,7 @@ describe('resilience runtime manifest', () => {
     }, { keepVercelEnv: true });
 
     const response = await modules.getResilienceRuntimeManifest({
-      request: new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest'),
+      request: new Request('https://example.test/api/resilience/v1/get-runtime-manifest'),
     } as never);
 
     assert.deepEqual(response.intervals, {
@@ -202,7 +202,7 @@ describe('resilience runtime manifest', () => {
     process.env.UPSTASH_REDIS_REST_TOKEN = 'super-secret-upstash-token';
 
     const response = await modules.getResilienceRuntimeManifest({
-      request: new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest'),
+      request: new Request('https://example.test/api/resilience/v1/get-runtime-manifest'),
     } as never);
     const serialized = JSON.stringify(response);
 
@@ -262,7 +262,7 @@ describe('resilience runtime manifest gateway auth', () => {
 
     const gateway = createDomainGateway(generated.createResilienceServiceRoutes(resilienceHandler, serverOptions));
 
-    const manifest = await gateway(new Request('https://worldmonitor.app/api/resilience/v1/get-runtime-manifest?_debug=1'));
+    const manifest = await gateway(new Request('https://example.test/api/resilience/v1/get-runtime-manifest?_debug=1'));
     assert.equal(manifest.status, 200);
     assert.equal(manifest.headers.get('Cache-Control'), 'no-store');
     assert.equal(manifest.headers.get('X-Cache-Tier'), 'no-store');
@@ -282,10 +282,10 @@ describe('resilience runtime manifest gateway auth', () => {
       lastObservedAt: '',
     });
 
-    const score = await gateway(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US'));
+    const score = await gateway(new Request('https://example.test/api/resilience/v1/get-resilience-score?countryCode=US'));
     assert.equal(score.status, 401);
 
-    const ranking = await gateway(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-ranking'));
+    const ranking = await gateway(new Request('https://example.test/api/resilience/v1/get-resilience-ranking'));
     assert.equal(ranking.status, 401);
   });
 });

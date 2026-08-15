@@ -19,12 +19,7 @@
 import { api } from '@nitric/sdk';
 import { registerGeneratedRoutes } from './routes.generated';
 import { adaptVercelHandler } from './adapt-vercel-handler';
-import { adaptNodeHandler } from './adapt-node-handler';
 import mcpHandler from '../../api/mcp';
-// @ts-expect-error — JS module, no declaration file
-import ogStoryHandler from '../../api/og-story.js';
-// @ts-expect-error — JS module, no declaration file
-import storyHandler from '../../api/story.js';
 
 const apiGateway = api('api');
 registerGeneratedRoutes(apiGateway);
@@ -34,15 +29,6 @@ const mcpRoute = mcpGateway.route('/api/mcp');
 mcpRoute.get(adaptVercelHandler(mcpHandler));
 mcpRoute.post(adaptVercelHandler(mcpHandler));
 mcpRoute.options(adaptVercelHandler(mcpHandler));
-
-// api/og-story.js + api/story.js: Vercel Node.js serverless functions (no
-// `runtime: 'edge'` config), skipped by generate-nitric-routes.mjs — see that
-// script's header. Hand-wired here via adapt-node-handler.ts instead of
-// adapt-vercel-handler.ts. GET only: both are fetched via <img>/<meta> tag
-// navigation or direct crawler requests, never any other verb, and neither
-// handler branches on req.method.
-apiGateway.route('/api/og-story').get(adaptNodeHandler(ogStoryHandler));
-apiGateway.route('/api/story').get(adaptNodeHandler(storyHandler));
 
 // api/[...notfound].ts — NOT wired here. Confirmed 2026-08-06 (empirically,
 // against a live `nitric start`, not guessed from docs which say nothing

@@ -370,7 +370,7 @@ window.addEventListener('securitypolicyviolation', (e) => {
 });
 
 import { debugGetCells, getCellCount } from '@/services/geo-convergence';
-import { initMetaTags } from '@/services/meta-tags';
+import { resetMetaTags } from '@/services/meta-tags';
 import { installRuntimeFetchPatch, installWebApiRedirect } from '@/services/runtime';
 import { loadDesktopSecrets } from '@/services/runtime-config';
 import { applyStoredTheme } from '@/utils/theme-manager';
@@ -390,8 +390,8 @@ void initAnalytics();
 initVercelAnalytics();
 initDebugBearRum();
 
-// Initialize dynamic meta tags for sharing
-initMetaTags();
+// Initialize default document meta tags
+resetMetaTags();
 
 // In desktop mode, route /api/* calls to the local Tauri sidecar backend.
 installRuntimeFetchPatch();

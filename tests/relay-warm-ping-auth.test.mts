@@ -25,7 +25,7 @@ const NON_WARM_PATH = '/api/intelligence/v1/get-country-risk';
 function req(pathname: string, key?: string): Request {
   const headers: Record<string, string> = {};
   if (key !== undefined) headers['X-WorldMonitor-Key'] = key;
-  return new Request(`https://api.worldmonitor.app${pathname}`, { headers });
+  return new Request(`https://api.example.test${pathname}`, { headers });
 }
 
 describe('relay warm-ping internal auth', () => {
@@ -85,7 +85,7 @@ describe('relay warm-ping internal auth', () => {
 describe('relay warm-ping auth wiring (source guardrail)', () => {
   it('keeps the active Service Statuses relay loop on shared warm-ping auth headers', async () => {
     const src = await readFile(new URL('../scripts/ais-relay.cjs', import.meta.url), 'utf8');
-    assert.match(src, /const SERVICE_STATUSES_RPC_URL = 'https:\/\/api\.worldmonitor\.app\/api\/infrastructure\/v1\/list-service-statuses'/);
+    assert.match(src, /const SERVICE_STATUSES_RPC_URL = `\$\{resolveApiOrigin\(process\.env\.APP_DOMAIN\)\}\/api\/infrastructure\/v1\/list-service-statuses`/);
     assert.match(
       src,
       /fetch\(SERVICE_STATUSES_RPC_URL,\s*\{[\s\S]{0,240}?headers: warmPingHeaders\(\{ 'Content-Type': 'application\/json' \}\)/,

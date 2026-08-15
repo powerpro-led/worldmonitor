@@ -1,6 +1,7 @@
 'use strict';
 
 const { buildLlmCallEvent, emitLlmEvents } = require('./llm-telemetry.cjs');
+const { resolveAppOrigin } = require('../_domain-config.cjs');
 
 const SERVICE_UA = 'worldmonitor-llm/1.0';
 
@@ -50,7 +51,7 @@ const LLM_PROVIDERS = [
     envKey: 'OPENROUTER_API_KEY',
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
     model: 'google/gemini-2.5-flash',
-    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://worldmonitor.app', 'X-Title': 'World Monitor', 'User-Agent': SERVICE_UA }),
+    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN), 'X-Title': 'World Monitor', 'User-Agent': SERVICE_UA }),
     timeout: 20_000,
   },
 ];

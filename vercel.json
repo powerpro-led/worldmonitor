@@ -18,7 +18,6 @@
     { "source": "/reference/changelog", "destination": "/reference/changelog/", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/index.md", "destination": "/home.md" },
     { "source": "/mcp", "destination": "/api/mcp" },
     { "source": "/a2a", "destination": "/api/a2a" },
     { "source": "/ask", "destination": "/api/ask" },
@@ -31,14 +30,13 @@
     { "source": "/.well-known/mcp", "destination": "/api/mcp" },
     { "source": "/.well-known/mcp.json", "destination": "/api/mcp" },
     { "source": "/.well-known/http-message-signatures-directory", "destination": "/api/http-message-signatures-directory" },
-    { "source": "/embed", "destination": "/embed.html" },
     { "source": "/dashboard", "has": [{ "type": "host", "value": "tech.worldmonitor.app" }], "destination": "/dashboard-tech.html" },
     { "source": "/dashboard", "has": [{ "type": "host", "value": "finance.worldmonitor.app" }], "destination": "/dashboard-finance.html" },
     { "source": "/dashboard", "has": [{ "type": "host", "value": "commodity.worldmonitor.app" }], "destination": "/dashboard-commodity.html" },
     { "source": "/dashboard", "has": [{ "type": "host", "value": "happy.worldmonitor.app" }], "destination": "/dashboard-happy.html" },
     { "source": "/dashboard", "has": [{ "type": "host", "value": "energy.worldmonitor.app" }], "destination": "/dashboard-energy.html" },
     { "source": "/dashboard", "destination": "/dashboard.html" },
-    { "source": "/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)", "destination": "/dashboard.html" }
+    { "source": "/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)", "destination": "/dashboard.html" }
   ],
   "headers": [
     {
@@ -97,13 +95,6 @@
       ]
     },
     {
-      "source": "/sandbox/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
-      ]
-    },
-    {
       "source": "/agent.txt",
       "headers": [
         { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
@@ -120,7 +111,7 @@
       ]
     },
     {
-      "source": "/((?!docs|embed|embed\\.html).*)",
+      "source": "/((?!docs).*)",
       "headers": [
         { "key": "Content-Signal", "value": "ai-train=no, search=yes, ai-input=yes" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
@@ -132,28 +123,6 @@
         { "key": "Cross-Origin-Embedder-Policy-Report-Only", "value": "require-corp; report-to=\"wm-coop-coep\"" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(self), accelerometer=(), autoplay=(self \"https://www.youtube.com\" \"https://www.youtube-nocookie.com\"), bluetooth=(), display-capture=(), encrypted-media=(self \"https://www.youtube.com\" \"https://www.youtube-nocookie.com\"), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), midi=(), payment=(), picture-in-picture=(self \"https://www.youtube.com\" \"https://www.youtube-nocookie.com\" \"https://challenges.cloudflare.com\"), unload=(*), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=(\"https://challenges.cloudflare.com\")" },
         { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https: wss: blob: data: https://*.ingest.sentry.io https://*.ingest.us.sentry.io; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'strict-dynamic' 'nonce-wm-static-bootstrap' 'sha256-+SFBjfmi2XfnyAT3POBxf6JIKYDcNXtllPclOcaNBI0=' 'sha256-7oZNrsyfSuHAVU4KcnfCYgflzMCUu6NcFnN8paFIf0A=' 'sha256-lKs3SvF31U/ZDoqILsGd1YpSh0LSw9Xlo0hNHcX8Wqk=' 'sha256-jAPaz07sLDJ3o7wlzW1l2gFp/IZLG9nMWVawE66s8RI=' 'sha256-ON6NHeug+Su0Hn9QfMc7RyVBWq1aRBr5AfV9PKhD5nw=' 'sha256-XsSfnJeoJYzlhuBF8lmmhxzSpSgSecVttS4CzI5UqnM=' 'sha256-YpNuL1hJEyya/Pw8JIX6ZTWbVjQT7oIlYOm4VhvRj/Y=' 'sha256-TAJAzopKucNx+MnKBor94dUVWCYr3etraA1NtPgVy+8=' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data:; media-src 'self' data: blob: https:; frame-src 'self' https://www.worldmonitor.app https://worldmonitor.app https://tech.worldmonitor.app https://finance.worldmonitor.app https://commodity.worldmonitor.app https://happy.worldmonitor.app https://energy.worldmonitor.app https://www.youtube.com https://www.youtube-nocookie.com https://www.google.com https://webcams.windy.com https://challenges.cloudflare.com https://vercel.live https://*.vercel.app; frame-ancestors 'self' https://www.worldmonitor.app https://tech.worldmonitor.app https://finance.worldmonitor.app https://commodity.worldmonitor.app https://happy.worldmonitor.app https://energy.worldmonitor.app https://worldmonitor.app https://vercel.live https://*.vercel.app; base-uri 'self'; object-src 'none'; form-action 'self' https://api.worldmonitor.app" }
-      ]
-    },
-    {
-      "source": "/embed",
-      "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Cache-Control", "value": "private, no-cache, must-revalidate" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), accelerometer=(), autoplay=(), bluetooth=(), display-capture=(), encrypted-media=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https: wss: blob: data:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; font-src 'self' data: https:; media-src 'self' data: blob: https:; frame-src 'none'; frame-ancestors *; base-uri 'self'; object-src 'none'; form-action 'none'" }
-      ]
-    },
-    {
-      "source": "/embed.html",
-      "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Cache-Control", "value": "private, no-cache, must-revalidate" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), accelerometer=(), autoplay=(), bluetooth=(), display-capture=(), encrypted-media=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), midi=(), payment=(), picture-in-picture=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https: wss: blob: data:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; font-src 'self' data: https:; media-src 'self' data: blob: https:; frame-src 'none'; frame-ancestors *; base-uri 'self'; object-src 'none'; form-action 'none'" }
       ]
     },
     {
@@ -268,7 +237,7 @@
       ]
     },
     {
-      "source": "/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)",
+      "source": "/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)",
       "headers": [
         { "key": "Cache-Control", "value": "private, no-cache, must-revalidate" }
       ]

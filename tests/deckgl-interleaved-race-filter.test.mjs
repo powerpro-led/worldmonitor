@@ -25,14 +25,14 @@ describe('DeckGLMap interleaved render race console filter', () => {
   it('matches the deck.gl null-id race when Sentry owns ev.filename but deck-stack is in the stack', () => {
     const stack = [
       "TypeError: Cannot read properties of null (reading 'id')",
-      '    at DeckRenderer._drawLayers (https://app.worldmonitor.app/assets/deck-stack-Dq2qX5Bt.js:1606:18)',
-      '    at LayerManager.renderLayers (https://app.worldmonitor.app/assets/deck-stack-Dq2qX5Bt.js:5000:12)',
-      '    at r (https://app.worldmonitor.app/assets/sentry-DMxp_zBn.js:488:7)',
+      '    at DeckRenderer._drawLayers (https://app.example.test/assets/deck-stack-Dq2qX5Bt.js:1606:18)',
+      '    at LayerManager.renderLayers (https://app.example.test/assets/deck-stack-Dq2qX5Bt.js:5000:12)',
+      '    at r (https://app.example.test/assets/sentry-DMxp_zBn.js:488:7)',
     ].join('\n');
 
     assert.equal(shouldSuppress({
       message: "Cannot read properties of null (reading 'id')",
-      filename: 'https://app.worldmonitor.app/assets/sentry-DMxp_zBn.js',
+      filename: 'https://app.example.test/assets/sentry-DMxp_zBn.js',
       stack,
     }), true);
   });
@@ -44,22 +44,22 @@ describe('DeckGLMap interleaved render race console filter', () => {
     }), true);
     assert.equal(shouldSuppress({
       message: "Cannot read properties of null (reading 'id')",
-      filename: 'https://app.worldmonitor.app/assets/deck-stack-Dq2qX5Bt.js',
+      filename: 'https://app.example.test/assets/deck-stack-Dq2qX5Bt.js',
     }), true);
   });
 
   it('does not suppress the same null-id message without deck-stack evidence', () => {
     assert.equal(shouldSuppress({
       message: "Cannot read properties of null (reading 'id')",
-      filename: 'https://app.worldmonitor.app/assets/main-Dq2qX5Bt.js',
-      stack: '    at firstPartyRender (https://app.worldmonitor.app/assets/main-Dq2qX5Bt.js:10:2)',
+      filename: 'https://app.example.test/assets/main-Dq2qX5Bt.js',
+      stack: '    at firstPartyRender (https://app.example.test/assets/main-Dq2qX5Bt.js:10:2)',
     }), false);
   });
 
   it('does not suppress unrelated errors from deck-stack chunks', () => {
     assert.equal(shouldSuppress({
       message: "Cannot read properties of null (reading 'type')",
-      filename: 'https://app.worldmonitor.app/assets/deck-stack-Dq2qX5Bt.js',
+      filename: 'https://app.example.test/assets/deck-stack-Dq2qX5Bt.js',
     }), false);
   });
 

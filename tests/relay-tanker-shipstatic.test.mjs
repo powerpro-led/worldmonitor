@@ -5,7 +5,7 @@
 // MetaData. PR #3402 shipped tanker capture predicated on `meta.ShipType`,
 // which evaluated to NaN on every PositionReport, so tankerReports stayed
 // permanently empty and the live-tanker layer rendered zero vessels on
-// energy.worldmonitor.app.
+// energy.example.test.
 //
 // These tests pin the fix shape so a regression can't flip the relay back
 // to PositionReport-only and silently re-empty the tanker layer:

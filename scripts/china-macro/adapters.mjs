@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { fredFetchJson, readCanonicalValue, resolveProxyForConnect } from '../_seed-utils.mjs';
+import { resolveAppOrigin } from '../_domain-config.mjs';
 
 export const OECD_MAX_REQUESTS_PER_RUN = 2;
 export const OECD_CPI_URL = 'https://sdmx.oecd.org/public/rest/data/OECD.SDD.TPS,DSD_G20_PRICES@DF_G20_PRICES,1.0/CHN.M...PA...?startPeriod=2024-01&dimensionAtObservation=AllDimensions&format=csvfile';
@@ -149,7 +150,7 @@ async function fetchText(fetchFn, url, headers = {}) {
   const response = await fetchFn(url, {
     // OECD's CLI flow currently returns `500 languageTag1` to Node clients
     // without an explicit language, even though the same URL works in curl.
-    headers: { Accept: 'text/csv, text/plain;q=0.9, */*;q=0.1', 'Accept-Language': 'en', 'User-Agent': 'WorldMonitor/2.10 (+https://worldmonitor.app)' , ...headers },
+    headers: { Accept: 'text/csv, text/plain;q=0.9, */*;q=0.1', 'Accept-Language': 'en', 'User-Agent': `WorldMonitor/2.10 (+${resolveAppOrigin(process.env.APP_DOMAIN)})` , ...headers },
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw Object.assign(new Error(`HTTP_${response.status}`), { status: response.status });
@@ -158,7 +159,7 @@ async function fetchText(fetchFn, url, headers = {}) {
 
 async function fetchJson(fetchFn, url) {
   const response = await fetchFn(url, {
-    headers: { Accept: 'application/json', 'User-Agent': 'WorldMonitor/2.10 (+https://worldmonitor.app)' },
+    headers: { Accept: 'application/json', 'User-Agent': `WorldMonitor/2.10 (+${resolveAppOrigin(process.env.APP_DOMAIN)})` },
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw Object.assign(new Error(`HTTP_${response.status}`), { status: response.status });

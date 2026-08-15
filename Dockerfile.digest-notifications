@@ -55,6 +55,7 @@ COPY scripts/_digest-markdown.mjs ./scripts/
 # standalone elsewhere, so every scripts/*.mjs file uses the local copy
 # uniformly). Guarded by tests/dockerfile-digest-notifications-imports.test.mjs.
 COPY scripts/_domain-config.mjs ./scripts/
+COPY scripts/_domain-config.cjs ./scripts/
 COPY scripts/lib/ ./scripts/lib/
 # Sprint 1 / U4 operator one-shot — `clearDeliveredEntry` primitive
 # pairs with the delivered-log writer in scripts/lib/digest-delivered-

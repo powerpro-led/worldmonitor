@@ -79,7 +79,7 @@ function makeReq(body) {
 // on every /.well-known/mcp GET (see buildServerCardPayload in
 // api/mcp/handler.ts), so this fetches the live-generated card instead.
 async function loadServerCardCapabilities(handlerFn) {
-  const res = await handlerFn(new Request('https://worldmonitor.app/.well-known/mcp', {
+  const res = await handlerFn(new Request('https://example.test/.well-known/mcp', {
     method: 'GET',
     headers: { Accept: 'application/json' },
   }));
@@ -257,7 +257,7 @@ describe('api/mcp.ts — capability parity (advertised AND non-empty)', () => {
   // object literal, so this is a live-response sanity check rather than a
   // hand-maintained-file drift guard — see buildServerCardPayload.)
   it('top-level server-card identity mirrors serverInfo (no drift)', async () => {
-    const res = await handler(new Request('https://worldmonitor.app/.well-known/mcp', {
+    const res = await handler(new Request('https://example.test/.well-known/mcp', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     }));

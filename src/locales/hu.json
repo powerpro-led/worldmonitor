@@ -253,7 +253,6 @@
     "settings": "BEÁLLÍTÁSOK",
     "sources": "FORRÁSOK",
     "copyLink": "Link",
-    "downloadApp": "Alkalmazás letöltése",
     "fullscreen": "Teljes képernyő",
     "pinMap": "Térkép rögzítése felülre",
     "selectRegion": "Régió kiválasztása",
@@ -321,7 +320,7 @@
     "panelCatCommodityEcon": "Gazdaság & Kereskedelem",
     "panelCatHappyNews": "Jó Hírek",
     "panelCatHappyPlanet": "Bolygó & Adományozás",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "panels": {
     "liveNews": "Élő Hírek",
@@ -610,35 +609,12 @@
       "sectorCascade": "Szektorváltás",
       "militarySurge": "Katonai hullám"
     },
-    "story": {
-      "generating": "Történet generálása...",
-      "close": "Bezárás",
-      "shareTitle": "Történet megosztása",
-      "save": "Mentés",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Hivatkozás",
-      "saved": "Mentve!",
-      "copied": "Másolva!",
-      "opening": "Megnyitás...",
-      "error": "Nem sikerült a történet generálása."
-    },
     "mobileWarning": {
       "title": "Mobilnézet",
       "description": "Egy egyszerűsített mobilnézetet használsz, amely a MENA régióra összpontosít, az alapvető rétegek engedélyezésével.",
       "tip": "Tipp: A nézet gombok (GLOBAL/US/MENA) segítségével váltasz régiókat. Koppints a jelölőkre a részletek megtekintéséhez.",
       "dontShowAgain": "Ne jelenjen meg újra",
       "gotIt": "Értem"
-    },
-    "downloadBanner": {
-      "description": "Natív teljesítmény, biztonságos helyi kulcstárolás, offline térképcsempék.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Összes platform megjelenítése",
-      "showLess": "Kevesebb"
     },
     "runtimeConfig": {
       "title": "Asztali konfiguráció",
@@ -1163,7 +1139,6 @@
     },
     "countryBrief": {
       "shareLink": "Hivatkozás megosztása",
-      "shareStory": "Történet megosztása",
       "printPdf": "Nyomtatás / PDF",
       "exportData": "Adatok exportálása"
     },
@@ -3092,7 +3067,6 @@
     "conflict": "Konfliktus",
     "security": "Biztonság",
     "information": "Információ",
-    "shareStory": "Történet megosztása",
     "exportImage": "Kép exportálása",
     "exportPdf": "PDF exportálása",
     "new": "ÚJ",

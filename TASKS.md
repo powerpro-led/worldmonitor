@@ -15,7 +15,155 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🚧 APPROVED, NOT STARTED — domain-literal eradication + second SaaS-cruft removal pass
+## ✅ Resolved 2026-08-15 (fifteenth session) — domain-literal eradication + second SaaS-cruft removal pass
+
+**Picked up cold exactly as handed off — operator confirmed the fourteenth session's local commits
+(`30c89d7`/`e677abb`) had already been pushed manually, then said "continue" to execute this
+plan in full.** Executed the removal pass, all named functional gaps, and the mechanical test
+sweep, in the order this entry originally specified. **Not committed** — holding per this entry's
+own stated discipline ("nothing gets committed or pushed without fresh explicit go-ahead"); ask
+before committing.
+
+**Removal pass — all 4 operator decisions + all "also approved" items executed, one plan
+correction found along the way:**
+
+- Story/social-share cards removed (`api/story.js`, `api/og-story.js`, `StoryModal.ts`,
+  `story-share.ts`, the whole share-button/dialog wiring chain across `event-handlers.ts`,
+  `panel-layout.ts`, `App.ts`, `CIIPanel.ts`, `CountryDeepDivePanel.ts`). **`story-renderer.ts` and
+  `story-data.ts` deliberately kept, not deleted** — tracing every call site found they're also used
+  by the separate, kept "Export Image" feature on the Country Brief panel; only the watermark
+  literal in `story-renderer.ts` was migrated to `APP_DOMAIN`, matching this entry's original
+  "story-renderer.ts watermark" phrasing exactly.
+- Public no-auth brief links removed (`api/brief/public/[hash].ts`, `api/brief/share-url.ts`,
+  `server/_shared/brief-share-url.ts`). The kept `api/brief/[userId]/[issueDate].ts` needed a real
+  edit too, not just "unaffected" — it was eagerly minting the same public-share Redis pointer and
+  rendering a Share button on every view; left alone it would have kept writing dead pointers and
+  shipped a button linking to the now-404'd public route.
+- Embeddable widget removed (`src/embed/`, `embed-main.ts`, `embed.html`, the "Embed" button/dialog).
+  Also found and removed a parallel Docker nginx security-header surface for `/embed` this entry
+  didn't name (`docker/nginx-embed-security-headers.conf` + two `nginx.conf`/`nginx.conf.template`
+  location blocks + a Dockerfile `COPY` line), and fixed a Vite chunk-splitting side effect (removing
+  the `embed.html` entry point caused an unrelated premium-fetch data file to get inlined into
+  `main.js`, tripping the eager-chunk-budget guard — fixed with a new stable `manualChunks` rule,
+  not by re-adding the entry point).
+- `api/download.js` + `DownloadBanner.ts` + desktop-updater.ts's Tauri-download references removed;
+  the still-live update-check-and-toast mechanism deliberately preserved.
+- Sandbox API-console demo removed (`public/sandbox/*.json`, `index.json`,
+  `scripts/generate-sandbox-fixtures.mjs`).
+- **Plan correction: `public/agent.txt` kept, not deleted.** Investigation found it's live,
+  load-bearing infrastructure for the kept `api/ask.ts`/`api/a2a.ts` NLWeb/A2A discovery
+  endpoints — their own code comments say it was deliberately chosen as their docs pointer after
+  the Mintlify docs site was removed, and two test suites assert on that wiring. Deleting it would
+  have broken two kept, live endpoints. `public/home.md` deleted as planned (no live dependents,
+  and it already referenced other already-dead `.well-known/*` paths).
+- Stale `pro-test/` references cleaned up beyond the two files this entry named — also found and
+  fixed `biome.json`'s dangling lint-config entry, a stale `tests/deploy-config.test.mjs` comment
+  block, and two "keep in sync with pro-test/..." maintenance comments in `src/App.ts` and
+  `src/bootstrap/debugbear-rum.ts`.
+- **Found and removed one item this entry never listed: `e2e/embed.spec.ts`**, an orphaned e2e spec
+  for the embed feature, missed by the initial embed removal and only caught while auditing
+  `e2e/*.spec.ts` for the mechanical sweep.
+
+**Functional gaps — all fixed, each verified individually before moving on:**
+
+- `scripts/ais-relay.cjs`: CORS allowlist now derived from `buildAllowedOriginPatterns()` (matching
+  `api/_cors.js`'s exact pattern) instead of a hardcoded array; 5 RPC-URL consts, an OpenRouter
+  `HTTP-Referer`, a warm-ping `Origin` header, and 2 external-API User-Agent strings all migrated.
+  Required building new infrastructure first: `scripts/_domain-config.cjs`, a new generated target
+  in `scripts/sync-domain-config.mjs` that mechanically transforms `shared/domain-config.js`'s ESM
+  source into CommonJS (verified via `require()` sanity checks) — `ais-relay.cjs` and
+  `notification-relay.cjs` are both CJS and can't `require()` an ESM file directly.
+  `Dockerfile.relay` needed a new `COPY` line for it, caught by the repo's own
+  `tests/dockerfile-relay-imports.test.mjs` transitive-import-closure guard, not by inspection.
+- `scripts/notification-relay.cjs`: `RESEND_FROM` fallback, VAPID subject, and 4 notification-URL
+  fallbacks migrated. Confirmed (but did not fix) that this script is not wired into any Railway
+  deployment mode in `scripts/railway-services.json` — flagged as a separate, pre-existing
+  discovery, not touched further.
+- `src/bootstrap/web-vitals-utils.ts:65`: SSR-fallback base URL now uses `APP_ORIGIN` from
+  `@/config/domain`.
+- Scraper identity strings in `scripts/regional-snapshot/*`, `scripts/china-macro/*`,
+  `scripts/lib/*`: 5 files migrated (OpenRouter `HTTP-Referer` headers, `WorldMonitor/2.10
+  (+https://...)` User-Agent strings sent to OECD/NBS-China/ChinaMoney). No documented
+  brand-substring-rejection history exists for any of these targets (unlike the HDX HAPI case) and
+  only the URL suffix changed, not the "WorldMonitor" brand token itself, so this was lower-risk
+  than the "check every target" caution implied — still checked each one individually before
+  editing. `Dockerfile.digest-notifications` needed the same new `COPY scripts/_domain-config.cjs`
+  line as `Dockerfile.relay`, caught by `tests/dockerfile-digest-notifications-imports.test.mjs`.
+- `docker/Dockerfile` + `docker/docker-entrypoint.sh`: `VITE_WS_API_URL` build-arg default changed
+  from `https://api.worldmonitor.app` to empty (matching `.env.example`'s own documented
+  same-origin-when-empty convention). `API_UPSTREAM`'s runtime default changed from silently
+  pointing at `api.worldmonitor.app` to **failing loudly** unless `API_UPSTREAM` or `APP_DOMAIN` is
+  set — a real, deliberate behavior change (self-hosters relying on the old silent default now get
+  an explicit startup error instead of a wrong backend proxy target). Confirmed this doesn't affect
+  `docker-compose.yml`'s default `docker compose up` path, which builds from the separate root
+  `Dockerfile` (bundled local API server, no `API_UPSTREAM` involved at all).
+- `e2e/*.spec.ts`: built the `TEST_APP_DOMAIN`-equivalent wiring this entry called for —
+  `playwright.config.ts`'s `webServer.env` now pins `APP_DOMAIN` to
+  `tests/helpers/domain-config.mjs`'s `TEST_APP_DOMAIN` for the dev server e2e tests run against,
+  so specs stay deterministic regardless of the local machine's real `.env`. Migrated the literal
+  values in `e2e/runtime-fetch.spec.ts` and `e2e/secondary-startup.spec.ts` to match. Verified with
+  a real Playwright run (22/23 pass; the 1 failure confirmed pre-existing via `git stash` A/B,
+  unrelated `fetchHapiSummary` bug).
+
+**Mechanical test sweep — 68 of ~73 candidate files migrated to `TEST_APP_DOMAIN`-equivalent
+literals; the exclusions matter as much as the migration:**
+
+- Confirmed-excluded per this entry: `tests/sentry-beforesend.test.mjs`,
+  `tests/variant-meta-index-html-drift.test.mts:21`.
+- Also excluded: `tests/cors-preflight-live.test.mjs` and `tests/live-api-cache-auth-regression.test.mjs`
+  (both `LIVE_SMOKE`/`LIVE_API_CACHE_TESTS`-gated tests that deliberately hit real production
+  infrastructure, not test fixtures — migrating their literals to a fake `example.test` domain
+  would silently break their actual purpose) and `tests/browser-bundle-secret-guard.test.mts` (one
+  of the pre-existing-failure baseline suites — left untouched to avoid muddying that baseline).
+- **The real risk in this sweep wasn't the migration itself, it was files that assert against REAL,
+  not-yet-migrated repo files** (`vercel.json`, `index.html`, `public/agent.txt`,
+  `public/wm-widget-sandbox.html` — all still-parked, real-infra-provisioning-blocked literals per
+  the "Parked" section below). Found and deliberately reverted 4 such assertions in
+  `tests/widget-builder.test.mjs` (reads `wm-widget-sandbox.html`'s real source) and
+  `tests/deploy-config.test.mjs` (reads `agent.txt` and `vercel.json`'s real content) — migrating
+  those would have made the tests assert something false about files this pass never touched.
+  `tests/secondary-startup.test.mts` (the `tests/` unit test, not the same-named e2e spec) needed
+  no changes at all for the same reason — it already correctly reads real `index.html`/`vercel.json`.
+- **A second real gotcha, caught only by running the full suite twice: plain-string fixture values
+  and their paired regex/RegExp assertions don't always get swept together.** A literal search for
+  `worldmonitor.app` correctly skips regex literals that escape the dot (`worldmonitor\.app` or
+  `worldmonitor\\.app` inside a template string for `new RegExp(...)`) — but 5 of those escaped
+  occurrences were the *assertion* half of a pair whose *input* half I'd already migrated, so the
+  first full-suite run surfaced 3 new failures (`brief-url.test.mjs`, `brief-url-sign.test.mjs`,
+  `resend-sender-normalize.test.mjs`) plus a 4th file (`crawlable-corpus.test.mjs`, 7 occurrences)
+  found by the same targeted re-check before it could fail. Fixed all of them, then reran the full
+  suite twice more to confirm — both runs landed on the exact same 40-failure/7-suite baseline as
+  every prior verification this session.
+
+**Full verification, run repeatedly at each stage and once more at the very end**: `typecheck:all`
+(0 errors throughout), real `npm run build` (confirmed the right dist chunks appear/disappear at
+each removal step), `docs:check` (fixed 3 rounds of stale component/service counts in
+`AGENTS.md`/`CONTRIBUTING.md` as files were deleted), `lint:md` (clean except the same 4
+pre-existing `TASKS.md` formatting errors, present before this session and untouched by it),
+`sync:domain-config:check` / `sync:domain-literals:check` (clean — the latter's stale-file report
+is unchanged from before this session: `vercel.json`, `docker/nginx-security-headers.conf`,
+`docker/nginx.conf`, `public/wm-widget-sandbox.html`, `index.html`,
+`shared/hapi-app-identifier.json`, `scripts/shared/hapi-app-identifier.json` — all still genuinely
+parked, real-infra-decision territory, confirmed via `git stash` A/B that this session introduced
+zero new drift there), `enforce-sebuf-api-contract.mjs` (clean), full `npm run test:data` (run 4
+times across the session at major checkpoints, landed on the exact documented 40-failure/7-suite
+baseline every time: `readBootstrapTierObject`, `Bootstrap endpoint`, `browser bundle secret guard`,
+`CI workflow coverage`, `Edge Function no node: built-ins`, `no non-timing-safe secret comparison`,
+`Railway service registry coverage`), `npm run test:sidecar` (210/211, same pre-existing
+dev-machine port conflict as every prior session).
+
+**Genuinely still open, not touched this session** (matches this entry's original "leave alone"
+list plus what's newly confirmed parked): the 7-file `sync:domain-literals:check` stale-literal
+report above (real infra decision needed — see the 🅿️ Parked section); `scripts/notification-relay.cjs`
+not being wired into any Railway deployment mode (discovered, not diagnosed further — separate from
+domain literals); `.env.example`, `data/resilience-snapshots/*.json`,
+`scripts/seed-digest-notifications.mjs`'s email-template HTML branding (all explicitly deferred, as
+before).
+
+---
+
+<details>
+<summary>Original plan text (superseded by the resolution above, kept for the record)</summary>
 
 **Fourteenth session (2026-08-14), planned via EnterPlanMode with 2 parallel Explore-agent
 inventories + 4 explicit operator decisions, then execution deferred to a fresh session
@@ -84,6 +232,8 @@ committed or pushed without fresh explicit go-ahead — the current holding patt
 `30c89d7`/`e677abb` local-only on `main`, GitHub Actions disabled repo-wide for
 `powerpro-led/worldmonitor`) carries forward unchanged; don't push or re-enable Actions as a side
 effect of this work either.
+
+</details>
 
 ---
 

@@ -293,15 +293,6 @@
       "dontShowAgain": "Visa inte igen",
       "gotIt": "Jag förstår"
     },
-    "downloadBanner": {
-      "description": "Inbyggd prestanda, säker lokal nyckellagring, offline kartplattor.",
-      "macSilicon": "macOS (Apple Silicon)",
-      "macIntel": "macOS (Intel)",
-      "windows": "Windows (.exe)",
-      "linux": "Linux (.AppImage)",
-      "showAllPlatforms": "Visa alla plattformar",
-      "showLess": "Visa mindre"
-    },
     "runtimeConfig": {
       "title": "Skrivbordskonfiguration",
       "alertTitle": {
@@ -408,20 +399,6 @@
         "nuclear": "Närliggande kärnteknisk",
         "port": "Hamnar"
       }
-    },
-    "story": {
-      "shareTitle": "Dela berättelse",
-      "close": "Nära",
-      "generating": "Skapar berättelse...",
-      "save": "Spara",
-      "whatsapp": "WhatsApp",
-      "twitter": "X",
-      "linkedin": "LinkedIn",
-      "copyLink": "Länk",
-      "error": "Det gick inte att skapa berättelse.",
-      "saved": "Sparad!",
-      "copied": "Kopierade!",
-      "opening": "Öppning..."
     },
     "settingsWindow": {
       "invokeFail": "Det gick inte att köra {{command}}. Kontrollera skrivbordsloggen.",
@@ -728,7 +705,6 @@
       "sortRelevance": "Relevans"
     },
     "countryBrief": {
-      "shareStory": "Dela berättelse",
       "printPdf": "Skriv ut / PDF",
       "exportData": "Exportera data",
       "shareLink": "Dela länk"
@@ -2765,7 +2741,6 @@
     "conflict": "Konflikt",
     "security": "Militär aktivitet",
     "information": "Information",
-    "shareStory": "Dela historia",
     "selectAll": "Välj Alla",
     "selectNone": "Välj Ingen",
     "new": "NY",
@@ -2847,7 +2822,6 @@
     "panelCatCentralBanks": "Centralbanker & Ekonomi",
     "panelCatDeals": "Affärer & Institutionellt",
     "panelCatGulfMena": "Gulfen & MENA",
-    "downloadApp": "Ladda ner appen",
     "selectRegion": "Välj region",
     "cached": "CACHERAD",
     "unavailable": "OTILLGÄNGLIG",
@@ -2860,7 +2834,7 @@
     "panelCatCommodityEcon": "Ekonomi & Handel",
     "panelCatHappyNews": "Goda Nyheter",
     "panelCatHappyPlanet": "Planet & Välgörenhet",
-    "embed": "Embed"
+    "saveLayout": "Save Layout"
   },
   "countryBrief": {
     "identifying": "Identifierar land...",

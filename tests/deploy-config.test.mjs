@@ -33,8 +33,8 @@ const dockerNginxSource = readFileSync(resolve(__dirname, '../docker/nginx.conf'
 const frontendDockerfileSource = readFileSync(resolve(__dirname, '../docker/Dockerfile'), 'utf-8');
 const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 'utf-8');
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
-const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
-const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs|embed|embed\\.html).*)';
+const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
+const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs).*)';
 const GLOBAL_CSP_INLINE_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
@@ -430,16 +430,6 @@ describe('deploy/cache configuration guardrails', () => {
 
 const DASHBOARD_HTML_DESTINATION = '/dashboard.html';
 
-// Root marketing landing page — a second HTML entry in the pro-test bundle
-// (vite rollupOptions.input), served from public/pro/welcome.html on the full
-// site and app variant roots. Variant dashboards live at /dashboard so the root
-// welcome route is consistent across worldmonitor.app, finance.worldmonitor.app,
-// tech.worldmonitor.app, commodity.worldmonitor.app, happy.worldmonitor.app, and
-// energy.worldmonitor.app.
-// The dashboard source template remains index.html, but the web build renames
-// its output to dashboard.html so Vercel's filesystem cannot shadow the /
-// rewrite. /welcome and /index.html redirect to root so crawlers and humans do
-// not see duplicate landing URLs.
 describe('deploy/API CORS guardrails', () => {
   it('does not define static CORS headers for /api routes in vercel.json', () => {
     const corsHeaderKeys = new Set([
@@ -877,84 +867,12 @@ describe('security header guardrails', () => {
   });
 });
 
-describe('embeddable map route guardrails', () => {
-  it('registers embed.html as a Vite HTML entry', () => {
-    assert.match(viteConfigSource, /embed:\s*resolve\(__dirname,\s*'embed\.html'\)/);
-  });
-
-  it('rewrites /embed to the dedicated embed.html entry before the SPA catch-all', () => {
-    const rewriteIndex = vercelConfig.rewrites.findIndex((r) => r.source === '/embed');
-    const catchAllIndex = vercelConfig.rewrites.findIndex((r) =>
-      r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-    );
-    assert.ok(rewriteIndex !== -1, 'expected /embed rewrite');
-    assert.ok(catchAllIndex !== -1, 'expected SPA catch-all rewrite');
-    assert.ok(rewriteIndex < catchAllIndex, '/embed rewrite must appear before the SPA catch-all');
-    assert.equal(vercelConfig.rewrites[rewriteIndex].destination, '/embed.html');
-  });
-
-  it('excludes /embed and /embed.html from the SPA catch-all rewrite and cache header', () => {
-    const catchAll = vercelConfig.rewrites.find((r) =>
-      r.destination === DASHBOARD_HTML_DESTINATION && r.source.startsWith('/((?!')
-    );
-    assert.ok(catchAll.source.includes('|embed|embed\\.html|'), 'SPA catch-all must exclude the public embed entry');
-    assert.ok(SPA_HTML_CACHE_SOURCE.includes('|embed|embed\\.html|'), 'HTML cache catch-all must exclude the public embed entry');
-    assert.equal(getCacheHeaderValue(SPA_HTML_CACHE_SOURCE), 'private, no-cache, must-revalidate');
-  });
-
-  it('keeps the global security header anti-framing rule off the embed entry', () => {
-    assert.equal(GLOBAL_SECURITY_HEADER_SOURCE, '/((?!docs|embed|embed\\.html).*)');
-    const globalXfo = getHeaderValueForSource(GLOBAL_SECURITY_HEADER_SOURCE, 'X-Frame-Options');
-    assert.equal(globalXfo, 'SAMEORIGIN');
-  });
-
-  for (const source of ['/embed', '/embed.html']) {
-    it(`${source} allows cross-origin iframe embedding without inheriting app XFO`, () => {
-      const headers = getHeadersForSource(source);
-      assert.ok(headers.length > 0, `${source} must have an explicit header rule`);
-      assert.equal(getHeaderValueForSource(source, 'X-Frame-Options'), null);
-      assert.equal(getHeaderValueForSource(source, 'Cache-Control'), 'private, no-cache, must-revalidate');
-      const csp = getHeaderValueForSource(source, 'Content-Security-Policy');
-      assert.ok(csp, `${source} must have a CSP`);
-      assert.match(csp, /frame-ancestors \*/);
-      assert.match(csp, /script-src 'self'(?:;|$)/);
-      assert.doesNotMatch(csp, /clerk|dodopayments|stripe/);
-      assert.ok(!getCspDirectiveTokens(csp, 'script-src').includes("'unsafe-inline'"));
-    });
-  }
-
-  it('keeps Docker embed routes on the locked-down embed security headers', () => {
-    const nginxTemplate = readFileSync(resolve(__dirname, '../docker/nginx.conf.template'), 'utf-8');
-    assert.match(nginxTemplate, /location = \/embed \{[\s\S]*?include \/etc\/nginx\/embed_security_headers\.conf;/);
-    assert.match(nginxTemplate, /location = \/embed\.html \{[\s\S]*?include \/etc\/nginx\/embed_security_headers\.conf;/);
-    assert.match(frontendDockerfileSource, /COPY docker\/nginx-embed-security-headers\.conf \/etc\/nginx\/embed_security_headers\.conf/);
-    assert.match(dockerNginxSource, /location = \/embed \{[\s\S]*?add_header Permissions-Policy "camera=\(\), microphone=\(\), geolocation=\(\), accelerometer=\(\)/);
-    assert.match(dockerNginxSource, /location = \/embed\.html \{[\s\S]*?add_header Permissions-Policy "camera=\(\), microphone=\(\), geolocation=\(\), accelerometer=\(\)/);
-
-    const lockedPolicy = getHeaderValueForSource('/embed', 'Permissions-Policy');
-    const dockerLockedPolicy = getNginxHeaderValueFrom('docker/nginx-embed-security-headers.conf', 'Permissions-Policy');
-    assert.equal(dockerLockedPolicy, lockedPolicy, 'Docker embed Permissions-Policy must match Vercel embed policy');
-    for (const directive of [
-      'accelerometer=()',
-      'bluetooth=()',
-      'gyroscope=()',
-      'magnetometer=()',
-      'picture-in-picture=()',
-      'payment=()',
-    ]) {
-      assert.ok(dockerLockedPolicy.includes(directive), `Docker embed policy must keep ${directive}`);
-    }
-
-    const dockerEmbedCsp = getNginxHeaderValueFrom('docker/nginx-embed-security-headers.conf', 'Content-Security-Policy');
-    assert.equal(dockerEmbedCsp, getHeaderValueForSource('/embed', 'Content-Security-Policy'));
-  });
-
+describe('self-hosted docker nginx SPA fallback CSP parity', () => {
   it('self-hosted docker/nginx.conf SPA fallback ships the full dashboard CSP', () => {
     // Image A (root Dockerfile -> docker/nginx.conf, nginx + Node API under
     // supervisord) inlines headers per location instead of including
     // security_headers.conf. The SPA fallback (location /) must still carry the
-    // dashboard CSP, or the containerized dashboard runs CSP-less while /embed
-    // stays locked down.
+    // dashboard CSP, or the containerized dashboard runs CSP-less.
     const canonicalCsp = getNginxHeaderValue('Content-Security-Policy');
     assert.ok(canonicalCsp, 'docker/nginx-security-headers.conf must define a dashboard CSP');
 
@@ -1150,7 +1068,7 @@ describe('agent readiness: MCP/OAuth origin alignment', () => {
       + readFileSync(resolve(__dirname, '../api/mcp/auth.ts'), 'utf-8');
     // Must NOT contain a hardcoded apex or api URL for resource_metadata —
     // that regressed once (PR #3351 review: apex pointer emitted from
-    // api.worldmonitor.app/mcp 401s) and the grep-only test didn't catch it.
+    // api.example.test/mcp 401s) and the grep-only test didn't catch it.
     assert.ok(
       !/resource_metadata="https:\/\/(?:api\.)?worldmonitor\.app\/\.well-known\//.test(source),
       'api/mcp.ts must not hardcode resource_metadata URL — derive from request host'
@@ -1317,6 +1235,9 @@ describe('agent readiness: agent.txt', () => {
     assert.ok(SPA_HTML_CACHE_SOURCE.includes('|agent\\.txt|'), 'HTML cache catch-all must exclude /agent.txt');
     const agentTxt = readFileSync(resolve(__dirname, '../public/agent.txt'), 'utf-8');
     assert.match(agentTxt, /When to use/i, 'agent.txt must carry when-to-use guidance');
+    // Literal 'worldmonitor.app' deliberately not migrated to TEST_APP_DOMAIN
+    // here — public/agent.txt's own content is still a hardcoded-literal file
+    // (kept, but not domain-config-migrated this pass — see TASKS.md).
     assert.ok(agentTxt.includes('https://worldmonitor.app/mcp'), 'agent.txt must point at the MCP server');
   });
 });

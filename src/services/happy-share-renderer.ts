@@ -185,7 +185,6 @@ export async function renderHappyShareCard(item: NewsItem): Promise<HTMLCanvasEl
 /**
  * Generate and share a branded PNG card for a positive news item.
  * Fallback chain: Web Share API -> clipboard -> download.
- * Follows the same pattern as StoryModal.ts lines 128-147.
  */
 export async function shareHappyCard(item: NewsItem): Promise<void> {
   const canvas = await renderHappyShareCard(item);

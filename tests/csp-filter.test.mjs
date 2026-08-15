@@ -39,7 +39,7 @@ describe('CSP violation filter (shouldSuppressCspViolation)', () => {
 
   describe('connect-src HTTPS suppression (policy-aware)', () => {
     it('suppresses HTTPS connect-src when CSP allows https:', () => {
-      assert.ok(suppress('enforce', 'connect-src', 'https://api.worldmonitor.app/api/oref-alerts', '', true));
+      assert.ok(suppress('enforce', 'connect-src', 'https://api.example.test/api/oref-alerts', '', true));
     });
 
     it('suppresses HTTPS connect-src for tilecache.rainviewer.com', () => {
@@ -59,7 +59,7 @@ describe('CSP violation filter (shouldSuppressCspViolation)', () => {
     });
 
     it('does NOT suppress HTTPS connect-src when CSP does not allow https:', () => {
-      assert.ok(!suppress('enforce', 'connect-src', 'https://api.worldmonitor.app/api/oref-alerts', '', false));
+      assert.ok(!suppress('enforce', 'connect-src', 'https://api.example.test/api/oref-alerts', '', false));
     });
 
     it('does NOT suppress HTTP connect-src even when CSP allows https:', () => {
@@ -169,7 +169,7 @@ describe('CSP violation filter (shouldSuppressCspViolation)', () => {
     });
 
     it('suppresses blob: URI', () => {
-      assert.ok(suppress('enforce', 'worker-src', 'blob:https://www.worldmonitor.app/abc', '', false));
+      assert.ok(suppress('enforce', 'worker-src', 'blob:https://www.example.test/abc', '', false));
     });
 
     it('suppresses eval', () => {
@@ -270,12 +270,12 @@ describe('CSP violation filter (shouldSuppressCspViolation)', () => {
     });
 
     it('suppresses manifest.webmanifest', () => {
-      assert.ok(suppress('enforce', 'default-src', 'https://www.worldmonitor.app/manifest.webmanifest', '', false));
+      assert.ok(suppress('enforce', 'default-src', 'https://www.example.test/manifest.webmanifest', '', false));
     });
 
     it('suppresses third-party stylesheet injection from cdn.jsdelivr.net (style-src-elem)', () => {
       // WORLDMONITOR-J0: extension/bookmarklet injecting antd@4 CSS on
-      // finance.worldmonitor.app — 270 events / 26 users. We never load
+      // finance.example.test — 270 events / 26 users. We never load
       // CSS from jsDelivr (only JSON atlases + chart.js JS).
       assert.ok(suppress('enforce', 'style-src-elem', 'https://cdn.jsdelivr.net/npm/antd@4/dist/antd.min.css', '', false));
     });

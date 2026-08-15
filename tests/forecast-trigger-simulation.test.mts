@@ -21,7 +21,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
 function makeCtx(headers: Record<string, string> = {}) {
-  const req = new Request('https://worldmonitor.app/api/forecast/v1/trigger-simulation', {
+  const req = new Request('https://example.test/api/forecast/v1/trigger-simulation', {
     method: 'POST',
     headers,
   });

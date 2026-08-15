@@ -1,3 +1,5 @@
+import { APP_ORIGIN } from '@/config/domain';
+
 export const roundMs = (n: number | undefined): number | undefined =>
   typeof n === 'number' && Number.isFinite(n) ? Math.round(n) : undefined;
 
@@ -62,7 +64,7 @@ export function getWebVitalsFormFactor(): WebVitalsFormFactor {
 export function sanitizeWebVitalUrl(raw: string | undefined): string {
   if (!raw) return '';
   try {
-    const url = new URL(raw, typeof window !== 'undefined' ? window.location.href : 'https://worldmonitor.app/');
+    const url = new URL(raw, typeof window !== 'undefined' ? window.location.href : `${APP_ORIGIN}/`);
     const query = url.search ? '?[redacted]' : '';
     return `${url.origin}${url.pathname}${query}`;
   } catch {

@@ -173,7 +173,7 @@ describe('empty 200 degraded handler responses', () => {
     process.env.WORLDMONITOR_VALID_KEYS = 'pro-test-key';
 
     const ctx = {
-      request: new Request('https://worldmonitor.app/api/v2/shipping/route-intelligence', {
+      request: new Request('https://example.test/api/v2/shipping/route-intelligence', {
         headers: { 'X-WorldMonitor-Key': 'pro-test-key' },
       }),
       pathParams: {},

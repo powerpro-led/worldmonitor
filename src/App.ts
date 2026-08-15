@@ -965,12 +965,6 @@ export class App {
     });
 
     this.panelLayout = new PanelLayoutManager(this.state, {
-      openCountryStory: (code, name) => {
-        void this.countryIntel.openCountryStory(code, name).catch((err) => {
-          console.error('[CountryStory] Failed to open story:', err);
-          showToast('Country story failed to open. Please try again.');
-        });
-      },
       openCountryBrief: (code) => {
         const name = CountryIntelManager.resolveCountryName(code);
         void this.countryIntel.openCountryBriefByCode(code, name).catch((err) => {
@@ -1254,9 +1248,6 @@ export class App {
     setMeta('meta[property="og:description"]', t('shell.metaDescription'));
     setMeta('meta[name="twitter:title"]', t('shell.documentTitle'));
     setMeta('meta[name="twitter:description"]', t('shell.metaDescription'));
-    // Mirror of OG_LOCALE in pro-test/src/i18n.ts. The two packages have
-    // separate Vite roots and bundlers and can't share an import — keep the
-    // tables aligned by hand when adding a locale here OR there.
     const ogLocaleMap: Record<string, string> = {
       en: 'en_US', bg: 'bg_BG', cs: 'cs_CZ', fr: 'fr_FR', de: 'de_DE', el: 'el_GR',
       es: 'es_ES', hr: 'hr_HR', hu: 'hu_HU', it: 'it_IT', pl: 'pl_PL', pt: 'pt_BR',
@@ -1806,23 +1797,20 @@ export class App {
     // Check for country brief deep link: ?c=IR (captured early before URL sync)
     const storyCode = this.pendingDeepLinkStoryCode ?? url.searchParams.get('c');
     this.pendingDeepLinkStoryCode = null;
-    if (url.pathname === '/story' || storyCode) {
-      const countryCode = storyCode;
-      if (countryCode) {
-        trackDeeplinkOpened('country', countryCode);
-        const countryName = getCountryNameByCode(countryCode.toUpperCase()) || countryCode;
-        setTimeout(() => {
-          void this.countryIntel.openCountryBriefByCode(countryCode.toUpperCase(), countryName, {
-            maximize: true,
-          }).catch((err) => {
-            console.error('[CountryBrief] Failed to open country brief:', err);
-            this.state.map?.setRenderPaused(false);
-            showToast('Country brief failed to open. Please try again.');
-          });
-          this.eventHandlers.syncUrlState();
-        }, DEEP_LINK_INITIAL_DELAY_MS);
-        return;
-      }
+    if (storyCode) {
+      trackDeeplinkOpened('country', storyCode);
+      const countryName = getCountryNameByCode(storyCode.toUpperCase()) || storyCode;
+      setTimeout(() => {
+        void this.countryIntel.openCountryBriefByCode(storyCode.toUpperCase(), countryName, {
+          maximize: true,
+        }).catch((err) => {
+          console.error('[CountryBrief] Failed to open country brief:', err);
+          this.state.map?.setRenderPaused(false);
+          showToast('Country brief failed to open. Please try again.');
+        });
+        this.eventHandlers.syncUrlState();
+      }, DEEP_LINK_INITIAL_DELAY_MS);
+      return;
     }
 
     // Check for country brief deep link: ?country=UA or ?country=UA&expanded=1

@@ -35,14 +35,14 @@ function sentHeaders(callIndex = 0): Headers {
 // injection is now path-gated. Using `some-premium-rpc` (a non-existent
 // path) made every "Supabase Bearer attached" assertion silently fail under
 // the new logic. See PREMIUM_RPC_PATHS in src/shared/premium-paths.ts.
-const TARGET = 'https://api.worldmonitor.app/api/sanctions/v1/list-sanctions-pressure';
+const TARGET = 'https://api.example.test/api/sanctions/v1/list-sanctions-pressure';
 // A real PUBLIC path used to verify the path-gating bypass: hits below
 // fetch the same way but should NOT see Bearer attached.
-const PUBLIC_TARGET = 'https://api.worldmonitor.app/api/economic/v1/get-fred-series-batch';
+const PUBLIC_TARGET = 'https://api.example.test/api/economic/v1/get-fred-series-batch';
 const PUBLIC_INSIDER_TRANSACTIONS_TARGET =
-  'https://api.worldmonitor.app/api/market/v1/get-insider-transactions?symbol=AAPL';
+  'https://api.example.test/api/market/v1/get-insider-transactions?symbol=AAPL';
 const PRO_FRESH_MARKET_TARGET =
-  'https://api.worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL';
+  'https://api.example.test/api/market/v1/list-market-quotes?symbols=AAPL';
 
 // ---------------------------------------------------------------------------
 // Suite

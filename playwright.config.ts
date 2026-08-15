@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { TEST_APP_DOMAIN } from './tests/helpers/domain-config.mjs';
 
 export default defineConfig({
   testDir: './e2e',
@@ -32,7 +33,13 @@ export default defineConfig({
   ],
   snapshotPathTemplate: '{testDir}/{testFileName}-snapshots/{arg}{ext}',
   webServer: {
-    command: 'VITE_E2E=1 npm run dev -- --host 127.0.0.1 --port 4173',
+    command: 'npm run dev -- --host 127.0.0.1 --port 4173',
+    // APP_DOMAIN pinned to the same test fixture domain as tests/*.test.mjs
+    // (tests/helpers/domain-config.mjs) rather than inheriting whatever the
+    // local .env happens to have configured — e2e specs assert on this exact
+    // value (e.g. api.example.test), so the dev server must resolve it the
+    // same way regardless of the machine's real APP_DOMAIN.
+    env: { VITE_E2E: '1', APP_DOMAIN: TEST_APP_DOMAIN },
     url: 'http://127.0.0.1:4173/tests/map-harness.html',
     reuseExistingServer: false,
     timeout: 120000,

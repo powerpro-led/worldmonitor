@@ -1,11 +1,13 @@
 /**
- * Shared by both api/ adapters (adapt-vercel-handler.ts, adapt-node-handler.ts).
+ * Used by adapt-vercel-handler.ts (formerly also shared with the now-removed
+ * adapt-node-handler.ts, wiring for api/og-story.js / api/story.js).
  *
  * Nitric's `HttpContext.req.query` is TYPED as `Record<string, string[]>`
  * (node_modules/@nitric/sdk/lib/index.d.ts), but a live `nitric start` local
- * dev membrane was observed (2026-08-06, while wiring api/og-story.js /
- * api/story.js) actually delivering plain STRINGS for single-valued query
- * params, e.g. `{ c: "US" }` rather than `{ c: ["US"] }`. Naively iterating
+ * dev membrane was observed (2026-08-06, while wiring the since-removed
+ * api/og-story.js / api/story.js) actually delivering plain STRINGS for
+ * single-valued query params, e.g. `{ c: "US" }` rather than `{ c: ["US"] }`.
+ * Naively iterating
  * `for (const value of values)` when `values` is a bare string iterates its
  * individual CHARACTERS — confirmed with `?testparam=multichar123` producing
  * `testparam=m&testparam=u&testparam=l&...` once reconstructed, silently

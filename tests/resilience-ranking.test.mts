@@ -1582,7 +1582,7 @@ describe('resilience ranking contracts', () => {
     ]);
 
     const seedRefresh = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-ranking?refresh=1', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-ranking?refresh=1', {
         headers: { 'X-WorldMonitor-Key': 'seed-refresh-secret' },
       }),
     );
@@ -1593,21 +1593,21 @@ describe('resilience ranking contracts', () => {
     });
 
     const seedWithoutRefresh = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-ranking', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-ranking', {
         headers: { 'X-WorldMonitor-Key': 'seed-refresh-secret' },
       }),
     );
     assert.equal(seedWithoutRefresh.status, 401, 'seed secret must not bypass normal ranking-read auth');
 
     const seedWrongPath = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US&refresh=1', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-score?countryCode=US&refresh=1', {
         headers: { 'X-WorldMonitor-Key': 'seed-refresh-secret' },
       }),
     );
     assert.equal(seedWrongPath.status, 401, 'seed secret must not bypass auth on other resilience paths');
 
     const normalReadRefresh = await handler(
-      new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-ranking?refresh=1', {
+      new Request('https://example.test/api/resilience/v1/get-resilience-ranking?refresh=1', {
         headers: { 'X-WorldMonitor-Key': 'normal-read-key' },
       }),
     );

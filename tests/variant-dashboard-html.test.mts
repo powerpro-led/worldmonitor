@@ -34,13 +34,13 @@ const fixture = `<!doctype html>
     <meta property="og:url" content="${FULL.url}" />
     <meta property="og:title" content="${FULL.title}" />
     <meta property="og:description" content="${FULL.description}" />
-    <meta property="og:image" content="https://www.worldmonitor.app/favico/og-image.png" />
+    <meta property="og:image" content="https://www.example.test/favico/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:site_name" content="World Monitor" />
     <meta name="twitter:url" content="${FULL.url}" />
     <meta name="twitter:title" content="${FULL.title}" />
     <meta name="twitter:description" content="${FULL.description}" />
-    <meta name="twitter:image" content="https://www.worldmonitor.app/favico/og-image.png" />
+    <meta name="twitter:image" content="https://www.example.test/favico/og-image.png" />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -48,7 +48,7 @@ const fixture = `<!doctype html>
       "name": "World Monitor",
       "alternateName": ["WorldMonitor", "World Monitor App", "WM Intelligence"],
       "url": "${FULL.url}",
-      "screenshot": "https://www.worldmonitor.app/favico/og-image.png",
+      "screenshot": "https://www.example.test/favico/og-image.png",
       "featureList": [
         "Real-time news aggregation",
         "Stock market tracking"
@@ -61,7 +61,7 @@ const fixture = `<!doctype html>
       "@type": "Organization",
       "name": "World Monitor",
       "alternateName": "WorldMonitor",
-      "url": "https://www.worldmonitor.app/"
+      "url": "https://www.example.test/"
     }
     </script>
   </head>
@@ -135,7 +135,7 @@ describe('renderVariantDashboardHtml (#4996)', () => {
     assert.equal(webApp.screenshot, `${new URL(finance.url).origin}/favico/finance/og-image.png`);
     assert.deepEqual(webApp.featureList, finance.features);
     assert.equal(org.name, 'World Monitor', 'variant isPartOf World Monitor — org identity stays');
-    assert.equal(org.url, 'https://www.worldmonitor.app/');
+    assert.equal(org.url, 'https://www.example.test/');
   });
 
   it('leaves body links to the main dashboard untouched', () => {

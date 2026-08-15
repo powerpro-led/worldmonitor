@@ -85,7 +85,7 @@ async function captureRpcFetches(toolName, params, opts = {}) {
     throw new Error(`Unexpected fetch in ${toolName}: ${url}`);
   };
 
-  result = await rpcTool(toolName)._execute(params, 'https://worldmonitor.app', {
+  result = await rpcTool(toolName)._execute(params, 'https://example.test', {
     kind: 'env_key',
     apiKey: 'wm_test_key_mcp_news_contract',
   });

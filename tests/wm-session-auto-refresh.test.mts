@@ -112,11 +112,11 @@ const stubLocalStorage: Storage = {
 // transitively via runtime.ts → wm-session.ts) reads `location.hostname` at
 // module-eval time and calls `.startsWith(...)` on it.
 (globalThis as unknown as { location: Location }).location = {
-  href: 'https://worldmonitor.app/',
-  origin: 'https://worldmonitor.app',
-  hostname: 'worldmonitor.app',
+  href: 'https://example.test/',
+  origin: 'https://example.test',
+  hostname: 'example.test',
   protocol: 'https:',
-  host: 'worldmonitor.app',
+  host: 'example.test',
 } as Location;
 
 // ---------------------------------------------------------------------------

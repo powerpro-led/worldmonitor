@@ -92,7 +92,7 @@ after(() => {
   delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
 });
 
-describe('story meta tags', () => {
+describe('meta tags', () => {
   let fakeDocument: FakeDocument;
 
   beforeEach(() => {
@@ -100,11 +100,7 @@ describe('story meta tags', () => {
   });
 
   it('emits OpenGraph tags with property and Twitter tags with name', () => {
-    metaTags.updateMetaTagsForStory({
-      countryCode: 'UA',
-      countryName: 'Ukraine',
-      type: 'dailybrief',
-    });
+    metaTags.resetMetaTags();
 
     assert.ok(
       fakeDocument.querySelector('meta[property="og:title"]'),

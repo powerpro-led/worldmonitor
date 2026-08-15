@@ -2,7 +2,7 @@ import { Panel } from './Panel';
 import { getCSSColor } from '@/utils';
 import type { CountryScore } from '@/services/country-instability';
 import { t } from '../services/i18n';
-import { h, replaceChildren, rawHtml, setTrustedHtml, trustedHtml, type TrustedHtml } from '@/utils/dom-utils';
+import { h, replaceChildren, setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import type { CachedRiskScores } from '@/services/cached-risk-scores';
 import { toCountryScore } from '@/services/cached-risk-scores';
 import { renderFollowButton } from '@/utils/follow-button';
@@ -20,7 +20,6 @@ export const CII_METHODOLOGY_HREF = '/docs/methodology/cii-risk-scores';
 
 export class CIIPanel extends Panel {
   private scores: CountryScore[] = [];
-  private onShareStory?: (code: string, name: string) => void;
   private onCountryClick?: (code: string) => void;
   // Per-row FollowButton teardowns. Keyed by ISO code so we can tear
   // down each one before the row is re-rendered (refresh / renderFromCached
@@ -57,10 +56,6 @@ export class CIIPanel extends Panel {
     });
   }
 
-  public setShareStoryHandler(handler: (code: string, name: string) => void): void {
-    this.onShareStory = handler;
-  }
-
   public setCountryClickHandler(handler: (code: string) => void): void {
     this.onCountryClick = handler;
   }
@@ -85,11 +80,6 @@ export class CIIPanel extends Panel {
     }
   }
 
-  private static readonly SHARE_SVG: TrustedHtml = trustedHtml(
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
-    'Static share icon SVG defined in source',
-  );
-
   private buildTrendArrow(trend: CountryScore['trend'], change: number): HTMLElement {
     if (trend === 'rising') return h('span', { className: 'trend-up' }, `↑${change > 0 ? change : ''}`);
     if (trend === 'falling') return h('span', { className: 'trend-down' }, `↓${Math.abs(change)}`);
@@ -99,13 +89,6 @@ export class CIIPanel extends Panel {
   private buildCountry(country: CountryScore): HTMLElement {
     const color = this.getLevelColor(country.level);
     const emoji = this.getLevelEmoji(country.level);
-
-    const shareBtn = h('button', {
-      className: 'cii-share-btn',
-      dataset: { code: country.code, name: country.name },
-      title: t('common.shareStory'),
-    });
-    shareBtn.appendChild(rawHtml(CIIPanel.SHARE_SVG));
 
     // First child: per-row FollowButton (size sm). Insertion happens
     // before the existing .cii-header so the star renders at the start
@@ -129,8 +112,7 @@ export class CIIPanel extends Panel {
     const teardown = handle.attach(followHost);
     this.followButtonTeardowns.set(country.code, teardown);
     // Stop click bubbling so the per-row `onCountryClick` doesn't fire
-    // when the user clicks the star (matches the `cii-share-btn`
-    // stopPropagation pattern in `bindShareButtons`).
+    // when the user clicks the star.
     followHost.addEventListener('click', (e) => e.stopPropagation());
 
     return h('div', { className: 'cii-country', dataset: { code: country.code } },
@@ -140,7 +122,6 @@ export class CIIPanel extends Panel {
         h('span', { className: 'cii-name' }, country.name),
         h('span', { className: 'cii-score' }, String(country.score)),
         this.buildTrendArrow(country.trend, country.change24h),
-        shareBtn,
       ),
       h('div', { className: 'cii-bar-container' },
         h('div', { className: 'cii-bar', style: `width: ${country.score}%; background: ${color};` }),
@@ -260,11 +241,11 @@ export class CIIPanel extends Panel {
     if (withData.length === 0) return;
     this.tearDownFollowButtons();
     replaceChildren(this.content, this.buildList(withData), this.buildMethodologyFooter());
-    this.bindShareButtons();
+    this.bindRowClickHandlers();
   }
 
-  private bindShareButtons(): void {
-    if (!this.onShareStory && !this.onCountryClick) return;
+  private bindRowClickHandlers(): void {
+    if (!this.onCountryClick) return;
 
     this.content.querySelectorAll('.cii-country').forEach(el => {
       el.addEventListener('click', (e) => {
@@ -273,16 +254,6 @@ export class CIIPanel extends Panel {
         if (code && this.onCountryClick) {
           this.onCountryClick(code);
         }
-      });
-    });
-
-    this.content.querySelectorAll('.cii-share-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const el = e.currentTarget as HTMLElement;
-        const code = el.dataset.code || '';
-        const name = el.dataset.name || '';
-        if (code && name && this.onShareStory) this.onShareStory(code, name);
       });
     });
   }
@@ -310,7 +281,7 @@ export class CIIPanel extends Panel {
     // Tear down previous FollowButtons before mounting the new batch.
     this.tearDownFollowButtons();
     replaceChildren(this.content, this.buildList(scores), this.buildMethodologyFooter());
-    this.bindShareButtons();
+    this.bindRowClickHandlers();
     console.log(`[CIIPanel] Rendered ${scores.length} countries from cached/bootstrap data`);
   }
 

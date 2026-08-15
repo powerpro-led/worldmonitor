@@ -28,10 +28,6 @@ const viteConfigSource = readFileSync(resolve(__dirname, '../vite.config.ts'), '
 const mainSource = readFileSync(resolve(__dirname, '../src/main.ts'), 'utf-8');
 const zodCspSource = readFileSync(resolve(__dirname, '../src/bootstrap/zod-csp.ts'), 'utf-8');
 const middlewareSource = readFileSync(resolve(__dirname, '../middleware.ts'), 'utf-8');
-const dockerfileSource = readFileSync(resolve(__dirname, '../Dockerfile'), 'utf-8');
-const dockerNginxSource = readFileSync(resolve(__dirname, '../docker/nginx.conf'), 'utf-8');
-const frontendDockerfileSource = readFileSync(resolve(__dirname, '../docker/Dockerfile'), 'utf-8');
-const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 'utf-8');
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
 const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|docs|countries|chokepoints|crises|tools|reference|changelog|favico|map-styles|data|textures|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html).*)';
 const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs).*)';
@@ -198,30 +194,11 @@ describe('crawlable content corpus deployment contracts', () => {
         scriptName + ' must generate the static corpus before Vite copies public/ into dist/'
       );
     }
-
-    for (const [name, source] of [
-      ['Dockerfile', dockerfileSource],
-      ['docker/Dockerfile', frontendDockerfileSource],
-    ]) {
-      assert.ok(source.includes('npm run build:crawlable-corpus'), name + ' must build the static corpus');
-      assert.ok(!source.includes('build:content-corpus'), name + ' must not reference retired build:content-corpus');
-      assert.ok(
-        source.indexOf('npm run build:crawlable-corpus') < source.indexOf('npx vite build'),
-        name + ' must generate the static corpus before Vite copies public/ into dist/'
-      );
-    }
   });
 
   it('builds Vercel when corpus source files change', () => {
     assert.ok(vercelIgnoreSource.includes("'CHANGELOG.md'"));
     assert.ok(vercelIgnoreSource.includes("'data/resilience-snapshots/'"));
-  });
-
-  it('keeps corpus inputs available in Docker build contexts', () => {
-    const markdownIgnore = dockerignoreSource.indexOf('*.md');
-    const changelogInclude = dockerignoreSource.indexOf('!CHANGELOG.md');
-    assert.ok(markdownIgnore >= 0, 'expected the broad markdown ignore rule to be present');
-    assert.ok(changelogInclude > markdownIgnore, 'CHANGELOG.md must be re-included after *.md for Docker corpus builds');
   });
 
   it('keeps generated corpus prefixes out of the SPA catch-all while preserving normal app deep links', () => {
@@ -451,35 +428,6 @@ describe('deploy/API CORS guardrails', () => {
   });
 });
 
-describe('docker runtime dependency guardrails', () => {
-  const runtimePackage = JSON.parse(readFileSync(resolve(__dirname, '../docker/runtime-package.json'), 'utf-8'));
-  const runtimeLock = JSON.parse(readFileSync(resolve(__dirname, '../docker/runtime-package-lock.json'), 'utf-8'));
-
-  it('installs runtime node_modules from a minimal dependency stage', () => {
-    assert.match(dockerfileSource, /^FROM\s+node:\d+-alpine@sha256:[a-f0-9]{64}\s+AS\s+runtime-deps$/m);
-    assert.match(dockerfileSource, /npm ci --omit=dev --omit=optional --ignore-scripts/);
-    assert.match(dockerfileSource, /COPY --from=runtime-deps \/app\/node_modules \.\/node_modules/);
-    assert.doesNotMatch(dockerfileSource, /npm prune --omit=dev/);
-    assert.doesNotMatch(dockerfileSource, /COPY --from=builder \/app\/node_modules \.\/node_modules/);
-  });
-
-  it('keeps raw JS handler packages without copying the full app dependency graph', () => {
-    assert.deepEqual(Object.keys(runtimePackage.dependencies).sort(), [
-      '@upstash/ratelimit',
-      '@upstash/redis',
-    ]);
-    assert.deepEqual(
-      Object.keys(runtimeLock.packages[''].dependencies).sort(),
-      Object.keys(runtimePackage.dependencies).sort()
-    );
-
-    const lockPackageNames = Object.keys(runtimeLock.packages);
-    for (const omitted of ['node_modules/@xenova/transformers', 'node_modules/onnxruntime-web', 'node_modules/playwright']) {
-      assert.ok(!lockPackageNames.includes(omitted), `${omitted} should not be in Docker runtime deps`);
-    }
-  });
-});
-
 const getSecurityHeaders = () => {
   const rule = vercelConfig.headers.find((entry) => entry.source === GLOBAL_SECURITY_HEADER_SOURCE);
   return rule?.headers ?? [];
@@ -490,18 +438,6 @@ const getHeaderValue = (key) => {
   const header = headers.find((h) => h.key.toLowerCase() === key.toLowerCase());
   return header?.value ?? null;
 };
-
-const getNginxHeaderValueFrom = (file, key) => {
-  const nginxConf = readFileSync(resolve(__dirname, `../${file}`), 'utf-8');
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const line = nginxConf
-    .split('\n')
-    .find((candidate) => new RegExp(`^add_header\\s+${escapedKey}\\s+"`, 'i').test(candidate));
-  const match = line?.match(/^add_header\s+\S+\s+"(.*)"\s+always;$/i);
-  return match?.[1].replace(/\\"/g, '"') ?? null;
-};
-
-const getNginxHeaderValue = (key) => getNginxHeaderValueFrom('docker/nginx-security-headers.conf', key);
 
 describe('security header guardrails', () => {
   it('includes required security headers on catch-all route', () => {
@@ -541,25 +477,6 @@ describe('security header guardrails', () => {
     );
     assert.equal(getHeaderValue('Cross-Origin-Opener-Policy'), null);
     assert.equal(getHeaderValue('Cross-Origin-Embedder-Policy'), null);
-  });
-
-  it('keeps self-hosted nginx security headers aligned for COOP/COEP reporting', () => {
-    const nginxHeaders = readFileSync(
-      resolve(__dirname, '../docker/nginx-security-headers.conf'),
-      'utf-8',
-    );
-    assert.match(
-      nginxHeaders,
-      /add_header Reporting-Endpoints "wm-coop-coep=\\"\/api\/security\/report\\"" always;/,
-    );
-    assert.match(
-      nginxHeaders,
-      /add_header Cross-Origin-Opener-Policy-Report-Only "same-origin; report-to=\\"wm-coop-coep\\"" always;/,
-    );
-    assert.match(
-      nginxHeaders,
-      /add_header Cross-Origin-Embedder-Policy-Report-Only "require-corp; report-to=\\"wm-coop-coep\\"" always;/,
-    );
   });
 
   it('Permissions-Policy disables all expected browser APIs', () => {
@@ -617,14 +534,6 @@ describe('security header guardrails', () => {
     );
   });
 
-  it('Permissions-Policy is in sync between vercel.json header and docker/nginx-security-headers.conf', () => {
-    assert.equal(
-      getNginxHeaderValue('Permissions-Policy'),
-      getHeaderValue('Permissions-Policy'),
-      'Self-hosted docker users must have the same Permissions-Policy as Vercel.'
-    );
-  });
-
   it('CSP connect-src does not allow unencrypted WebSocket (ws:)', () => {
     const csp = getHeaderValue('Content-Security-Policy');
     const connectSrc = csp.match(/connect-src\s+([^;]+)/)?.[1] ?? '';
@@ -650,33 +559,18 @@ describe('security header guardrails', () => {
     assert.ok(!connectSrc.includes('http://localhost'), 'CSP connect-src must not contain http://localhost in production');
   });
 
-  it('dashboard CSP font and style sources are first-party across deploy surfaces', () => {
+  it('dashboard CSP font and style sources are first-party', () => {
     const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
     const headerCsp = getHeaderValue('Content-Security-Policy');
     assert.equal(hasCspMeta(indexHtml), false, 'index.html must not ship a CSP meta tag');
-    const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
-
-    const surfaces = [
-      ['vercel', headerCsp],
-      ['docker/nginx', nginxCsp],
-    ];
 
     for (const directive of ['style-src', 'font-src']) {
-      const baseline = getCspDirectiveTokens(headerCsp, directive);
-      for (const [label, csp] of surfaces) {
-        const tokens = getCspDirectiveTokens(csp, directive);
-        assert.deepEqual(
-          tokens,
-          baseline,
-          `${directive} tokens in ${label} must match vercel.json: ${tokens.join(', ')}`
-        );
-        assert.ok(!tokens.includes('https:'), `${label} ${directive} must not allow all HTTPS origins`);
-        assert.ok(
-          !tokens.some((token) => token.includes('fonts.googleapis.com') || token.includes('fonts.gstatic.com')),
-          `${label} ${directive} must not allow Google Fonts after the dashboard self-hosts fonts`
-        );
-      }
+      const tokens = getCspDirectiveTokens(headerCsp, directive);
+      assert.ok(!tokens.includes('https:'), `${directive} must not allow all HTTPS origins`);
+      assert.ok(
+        !tokens.some((token) => token.includes('fonts.googleapis.com') || token.includes('fonts.gstatic.com')),
+        `${directive} must not allow Google Fonts after the dashboard self-hosts fonts`
+      );
     }
   });
 
@@ -753,31 +647,15 @@ describe('security header guardrails', () => {
     assert.doesNotMatch(frameSrc, /clerk|dodopayments/, 'CSP frame-src must not allow retired Clerk/Dodo origins');
   });
 
-  it('docker/nginx CSP frame-src excludes retired Clerk/Dodo origins', () => {
-    // Parity with the Vercel/index.html frame-src above.
-    const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
-    const frameSrc = nginxCsp.match(/frame-src\s+([^;]+)/)?.[1] ?? '';
-    assert.doesNotMatch(
-      frameSrc,
-      /clerk|dodopayments/,
-      'docker/nginx CSP frame-src must not allow retired Clerk/Dodo origins'
-    );
-  });
-
   it('CSP frame directives include every variant hostname', () => {
     const variantHosts = getVariantHosts();
     const headerCsp = getHeaderValue('Content-Security-Policy');
     const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
     assert.equal(hasCspMeta(indexHtml), false, 'index.html must not ship a CSP meta tag');
-    const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
 
     const surfaces = [
       ['vercel frame-src', getCspDirectiveTokens(headerCsp, 'frame-src')],
       ['vercel frame-ancestors', getCspDirectiveTokens(headerCsp, 'frame-ancestors')],
-      ['nginx frame-src', getCspDirectiveTokens(nginxCsp, 'frame-src')],
-      ['nginx frame-ancestors', getCspDirectiveTokens(nginxCsp, 'frame-ancestors')],
     ];
 
     for (const [label, tokens] of surfaces) {
@@ -818,94 +696,10 @@ describe('security header guardrails', () => {
     }
   });
 
-  it('CSP script-src is in sync between vercel.json header and docker/nginx-security-headers.conf', () => {
-    const headerCsp = getHeaderValue('Content-Security-Policy');
-    const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
-
-    const headerTokens = getCspDirectiveTokens(headerCsp, 'script-src');
-    const nginxTokens = getCspDirectiveTokens(nginxCsp, 'script-src');
-
-    const onlyHeader = headerTokens.filter((token) => !nginxTokens.includes(token));
-    const onlyNginx = nginxTokens.filter((token) => !headerTokens.includes(token));
-
-    assert.deepEqual(onlyHeader, [],
-      `script-src tokens in vercel.json but missing from nginx-security-headers.conf: ${onlyHeader.join(', ')}. ` +
-      'Self-hosted docker users must have the same CSP parity.');
-    assert.deepEqual(onlyNginx, [],
-      `script-src tokens in nginx-security-headers.conf but missing from vercel.json: ${onlyNginx.join(', ')}. ` +
-      'Self-hosted docker users must have the same CSP parity.');
-
-    const nginxScriptSrc = nginxCsp.match(/script-src\s+([^;]+)/)?.[1] ?? '';
-    assert.ok(!nginxScriptSrc.includes("'unsafe-inline'"), "nginx script-src must not contain 'unsafe-inline' to maintain CSP parity with Vercel.");
-  });
-
-  it('CSP payment frame and form directives stay in sync between Vercel and docker/nginx', () => {
-    const headerCsp = getHeaderValue('Content-Security-Policy');
-    const nginxCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(nginxCsp, 'nginx-security-headers.conf must have a Content-Security-Policy header');
-
-    for (const directive of ['frame-src', 'form-action']) {
-      const headerTokens = getCspDirectiveTokens(headerCsp, directive);
-      const nginxTokens = getCspDirectiveTokens(nginxCsp, directive);
-      const onlyHeader = headerTokens.filter((token) => !nginxTokens.includes(token));
-      const onlyNginx = nginxTokens.filter((token) => !headerTokens.includes(token));
-
-      assert.deepEqual(onlyHeader, [],
-        `${directive} tokens in vercel.json but missing from nginx-security-headers.conf: ${onlyHeader.join(', ')}. ` +
-        'Payment/auth iframe and form targets must stay deploy-surface identical.');
-      assert.deepEqual(onlyNginx, [],
-        `${directive} tokens in nginx-security-headers.conf but missing from vercel.json: ${onlyNginx.join(', ')}. ` +
-        'Payment/auth iframe and form targets must stay deploy-surface identical.');
-    }
-  });
-
   it('security.txt exists in public/.well-known/', () => {
     const secTxt = readFileSync(resolve(__dirname, '../public/.well-known/security.txt'), 'utf-8');
     assert.match(secTxt, /^Contact:/m, 'security.txt must have a Contact field');
     assert.match(secTxt, /^Expires:/m, 'security.txt must have an Expires field');
-  });
-});
-
-describe('self-hosted docker nginx SPA fallback CSP parity', () => {
-  it('self-hosted docker/nginx.conf SPA fallback ships the full dashboard CSP', () => {
-    // Image A (root Dockerfile -> docker/nginx.conf, nginx + Node API under
-    // supervisord) inlines headers per location instead of including
-    // security_headers.conf. The SPA fallback (location /) must still carry the
-    // dashboard CSP, or the containerized dashboard runs CSP-less.
-    const canonicalCsp = getNginxHeaderValue('Content-Security-Policy');
-    assert.ok(canonicalCsp, 'docker/nginx-security-headers.conf must define a dashboard CSP');
-
-    const block = dockerNginxSource.match(/\n {4}location \/ \{\n([\s\S]*?)\n {4}\}/);
-    assert.ok(block, 'docker/nginx.conf must define a location / block');
-    const cspLine = block[1]
-      .split('\n')
-      .find((line) => /add_header Content-Security-Policy "/.test(line));
-    assert.ok(cspLine, 'docker/nginx.conf location / must ship a Content-Security-Policy header');
-    const value = cspLine.match(/add_header Content-Security-Policy "(.*)" always;/)?.[1];
-    assert.ok(value, 'could not extract CSP value from docker/nginx.conf location / Content-Security-Policy line');
-    assert.equal(
-      value,
-      canonicalCsp,
-      'docker/nginx.conf location / CSP must match docker/nginx-security-headers.conf (and thus vercel.json)',
-    );
-  });
-});
-
-describe('self-hosted docker nginx SPA entry', () => {
-  it('both nginx confs serve dashboard.html as the SPA entry', () => {
-    // dashboardHtmlOutputPlugin (vite.config.ts, !isDesktopBuild) renames the
-    // built SPA entry index.html -> dashboard.html for every web build, so dist/
-    // ships no index.html. BOTH self-hosted images must point the `index`
-    // directive and the SPA fallback at dashboard.html, or `/` 403s:
-    //   root Dockerfile   -> docker/nginx.conf          (docker-compose stack)
-    //   docker/Dockerfile -> docker/nginx.conf.template (published ghcr image)
-    for (const conf of ['docker/nginx.conf', 'docker/nginx.conf.template']) {
-      const src = readFileSync(resolve(__dirname, `../${conf}`), 'utf-8');
-      assert.match(src, /^\s*index dashboard\.html;/m, `${conf}: index directive must be dashboard.html`);
-      assert.match(src, /try_files \$uri \$uri\/ \/dashboard\.html;/, `${conf}: SPA fallback must serve /dashboard.html`);
-      assert.doesNotMatch(src, /try_files \$uri \$uri\/ \/index\.html;/, `${conf}: must not keep the broken /index.html SPA fallback`);
-    }
   });
 });
 

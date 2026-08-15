@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // Derives the CSP script-src sha256 hash allowlist from the un-nonced inline
 // <script> bodies actually shipped in the HTML entry points, then writes that
-// exact set into the 3 files that must stay in byte-identical sync:
-// vercel.json, docker/nginx-security-headers.conf, docker/nginx.conf.
+// exact set into vercel.json.
 //
-// Why this exists: those 3 files used to be hand-edited independently.
+// Why this exists: hand-editing the CSP hash allowlist is error-prone.
 // Editing any inline <script> in index.html (including JSON-LD
 // <script type="application/ld+json"> blocks) changes that script's hash,
 // and it's easy to update one file, run the no-op `npm test` path, and ship
@@ -38,8 +37,6 @@ const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
 
 const TARGET_FILES = [
   { file: 'vercel.json', label: 'vercel.json' },
-  { file: 'docker/nginx-security-headers.conf', label: 'docker/nginx-security-headers.conf' },
-  { file: 'docker/nginx.conf', label: 'docker/nginx.conf' },
 ];
 
 const hasTrustedStaticNonce = (attributes) => (
@@ -63,9 +60,7 @@ function getInlineScriptHashTokens(htmlSource) {
 // ones at the end. That keeps a real hash update's diff minimal instead of
 // reshuffling the whole allowlist on every run. Leaves every other token
 // ('self', 'strict-dynamic', the nonce, 'wasm-unsafe-eval', ...) untouched.
-// Only touches script-src directives that already carry hash tokens (some
-// docker/nginx.conf location blocks intentionally ship a bare `script-src
-// 'self'` with no inline scripts to allow — those are left alone).
+// Only touches script-src directives that already carry hash tokens.
 function replaceHashesInCsp(source, newHashTokens) {
   const newHashSet = new Set(newHashTokens);
   let changed = false;

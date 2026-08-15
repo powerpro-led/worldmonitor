@@ -35,7 +35,6 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   // Forcing brace-expansion 5.0.8 breaks minimatch 3.x/5.x's callable require,
   // while replacing ExcelJS's archiver stack requires unrelated major upgrades.
   'scripts/package-lock.json': ['GHSA-mh99-v99m-4gvg'],
-  'docker/runtime-package-lock.json': [],
 };
 
 function severityRank(severity) {

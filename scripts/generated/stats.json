@@ -10,9 +10,9 @@
     "energy": 18
   },
   "variantCount": 6,
-  "componentTopLevelTsFiles": 160,
+  "componentTopLevelTsFiles": 159,
   "serviceTopLevelEntries": 176,
-  "apiEndpointEntries": 82,
+  "apiEndpointEntries": 81,
   "panelClasses": 105,
   "protoFiles": 278,
   "protoServices": 34,
@@ -50,7 +50,6 @@
     "analytics-collector-monitor.yml",
     "contributor-trust.yml",
     "deploy-gate.yml",
-    "docker-publish.yml",
     "feed-validation.yml",
     "lint-code.yml",
     "lint.yml",
@@ -63,7 +62,7 @@
     "test.yml",
     "typecheck.yml"
   ],
-  "workflowCount": 15,
+  "workflowCount": 14,
   "freshnessSources": 35,
   "freshnessRequiredForRisk": 2,
   "feedDefinitions": 568,

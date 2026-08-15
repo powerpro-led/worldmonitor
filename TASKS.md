@@ -15,9 +15,9 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔖 HANDOFF (2026-08-15, end of sixteenth session) — read this first, before anything below
+## 🔖 HANDOFF (2026-08-15, end of seventeenth session) — read this first, before anything below
 
-**Repo state**: `main` is **12 commits ahead of `origin/main`, 0 behind, working tree clean**
+**Repo state**: `main` is **14 commits ahead of `origin/main`, 0 behind, working tree clean**
 (verify yourself with `git status` + `git rev-list --left-right --count origin/main...main` —
 don't trust this number blindly, it's drifted before). **Not pushed** — every session this thread
 holds push for explicit operator go-ahead; that's still true, nothing about this session changes it.
@@ -25,35 +25,128 @@ GitHub Actions is **repo-wide disabled** (operator: "we need to stop all github 
 refactor") — still true, re-verify via `gh api repos/powerpro-led/worldmonitor/actions/permissions`
 before assuming either way.
 
-**What this session did (6 passes, all on the "de-brand hardcoded worldmonitor.app strings"
-initiative)**: started at 384 grep hits / 55 files, ended at **~26 files, all individually
-re-confirmed correct-to-remain** (not just left alone by default — each one's actual code path or
-historical accuracy was checked). Along the way, found and fixed 2 unrelated-but-real bugs the same
-investigation surfaced: a wrong GitHub org (`koala73` → real origin `powerpro-led`) hardcoded in 18
-files including 3 `git clone` commands, and several dead links (retired Tauri desktop app, retired
-CLI package, deleted Mintlify docs site) in both READMEs and 4 other doc files. Full pass-by-pass
-narrative is below and in the `domain_migration_scope.md` Claude memory — **don't re-derive any of
-this cold, read the relevant ✅ section instead.**
+**What this session did**: operator asked to "continue cleanup and de-brand" the remaining 26
+`worldmonitor.app` files. Investigating one of them (`docker/nginx.conf`) surfaced that it wasn't a
+branding leftover but real self-hosting infrastructure (Docker Compose stack + a separate GHCR
+image), which led to a scoped decision: **operator chose to drop Docker/nginx self-hosting AND the
+non-Docker npm+Upstash self-hosting path entirely**, not just de-brand them. Executed and verified —
+see the ✅ Resolved entry immediately below for the full file list and verification bar. This also
+mechanically shrank the domain-literal-blocked file list from 8 to 6 (the 2 self-hosted nginx CSP
+configs are gone, not just unblocked).
 
 **What's still genuinely open, in priority order:**
 
-1. **Push the 12 commits** — purely the operator's call, everything's verified.
-2. **2 items flagged this session, not fixed** (see the 🆕 section immediately below this one):
-   `vscode-extension/README.md` may describe a superseded pre-live-verification build process (its
-   `VITE_DESKTOP_RUNTIME=1` recommendation may have caused a documented security leak per a
-   *later* memory); `TAURI_ORIGIN_PATTERNS` may be dead code in the live CORS allowlist. Both need
-   a real look, not a reflex edit.
-3. **8 files still blocked on a real replacement domain** — no domain chosen yet, nothing to do
-   until the operator has one. See the 🅿️ READ FIRST section further below for the exact list.
+1. **Push the 14 commits** — purely the operator's call, everything's verified.
+2. **3 items flagged, not fixed** (need a dedicated look, not a reflex edit):
+   - (carried from sixteenth session) `vscode-extension/README.md` may describe a superseded
+     pre-live-verification build process (its `VITE_DESKTOP_RUNTIME=1` recommendation may have
+     caused a documented security leak per a *later* memory); `TAURI_ORIGIN_PATTERNS` may be dead
+     code in the live CORS allowlist.
+   - (new, this session) `vscode-extension/sidecar/local-api-server.mjs`'s `mode === 'docker'`
+     branch (disables cloud fallback, trusts a private Redis REST origin) is now genuinely dead —
+     it was fed exclusively by the just-deleted `docker-compose.yml`'s `LOCAL_API_MODE: "docker"`.
+     Harmless (gated, untriggerable now) but worth removing in a dedicated vscode-extension pass;
+     out of scope for this session (didn't touch vscode-extension code).
+3. **6 files still blocked on a real replacement domain** — no domain chosen yet, nothing to do
+   until the operator has one. See the 🅿️ READ FIRST section further below for the exact list
+   (down from 8 — `docker/nginx-security-headers.conf` and `docker/nginx.conf` no longer exist).
 4. **GitHub Actions re-enable** — ask whether the "big refactor" that justified disabling it is
    over; if not, leave it.
-5. Low priority: CORS-allowlist triple-duplication (recommended cleanup, not required — see the
-   🅿️ Parked section further down).
+5. Low priority: CORS-allowlist triple-duplication in `vercel.json`'s inline CSP vs. what used to be
+   the nginx mirrors — **partially moot now**: the nginx side is gone, so this is really just
+   "vercel.json's header block is hand-duplicated across route entries," not a 3-way sync problem
+   anymore. Re-scope if picked up.
+6. **2 pre-existing, unrelated test gaps surfaced (not caused) by this session's verification pass**
+   — flagged for a future session, not fixed here (out of scope, predate this work): `tests/
+   ci-workflow-coverage.test.mts` expects `vscode-extension/package-lock.json` in
+   `security-audit.yml`'s audit matrix and it isn't there; `tests/railway-services-registry-
+   coverage.test.mts` expects registry entries for `Dockerfile.process-deep-forecast-tasks`,
+   `Dockerfile.process-simulation-tasks`, `Dockerfile.scenario-worker` and none exist. Confirmed via
+   `git stash` that both fail identically on the pre-session baseline.
 
-**If the operator says "continue de-branding" again**: the mechanical/safe work is genuinely done
-this time (verified 3 times now, across passes 3, 4, and 6 — each pass that thought it was done
-found a little more, so re-verify with a fresh full read before assuming the well is dry, but don't
-expect much). What's left needs either a real domain or a decision on the 2 flagged items above.
+**If the operator says "continue de-branding" again**: the domain-literal-eradication initiative
+itself is still genuinely done pending a real domain (see item 3). Self-hosting is now fully removed,
+not just de-branded — there's nothing left to "de-brand" there, only the 3 flagged items above.
+
+---
+
+## ✅ Resolved 2026-08-15 (seventeenth session) — Docker/nginx + npm+Upstash self-hosting removed entirely
+
+**Not a de-branding pass — a scope decision.** Operator asked to continue de-branding the remaining
+26 `worldmonitor.app` files; investigating `docker/nginx.conf` found it was real self-hosting
+infrastructure (two separate self-hosted images: a full Docker Compose stack, and a lighter GHCR
+image), not a branding leftover. Surfaced this explicitly (nginx CSP allowlists a real security
+boundary, not text) and asked before touching anything. Operator's answer, across two rounds of
+clarification: drop self-hosting entirely — both the Docker/nginx path AND `INSTALL_GUIDE.md`'s
+separate non-Docker npm+Upstash path — including updating `README.md`'s AGPL license table (the
+"Self-hosted instance" row is redundant with "Fork and modify," which already covers the AGPL grant;
+removed rather than reworded to avoid overclaiming what the license does/doesn't permit).
+
+**Deleted** (verified each has no other consumer before removing — see investigation notes below):
+`docker/` (whole directory: `Dockerfile`, `Dockerfile.redis-rest`, `nginx.conf`,
+`nginx-security-headers.conf`, `nginx.conf.template`, `entrypoint.sh`, `docker-entrypoint.sh`,
+`supervisord.conf`, `redis-rest-proxy.mjs`, `build-handlers.mjs`, `runtime-package.json` +
+`runtime-package-lock.json`, `.dockerignore`), root `Dockerfile` (the nginx+Node-API-under-
+supervisord self-host image), `docker-compose.yml`, `.github/workflows/docker-publish.yml` (GHCR
+publish), `SELF_HOSTING.md`, `INSTALL_GUIDE.md`, `scripts/run-seeders.sh` (only ever referenced from
+`SELF_HOSTING.md`), `deploy/nginx/brotli-api-proxy.conf` (an unreferenced example reverse-proxy
+config, found during the directory-structure sweep — 0 consumers anywhere in the repo), plus 2 test
+files that existed solely to test the deleted surface (`tests/docker-compose-no-default-secrets
+.test.mts` — regression coverage for issue #3804, entirely about `docker-compose.yml`; `tests/
+redis-rest-proxy-url-masking.test.mjs` — tested `docker/redis-rest-proxy.mjs`'s `maskRedisUrl`
+directly).
+
+**One real discovery while investigating, not caused by this removal**: root `Dockerfile` COPY'd
+`/app/src-tauri/sidecar/local-api-server.mjs`, but `src-tauri/` was already deleted in an earlier
+session's Tauri-desktop-app retirement — **the self-hosted Docker image could no longer build at
+all**, independent of this session's decision. Confirms the removal wasn't just a preference call.
+
+**Edited, not deleted** (trimmed the self-host-specific slice, kept everything else):
+
+- `tests/deploy-config.test.mjs` — removed every nginx/Docker CSP-parity test and helper
+  (`getNginxHeaderValue*`, the `docker runtime dependency guardrails` and both `self-hosted docker
+  nginx` describe blocks, the Docker loop in the corpus-generator test, the Docker-build-context
+  `.dockerignore` test). Kept every Vercel-only assertion, simplified multi-surface loops
+  (`vercel` + `docker/nginx`) down to `vercel` alone rather than deleting the underlying check.
+- `tests/docker-sidecar-auth-config.test.mjs` → renamed `tests/relay-dockerfile-healthcheck.test.mjs`
+  — 3 of its 4 tests covered deleted self-host files; the 4th (`Dockerfile.relay` healthcheck, a real
+  kept production Railway service) survived, so the file was renamed rather than deleted to stop
+  claiming to test "sidecar auth config" it no longer contains.
+- `tests/market-quote-refresh.test.mjs` — dropped the `docker-compose.yml` env-var-wiring assertion,
+  kept the relay/standalone/`.env.example` assertions.
+- `tests/security-audit-baseline.test.mjs` + `.github/scripts/audit-production-dependencies.mjs` +
+  `.github/workflows/security-audit.yml` — removed the `docker/runtime-package-lock.json` entry from
+  the security-audit baseline map and the `docker-runtime` matrix job (the lockfile it audited no
+  longer exists).
+- `scripts/sync-domain-literals.mjs` + `scripts/sync-csp-script-hashes.mjs` — both had
+  `docker/nginx-security-headers.conf` / `docker/nginx.conf` in their target-file lists; left
+  in place they'd throw ENOENT on the next run. Trimmed to the files that still exist.
+- `README.md` — removed the "Self-hosted instance" license-table row; simplified the
+  ARCHITECTURE.md deployment-options cross-link (was "Vercel, Docker, static").
+- `ARCHITECTURE.md` — removed the "Container Image | GHCR" deployment-topology row, `docker/
+  Dockerfile` from the topology source-files list, the `docker-publish.yml` workflow-table row, and
+  the `docker/` + `deploy/` directory-structure entries.
+- `scripts/generated/stats.json` — regenerated via `npm run docs:stats` (auto-generated, not
+  hand-edited) to drop the removed `docker-publish.yml` workflow from its cached list.
+
+**Deliberately left alone** (comments citing the deleted self-host proxy as historical rationale for
+real, still-live production behavior — same "don't rewrite true history for zero functional gain"
+reasoning as CHANGELOG.md / Sentry incident IDs elsewhere in this file): `server/_shared/redis.ts`,
+`api/_rate-limit.test.mjs`, `tests/redis-caching.test.mjs`, `tests/rate-limit.test.mts`, `tests/
+relay-auth.test.mjs`. Also left alone: every unrelated "self-hosted X" mention that isn't about
+*this* app being self-hosted (self-hosted fonts, self-hosted PMTiles/basemap tiles, the self-hosted
+Umami analytics collector at `abacus.worldmonitor.app`, self-hosted MCP server config field) — traced
+each one individually before excluding it, not pattern-matched away.
+
+**Verified**: `tsc --noEmit` clean; `npm run docs:check` clean (23 doc claims match code);
+`npm run sync:domain-literals:check` clean transition (8 blocked files → 6, all still correctly
+domain-blocked); `npm run sync:csp-hashes:check` clean (1 file now, was 3); `markdownlint-cli2` on
+`README.md`/`ARCHITECTURE.md` clean (pre-existing unrelated `TASKS.md` lint errors, not touched);
+full `npm run test:data` (13,792 tests) — same 7 pre-existing failing suites as the unmodified
+baseline (confirmed via `git stash` A/B on the ones not already known-pre-existing from earlier
+sessions), zero new failures. One stray unrelated `src/main.ts` quote-style reformat surfaced by a
+mid-investigation `git stash`/`git stash pop` cycle was caught and reverted before it could get
+swept into this diff — not part of this change. Committed, not pushed (see 🔖 HANDOFF above).
 
 ---
 
@@ -229,14 +322,16 @@ touched suite pass. Committed (`5b746bc`), not pushed.
 
 **Every `worldmonitor.app` literal that CODE can fix without a real-world decision is fixed,
 committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately below for
-the full writeup.** What's left is **8 files**, and none of them can be "continued" with more code
+the full writeup.** What's left is **6 files** (updated seventeenth session: `docker/nginx-security-
+headers.conf` and `docker/nginx.conf` were on the original 8-file list but no longer exist — the
+whole self-hosted Docker/nginx surface was removed, not just unblocked — see this file's newest ✅
+Resolved entry, above the sixteenth-session ones), and none of them can be "continued" with more code
 work — they're blocked on the operator picking a real replacement domain first. Confirm the current
-list before doing anything by running `npm run sync:domain-literals:check` (reports 7 of the 8 —
+list before doing anything by running `npm run sync:domain-literals:check` (reports 5 of the 6 —
 `security.txt` isn't wired into that tool yet, tracked here by hand) plus a manual check of
 `public/.well-known/security.txt`:
 
-- `vercel.json`, `docker/nginx-security-headers.conf`, `docker/nginx.conf` — CSP `frame-src`/
-  `frame-ancestors`/`form-action` directives and routing config.
+- `vercel.json` — CSP `frame-src`/`frame-ancestors`/`form-action` directives and routing config.
 - `public/wm-widget-sandbox.html`, `index.html` — static HTML with inline domain references.
 - `shared/hapi-app-identifier.json`, `scripts/shared/hapi-app-identifier.json` — contact-email
   identifier (Railway-mirror pair, must stay byte-identical to each other).

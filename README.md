@@ -71,7 +71,7 @@ npm run dev:happy      # happy variant
 npm run dev:energy     # energy variant
 ```
 
-See **[ARCHITECTURE.md](./ARCHITECTURE.md#2-deployment-topology)** for deployment options (Vercel, Docker, static).
+See **[ARCHITECTURE.md](./ARCHITECTURE.md#2-deployment-topology)** for the deployment topology.
 
 ---
 
@@ -128,7 +128,6 @@ npm run build:full       # Production build
 | Use Case | Allowed? |
 |----------|----------|
 | Personal / research / educational | Yes, under AGPL-3.0-only |
-| Self-hosted instance | Yes, under AGPL-3.0-only |
 | Fork and modify | Yes, share source under AGPL-3.0-only when required |
 | Commercial use / SaaS | Yes, under AGPL-3.0-only when you comply with AGPL obligations |
 | Private-source proprietary use or official branding rights | Separate commercial or trademark permission needed |

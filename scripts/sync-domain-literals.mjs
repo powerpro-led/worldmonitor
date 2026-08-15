@@ -59,8 +59,6 @@ function buildTargetFiles() {
   return [
     // CSP configs — literal domain tokens mixed with static third-party origins.
     'vercel.json',
-    'docker/nginx-security-headers.conf',
-    'docker/nginx.conf',
     'public/wm-widget-sandbox.html',
     'index.html',
     // Live contact address — the bare-hostname rule below turns

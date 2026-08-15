@@ -59,9 +59,8 @@ World Monitor is a real-time global intelligence dashboard built as a TypeScript
 | AIS Relay | Railway | WebSocket proxy (AIS stream), seed loops (market, aviation, GPSJAM, risk scores, UCDP, positive events), RSS proxy, OREF polling |
 | Consumer Prices | Railway | Containerized price scrapers (Playwright, per-country baskets) + Redis publisher for the consumer-prices dataset |
 | Redis | Upstash | Cache layer with stampede protection, seed-meta freshness tracking, rate limiting |
-| Container Image | GHCR | Multi-arch Docker image (nginx serving built SPA, proxies API to upstream) |
 
-**Source files**: `vercel.json`, `docker/Dockerfile`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`
+**Source files**: `vercel.json`, `scripts/ais-relay.cjs`, `consumer-prices-core/Dockerfile`
 
 > The Cloudflare CORS Preflight Worker and the Tauri desktop app were retired from this repo (scope-down to VS Code dashboard + data pipeline, see TASKS.md); their source (`workers/api-cors-preflight/`, `src-tauri/`) is gone. The dashboard engine and cloud→local data pipeline live on as the VS Code extension's sidecar (`vscode-extension/sidecar/`).
 
@@ -357,7 +356,6 @@ Runs before every `git push`:
 | `analytics-collector-monitor.yml` | 15-minute cron, manual | Probes the self-hosted Umami collector directly (heartbeat, tracker script, ingest route) and fails when events are being dropped — Railway reported a green deployment through the 4-day #5565 blackout, so deployment status is not trusted here |
 | `contributor-trust.yml` | PR | Gates untrusted first-time-contributor runs |
 | `deploy-gate.yml` | After Test/Typecheck/Security Audit complete | Aggregates required smoke-gate statuses onto the head SHA for branch protection |
-| `docker-publish.yml` | Release, manual | Multi-arch image (amd64, arm64) pushed to GHCR |
 | `nitric-deploy.yml` | Manual | Deploys the backend to GCP (Nitric) — manual-only by design, so unrelated pushes to main never trigger a live infra deploy during this dev phase |
 
 **Source files**: `.github/workflows/`, `.husky/pre-push`. The workflow list is CI-checked against `.github/workflows/*.yml` by `npm run docs:check` — a new workflow file must be added to this table.
@@ -373,8 +371,6 @@ Runs before every `git push`:
 │   └── <domain>/           Domain endpoints (aviation/, climate/, conflict/, ...)
 ├── consumer-prices-core/   Consumer-price collection service (Playwright scrapers, per-country baskets; Railway/Docker)
 ├── data/                   Static data (telegram channels, OREF threat translations, gamma irradiators)
-├── deploy/                 Deployment configs (nginx)
-├── docker/                 Dockerfile + nginx config for Railway
 ├── e2e/                    Playwright E2E specs
 ├── proto/                  Protobuf service definitions (sebuf framework)
 ├── public/                 Static assets served as-is (favicons, textures)

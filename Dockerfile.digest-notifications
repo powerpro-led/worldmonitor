@@ -21,7 +21,7 @@
 #   RESEND_API_KEY
 #   TELEGRAM_BOT_TOKEN
 #   BRIEF_URL_SIGNING_SECRET      (brief compose disabled without this)
-#   WORLDMONITOR_PUBLIC_BASE_URL  (defaults to https://worldmonitor.app)
+#   WORLDMONITOR_PUBLIC_BASE_URL  (defaults to the configured APP_DOMAIN origin)
 # Optional:
 #   DIGEST_CRON_ENABLED=0         (kill switch for the whole cron)
 #   BRIEF_COMPOSE_ENABLED=0       (kill switch for just brief compose)

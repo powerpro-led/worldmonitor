@@ -4,44 +4,20 @@
 
 **实时全球情报仪表盘** — 在统一的态势感知界面中，汇集 AI 驱动的新闻聚合、地缘政治监测和基础设施追踪。
 
-[![GitHub stars](https://img.shields.io/github/stars/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/powerpro-led/worldmonitor?style=social)](https://github.com/powerpro-led/worldmonitor/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/re63kWKxaz)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Last commit](https://img.shields.io/github/last-commit/koala73/worldmonitor)](https://github.com/koala73/worldmonitor/commits/main)
-[![Latest release](https://img.shields.io/github/v/release/koala73/worldmonitor?style=flat)](https://github.com/koala73/worldmonitor/releases/latest)
-[![npm: worldmonitor](https://img.shields.io/npm/v/worldmonitor?logo=npm&label=npm)](https://www.npmjs.com/package/worldmonitor)
-[![smithery badge](https://smithery.ai/badge/worldmonitor/wm-mcp)](https://smithery.ai/servers/worldmonitor/wm-mcp)
-[![skills.sh](https://skills.sh/b/koala73/worldmonitor)](https://skills.sh/koala73/worldmonitor)
+[![Last commit](https://img.shields.io/github/last-commit/powerpro-led/worldmonitor)](https://github.com/powerpro-led/worldmonitor/commits/main)
+[![Latest release](https://img.shields.io/github/v/release/powerpro-led/worldmonitor?style=flat)](https://github.com/powerpro-led/worldmonitor/releases/latest)
+
+在线部署：[worldmonitor.app](https://www.worldmonitor.app) · [tech](https://tech.worldmonitor.app) · [finance](https://finance.worldmonitor.app) · [commodity](https://commodity.worldmonitor.app) · [happy](https://happy.worldmonitor.app) · [energy](https://energy.worldmonitor.app)
 
 <p align="center">
-  <a href="https://www.worldmonitor.app"><img src="https://img.shields.io/badge/Web_App-worldmonitor.app-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Web 应用"></a>&nbsp;
-  <a href="https://tech.worldmonitor.app"><img src="https://img.shields.io/badge/Tech_Variant-tech.worldmonitor.app-0891b2?style=for-the-badge&logo=googlechrome&logoColor=white" alt="科技变体"></a>&nbsp;
-  <a href="https://finance.worldmonitor.app"><img src="https://img.shields.io/badge/Finance_Variant-finance.worldmonitor.app-059669?style=for-the-badge&logo=googlechrome&logoColor=white" alt="金融变体"></a>&nbsp;
-  <a href="https://commodity.worldmonitor.app"><img src="https://img.shields.io/badge/Commodity_Variant-commodity.worldmonitor.app-b45309?style=for-the-badge&logo=googlechrome&logoColor=white" alt="大宗商品变体"></a>&nbsp;
-  <a href="https://happy.worldmonitor.app"><img src="https://img.shields.io/badge/Happy_Variant-happy.worldmonitor.app-f59e0b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="正能量变体"></a>&nbsp;
-  <a href="https://energy.worldmonitor.app"><img src="https://img.shields.io/badge/Energy_Variant-energy.worldmonitor.app-eab308?style=for-the-badge&logo=googlechrome&logoColor=white" alt="能源变体"></a>
+  <a href="./ARCHITECTURE.md"><strong>架构文档</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/powerpro-led/worldmonitor/releases/latest"><strong>发布版本</strong></a> &nbsp;·&nbsp;
+  <a href="./CONTRIBUTING.md"><strong>贡献指南</strong></a>
 </p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/worldmonitor"><img src="https://img.shields.io/npm/v/worldmonitor?style=for-the-badge&logo=npm&logoColor=white&label=npm%20i%20worldmonitor&color=CB3837" alt="npm i worldmonitor"></a>&nbsp;
-  <a href="https://www.npmjs.com/package/worldmonitor"><img src="https://img.shields.io/badge/CLI-npx%20worldmonitor-CB3837?style=for-the-badge&logo=npm&logoColor=white" alt="npx worldmonitor"></a>&nbsp;
-</p>
-
-<p align="center">
-  <a href="https://www.worldmonitor.app/api/download?platform=windows-exe"><img src="https://img.shields.io/badge/Download-Windows_(.exe)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=macos-arm64"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS Apple Silicon"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=macos-x64"><img src="https://img.shields.io/badge/Download-macOS_Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS Intel"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=linux-appimage"><img src="https://img.shields.io/badge/Download-Linux_(.AppImage)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="下载 Linux"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.worldmonitor.app/docs/zh/documentation"><strong>文档</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/koala73/worldmonitor/releases/latest"><strong>发布版本</strong></a> &nbsp;·&nbsp;
-  <a href="https://www.worldmonitor.app/docs/zh/contributing"><strong>贡献指南</strong></a>
-</p>
-
-![World Monitor 仪表盘](docs/images/worldmonitor-7-mar-2026.jpg)
 
 ---
 
@@ -56,7 +32,7 @@
 - **6 个站点变体**，均来自同一代码库（World Monitor、Tech Monitor、Finance Monitor、Commodity Monitor、Happy Monitor、Energy Monitor）
 - **25 种语言**，提供本地语言信息流和 RTL 支持
 
-完整的功能清单、架构、数据源和算法，请参阅**[文档](https://www.worldmonitor.app/docs/zh/documentation)**。
+完整的功能清单、架构、数据源和算法，请参阅**[ARCHITECTURE.md](./ARCHITECTURE.md)**（英文）。
 
 ---
 
@@ -68,14 +44,14 @@
 |---------|--------|-------|
 | `worldmonitor.app`、`tech.`、`finance.`、`commodity.`、`happy.`、`energy.` | 稳定 | 从本仓库构建的公开部署，持续维护中 |
 
-上述任一产品形态的问题都会进入同一待办队列；请查看[问题看板](https://github.com/koala73/worldmonitor/issues)了解当前公开工作。
+上述任一产品形态的问题都会进入同一待办队列；请查看[问题看板](https://github.com/powerpro-led/worldmonitor/issues)了解当前公开工作。
 
 ---
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/koala73/worldmonitor.git
+git clone https://github.com/powerpro-led/worldmonitor.git
 cd worldmonitor
 npm install
 npm run dev
@@ -88,14 +64,14 @@ npm run dev
 针对特定变体进行开发：
 
 ```bash
-npm run dev:tech       # tech.worldmonitor.app
-npm run dev:finance    # finance.worldmonitor.app
-npm run dev:commodity  # commodity.worldmonitor.app
-npm run dev:happy      # happy.worldmonitor.app
-npm run dev:energy     # energy.worldmonitor.app
+npm run dev:tech       # tech 变体
+npm run dev:finance    # finance 变体
+npm run dev:commodity  # commodity 变体
+npm run dev:happy      # happy 变体
+npm run dev:energy     # energy 变体
 ```
 
-部署选项（Vercel、Docker、静态托管）请参阅**[自托管指南](https://www.worldmonitor.app/docs/zh/getting-started)**。
+部署选项（Vercel、Docker、静态托管）请参阅**[ARCHITECTURE.md](./ARCHITECTURE.md#2-deployment-topology)**（英文）。
 
 ---
 
@@ -109,7 +85,7 @@ npm run dev:energy     # energy.worldmonitor.app
 | **部署** | Vercel Edge Functions（60+）、Railway 中继、PWA |
 | **缓存** | Redis（Upstash）、3 层缓存、CDN、service worker |
 
-完整技术栈详情请参阅**[架构文档](https://www.worldmonitor.app/docs/zh/architecture)**。
+完整技术栈详情请参阅**[ARCHITECTURE.md](./ARCHITECTURE.md)**（英文）。
 
 ---
 
@@ -130,13 +106,13 @@ World Monitor 同时为智能体、脚本和浏览器而构建：
 
 ## 数据源
 
-WorldMonitor 汇聚来自地缘政治、金融、能源、气候、航空、网络、军事、基础设施和新闻情报领域的 65+ 个外部提供商与 API；其内容通过 500+ 个精选信息流呈现，并由覆盖 35 个来源组的新鲜度监控器追踪。有关提供商、信息流层级和采集方法，请参阅完整的[数据源目录](https://www.worldmonitor.app/docs/zh/data-sources)。
+WorldMonitor 汇聚来自地缘政治、金融、能源、气候、航空、网络、军事、基础设施和新闻情报领域的 65+ 个外部提供商与 API；其内容通过 500+ 个精选信息流呈现，并由覆盖 35 个来源组的新鲜度监控器追踪。有关提供商、信息流层级和采集方法，请参阅**[ARCHITECTURE.md](./ARCHITECTURE.md#6-data-pipeline)**（英文）。
 
 ---
 
 ## 贡献
 
-欢迎贡献！请参阅[贡献指南](https://www.worldmonitor.app/docs/zh/contributing)。
+欢迎贡献！请参阅[CONTRIBUTING.md](./CONTRIBUTING.md)（英文）。
 
 ```bash
 npm run typecheck        # Type checking
@@ -157,7 +133,7 @@ npm run build:full       # Production build
 | 商业使用 / SaaS | 是，在遵守 AGPL 义务的前提下采用 AGPL-3.0-only |
 | 私有源代码的专有使用或官方品牌权利 | 需要单独的商业许可或商标许可 |
 
-完整的代码许可证请参阅 [LICENSE](LICENSE)，通俗语言摘要请参阅 [docs/zh/license.mdx](docs/zh/license.mdx)。对于需要非 AGPL 条款的团队，可选择商业许可。
+完整的代码许可证请参阅 [LICENSE](LICENSE)。对于需要非 AGPL 条款的团队，可选择商业许可。
 
 版权所有 (C) 2024-2026 Elie Habib。保留所有权利。
 
@@ -169,8 +145,8 @@ npm run build:full       # Production build
 
 ## 贡献者
 
-<a href="https://github.com/koala73/worldmonitor/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=koala73/worldmonitor" />
+<a href="https://github.com/powerpro-led/worldmonitor/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=powerpro-led/worldmonitor" />
 </a>
 
 ## 安全致谢
@@ -185,16 +161,15 @@ npm run build:full       # Production build
 
 <p align="center">
   <a href="https://www.worldmonitor.app">worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://www.worldmonitor.app/docs/zh/documentation">docs.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://finance.worldmonitor.app">finance.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://commodity.worldmonitor.app">commodity.worldmonitor.app</a>
+  <a href="https://finance.worldmonitor.app">finance</a> &nbsp;·&nbsp;
+  <a href="https://commodity.worldmonitor.app">commodity</a>
 </p>
 
 ## 星标历史
 
-<a href="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date">
+<a href="https://api.star-history.com/svg?repos=powerpro-led/worldmonitor&type=Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date&theme=dark" />
-   <img alt="星标历史图表" src="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=powerpro-led/worldmonitor&type=Date&theme=dark" />
+   <img alt="星标历史图表" src="https://api.star-history.com/svg?repos=powerpro-led/worldmonitor&type=Date" />
  </picture>
 </a>

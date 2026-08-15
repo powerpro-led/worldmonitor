@@ -15,6 +15,48 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔖 HANDOFF (2026-08-15, end of sixteenth session) — read this first, before anything below
+
+**Repo state**: `main` is **12 commits ahead of `origin/main`, 0 behind, working tree clean**
+(verify yourself with `git status` + `git rev-list --left-right --count origin/main...main` —
+don't trust this number blindly, it's drifted before). **Not pushed** — every session this thread
+holds push for explicit operator go-ahead; that's still true, nothing about this session changes it.
+GitHub Actions is **repo-wide disabled** (operator: "we need to stop all github actions... big
+refactor") — still true, re-verify via `gh api repos/powerpro-led/worldmonitor/actions/permissions`
+before assuming either way.
+
+**What this session did (6 passes, all on the "de-brand hardcoded worldmonitor.app strings"
+initiative)**: started at 384 grep hits / 55 files, ended at **~26 files, all individually
+re-confirmed correct-to-remain** (not just left alone by default — each one's actual code path or
+historical accuracy was checked). Along the way, found and fixed 2 unrelated-but-real bugs the same
+investigation surfaced: a wrong GitHub org (`koala73` → real origin `powerpro-led`) hardcoded in 18
+files including 3 `git clone` commands, and several dead links (retired Tauri desktop app, retired
+CLI package, deleted Mintlify docs site) in both READMEs and 4 other doc files. Full pass-by-pass
+narrative is below and in the `domain_migration_scope.md` Claude memory — **don't re-derive any of
+this cold, read the relevant ✅ section instead.**
+
+**What's still genuinely open, in priority order:**
+
+1. **Push the 12 commits** — purely the operator's call, everything's verified.
+2. **2 items flagged this session, not fixed** (see the 🆕 section immediately below this one):
+   `vscode-extension/README.md` may describe a superseded pre-live-verification build process (its
+   `VITE_DESKTOP_RUNTIME=1` recommendation may have caused a documented security leak per a
+   *later* memory); `TAURI_ORIGIN_PATTERNS` may be dead code in the live CORS allowlist. Both need
+   a real look, not a reflex edit.
+3. **8 files still blocked on a real replacement domain** — no domain chosen yet, nothing to do
+   until the operator has one. See the 🅿️ READ FIRST section further below for the exact list.
+4. **GitHub Actions re-enable** — ask whether the "big refactor" that justified disabling it is
+   over; if not, leave it.
+5. Low priority: CORS-allowlist triple-duplication (recommended cleanup, not required — see the
+   🅿️ Parked section further down).
+
+**If the operator says "continue de-branding" again**: the mechanical/safe work is genuinely done
+this time (verified 3 times now, across passes 3, 4, and 6 — each pass that thought it was done
+found a little more, so re-verify with a fresh full read before assuming the well is dry, but don't
+expect much). What's left needs either a real domain or a decision on the 2 flagged items above.
+
+---
+
 ## ✅ Resolved 2026-08-15 (sixteenth session, fifth pass) — wrong GitHub org (koala73 → powerpro-led)
 
 **Separate bug from the domain-literal initiative below, found as a side effect of reading README.md
@@ -442,7 +484,12 @@ effect of this work either.
 
 ---
 
-## 🚧 IN PROGRESS — scope-down to VS Code dashboard + data pipeline only
+## ✅ Resolved — scope-down to VS Code dashboard + data pipeline only
+
+**Bookkeeping fix, sixteenth session: this section's every checkbox below was already checked and
+verified (src-tauri/, cli/, workers/api-cors-preflight/ all confirmed actually deleted on disk;
+GitHub Actions confirmed disabled via `gh api`) but the heading was never flipped from 🚧 to ✅ —
+fixed. No content below changed.**
 
 **Operator decision (2026-08-14, twelfth session): this fork's real product is the VS Code
 dashboard + the cloud→local data pipeline. Tauri desktop app, the published CLI, the Cloudflare
@@ -979,12 +1026,9 @@ infra-provisioning decisions in this "Needed before any code changes" list.
    `APP_DOMAIN`, so they automatically carry over to whatever domain gets picked with no further
    code change; still worth an explicit product call on whether to keep/drop/rename individual
    variants, but that's no longer a domain-migration blocker.
-5. **Code-ready as of Stage 3 (eleventh session), decision itself still open.** Whether the Tauri
-   desktop app's bundle identifier changes is still a real, standalone go/no-go — changing it
-   breaks the auto-update chain for anyone with the app already installed (a new identifier = a new
-   app identity to the OS; existing installs won't silently follow) — but it's no longer a code
-   change to execute once decided: `TAURI_BUNDLE_ID_BRAND` (see the Stage 3 ✅ section above) now
-   drives all 3 `src-tauri/tauri*.conf.json` identifiers, unset = today's exact literals.
+5. ~~Whether the Tauri desktop app's bundle identifier changes~~ — **MOOT as of the thirteenth
+   session (`30c89d7`): the Tauri app (`src-tauri/`) was retired entirely**, along with the
+   `TAURI_BUNDLE_ID_BRAND` mechanism this item used to point at. Nothing left to decide here.
 6. **Code-ready as of Stage 3, only the real mailbox itself still needed.** `shared/
    hapi-app-identifier.json`'s `email` field now derives from `APP_DOMAIN` automatically (Stage 3);
    what's still missing is a real inbox actually receiving mail at whatever address that resolves

@@ -3,9 +3,9 @@
 // of published figures. Writes to data/resilience-snapshots/resilience-ranking-<YYYY-MM-DD>.json.
 //
 // Usage:
-//   API_BASE=https://api.worldmonitor.app node scripts/freeze-resilience-ranking.mjs
-//   API_BASE=https://api.worldmonitor.app WORLDMONITOR_API_KEY=... node scripts/freeze-resilience-ranking.mjs
-//   API_BASE=https://api.worldmonitor.app WORLDMONITOR_API_KEY=... \
+//   API_BASE=https://api.example.com node scripts/freeze-resilience-ranking.mjs
+//   API_BASE=https://api.example.com WORLDMONITOR_API_KEY=... node scripts/freeze-resilience-ranking.mjs
+//   API_BASE=https://api.example.com WORLDMONITOR_API_KEY=... \
 //     RESILIENCE_RANKING_OUTPUT_BASENAME=resilience-ranking-live-post-pr1-YYYY-MM-DD.json \
 //     node scripts/freeze-resilience-ranking.mjs
 //
@@ -411,7 +411,7 @@ function resolveRankingSnapshotOutputPath(capturedAt, outputBasename = OUTPUT_BA
 
 async function main() {
   if (!API_BASE) {
-    console.error('[freeze-resilience-ranking] API_BASE env var required (e.g. https://api.worldmonitor.app)');
+    console.error('[freeze-resilience-ranking] API_BASE env var required (e.g. https://api.example.com)');
     process.exit(2);
   }
   if (FORCE_RANKING_REFRESH && !process.env.WORLDMONITOR_API_KEY) {

@@ -2,8 +2,8 @@
  * GET /.well-known/oauth-authorization-server (rewritten to /api/oauth-authorization-server)
  *
  * RFC 8414 OAuth Authorization Server Metadata, served dynamically so every
- * host that terminates the request (apex worldmonitor.app, www, or
- * api.worldmonitor.app) returns self-consistent metadata whose `issuer` and
+ * host that terminates the request (the configured apex domain, www, or
+ * api. subdomain) returns self-consistent metadata whose `issuer` and
  * endpoints point back at the request origin.
  *
  * Why dynamic (was a static file at public/.well-known/oauth-authorization-server):

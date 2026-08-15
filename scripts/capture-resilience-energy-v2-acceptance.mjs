@@ -5,7 +5,7 @@
 // produced by scripts/freeze-resilience-ranking.mjs with live credentials.
 //
 // Usage:
-//   API_BASE=https://www.worldmonitor.app \
+//   API_BASE=https://www.example.com \
 //     node --import tsx/esm scripts/capture-resilience-energy-v2-acceptance.mjs
 //
 // Optional:
@@ -233,7 +233,7 @@ function formatMissingPostFlipRankingSnapshotMessage() {
     '  data/resilience-snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
     '',
     'Capture it with production credentials; the freeze script verifies score anchors through get-resilience-score:',
-    '  API_BASE=https://www.worldmonitor.app \\',
+    '  API_BASE=https://www.example.com \\',
     '    WORLDMONITOR_API_KEY=<pro-api-key> \\',
     '    RESILIENCE_RANKING_OUTPUT_BASENAME=resilience-ranking-live-post-pr1-YYYY-MM-DD.json \\',
     '    node scripts/freeze-resilience-ranking.mjs',
@@ -241,7 +241,7 @@ function formatMissingPostFlipRankingSnapshotMessage() {
     '  #   [freeze-resilience-ranking] wrote .../data/resilience-snapshots/resilience-ranking-live-post-pr1-YYYY-MM-DD.json',
     '',
     'Then rerun this harness:',
-    '  API_BASE=https://www.worldmonitor.app \\',
+    '  API_BASE=https://www.example.com \\',
     '    WORLDMONITOR_API_KEY=<pro-api-key> \\',
     '    node --import tsx/esm scripts/capture-resilience-energy-v2-acceptance.mjs',
     '',

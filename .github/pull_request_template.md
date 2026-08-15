@@ -18,15 +18,15 @@
 - [ ] News panels / RSS feeds
 - [ ] AI Insights / World Brief
 - [ ] Market Radar / Crypto
-- [ ] Desktop app (Tauri)
+- [ ] VS Code extension
 - [ ] API endpoints (`/api/*`)
 - [ ] Config / Settings
 - [ ] Other: <!-- specify -->
 
 ## Checklist
 
-- [ ] Tested on [worldmonitor.app](https://worldmonitor.app) variant
-- [ ] Tested on [tech.worldmonitor.app](https://tech.worldmonitor.app) variant (if applicable)
+- [ ] Tested on the main variant
+- [ ] Tested on another variant (tech/finance/commodity/happy/energy), if applicable
 - [ ] New RSS feed domains added to `api/rss-proxy.js` allowlist (if adding feeds)
 - [ ] No API keys or secrets committed
 - [ ] TypeScript compiles without errors (`npm run typecheck`)

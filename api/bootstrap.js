@@ -35,8 +35,8 @@ const SLOW_KEYS = new Set(bootstrapTierKeyNames('slow', { iranEventsEnabled: IRA
 const FAST_KEYS = new Set(bootstrapTierKeyNames('fast', { iranEventsEnabled: IRAN_EVENTS_ENABLED }));
 const ON_DEMAND_KEYS = new Set(bootstrapTierKeyNames('on-demand', { iranEventsEnabled: IRAN_EVENTS_ENABLED }));
 
-// No public/s-maxage: CF (in front of api.worldmonitor.app) ignores Vary: Origin and would
-// pin ACAO: worldmonitor.app on cached responses, breaking CORS for preview deployments.
+// No public/s-maxage: CF (in front of the api. subdomain) ignores Vary: Origin and would
+// pin ACAO to whichever origin cached first, breaking CORS for preview deployments.
 // Vercel CDN caching is handled by TIER_CDN_CACHE via CDN-Cache-Control below.
 const TIER_CACHE = {
   slow: 'max-age=300, stale-while-revalidate=600, stale-if-error=3600',

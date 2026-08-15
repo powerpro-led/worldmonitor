@@ -289,7 +289,7 @@ function dashboardHtmlOutputPlugin(): Plugin {
 
 // Emit dashboard-<variant>.html siblings of dashboard.html for the variant
 // subdomains (#4996). The web deployment serves the 'full' build to every
-// host, so tech/finance/commodity/happy/energy.worldmonitor.app/dashboard
+// host, so tech/finance/commodity/happy/energy.<domain>/dashboard
 // shipped full-brand meta and a cross-host canonical pointing at www —
 // crawlers saw five duplicate pages that all declared themselves NOT to be
 // the sitemap URL they were fetched from. vercel.json host-based rewrites

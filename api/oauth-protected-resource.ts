@@ -2,8 +2,8 @@
  * GET /.well-known/oauth-protected-resource (rewritten to /api/oauth-protected-resource)
  *
  * RFC 9728 OAuth Protected Resource Metadata, served dynamically so every
- * host that terminates the request (apex worldmonitor.app, www, or
- * api.worldmonitor.app) returns self-consistent `resource` +
+ * host that terminates the request (the configured apex domain, www, or
+ * api. subdomain) returns self-consistent `resource` +
  * `authorization_servers` pointing at itself.
  *
  * Why dynamic: scanners like isitagentready.com (and Cloudflare's reference

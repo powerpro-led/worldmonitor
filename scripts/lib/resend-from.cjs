@@ -4,7 +4,7 @@
  * Coerce a Resend `from:` value into a form that renders a friendly
  * display name in Gmail / Outlook / Apple Mail. When the value is a
  * bare email address (no "Name <addr@domain>" wrapper), clients fall
- * back to the local-part as the sender name — so `alerts@worldmonitor.app`
+ * back to the local-part as the sender name — so `alerts@example.com`
  * shows up as "alerts" in the inbox, which reads like an incident
  * alarm when the mail is actually a curated editorial brief.
  *

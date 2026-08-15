@@ -110,7 +110,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Top-level error boundary. An edge function must never let an exception
   // escape: an uncaught throw becomes an opaque Vercel platform 500 that — for
-  // the cross-origin api.worldmonitor.app caller — also drops our CORS headers,
+  // the cross-origin api. subdomain caller — also drops our CORS headers,
   // so the browser sees an opaque failure rather than a readable status. The
   // pre-stream auth/entitlement lookups (resolvePremiumCallerIdentity) are network-backed
   // and, while individually fail-soft today, this route had NO server-side

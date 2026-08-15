@@ -8,7 +8,7 @@
  *
  * Usage:
  *   curl -H "x-probe-secret: $RELAY_SHARED_SECRET" \
- *        https://api.worldmonitor.app/api/seed-contract-probe
+ *        https://api.<your-domain>/api/seed-contract-probe
  *
  * On failure returns 503 + the failing `checks`/`boundary` entries so CI or
  * operators can pinpoint the regression. Replaces the curl/jq shell ritual.

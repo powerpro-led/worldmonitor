@@ -132,7 +132,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
 // off the `alerts@` mailbox so recipients don't see a scary "alert" from-name
 // in their inbox. normalizeResendSender coerces a bare email address into a
 // "Name <addr>" wrapper at runtime (with a loud warning), so a Railway env
-// like `RESEND_FROM_BRIEF=brief@worldmonitor.app` can't re-introduce the bug
+// like `RESEND_FROM_BRIEF=brief@example.com` can't re-introduce the bug
 // that `.env.example` documents.
 const RESEND_FROM =
   normalizeResendSender(

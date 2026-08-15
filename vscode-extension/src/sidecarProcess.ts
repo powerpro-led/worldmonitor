@@ -19,7 +19,7 @@ const PORT = 46123;
  * Upstash. `LOCAL_API_CLOUD_FALLBACK` is deliberately left unset (its
  * default is false) — the sidecar's own cloud-fallback proxy path only
  * activates when that env var is explicitly 'true', so this process
- * structurally never calls out to api.worldmonitor.app for the domains
+ * structurally never calls out to the deployed API domain for the domains
  * this dashboard reads, matching the "local cached, not network fetch"
  * requirement by construction, not just by convention.
  */

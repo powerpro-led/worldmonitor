@@ -19,7 +19,7 @@ RUN npm ci --include=dev --ignore-scripts
 
 # Build-time configuration. Pass via --build-arg. Other VITE_* vars (e.g. VITE_PMTILES_URL)
 # can be added here or via --build-arg for custom builds; see .env.example for the full list.
-# VITE_WS_API_URL empty (not a worldmonitor.app default) matches .env.example's
+# VITE_WS_API_URL empty (no hardcoded default) matches .env.example's
 # documented same-origin-when-empty convention (src/services/runtime.ts
 # getApiBaseUrl() falls back to a relative path, which this image's own nginx
 # already proxies to API_UPSTREAM below).

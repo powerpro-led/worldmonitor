@@ -1457,7 +1457,7 @@ function resolveStaticFilePath(staticDir, pathname) {
   if (decoded.includes('\0') || decoded.split('/').includes('..')) return null;
   // NOT index.html: vite.config.ts's wm-dashboard-html-output plugin renames
   // the built entry from index.html to dashboard.html (the app's real
-  // production entry, e.g. https://www.worldmonitor.app/dashboard) — a
+  // production entry, e.g. https://www.<your-domain>/dashboard) — a
   // plain `npm run build` output has no index.html at all. Confirmed by
   // reading the plugin, not assumed.
   const relative = decoded === '/' ? 'dashboard.html' : decoded.replace(/^\/+/, '');

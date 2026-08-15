@@ -16,7 +16,7 @@ reinvented UI.
    (`vscode-extension/sidecar/local-cache.db`), not live Upstash. This extension
    spawns it in `LOCAL_API_MODE=tauri-sidecar` mode and never sets
    `LOCAL_API_CLOUD_FALLBACK=true`, so it structurally never proxies to
-   `api.worldmonitor.app` for the domains this dashboard reads.
+   the deployed API domain for the domains this dashboard reads.
 3. **The extension loads `dist/index.html` directly into a VS Code
    webview** — the real UI, not a rebuilt subset — with a small
    fetch-rewrite shim (a few lines, not a reimplementation) so the app's
@@ -75,7 +75,7 @@ construction (`LOCAL_API_CLOUD_FALLBACK` unset ⇒ the sidecar's own
 cloud-fallback code path never activates), not just by convention. It does
 **not** mean the whole page never touches a network: the real app's map
 layer streams tile imagery from a separate CDN
-(`maps.worldmonitor.app`/Cloudflare R2), and that dependency exists in the
+(the deployed `maps.` subdomain/Cloudflare R2), and that dependency exists in the
 real product regardless of this extension — narrowing the webview's CSP to
 block it wouldn't change the underlying app, just make map tiles fail to
 load. One additional narrow exception: `/api/youtube/live` always proxies

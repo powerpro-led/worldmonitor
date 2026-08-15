@@ -61,7 +61,30 @@ unrelated). Committed, **not pushed** — holding per operator request ("push la
 
 ---
 
-## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — sixteenth-session update
+## 🆕 2 items flagged during the sixth de-branding pass — NOT fixed, need a dedicated look
+
+**Found while de-branding `vscode-extension/README.md` and `ARCHITECTURE.md` — real, but outside
+that pass's safe-mechanical-edit scope, so deliberately left alone rather than guessed at:**
+
+1. **`vscode-extension/README.md` may describe a superseded, pre-live-verification design.** It
+   tells contributors to build with `VITE_DESKTOP_RUNTIME=1 npm run build:desktop` — but
+   `build:desktop` doesn't exist anymore (removed in the Tauri retirement, `30c89d7`), AND per the
+   `local_pipeline_and_vscode_dagu_plan` Claude memory (a *later*, live-verified session), that
+   exact `VITE_DESKTOP_RUNTIME=1` flag was found to create a "Tauri IPC bridge gap / silent
+   live-cloud-fallback leak" — the memory's own live-tested, correct build is plain `npm run
+   build`/`build:full` **without** that flag. This README's whole architecture description (SQLite
+   local-sync mirror, `LOCAL_API_MODE=tauri-sidecar`) may predate that later, more authoritative
+   session entirely (MEMORY.md describes the final working state as "the sidecar serving `dist/`
+   directly, no cache" — a different design). Needs someone to actually reconcile this doc against
+   `local_pipeline_and_vscode_dagu_plan.md` and the real current sidecar code, not a text edit.
+2. **`shared/domain-config.js`'s `TAURI_ORIGIN_PATTERNS` is still spliced into the live CORS
+   allowlist** (`buildAllowedOriginPatterns`) even though the Tauri app itself is fully deleted —
+   possibly dead code now, not verified either way (the VS Code webview might use a similar scheme,
+   or might not). Worth a real look before touching, since it's CORS/security-relevant.
+
+---
+
+## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — sixteenth-session update (6 passes)
 
 **Sixteenth session (2026-08-15) re-verified this cold against a raw `grep -rli worldmonitor\.app`
 (55 files, 384 hits — matches what a plain editor search shows) after the operator flagged it as
@@ -144,6 +167,23 @@ drift.test.mts`'s real-build drift check), `tests/sentry-beforesend.test.mjs`'s 
 labels (see above), `data/resilience-snapshots/*.json` (historical data provenance, never touch), and
 plain prose (docs/READMEs/comments truthfully describing the still-live deployment). None of this is
 mechanical/code work anymore.
+
+**Sixth pass (2026-08-15, same session), operator said "de-brand all of them, none question" after
+seeing a fresh 49-file/313-hit editor search.** The "nothing mechanical left" conclusion above turned
+out wrong — a closer per-occurrence read (not a re-grep) found ~23 more genuinely-inert comment/docstring/
+example mentions across `.env.example`, `CONTRIBUTING.md` (2 more dead docs/* links, same bug as the
+READMEs), `.github/{bug_report.yml,pull_request_template.md}` (also dropped stale "Desktop app
+(Tauri)" options — that product's retired, replaced with "VS Code extension"), and ~15 pure-comment
+files across `api/`/`server/`/`scripts/`/`vite.config.ts`/`docker/Dockerfile`/`vscode-extension/` —
+softened to describe the mechanism generically instead of the literal brand, zero behavior change.
+Also removed `.env.example`'s entirely dead `SITE_URL` var (referenced deleted `convex/payments/
+checkout.ts`; confirmed nothing reads it). File count: 49 → 26, all 26 individually re-confirmed
+correct-to-remain (parked files, historical incident citations with real measured data, live
+integration tests, tests deliberately pinned to real config, the sync tool's own required constant).
+2 new items found and deliberately NOT fixed (need a dedicated look, not a text edit) — see the 🆕
+section just above this one. Verified: `tsc --noEmit` clean (root + vscode-extension), sebuf contract
+check clean, `docs:check`/`markdownlint` clean, both `sync:*:check` unchanged, 248 tests across every
+touched suite pass. Committed (`5b746bc`), not pushed.
 
 **Every `worldmonitor.app` literal that CODE can fix without a real-world decision is fixed,
 committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately below for

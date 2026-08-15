@@ -15,6 +15,38 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — fifteenth-session handoff
+
+**Every `worldmonitor.app` literal that CODE can fix without a real-world decision is already
+fixed, committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately
+below for the full writeup.** What's left is exactly **7 files**, and none of them can be
+"continued" with more code work — they're blocked on the operator picking a real replacement
+domain first. Confirm the current list before doing anything by running
+`npm run sync:domain-literals:check` — as of this handoff it reports:
+
+- `vercel.json`, `docker/nginx-security-headers.conf`, `docker/nginx.conf` — CSP `frame-src`/
+  `frame-ancestors`/`form-action` directives and routing config.
+- `public/wm-widget-sandbox.html`, `index.html` — static HTML with inline domain references.
+- `shared/hapi-app-identifier.json`, `scripts/shared/hapi-app-identifier.json` — contact-email
+  identifier (Railway-mirror pair, must stay byte-identical to each other).
+
+**Why these specifically can't move without an operator decision**: `scripts/sync-domain-literals.mjs`
+is the tool that rewrites all 7 in one pass, but it does a literal find-and-replace of the *current*
+hardcoded domain for a *new* one you supply via `APP_DOMAIN` — there is no "new" domain to supply
+yet. See the 🅿️ Parked section further down this file (real infra provisioning: new domain name,
+Vercel project, Cloudflare zone, live mailbox) for the exact list of what has to happen first, and
+`domain_migration_scope.md` (Claude memory) for **two separate documented incidents** where running
+this script against a non-real placeholder domain silently corrupted ~46-50 files in ways that
+`--check` couldn't detect and a blind `git checkout` couldn't safely undo. **Do not run
+`sync-domain-literals` against anything other than a real, operator-confirmed domain.**
+
+If the operator has a real domain to give you, the path is: set `APP_DOMAIN` to it, run
+`npm run sync:domain-literals`, verify with `npm run sync:domain-literals:check` (should report
+clean), then run the full verification bar from the ✅ Resolved entry below before committing. If
+they don't have one yet, there's nothing left to do on this initiative except ask.
+
+---
+
 ## ✅ Resolved 2026-08-15 (fifteenth session) — domain-literal eradication + second SaaS-cruft removal pass
 
 **Picked up cold exactly as handed off — operator confirmed the fourteenth session's local commits

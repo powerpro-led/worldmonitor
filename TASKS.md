@@ -69,6 +69,36 @@ initiative has no more mechanical/code work left**: what remains is either (a) t
 an operator-supplied real domain, or (b) rewriting true, accurate prose in docs/READMEs to be less
 specific about the current deployment — a content decision, not a bug fix, not done without asking.
 
+**Fourth pass, same session — operator said "no real domain yet, reduce hardcode as much as we can."**
+Converted 3 files whose literal was genuinely just inert test-fixture text (`api/_api-key.test.mjs`,
+`api/_rate-limit.test.mjs`, `api/security/report.test.mjs`) to the existing `TEST_APP_DOMAIN`
+convention (`tests/helpers/domain-config.mjs`, already used by 24+ other test files) — verified via
+`node --test` (55 tests, all pass) that none of these actually compared against `APP_DOMAIN`, so this
+was pure consistency cleanup, not a bug fix. **Investigated `tests/sentry-beforesend.test.mjs` in
+real depth first** (10 remaining literal occurrences, the largest holdout) before deciding to leave
+it alone — worth recording why, since a shallower look would have gotten this wrong: the file
+reconstructs the real `beforeSend` from `src/bootstrap/sentry-init.ts` and DOES parameterize it by
+`APP_DOMAIN`/abacus-hostname (2 of its own fixtures already correctly use `TEST_ABACUS_HOSTNAME` for
+that reason) — but the specific literal-`worldmonitor.app` fixtures left are message strings for
+tests exercising `THIRD_PARTY_FETCH_HOST_ALLOWLIST.has(host)` (an exact-match Set against ~3 fixed
+third-party hosts, `api.`/`pmtiles.` deliberately excluded by design) or the generic
+`hasFirstParty`/extension-frame stack heuristics — neither cares what the hostname string actually
+is, only stack shape. Traced every one of the 10 occurrences individually against the real filter
+logic before concluding this. Also, several of that file's `describe`/comment titles reference real
+Sentry incident IDs (`WORLDMONITOR-WH/WJ`, `WORLDMONITOR-P5`, `WORLDMONITOR-RP`) tied to the real
+domain — rewriting those would reduce their value as incident documentation for zero functional gain,
+same reasoning as not rewriting `CHANGELOG.md`. Left untouched, on purpose, not an oversight.
+
+**What is left after 4 passes, for real this time:** the 8 parked files (need a real domain), 2 "live"
+integration tests that intentionally hit real production (`tests/cors-preflight-live.test.mjs`,
+`tests/live-api-cache-auth-regression.test.mjs`), 2 tests deliberately pinned to the real
+currently-configured domain (`tests/widget-builder.test.mjs`/`tests/deploy-config.test.mjs`'s
+"deliberately not migrated" assertions against the real parked files, `tests/variant-meta-index-html-
+drift.test.mts`'s real-build drift check), `tests/sentry-beforesend.test.mjs`'s incident-referencing
+labels (see above), `data/resilience-snapshots/*.json` (historical data provenance, never touch), and
+plain prose (docs/READMEs/comments truthfully describing the still-live deployment). None of this is
+mechanical/code work anymore.
+
 **Every `worldmonitor.app` literal that CODE can fix without a real-world decision is fixed,
 committed (`3500fe5`, not pushed), and verified — see the ✅ Resolved entry immediately below for
 the full writeup.** What's left is **8 files**, and none of them can be "continued" with more code

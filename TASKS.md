@@ -15,6 +15,52 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## ✅ Resolved 2026-08-15 (sixteenth session, fifth pass) — wrong GitHub org (koala73 → powerpro-led)
+
+**Separate bug from the domain-literal initiative below, found as a side effect of reading README.md
+in full while investigating it.** This repo's real origin is `github.com/powerpro-led/worldmonitor`
+(verified via `git remote -v`) — 18 files across both READMEs plus `INSTALL_GUIDE.md`,
+`SELF_HOSTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`,
+`.github/ISSUE_TEMPLATE/config.yml`, `.github/workflows/docker-publish.yml`, and `index.html`
+hardcoded the wrong org `koala73/worldmonitor` instead — including `git clone` commands in 3 files
+that would clone the wrong repository, and `SECURITY.md`'s private-vulnerability-reporting link
+pointing at the wrong repo's advisories page. Fixed all of them (2 commits: `c98f986` for the
+READMEs, `a4a427d` for the rest). Also removed while there: the README/`index.html` badges and
+JSON-LD `sameAs` entries advertising the retired `npm i worldmonitor` CLI package (retired in
+`30c89d7`, same as the desktop app) and the `smithery.ai`/`skills.sh` external registry badges (same
+"belongs to upstream, not this fork" reasoning the MCP registry entry was removed for in an earlier
+session); `.github/ISSUE_TEMPLATE/config.yml`'s dead `docs/DOCUMENTATION.md` link (docs/ deleted) and
+its Discussions contact link (confirmed via `gh api repos/powerpro-led/worldmonitor` that GitHub
+Discussions is disabled on this repo — would 404 regardless of org); `docker-publish.yml`'s
+`ghcr.io/koala73/worldmonitor` image path (confirmed via `gh api .../actions/permissions` that
+Actions are repo-wide disabled, so dormant today, but wrong regardless).
+
+**Deliberately left alone — a different, correct use of the same string**: `github.com/koala73`
+*bare* (no `/worldmonitor`) is Elie Habib's real personal GitHub profile (confirmed via
+`index.html`'s own structured-data `founder.sameAs` and `panel-layout.ts`'s credit link, both
+correctly distinct from the repo link) — untouched everywhere. Also left alone: historical GitHub
+issue-number citations (`koala73/worldmonitor#3800` etc. in `acled-auth.ts`,
+`list-company-signals.ts`, `get-company-enrichment.ts`, `cached-risk-scores.test.mts`,
+`seed-bis-extended.mjs`, `e2e/giving-provenance.spec.ts`, `scripts/shared/giving-published-estimate-
+claims.json`) — these cite real issues filed on the original pre-fork repo before it had its own
+numbering; renumbering the org would point at a different, likely-nonexistent issue on this fork, so
+these are accurate history, not bugs (same reasoning as not rewriting `CHANGELOG.md`). One
+`.proto` file's `go_package` option pointing at `github.com/koala73/...` also left alone — no
+evidence anything in this TS/JS-only stack actually consumes Go codegen from it; flagged, not
+verified, worth a closer look if anyone ever touches Go tooling here.
+
+Editing `index.html`'s inline JSON-LD scripts changed their CSP `script-src` hash (the same gotcha
+documented in an earlier session for a different `index.html` edit) — caught proactively this time
+by running `npm run sync:csp-hashes` immediately after, not by a failing test.
+
+Verified: `docs:check` clean, `markdownlint-cli2` on all touched `.md` files (0 errors), YAML
+validity on both touched YAML files, `tsx --test` on the 3 suites touching `index.html`'s CSP hash
+and GitHub-org content (`crawlable-corpus`/`deploy-config` clean, `edge-functions`'s 34 "no node:
+built-ins" failures confirmed byte-identical via `git stash` A/B against clean HEAD — pre-existing,
+unrelated). Committed, **not pushed** — holding per operator request ("push later").
+
+---
+
 ## 🅿️ READ FIRST if picking up "remove hardcoded worldmonitor.app strings" — sixteenth-session update
 
 **Sixteenth session (2026-08-15) re-verified this cold against a raw `grep -rli worldmonitor\.app`

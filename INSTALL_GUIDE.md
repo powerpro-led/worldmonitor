@@ -1,9 +1,9 @@
 # World Monitor — Self-Hosted Setup Guide
 
-## 1. Clone (shallow, from the original repo)
+## 1. Clone (shallow)
 
 ```bash
-git clone --depth 1 https://github.com/koala73/worldmonitor.git
+git clone --depth 1 https://github.com/powerpro-led/worldmonitor.git
 cd worldmonitor
 ```
 

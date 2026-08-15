@@ -12,7 +12,7 @@ Run the full World Monitor stack locally with Docker/Podman.
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/koala73/worldmonitor.git
+git clone https://github.com/powerpro-led/worldmonitor.git
 cd worldmonitor
 npm install
 

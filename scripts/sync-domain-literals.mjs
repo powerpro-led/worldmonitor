@@ -61,6 +61,11 @@ function buildTargetFiles() {
     'vercel.json',
     'public/wm-widget-sandbox.html',
     'index.html',
+    // AI-agent discovery doc (api/ask.ts / api/a2a.ts point at this as their
+    // docs/agentGuidance URL) — real content, not branding, but was missing
+    // from this target list across many sessions despite being just as live
+    // as the files above. See TASKS.md.
+    'public/agent.txt',
     // Live contact address — the bare-hostname rule below turns
     // "monitor@worldmonitor.app" into "monitor@<APP_DOMAIN>" automatically.
     // Both copies included so tests/scripts-shared-mirror.test.mjs's

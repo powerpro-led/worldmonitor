@@ -1030,8 +1030,10 @@ describe('agent readiness: agent.txt', () => {
     const agentTxt = readFileSync(resolve(__dirname, '../public/agent.txt'), 'utf-8');
     assert.match(agentTxt, /When to use/i, 'agent.txt must carry when-to-use guidance');
     // Literal 'worldmonitor.app' deliberately not migrated to TEST_APP_DOMAIN
-    // here — public/agent.txt's own content is still a hardcoded-literal file
-    // (kept, but not domain-config-migrated this pass — see TASKS.md).
+    // here — this asserts on public/agent.txt's REAL committed content, now
+    // tracked by scripts/sync-domain-literals.mjs alongside vercel.json/
+    // index.html (see TASKS.md's domain-literal tracked-file list). Migrate
+    // this assertion only alongside that file, not before.
     assert.ok(agentTxt.includes('https://worldmonitor.app/mcp'), 'agent.txt must point at the MCP server');
   });
 });

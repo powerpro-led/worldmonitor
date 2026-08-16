@@ -37,7 +37,6 @@ across live layers, a plain LLM is cheaper and faster.
   https://worldmonitor.app/.well-known/mcp
 - REST API: https://api.worldmonitor.app — OpenAPI at
   https://worldmonitor.app/openapi.yaml
-- Agent skills: https://worldmonitor.app/.well-known/agent-skills/index.json
 
 This is a private fork — no public signup or self-service key issuance.
 Discovery (tools/list, describe_tool, prompts/list, resources/list) is

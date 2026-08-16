@@ -15,58 +15,85 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔖 HANDOFF (2026-08-15, end of seventeenth session) — read this first, before anything below
+## 🔖 HANDOFF (2026-08-15/16, end of seventeenth session) — read this first, before anything below
 
-**Repo state**: `main` is **14 commits ahead of `origin/main`, 0 behind, working tree clean**
-(verify yourself with `git status` + `git rev-list --left-right --count origin/main...main` —
-don't trust this number blindly, it's drifted before). **Not pushed** — every session this thread
-holds push for explicit operator go-ahead; that's still true, nothing about this session changes it.
-GitHub Actions is **repo-wide disabled** (operator: "we need to stop all github actions... big
-refactor") — still true, re-verify via `gh api repos/powerpro-led/worldmonitor/actions/permissions`
-before assuming either way.
+**Repo state**: `origin/main` was pushed **externally, outside this session** (confirmed via
+`git reflog show origin/main` — `update by push` — not this session's doing; this session never ran
+`git push`). `origin/main` now sits at `87787be` (the self-hosting-removal commit). `main` is **1
+commit ahead of `origin/main`, 0 behind, working tree clean** (`79b2d68`, the `agent.txt` tracking
+fix below) — held, not pushed, per explicit operator choice this session (re-verify yourself with
+`git status` + `git rev-list --left-right --count origin/main...main`, don't trust this number
+blindly). GitHub Actions is **repo-wide disabled** — still true, re-verify via
+`gh api repos/powerpro-led/worldmonitor/actions/permissions` before assuming either way.
 
-**What this session did**: operator asked to "continue cleanup and de-brand" the remaining 26
-`worldmonitor.app` files. Investigating one of them (`docker/nginx.conf`) surfaced that it wasn't a
-branding leftover but real self-hosting infrastructure (Docker Compose stack + a separate GHCR
-image), which led to a scoped decision: **operator chose to drop Docker/nginx self-hosting AND the
-non-Docker npm+Upstash self-hosting path entirely**, not just de-brand them. Executed and verified —
-see the ✅ Resolved entry immediately below for the full file list and verification bar. This also
-mechanically shrank the domain-literal-blocked file list from 8 to 6 (the 2 self-hosted nginx CSP
-configs are gone, not just unblocked).
+**Domain-literal/de-branding initiative is CLOSED for this session** (operator: "let's close this
+cleanup domain focus task for now"). Summary of the whole session: continuing a "de-brand the
+remaining 26 files" ask surfaced that `docker/nginx.conf` was real self-hosting infra, not branding
+— operator chose to remove Docker/nginx + npm+Upstash self-hosting entirely (see the ✅ Resolved
+entry below `87787be`). A follow-up real-domain test with `APP_DOMAIN=led4signage.com` was tried,
+then **explicitly reverted — not the intended domain**, confirm-before-executing worked as intended
+here. A proposal to move CSP into dynamic middleware (to eliminate `vercel.json`'s domain literals)
+was investigated in real depth — confirmed technically possible via `next()` from `@vercel/functions`
+— then **correctly rejected**: it would turn nearly every request into a real Edge Function
+invocation instead of a free static header lookup, a permanent per-request cost to avoid a one-time,
+rare inconvenience. One real gap found and fixed (`79b2d68`, not pushed): `public/agent.txt` (the
+live discovery doc for `api/ask.ts`/`api/a2a.ts`) had a dead link to a deleted agent-skills path and,
+despite being as real/load-bearing as the other tracked files, was never added to
+`scripts/sync-domain-literals.mjs`'s target list across many sessions — fixed both.
 
-**What's still genuinely open, in priority order:**
+**Still genuinely open on this initiative, unchanged priority, nothing to do until acted on:**
 
-1. **Push the 14 commits** — purely the operator's call, everything's verified.
-2. **3 items flagged, not fixed** (need a dedicated look, not a reflex edit):
-   - (carried from sixteenth session) `vscode-extension/README.md` may describe a superseded
-     pre-live-verification build process (its `VITE_DESKTOP_RUNTIME=1` recommendation may have
-     caused a documented security leak per a *later* memory); `TAURI_ORIGIN_PATTERNS` may be dead
-     code in the live CORS allowlist.
-   - (new, this session) `vscode-extension/sidecar/local-api-server.mjs`'s `mode === 'docker'`
-     branch (disables cloud fallback, trusts a private Redis REST origin) is now genuinely dead —
-     it was fed exclusively by the just-deleted `docker-compose.yml`'s `LOCAL_API_MODE: "docker"`.
-     Harmless (gated, untriggerable now) but worth removing in a dedicated vscode-extension pass;
-     out of scope for this session (didn't touch vscode-extension code).
-3. **6 files still blocked on a real replacement domain** — no domain chosen yet, nothing to do
-   until the operator has one. See the 🅿️ READ FIRST section further below for the exact list
-   (down from 8 — `docker/nginx-security-headers.conf` and `docker/nginx.conf` no longer exist).
-4. **GitHub Actions re-enable** — ask whether the "big refactor" that justified disabling it is
-   over; if not, leave it.
-5. Low priority: CORS-allowlist triple-duplication in `vercel.json`'s inline CSP vs. what used to be
-   the nginx mirrors — **partially moot now**: the nginx side is gone, so this is really just
-   "vercel.json's header block is hand-duplicated across route entries," not a 3-way sync problem
-   anymore. Re-scope if picked up.
-6. **2 pre-existing, unrelated test gaps surfaced (not caused) by this session's verification pass**
-   — flagged for a future session, not fixed here (out of scope, predate this work): `tests/
-   ci-workflow-coverage.test.mts` expects `vscode-extension/package-lock.json` in
-   `security-audit.yml`'s audit matrix and it isn't there; `tests/railway-services-registry-
-   coverage.test.mts` expects registry entries for `Dockerfile.process-deep-forecast-tasks`,
-   `Dockerfile.process-simulation-tasks`, `Dockerfile.scenario-worker` and none exist. Confirmed via
-   `git stash` that both fail identically on the pre-session baseline.
+1. Push the 1 held commit — operator's call each time, small and verified.
+2. 3 flagged-not-fixed items (2 carried from sixteenth session — `vscode-extension/README.md`
+   possibly-superseded build docs, possibly-dead `TAURI_ORIGIN_PATTERNS` — plus 1 new from this
+   session: `vscode-extension/sidecar/local-api-server.mjs`'s `mode === 'docker'` branch is now dead
+   code, its only feeder deleted this session).
+3. **6 files still blocked on a real replacement domain** (`led4signage.com` was NOT it) — see the
+   🅿️ READ FIRST section below for the list and the exact procedure. **New finding this session,
+   worth remembering if this is ever picked up for real**: the actual migration footprint is bigger
+   than "6 files" — every test that reads one of those 6 files' real content directly must move in
+   the same commit, or it breaks (correctly, but confusingly). Found 3 more of these this session:
+   `tests/widget-builder.test.mjs` (`wm-widget-sandbox.html` origin checks), `tests/variant-meta-
+   index-html-drift.test.mts:21` (`index.html` drift guard), and 2 spots in `tests/deploy-
+   config.test.mjs` (`.replace('.worldmonitor.app', '')` variant-slug extraction ×2, plus a
+   regression-guard regex for `api/mcp/auth.ts`'s `resource_metadata`). None of these were changed —
+   the migration itself was reverted — but don't assume "6 tracked files" is the whole checklist next
+   time.
+4. GitHub Actions re-enable — ask if the "big refactor" justifying it is over.
+5. Low priority: `vercel.json`'s CSP is now hand-duplicated across route entries with no nginx
+   mirror to sync against anymore (nginx removed this session) — a smaller cleanup than before, not
+   required.
+6. 2 pre-existing test gaps, confirmed unrelated to this session's work via `git stash` A/B:
+   `tests/ci-workflow-coverage.test.mts` (missing `vscode-extension/package-lock.json` in the
+   security-audit matrix), `tests/railway-services-registry-coverage.test.mts` (3 `Dockerfile.*`
+   workers missing registry entries).
 
-**If the operator says "continue de-branding" again**: the domain-literal-eradication initiative
-itself is still genuinely done pending a real domain (see item 3). Self-hosting is now fully removed,
-not just de-branded — there's nothing left to "de-brand" there, only the 3 flagged items above.
+---
+
+## 🔖 NEXT INITIATIVE (starting eighteenth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+
+**Not started yet — this entry exists to hand off cold, not as a status report.** Operator wants the
+next session to work through the data-source seed scripts individually. Grounded, not guessed:
+
+- `ls scripts/seed-*.mjs | wc -l` → **156 files**, confirmed this session. 17 of them are
+  `seed-bundle-*.mjs` (aggregate multiple sources per script — e.g. `seed-bundle-climate.mjs`,
+  `seed-bundle-macro.mjs`), so the true distinct-source count is likely higher than 156, not lower.
+- `scripts/railway-services.json` has 31 entries with `"entry": "scripts/seed-*"` (either
+  `deployMode: "dockerfile"` with a dedicated `Dockerfile.*`, or `"nixpacks-root-repo"` for
+  standalone Railway cron services) — the rest run some other way (need to check per-script: cron
+  workflow, manual, or dead code — don't assume).
+- Existing tooling to build on, not reinvent: `scripts/check-seed-freshness.mjs` hits the live
+  `/api/health?compact=1` endpoint and reports any `STALE_SEED` problems — this is a live-production
+  monitor, not a local per-source test harness. `.github/workflows/seed-freshness-monitor.yml` runs
+  it on a schedule. There is **no existing local dry-run/test convention per seed script** (checked:
+  only 2 of the 156 mention `--dry-run`/`dryRun` at all) — "test a data source" isn't a pattern this
+  codebase already has; it needs defining, not just running.
+- **Before starting**: get the operator to define what "test" means for a source — does it mean (a)
+  run the script live once and confirm it writes fresh Redis data without error, (b) something
+  read-only/local that doesn't touch production Redis, (c) audit the script's error handling/fallback
+  behavior by reading it, or (d) something else. 156 items is large enough that the definition of
+  "done" per item matters a lot for how this gets scoped (one session, many sessions, or a
+  Workflow-based fan-out) — don't assume and start executing before that's confirmed.
 
 ---
 

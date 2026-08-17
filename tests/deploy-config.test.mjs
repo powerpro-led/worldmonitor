@@ -34,13 +34,11 @@ const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs).*)';
 const GLOBAL_CSP_INLINE_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
-  'live-channels.html',
   'public/offline.html',
 ];
 const GLOBAL_CSP_EXTERNAL_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
-  'live-channels.html',
 ];
 const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
 

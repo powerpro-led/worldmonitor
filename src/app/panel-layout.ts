@@ -140,8 +140,6 @@ export const DEFERRED_PANEL_NATURAL_FOOTPRINTS: Readonly<Record<string, Deferred
   'fuel-shortages': { rowSpan: 2 },
   'gdelt-intel': { rowSpan: 2 },
   'internet-disruptions': { rowSpan: 2 },
-  'live-news': { className: 'panel-wide' },
-  'live-webcams': { className: 'panel-wide' },
   'oil-inventories': { rowSpan: 2 },
   'pipeline-status': { rowSpan: 2 },
   'sanctions-pressure': { rowSpan: 2 },
@@ -770,22 +768,6 @@ export class PanelLayoutManager implements AppModule {
         <div class="panels-grid" id="panelsGrid" role="tabpanel"></div>
         <button class="search-mobile-fab" id="searchMobileFab" aria-label="Search">\u{1F50D}</button>
       </main>
-      <footer class="site-footer">
-        <div class="site-footer-brand">
-          <img src="/favico/android-chrome-96x96.png" alt="" width="28" height="28" loading="lazy" decoding="async" class="site-footer-icon" />
-          <div class="site-footer-brand-text">
-            <span class="site-footer-name">WORLD MONITOR</span>
-            <span class="site-footer-sub">v${__APP_VERSION__} &middot; <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="site-footer-credit">@eliehabib</a></span>
-          </div>
-        </div>
-        <nav>
-          <a href="${getSubdomainOrigin('status')}/" target="_blank" rel="noopener">Status</a>
-          <a href="https://github.com/powerpro-led/worldmonitor" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://discord.gg/re63kWKxaz" target="_blank" rel="noopener">Discord</a>
-          <a href="https://x.com/worldmonitorai" target="_blank" rel="noopener">X</a>
-        </nav>
-        <span class="site-footer-copy">&copy; ${new Date().getFullYear()} World Monitor</span>
-      </footer>
     `, "legacy direct innerHTML migration"));
     // Mark AFTER the innerHTML swap so the timestamp reflects when the new shell
     // DOM is actually live — placing it before setTrustedHtml recorded a time
@@ -1004,7 +986,6 @@ export class PanelLayoutManager implements AppModule {
     this.applyPanelSettings();
     this.applySavedPanelOrder();
     this.ctx.unifiedSettings?.refreshPanelToggles();
-    this.mountLiveNewsIfReady();
     this.scheduleLoadAllData();
   }
 
@@ -1168,46 +1149,6 @@ export class PanelLayoutManager implements AppModule {
       }
     });
     this.mobilePanelNav?.refresh();
-  }
-
-  /**
-   * Lazily instantiates and mounts LiveNewsPanel when channels become available
-   * mid-session (e.g. user adds channels via the standalone manager on a variant
-   * whose defaults are empty). No-op if the panel already exists or still has no
-   * channels. Called from the liveChannels storage event handler.
-   */
-  mountLiveNewsIfReady(): void {
-    if (this.ctx.panels['live-news']) return;
-    const grid = document.getElementById('panelsGrid');
-    if (this.lazyPanelRegistrations.has('live-news') && grid) {
-      this.mountLazyPanel('live-news', grid);
-      return;
-    }
-    void this.importPanel(
-      'live-news',
-      () => import('@/components/LiveNewsPanel'),
-      'LiveNewsPanel',
-      (LiveNewsPanel, module) => {
-        const liveNewsModule = module as typeof import('@/components/LiveNewsPanel');
-        if (liveNewsModule.getDefaultLiveChannels().length === 0 && liveNewsModule.loadChannelsFromStorage().length === 0) return null;
-        return new LiveNewsPanel();
-      },
-    ).then((panel) => {
-      if (this.ctx.isDestroyed) return;
-      if (this.ctx.panels['live-news'] || !panel) return;
-      this.ctx.panels['live-news'] = panel;
-      const el = panel.getElement();
-      this.makeDraggable(el, 'live-news');
-      if (grid) {
-        const addBlock = grid.querySelector('.add-panel-block');
-        if (addBlock) grid.insertBefore(el, addBlock);
-        else grid.appendChild(el);
-      }
-      this.applyPanelSettings();
-      this.afterPanelMounted('live-news', panel);
-    }).catch((err) => {
-      console.error('[panel] failed to lazy-load "live-news"', err);
-    });
   }
 
   private shouldCreatePanel(key: string): boolean {
@@ -1472,15 +1413,6 @@ export class PanelLayoutManager implements AppModule {
     return true;
   }
 
-  private mountLazyPanel(key: string, grid: HTMLElement): void {
-    void this.loadRegisteredPanel(key).then((panel) => {
-      if (!panel || this.ctx.isDestroyed) return;
-      if (this.mountPanelElement(grid, key, panel)) {
-        this.afterPanelMounted(key, panel);
-      }
-    });
-  }
-
   private scheduleHydrationForPanelElement(element: HTMLElement, fallbackPhase: HydrationSchedulePhase = 'near'): void {
     if (typeof window === 'undefined') {
       this.scheduleLoadAllData(fallbackPhase);
@@ -1651,14 +1583,6 @@ export class PanelLayoutManager implements AppModule {
     for (const key of Object.keys(CANONICAL_FEEDS)) {
       if (this.ctx.newsPanels[key]) continue;
       if (!Array.isArray((CANONICAL_FEEDS as Record<string, unknown>)[key])) continue;
-      // 'live-news' is the dedicated LiveNewsPanel (24/7 video) key, registered
-      // lazily below — NOT a generic RSS feed panel. CANONICAL_FEEDS['live-news']
-      // exists only to feed the energy variant's headlines; if we let it spawn a
-      // NewsPanel here it registers first and lazyPanel()'s dedup guard then
-      // blocks the real video panel (regression #4382 → "LIVE NEWS / No items in
-      // the last 7 days" on the live dashboard). Skip it so the video panel owns
-      // the key on every variant (happy has no 'live-news' panel at all).
-      if (key === 'live-news') continue;
       const panelKey = COLLIDING_NEWS_PANEL_KEYS.has(key) && !this.ctx.newsPanels[key] ? `${key}-news` : key;
       if (this.ctx.panels[panelKey]) continue;
       // Gate on panelKey, NOT key. When `key` collided with a non-news data
@@ -1882,13 +1806,6 @@ export class PanelLayoutManager implements AppModule {
       this.importPanel('climate-news', () => import('@/components/ClimateNewsPanel'), 'ClimateNewsPanel', (ClimateNewsPanel) => new ClimateNewsPanel()),
     );
 
-    this.lazyImportedPanel('live-news', () => import('@/components/LiveNewsPanel'), 'LiveNewsPanel', (LiveNewsPanel, module) => {
-      const liveNewsModule = module as typeof import('@/components/LiveNewsPanel');
-      if (liveNewsModule.getDefaultLiveChannels().length === 0 && liveNewsModule.loadChannelsFromStorage().length === 0) return null;
-      return new LiveNewsPanel();
-    });
-
-    this.lazyDefaultPanel('live-webcams', () => import('@/components/LiveWebcamsPanel'), 'LiveWebcamsPanel');
     this.lazyDefaultPanel('windy-webcams', () => import('@/components/PinnedWebcamsPanel'), 'PinnedWebcamsPanel');
 
     this.lazyPanel('events', () =>
@@ -2095,21 +2012,6 @@ export class PanelLayoutManager implements AppModule {
       allOrder = valid;
     } else {
       allOrder = [...defaultOrder];
-
-      if (SITE_VARIANT !== 'happy') {
-        const liveNewsIdx = allOrder.indexOf('live-news');
-        if (liveNewsIdx > 0) {
-          allOrder.splice(liveNewsIdx, 1);
-          allOrder.unshift('live-news');
-        }
-
-        const webcamsIdx = allOrder.indexOf('live-webcams');
-        if (webcamsIdx !== -1 && webcamsIdx !== allOrder.indexOf('live-news') + 1) {
-          allOrder.splice(webcamsIdx, 1);
-          const afterNews = allOrder.indexOf('live-news') + 1;
-          allOrder.splice(afterNews, 0, 'live-webcams');
-        }
-      }
 
       if (this.ctx.isDesktopApp) {
         const runtimeIdx = allOrder.indexOf('runtime-config');

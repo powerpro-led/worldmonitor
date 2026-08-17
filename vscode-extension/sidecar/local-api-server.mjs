@@ -1812,13 +1812,58 @@ async function dispatch(requestUrl, req, routes, context) {
     }
   }
 
-  // YouTube live detection — requires residential proxy (Railway relay).
-  // Direct fetch from sidecar fails (YouTube blocks datacenter IPs).
-  // Always proxy to cloud, bypassing the cloudFallback flag.
+  // YouTube live detection. A Docker deployment of this sidecar (mode ===
+  // 'docker') genuinely may run on datacenter infra where YouTube blocks the
+  // outbound IP, so that mode keeps the original always-proxy-to-cloud
+  // behavior verbatim (see the docker-mode test in local-api-server.test.mjs
+  // asserting exactly that). But the VS Code extension's sidecar runs as a
+  // local child process on the operator's own machine, on an ordinary
+  // residential/office IP, exactly like vite.config.ts's youtubeLivePlugin
+  // dev-server route (which the branch below mirrors) — confirmed live that
+  // it can fetch YouTube directly fine. Unconditionally proxying to a cloud
+  // relay that isn't configured for local installs made every channel whose
+  // hardcoded fallbackVideoId had gone stale silently show "Error 150" for
+  // every VS Code install, instead of resolving today's real live video ID.
   if (requestUrl.pathname === '/api/youtube/live') {
-    const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'youtube-live needs relay');
-    if (cloudResponse) return cloudResponse;
-    return json({ error: 'YouTube live detection unavailable' }, 503);
+    if (context.mode === 'docker') {
+      const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'youtube-live needs relay');
+      if (cloudResponse) return cloudResponse;
+      return json({ error: 'YouTube live detection unavailable' }, 503);
+    }
+
+    const channel = requestUrl.searchParams.get('channel');
+    if (!channel) return json({ error: 'Missing channel parameter' }, 400);
+
+    try {
+      const channelHandle = channel.startsWith('@') ? channel : `@${channel}`;
+      const liveUrl = `https://www.youtube.com/${channelHandle}/live`;
+      const ytRes = await fetchWithTimeout(liveUrl, { headers: { 'User-Agent': CHROME_UA } }, 12000);
+
+      if (!ytRes.ok) {
+        return json({ videoId: null, channel }, 200, { 'Cache-Control': 'public, max-age=300' });
+      }
+
+      const html = await ytRes.text();
+
+      // Scope both fields to the same videoDetails block so we don't combine
+      // a videoId from one object with isLive from another (same care as the
+      // vite dev-server route this mirrors).
+      let videoId = null;
+      const detailsIdx = html.indexOf('"videoDetails"');
+      if (detailsIdx !== -1) {
+        const block = html.substring(detailsIdx, detailsIdx + 5000);
+        const vidMatch = block.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+        const liveMatch = block.match(/"isLive"\s*:\s*true/);
+        if (vidMatch && liveMatch) videoId = vidMatch[1];
+      }
+
+      return json({ videoId, isLive: videoId !== null, channel }, 200, { 'Cache-Control': 'public, max-age=300' });
+    } catch (e) {
+      context.logger.warn(`[youtube-live] direct fetch failed, trying cloud relay: ${e.message}`);
+      const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'youtube-live direct fetch failed');
+      if (cloudResponse) return cloudResponse;
+      return json({ error: 'YouTube live detection unavailable' }, 503);
+    }
   }
 
   // RSS proxy — fetch public feeds with SSRF protection

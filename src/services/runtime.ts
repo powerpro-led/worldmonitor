@@ -113,6 +113,23 @@ export function isDesktopRuntime(): boolean {
   });
 }
 
+/**
+ * True only inside the VS Code extension's dashboard iframe (?embed=vscode
+ * on the URL — see local-api-server.mjs's buildVsCodeEmbedShim, which sets
+ * window.__wmVsCodeApi only in that case; same signal auth-provider.ts's
+ * signInWithGithub() already relies on). Deliberately NOT folded into
+ * isDesktopRuntime() itself — that function gates a lot of unrelated
+ * behavior (fetch patching, API base URL resolution, redirect allowlists)
+ * and widening it blind risks side effects far from what this is for: the
+ * sidecar-backed local runtime paths (YouTube embed proxy, HLS referer
+ * proxy) that a plain browser tab can't use but this embed legitimately
+ * can, alongside genuine Tauri desktop.
+ */
+export function isVsCodeEmbedRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi;
+}
+
 export function getApiBaseUrl(): string {
   if (!isDesktopRuntime()) {
     return '';

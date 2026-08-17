@@ -668,7 +668,6 @@ export class App {
       if (!localStorage.getItem(PANEL_KEY_RENAMES_MIGRATION_KEY)) {
         let migrated = false;
         const keyRenames: Array<[string, string]> = [
-          ['live-youtube', 'live-webcams'],
           ['pinned-webcams', 'windy-webcams'],
           ...(SITE_VARIANT === 'finance' ? [['regulation', 'fin-regulation'] as [string, string]] : []),
         ];
@@ -753,9 +752,8 @@ export class App {
           try {
             const order: string[] = JSON.parse(savedOrder);
             const priorityPanels = ['insights', 'strategic-posture', 'cii', 'strategic-risk'];
-            const filtered = order.filter(k => !priorityPanels.includes(k) && k !== 'live-news');
-            const liveNewsIdx = order.indexOf('live-news');
-            const newOrder = liveNewsIdx !== -1 ? ['live-news'] : [];
+            const filtered = order.filter(k => !priorityPanels.includes(k));
+            const newOrder: string[] = [];
             newOrder.push(...priorityPanels.filter(p => order.includes(p)));
             newOrder.push(...filtered);
             localStorage.setItem(PANEL_ORDER_KEY, JSON.stringify(newOrder));
@@ -767,7 +765,7 @@ export class App {
         localStorage.setItem(PANEL_ORDER_MIGRATION_KEY, 'done');
       }
 
-      // Tech variant migration: move insights to top (after live-news)
+      // Tech variant migration: move insights to top
       if (currentVariant === 'tech') {
         const TECH_INSIGHTS_MIGRATION_KEY = 'worldmonitor-tech-insights-top-v1';
         if (!localStorage.getItem(TECH_INSIGHTS_MIGRATION_KEY)) {
@@ -775,9 +773,8 @@ export class App {
           if (savedOrder) {
             try {
               const order: string[] = JSON.parse(savedOrder);
-              const filtered = order.filter(k => k !== 'insights' && k !== 'live-news');
+              const filtered = order.filter(k => k !== 'insights');
               const newOrder: string[] = [];
-              if (order.includes('live-news')) newOrder.push('live-news');
               if (order.includes('insights')) newOrder.push('insights');
               newOrder.push(...filtered);
               localStorage.setItem(PANEL_ORDER_KEY, JSON.stringify(newOrder));
@@ -992,7 +989,6 @@ export class App {
       applySavedPanelOrder: (panelOrder?: string[]) => this.panelLayout.applySavedPanelOrder(panelOrder),
       refreshCiiAfterFocalPointsReady: () => this.dataLoader.refreshCiiAfterFocalPointsReady(),
       stopLayerActivity: (layer) => this.dataLoader.stopLayerActivity(layer),
-      mountLiveNewsIfReady: () => this.panelLayout.mountLiveNewsIfReady(),
       updateFlightSource: (adsb, military) => this.updateFlightSourceIfReady(adsb, military),
     });
 

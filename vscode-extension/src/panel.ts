@@ -29,7 +29,11 @@ function buildCsp(nonce: string): string {
     `default-src 'self'`,
     `script-src 'nonce-${nonce}'`,
     `style-src 'unsafe-inline'`,
-    `frame-src http://127.0.0.1:* ${SUPABASE_ORIGIN}`,
+    // Both loopback forms allowed: the iframe now navigates via 'localhost'
+    // (see sidecarProcess.ts's baseUrl — YouTube's postMessage bridge only
+    // trusts that hostname, not a raw IP), but 127.0.0.1 stays allowlisted
+    // too since nothing depends on excluding it.
+    `frame-src http://127.0.0.1:* http://localhost:* ${SUPABASE_ORIGIN}`,
   ].join('; ');
 }
 
@@ -179,7 +183,7 @@ export class DashboardPanel {
       <meta http-equiv="Content-Security-Policy" content="${csp}">
       <style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}iframe{border:0;width:100%;height:100%;display:block;}</style>
     </head><body>
-      <iframe id="wm-frame" src="${escapeHtmlAttr(src)}"></iframe>
+      <iframe id="wm-frame" src="${escapeHtmlAttr(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; storage-access"></iframe>
       <script nonce="${nonce}">
         (function () {
           var vscodeApi = acquireVsCodeApi();

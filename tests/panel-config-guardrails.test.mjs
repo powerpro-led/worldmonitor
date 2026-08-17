@@ -382,16 +382,6 @@ describe('panel-config guardrails', () => {
       'expected DeductionPanel to be registered through the lazy panel loader',
     );
 
-    const mountLazyPanel = panelLayoutSrc.match(
-      /private mountLazyPanel\([\s\S]*?\n\s*\}/
-    );
-    assert.ok(mountLazyPanel, 'expected mountLazyPanel helper in panel-layout.ts');
-    assert.match(
-      mountLazyPanel[0],
-      /this\.afterPanelMounted\(key, panel\);/,
-      'lazy panel mounts must run afterPanelMounted so saved settings and hydration replay apply',
-    );
-
     const afterPanelMounted = panelLayoutSrc.match(
       /private afterPanelMounted\([\s\S]*?\n\s*\}/
     );

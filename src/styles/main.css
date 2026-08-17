@@ -1442,13 +1442,11 @@ canvas,
 #panelsGrid > .panel[data-panel="threat-timeline"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="gdelt-intel"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="intel"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
-#panelsGrid > .panel[data-panel="live-news"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="politics"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="energy-complex"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="global-procurement"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="strategic-posture"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
-#panelsGrid > .panel[data-panel="cascade"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
-#panelsGrid > .panel[data-panel="live-webcams"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized) {
+#panelsGrid > .panel[data-panel="cascade"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized) {
   height: var(--dashboard-panel-row-max);
 }
 
@@ -1465,9 +1463,7 @@ canvas,
 #panelsGrid > .panel[data-panel="gdelt-intel"].span-2:not(.resized),
 #panelsGrid > .panel[data-panel="energy-complex"].span-2:not(.resized),
 #panelsGrid > .panel[data-panel="strategic-posture"].span-2:not(.resized),
-#panelsGrid > .panel[data-panel="global-procurement"].span-2:not(.resized),
-#panelsGrid > .panel[data-panel="live-news"].panel-wide:not(.resized):not(.span-1):not(.span-2):not(.span-3):not(.span-4),
-#panelsGrid > .panel[data-panel="live-webcams"].panel-wide:not(.resized):not(.span-1):not(.span-2):not(.span-3):not(.span-4) {
+#panelsGrid > .panel[data-panel="global-procurement"].span-2:not(.resized) {
   height: calc(var(--dashboard-panel-row-max) * 2 + var(--dashboard-grid-gap));
 }
 

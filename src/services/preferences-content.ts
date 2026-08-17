@@ -1,9 +1,7 @@
 import { LANGUAGES, getCurrentLanguage, changeLanguage, t } from '@/services/i18n';
-import { getAiFlowSettings, setAiFlowSetting, getStreamQuality, setStreamQuality, STREAM_QUALITY_OPTIONS } from '@/services/ai-flow-settings';
+import { getAiFlowSettings, setAiFlowSetting } from '@/services/ai-flow-settings';
 import { getMapProvider, setMapProvider, MAP_PROVIDER_OPTIONS, MAP_THEME_OPTIONS, getMapTheme, setMapTheme, type MapProvider } from '@/config/basemap';
-import { getLiveStreamsAlwaysOn, setLiveStreamsAlwaysOn } from '@/services/live-stream-settings';
 import { getGlobeVisualPreset, setGlobeVisualPreset, GLOBE_VISUAL_PRESET_OPTIONS, type GlobeVisualPreset } from '@/services/globe-render-settings';
-import type { StreamQuality } from '@/services/ai-flow-settings';
 import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme-manager';
 import { getFontFamily, setFontFamily, type FontFamily } from '@/services/font-settings';
 import { escapeHtml } from '@/utils/sanitize';
@@ -321,34 +319,6 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
 
   html += `</div></details>`;
 
-  // ── Media group ──
-  html += `<details class="wm-pref-group">`;
-  html += `<summary>${t('preferences.media')}</summary>`;
-  html += `<div class="wm-pref-group-content">`;
-
-  const currentQuality = getStreamQuality();
-  html += `<div class="ai-flow-toggle-row">
-    <div class="ai-flow-toggle-label-wrap">
-      <div class="ai-flow-toggle-label">${t('components.insights.streamQualityLabel')}</div>
-      <div class="ai-flow-toggle-desc">${t('components.insights.streamQualityDesc')}</div>
-    </div>
-  </div>`;
-  html += `<select class="unified-settings-select" id="us-stream-quality">`;
-  for (const opt of STREAM_QUALITY_OPTIONS) {
-    const selected = opt.value === currentQuality ? ' selected' : '';
-    html += `<option value="${opt.value}"${selected}>${escapeHtml(opt.label)}</option>`;
-  }
-  html += `</select>`;
-
-  html += toggleRowHtml(
-    'us-live-streams-always-on',
-    t('components.insights.streamAlwaysOnLabel'),
-    t('components.insights.streamAlwaysOnDesc'),
-    getLiveStreamsAlwaysOn(),
-  );
-
-  html += `</div></details>`;
-
   // ── Panels group ──
   html += `<details class="wm-pref-group">`;
   html += `<summary>${t('preferences.panels')}</summary>`;
@@ -422,10 +392,6 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
           return;
         }
 
-        if (target.id === 'us-stream-quality') {
-          setStreamQuality(target.value as StreamQuality);
-          return;
-        }
         if (target.id === 'us-globe-visual-preset') {
           setGlobeVisualPreset(target.value as GlobeVisualPreset);
           return;
@@ -450,10 +416,6 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
           const provider = getMapProvider();
           setMapTheme(provider, target.value);
           window.dispatchEvent(new CustomEvent('map-theme-changed'));
-          return;
-        }
-        if (target.id === 'us-live-streams-always-on') {
-          setLiveStreamsAlwaysOn(target.checked);
           return;
         }
         if (target.id === 'us-language') {

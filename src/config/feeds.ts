@@ -830,15 +830,6 @@ const COMMODITY_FEEDS: Record<string, Feed[]> = {
 // brief news-category overrides in src/app/data-loader.ts. Keep in sync when
 // ENERGY_PANELS changes.
 const ENERGY_FEEDS: Record<string, Feed[]> = {
-  'live-news': [
-    { name: 'OilPrice.com',          url: rss('https://oilprice.com/rss/main') },
-    { name: 'Rigzone',               url: rss('https://www.rigzone.com/news/rss/rigzone_latest.aspx') },
-    { name: 'Reuters Energy',        url: rss('https://news.google.com/rss/search?q=site:reuters.com+(oil+OR+gas+OR+energy+OR+OPEC+OR+pipeline+OR+LNG)+when:1d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'Bloomberg Energy',      url: rss('https://news.google.com/rss/search?q=site:bloomberg.com+(oil+OR+gas+OR+energy+OR+pipeline+OR+LNG)+when:1d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'FT Energy',             url: rss('https://news.google.com/rss/search?q=site:ft.com+(oil+OR+gas+OR+energy+OR+LNG+OR+OPEC)+when:1d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'IEA News',              url: rss('https://news.google.com/rss/search?q=site:iea.org+(oil+OR+gas+OR+energy)+when:3d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'S&P Global Platts',     url: rss('https://news.google.com/rss/search?q=site:spglobal.com+(oil+OR+gas+OR+LNG+OR+pipeline)+when:2d&hl=en-US&gl=US&ceid=US:en') },
-  ],
   energy: [
     { name: 'OilPrice.com',          url: rss('https://oilprice.com/rss/main') },
     { name: 'Rigzone',               url: rss('https://www.rigzone.com/news/rss/rigzone_latest.aspx') },

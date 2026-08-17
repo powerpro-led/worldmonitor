@@ -15,6 +15,50 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔖 HANDOFF (2026-08-17, end of eighteenth session) — read this first, before anything below
+
+**The eighteenth session did NOT start the 156-seed-source initiative** (see that section further
+down — still fully accurate, still not started, now deferred to whichever session picks it up next).
+Instead the operator redirected mid-session into live collaborative UI testing/debugging via the
+real VS Code extension, which led to two separate, unrelated pieces of work:
+
+**1. Cosmetic: footer + "Join the Discord Community" widget removed.** Small, isolated
+(`src/app/panel-layout.ts`, `src/app/data-loader.ts`). No follow-up needed.
+
+**2. Live News + Live Webcams panels removed entirely — operator's explicit call** ("bad UX, we
+don't need it as our internal tools, easier to just turn on a TV"). This followed real live-debugging
+through the VS Code extension that found and fixed 3 genuine bugs in the Live News pipeline first
+(sidecar's `/api/youtube/live` always 503ing locally, and the actual root cause — YouTube's
+postMessage bridge never completing inside the VS Code webview's nested iframe chain) — full detail
+in memory `vscode_live_news_debugging_session.md`. Once those fixes proved the panel *could* work,
+the operator decided it wasn't worth keeping anyway and asked for full removal instead.
+
+**Scope of the removal, so the next session doesn't have to rediscover it:** both panel components,
+the standalone channel-management popup + its Tauri entry point, 3 dedicated service files, the
+"stream quality" and "always keep streams playing" Settings controls, every panel-registry/mission-
+preset/command-palette/analytics/freshness/chunk-config reference across ~40 files, and CSS. 7 test
+files were updated (not deleted-and-forgotten) to keep their real invariants intact — mission preset
+ordering, freshness-source aggregation, CSP file lists, panel chunk-map consistency — verified via
+`git stash` A/B against a clean baseline (7 pre-existing unrelated failures before AND after; zero
+new regressions). Typecheck, biome lint, and `npm run build` all clean. Full detail, including every
+file touched and why, in memory `vscode_live_news_debugging_session.md`.
+
+**Deliberately deferred, not forgotten — flagged for whenever backend cleanup is wanted:**
+- Production Vercel routes `api/youtube/live.js`, `api/youtube/embed.js` are now unreachable dead
+  code (nothing calls them anymore).
+- `api/webcam/v1/[rpc].js` (35,751 lines, sebuf-codegen-generated) plus its generated client/server
+  pairs in `src/generated/`. Removing a codegen domain needs the actual generator tooling, not
+  hand-edits — didn't attempt this blind.
+- VS Code sidecar's now-dead `/api/youtube-embed`, `/api/hls-proxy`, `/api/youtube/live` routes in
+  `vscode-extension/sidecar/local-api-server.mjs` — small, self-contained, low-risk, just not done.
+
+**Repo state**: `main` is **2 commits ahead of `origin/main`, 0 behind** (re-verified via
+`git fetch` + `git rev-list --left-right --count origin/main...main` this session, don't trust an
+older turn's number). **47 files uncommitted** (both pieces of work above, nothing committed or
+pushed) — holding for explicit operator go-ahead, same standing discipline as every prior session.
+
+---
+
 ## 🔖 HANDOFF (2026-08-15/16, end of seventeenth session) — read this first, before anything below
 
 **Repo state**: `origin/main` was pushed **externally, outside this session** (confirmed via
@@ -70,10 +114,12 @@ despite being as real/load-bearing as the other tracked files, was never added t
 
 ---
 
-## 🔖 NEXT INITIATIVE (starting eighteenth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+## 🔖 NEXT INITIATIVE (deferred a second time, now starting nineteenth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
 
-**Not started yet — this entry exists to hand off cold, not as a status report.** Operator wants the
-next session to work through the data-source seed scripts individually. Grounded, not guessed:
+**Still not started — this entry exists to hand off cold, not as a status report.** Originally queued
+for the eighteenth session, which got redirected into unrelated live-debugging work instead (see the
+HANDOFF block above this one). Everything below is still fully accurate and unchanged. Operator wants
+the next session to work through the data-source seed scripts individually. Grounded, not guessed:
 
 - `ls scripts/seed-*.mjs | wc -l` → **156 files**, confirmed this session. 17 of them are
   `seed-bundle-*.mjs` (aggregate multiple sources per script — e.g. `seed-bundle-climate.mjs`,

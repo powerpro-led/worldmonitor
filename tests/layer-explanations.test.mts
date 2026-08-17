@@ -201,13 +201,6 @@ describe('layer explanation metadata', () => {
       assertDuration(text, /every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('CHOKEPOINT_WARM_PING_INTERVAL_MS'), `${layer} chokepoint warm-ping cadence`);
       assertDuration(text, /refresh\s+every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('TRANSIT_SUMMARY_INTERVAL_MS'), `${layer} transit-summary cadence`);
     }
-
-    assertDuration(
-      renderedFreshnessText('hotspots'),
-      /around\s+([0-9]+)\s+(minute)s?/i,
-      constNumber('src/services/live-news.ts', 'CACHE_TTL') / 60_000,
-      'hotspot live-news RSS cache',
-    );
   });
 
   test('freshness contract assertions fail on stale copied cadence values', () => {

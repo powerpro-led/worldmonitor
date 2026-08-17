@@ -63,7 +63,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
     timeRange: '24h',
     panels: [
       'map',
-      'live-news',
       'insights',
       'strategic-posture',
       'cii',
@@ -180,7 +179,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
     timeRange: '24h',
     panels: [
       'map',
-      'live-news',
       'gdelt-intel',
       'intel',
       'politics',
@@ -191,7 +189,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
       'asia',
       'us',
       'social-velocity',
-      'live-webcams',
       'security-advisories',
     ],
     layers: [
@@ -265,7 +262,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
     timeRange: '7d',
     panels: [
       'map',
-      'live-news',
       'insights',
       'ai',
       'tech',

@@ -194,7 +194,6 @@ export interface EventHandlerCallbacks {
   applySavedPanelOrder?: (panelOrder?: string[]) => void;
   refreshCiiAfterFocalPointsReady?: () => void;
   stopLayerActivity?: (layer: keyof MapLayers) => void;
-  mountLiveNewsIfReady?: () => void;
 }
 
 export class EventHandlerManager implements AppModule {
@@ -517,16 +516,6 @@ export class EventHandlerManager implements AppModule {
           this.applyPanelSettings();
           this.ctx.unifiedSettings?.refreshPanelToggles();
         } catch (_) { }
-      }
-      if (e.key === STORAGE_KEYS.liveChannels && e.newValue) {
-        const panel = this.ctx.panels['live-news'];
-        if (panel) {
-          if (typeof (panel as unknown as { refreshChannelsFromStorage?: () => void }).refreshChannelsFromStorage === 'function') {
-            (panel as unknown as { refreshChannelsFromStorage: () => void }).refreshChannelsFromStorage();
-          }
-        } else {
-          this.callbacks.mountLiveNewsIfReady?.();
-        }
       }
     };
     window.addEventListener('storage', this.boundStorageHandler);
@@ -1082,7 +1071,6 @@ export class EventHandlerManager implements AppModule {
     this.applyMissionMapLayerTransitions(previousMapLayers, mapLayers);
     this.ctx.map?.setView(applied.preset.view as MapView, applied.preset.zoom);
     this.ctx.map?.setTimeRange(applied.preset.timeRange);
-    this.callbacks.mountLiveNewsIfReady?.();
     this.callbacks.syncDataFreshnessWithLayers();
     this.scheduleMissionDataRefresh();
     this.syncUrlState();
@@ -1114,7 +1102,6 @@ export class EventHandlerManager implements AppModule {
     this.applyMissionMapLayerTransitions(previousMapLayers, mapLayers);
     this.ctx.map?.setView('global');
     this.ctx.map?.setTimeRange('7d');
-    this.callbacks.mountLiveNewsIfReady?.();
     this.callbacks.syncDataFreshnessWithLayers();
     this.scheduleMissionDataRefresh();
     this.syncUrlState();

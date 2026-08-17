@@ -432,21 +432,14 @@ try {
   // only a convenience hint, so boot must continue with the in-memory default.
 }
 
-// Standalone windows: ?settings=1 = panel display settings, ?live-channels=1 = channel management
-// Both need i18n initialized so t() does not return undefined.
+// Standalone window: ?settings=1 = panel display settings.
+// Needs i18n initialized so t() does not return undefined.
 const urlParams = new URL(location.href).searchParams;
 if (urlParams.get('settings') === '1') {
   void Promise.all([import('./services/i18n'), import('./settings-window')]).then(
     async ([i18n, m]) => {
       await i18n.initI18n();
       m.initSettingsWindow();
-    }
-  );
-} else if (urlParams.get('live-channels') === '1') {
-  void Promise.all([import('./services/i18n'), import('./live-channels-window')]).then(
-    async ([i18n, m]) => {
-      await i18n.initI18n();
-      m.initLiveChannelsWindow();
     }
   );
 } else {

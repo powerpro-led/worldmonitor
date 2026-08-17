@@ -20,11 +20,9 @@ const IRAN_ATTACKS_ENABLED = typeof window !== 'undefined' && import.meta.env.VI
 // FULL VARIANT (Geopolitical)
 // ============================================
 // Panel order matters! First panels appear at top of grid.
-// Desired order: live-news, AI Insights, AI Strategic Posture, cii, strategic-risk, then rest
+// Desired order: AI Insights, AI Strategic Posture, cii, strategic-risk, then rest
 const FULL_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Map', enabled: true, priority: 1 },
-  'live-news': { name: 'Live News', enabled: true, priority: 1 },
-  'live-webcams': { name: 'Live Webcams', enabled: true, priority: 1 },
   'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   'threat-timeline': { name: 'Threat Timeline', enabled: true, priority: 1 },
@@ -262,8 +260,6 @@ const FULL_MOBILE_MAP_LAYERS: MapLayers = {
 // ============================================
 const TECH_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Tech Map', enabled: true, priority: 1 },
-  'live-news': { name: 'Tech Headlines', enabled: true, priority: 1 },
-  'live-webcams': { name: 'Live Webcams', enabled: true, priority: 2 },
   'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   ai: { name: 'AI/ML News', enabled: true, priority: 1 },
@@ -433,8 +429,6 @@ const TECH_MOBILE_MAP_LAYERS: MapLayers = {
 // ============================================
 const FINANCE_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Markets Map', enabled: true, priority: 1 },
-  'live-news': { name: 'Market Headlines', enabled: true, priority: 1 },
-  'live-webcams': { name: 'Live Webcams', enabled: true, priority: 2 },
   'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Market Insights', enabled: true, priority: 1 },
   markets: { name: 'Live Markets', enabled: true, priority: 1 },
@@ -772,7 +766,6 @@ const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
 // ============================================
 const COMMODITY_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Commodity Map', enabled: true, priority: 1 },
-  'live-news': { name: 'Commodity Headlines', enabled: true, priority: 1 },
   insights: { name: 'AI Commodity Insights', enabled: true, priority: 1 },
   'commodity-news': { name: 'Commodity News', enabled: true, priority: 1 },
   'liquidity-shifts': { name: 'Liquidity Shifts', enabled: true, priority: 1 },
@@ -947,7 +940,6 @@ const ENERGY_PANELS: Record<string, PanelConfig> = {
   'storage-facility-map': { name: 'Strategic Storage Atlas', enabled: true, priority: 1 },
   'fuel-shortages': { name: 'Global Fuel Shortage Registry', enabled: true, priority: 1 },
   'energy-disruptions': { name: 'Energy Disruptions Log', enabled: true, priority: 1 },
-  'live-news': { name: 'Energy Headlines', enabled: true, priority: 1 },
   insights: { name: 'AI Energy Insights', enabled: true, priority: 1 },
   // Energy complex — existing panels reused at launch
   'energy-complex': { name: 'Oil & Gas Complex', enabled: true, priority: 1 },
@@ -1143,22 +1135,18 @@ export const VARIANT_DEFAULTS: Record<string, string[]> = {
 export const VARIANT_PANEL_OVERRIDES: Partial<Record<string, Partial<Record<string, Partial<PanelConfig>>>>> = {
   finance: {
     map:         { name: 'Global Markets Map' },
-    'live-news': { name: 'Market Headlines' },
     insights:    { name: 'AI Market Insights' },
   },
   tech: {
     map:         { name: 'Global Tech Map' },
-    'live-news': { name: 'Tech Headlines' },
     insights:    { name: 'AI Insights' },
   },
   commodity: {
     map:         { name: 'Commodity Map' },
-    'live-news': { name: 'Commodity Headlines' },
     insights:    { name: 'AI Commodity Insights' },
   },
   energy: {
     map:         { name: 'Energy Atlas Map' },
-    'live-news': { name: 'Energy Headlines' },
     insights:    { name: 'AI Energy Insights' },
   },
   happy: {
@@ -1342,7 +1330,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   // All variants — essential panels
   core: {
     labelKey: 'header.panelCatCore',
-    panelKeys: ['map', 'live-news', 'live-webcams', 'windy-webcams', 'insights', 'strategic-posture', 'latest-brief'],
+    panelKeys: ['map', 'windy-webcams', 'insights', 'strategic-posture', 'latest-brief'],
   },
 
   // Full (geopolitical) variant — marketsFinance/topical/dataTracking are

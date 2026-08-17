@@ -519,9 +519,9 @@ export class StrategicRiskPanel extends Panel {
       btn.addEventListener('click', (e) => {
         const action = (e.target as HTMLElement).dataset.action;
         if (action === 'enable-core') {
-          this.emitEnablePanels(['protests', 'intel', 'live-news']);
+          this.emitEnablePanels(['protests', 'intel']);
         } else if (action === 'enable-all') {
-          this.emitEnablePanels(['protests', 'intel', 'live-news', 'military', 'shipping']);
+          this.emitEnablePanels(['protests', 'intel', 'military', 'shipping']);
         }
       });
     });

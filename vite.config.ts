@@ -98,7 +98,7 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   BreakthroughsTicker: 'panels-news', ClimateNews: 'panels-news',
   DailyMarketBrief: 'panels-news', GdeltIntel: 'panels-news',
   GoodThingsDigest: 'panels-news', LatestBrief: 'panels-news',
-  LiveNews: 'panels-news', News: 'panels-news',
+  News: 'panels-news',
   PositiveNewsFeed: 'panels-news', TelegramIntel: 'panels-news',
   // Macro / prices / trade
   BigMac: 'panels-economy', ConsumerPrices: 'panels-economy',
@@ -123,7 +123,7 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   MilitaryCorrelation: 'panels-intel',
   Forecast: 'panels-intel',
   HeroSpotlight: 'panels-intel', Insights: 'panels-intel',
-  LiveWebcams: 'panels-intel', McpData: 'panels-intel',
+  McpData: 'panels-intel',
   Monitor: 'panels-intel', PinnedWebcams: 'panels-intel',
   Prediction: 'panels-intel', ProgressCharts: 'panels-intel',
   RegionalIntelligenceBoard: 'panels-intel',
@@ -729,72 +729,6 @@ function rssProxyPlugin(): Plugin {
   };
 }
 
-function youtubeLivePlugin(): Plugin {
-  return {
-    name: 'youtube-live',
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        if (!req.url?.startsWith('/api/youtube/live')) {
-          return next();
-        }
-
-        const url = new URL(req.url, 'http://localhost');
-        const channel = url.searchParams.get('channel');
-
-        if (!channel) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'Missing channel parameter' }));
-          return;
-        }
-
-        try {
-          const channelHandle = channel.startsWith('@') ? channel : `@${channel}`;
-          const liveUrl = `https://www.youtube.com/${channelHandle}/live`;
-
-          const ytRes = await fetch(liveUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-            redirect: 'follow',
-          });
-
-          if (!ytRes.ok) {
-            res.setHeader('Content-Type', 'application/json');
-            res.setHeader('Cache-Control', 'public, max-age=300');
-            res.end(JSON.stringify({ videoId: null, channel }));
-            return;
-          }
-
-          const html = await ytRes.text();
-
-          // Scope both fields to the same videoDetails block so we don't
-          // combine a videoId from one object with isLive from another.
-          let videoId: string | null = null;
-          const detailsIdx = html.indexOf('"videoDetails"');
-          if (detailsIdx !== -1) {
-            const block = html.substring(detailsIdx, detailsIdx + 5000);
-            const vidMatch = block.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-            const liveMatch = block.match(/"isLive"\s*:\s*true/);
-            if (vidMatch && liveMatch) {
-              videoId = vidMatch[1];
-            }
-          }
-
-          res.setHeader('Content-Type', 'application/json');
-          res.setHeader('Cache-Control', 'public, max-age=300');
-          res.end(JSON.stringify({ videoId, isLive: videoId !== null, channel }));
-        } catch (error) {
-          console.error(`[YouTube Live] Error:`, error);
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'Failed to fetch', videoId: null }));
-        }
-      });
-    },
-  };
-}
-
 function gpsjamDevPlugin(): Plugin {
   return {
     name: 'gpsjam-dev',
@@ -897,7 +831,6 @@ export default defineConfig(({ mode }) => {
       !isDesktopBuild && activeVariant === 'full' && variantDashboardHtmlPlugin(),
       polymarketPlugin(),
       rssProxyPlugin(),
-      youtubeLivePlugin(),
       gpsjamDevPlugin(),
       sebufApiPlugin(),
       brotliPrecompressPlugin(),
@@ -1087,7 +1020,6 @@ export default defineConfig(({ mode }) => {
         input: {
           main: resolve(__dirname, 'index.html'),
           settings: resolve(__dirname, 'settings.html'),
-          liveChannels: resolve(__dirname, 'live-channels.html'),
         },
         output: {
           // onlyExplicitManualChunks keeps the panel clusters from forming

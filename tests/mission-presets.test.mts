@@ -661,17 +661,16 @@ describe('applyMissionPresetToState', () => {
 
     assert.equal(applied.preset.id, 'crisis-desk');
     assert.equal(applied.panelSettings.map?.enabled, true);
-    assert.equal(applied.panelSettings['live-news']?.enabled, true);
     assert.equal(applied.panelSettings['strategic-risk']?.enabled, true);
     assert.equal(applied.panelSettings.markets?.enabled, false);
     assert.equal(applied.panelSettings['cw-market-note']?.enabled, true);
     assert.equal(applied.panelSettings['mcp-risk-feed']?.enabled, false);
     assert.deepEqual(applied.panelOrder.slice(0, 5), [
-      'live-news',
       'insights',
       'strategic-posture',
       'cii',
       'strategic-risk',
+      'gdelt-intel',
     ]);
     assert.equal(applied.mapLayers.conflicts, true);
     assert.equal(applied.mapLayers.ciiChoropleth, true);
@@ -737,11 +736,11 @@ describe('applyMissionPresetToState', () => {
       'tech',
     );
     assert.deepEqual(techApplied.panelOrder.slice(0, 5), [
-      'live-news',
       'insights',
       'ai',
       'tech',
       'startups',
+      'security',
     ]);
     assert.equal(techApplied.mapLayers.datacenters, true);
     assert.equal(techApplied.mapLayers.startupHubs, true);
@@ -807,7 +806,7 @@ describe('applyMissionPresetToState', () => {
 describe('resetMissionPresetState', () => {
   it('restores active variant defaults and preserves dynamic panels', () => {
     const current = makePanelSettings('full');
-    current['live-news']!.enabled = false;
+    current['strategic-risk']!.enabled = false;
     current.markets!.enabled = true;
     current['cw-market-note']!.enabled = true;
 
@@ -815,7 +814,7 @@ describe('resetMissionPresetState', () => {
 
     assert.deepEqual(reset.panelOrder, VARIANT_DEFAULTS.full.filter((key) => key !== 'map'));
     assert.equal(reset.panelSettings.map?.enabled, true);
-    assert.equal(reset.panelSettings['live-news']?.enabled, getEffectivePanelConfig('live-news', 'full').enabled);
+    assert.equal(reset.panelSettings['strategic-risk']?.enabled, getEffectivePanelConfig('strategic-risk', 'full').enabled);
     assert.equal(reset.panelSettings['energy-risk-overview']?.enabled, false);
     assert.equal(reset.panelSettings['cw-market-note']?.enabled, true);
     assert.deepEqual(reset.mapLayers, DEFAULT_MAP_LAYERS);
@@ -921,7 +920,6 @@ type MissionTestCallbacks = {
   stopLayerActivity: string[];
   loadAllDataCalls: number;
   syncDataFreshnessCalls: number;
-  mountLiveNewsCalls: number;
   waitForAisCalls: number;
 };
 
@@ -1024,7 +1022,6 @@ function createMissionHarness(options: { mobile?: boolean; storage?: MemoryStora
     stopLayerActivity: [],
     loadAllDataCalls: 0,
     syncDataFreshnessCalls: 0,
-    mountLiveNewsCalls: 0,
     waitForAisCalls: 0,
   };
   const unifiedSettings = {
@@ -1102,7 +1099,6 @@ function createMissionHarness(options: { mobile?: boolean; storage?: MemoryStora
     applySavedPanelOrder: (panelOrder?: string[]) => callbacks.appliedOrders.push([...(panelOrder ?? [])]),
     refreshCiiAfterFocalPointsReady() {},
     stopLayerActivity: (layer: keyof MapLayers) => callbacks.stopLayerActivity.push(String(layer)),
-    mountLiveNewsIfReady: () => { callbacks.mountLiveNewsCalls += 1; },
   });
 
   return { ctx, callbacks, manager: manager as MissionHarness['manager'], storage };
@@ -1137,7 +1133,7 @@ describe('mission preset shell integration', () => {
 
     assert.equal(ctx.panelSettings['supply-chain']?.enabled, true);
     assert.equal(ctx.panelSettings.markets?.enabled, true);
-    assert.equal(ctx.panelSettings['live-news']?.enabled, false);
+    assert.equal(ctx.panelSettings['insights']?.enabled, false);
     assert.deepEqual(callbacks.appliedOrders[0]?.slice(0, 3), ['supply-chain', 'hormuz-tracker', 'cascade']);
     assert.equal(localStorage.getItem(MISSION_PRESET_STORAGE_KEY), 'supply-chain-risk');
     assert.deepEqual(readJsonStorage<string[]>('panel-order'), callbacks.appliedOrders[0]);

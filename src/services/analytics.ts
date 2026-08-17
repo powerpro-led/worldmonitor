@@ -64,11 +64,6 @@ const EVENTS = {
   // News
   'news-sort-toggle': true,
   'news-summarize': true,
-  'live-news-fullscreen': true,
-  // Webcams
-  'webcam-selected': true,
-  'webcam-region-filter': true,
-  'webcam-fullscreen': true,
   // Downloads / banners
   'download-clicked': true,
   'critical-banner': true,
@@ -520,18 +515,6 @@ export function trackLLMUsage(_provider: string, _model: string, _cached: boolea
 
 export function trackLLMFailure(_lastProvider: string): void {
   // No-op: per-request noise, not a meaningful user action for analytics.
-}
-
-// ---------------------------------------------------------------------------
-// Webcams
-// ---------------------------------------------------------------------------
-
-export function trackWebcamSelected(webcamId: string, city: string, viewMode: string): void {
-  track('webcam-selected', { webcamId, city, viewMode });
-}
-
-export function trackWebcamRegionFiltered(region: string): void {
-  track('webcam-region-filter', { region });
 }
 
 // ---------------------------------------------------------------------------

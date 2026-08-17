@@ -38,16 +38,6 @@ const keyBackedFeatures: RuntimeFeatureId[] = [
 
 export const DESKTOP_PARITY_FEATURES: DesktopParityFeature[] = [
   {
-    id: 'live-news',
-    panel: 'LiveNewsPanel',
-    serviceFiles: ['src/services/live-news.ts'],
-    apiRoutes: ['/api/youtube/live'],
-    apiHandlers: ['api/youtube/live.js'],
-    locality: 'fully-local',
-    fallback: 'Channel fallback video IDs are used when live detection fails.',
-    priority: 1,
-  },
-  {
     id: 'monitor',
     panel: 'MonitorPanel',
     serviceFiles: [],

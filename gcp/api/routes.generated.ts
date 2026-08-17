@@ -157,10 +157,6 @@ import route_84_widget_agentHandler from '../../api/widget-agent';
 import route_85_wildfire_v1_rpcHandler from '../../api/wildfire/v1/[rpc]';
 // @ts-expect-error — JS module, no declaration file
 import route_86_wm_sessionHandler from '../../api/wm-session.js';
-// @ts-expect-error — JS module, no declaration file
-import route_87_youtube_embedHandler from '../../api/youtube/embed.js';
-// @ts-expect-error — JS module, no declaration file
-import route_88_youtube_liveHandler from '../../api/youtube/live.js';
 
 export function registerGeneratedRoutes(api: Api): void {
   const route_0_a2a = api.route('/api/a2a');
@@ -772,18 +768,4 @@ export function registerGeneratedRoutes(api: Api): void {
   route_86_wm_session.patch(adaptVercelHandler(route_86_wm_sessionHandler));
   route_86_wm_session.delete(adaptVercelHandler(route_86_wm_sessionHandler));
   route_86_wm_session.options(adaptVercelHandler(route_86_wm_sessionHandler));
-  const route_87_youtube_embed = api.route('/api/youtube/embed');
-  route_87_youtube_embed.get(adaptVercelHandler(route_87_youtube_embedHandler));
-  route_87_youtube_embed.post(adaptVercelHandler(route_87_youtube_embedHandler));
-  route_87_youtube_embed.put(adaptVercelHandler(route_87_youtube_embedHandler));
-  route_87_youtube_embed.patch(adaptVercelHandler(route_87_youtube_embedHandler));
-  route_87_youtube_embed.delete(adaptVercelHandler(route_87_youtube_embedHandler));
-  route_87_youtube_embed.options(adaptVercelHandler(route_87_youtube_embedHandler));
-  const route_88_youtube_live = api.route('/api/youtube/live');
-  route_88_youtube_live.get(adaptVercelHandler(route_88_youtube_liveHandler));
-  route_88_youtube_live.post(adaptVercelHandler(route_88_youtube_liveHandler));
-  route_88_youtube_live.put(adaptVercelHandler(route_88_youtube_liveHandler));
-  route_88_youtube_live.patch(adaptVercelHandler(route_88_youtube_liveHandler));
-  route_88_youtube_live.delete(adaptVercelHandler(route_88_youtube_liveHandler));
-  route_88_youtube_live.options(adaptVercelHandler(route_88_youtube_liveHandler));
 }

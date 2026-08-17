@@ -593,9 +593,6 @@ test('does not forward the sidecar transport token through Docker cloud proxy ro
 
   try {
     const headers = { 'X-WorldMonitor-Local-Token': TEST_LOCAL_API_TOKEN };
-    const youtubeResponse = await fetch(`http://127.0.0.1:${port}/api/youtube/live`, { headers });
-    assert.equal(youtubeResponse.status, 200);
-
     const registerResponse = await fetch(`http://127.0.0.1:${port}/api/register-interest`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -603,8 +600,8 @@ test('does not forward the sidecar transport token through Docker cloud proxy ro
     });
     assert.equal(registerResponse.status, 200);
 
-    assert.deepEqual(remote.hits, ['/api/youtube/live', '/api/leads/v1/register-interest']);
-    assert.equal(remote.headers.length, 2);
+    assert.deepEqual(remote.hits, ['/api/leads/v1/register-interest']);
+    assert.equal(remote.headers.length, 1);
     for (const upstreamHeaders of remote.headers) {
       assert.equal(upstreamHeaders['x-worldmonitor-local-token'], undefined);
     }

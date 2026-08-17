@@ -29,10 +29,9 @@ function buildCsp(nonce: string): string {
     `default-src 'self'`,
     `script-src 'nonce-${nonce}'`,
     `style-src 'unsafe-inline'`,
-    // Both loopback forms allowed: the iframe now navigates via 'localhost'
-    // (see sidecarProcess.ts's baseUrl — YouTube's postMessage bridge only
-    // trusts that hostname, not a raw IP), but 127.0.0.1 stays allowlisted
-    // too since nothing depends on excluding it.
+    // Both loopback forms allowed: the iframe navigates via 'localhost'
+    // (see sidecarProcess.ts's baseUrl for why), but 127.0.0.1 stays
+    // allowlisted too since nothing depends on excluding it.
     `frame-src http://127.0.0.1:* http://localhost:* ${SUPABASE_ORIGIN}`,
   ].join('; ');
 }

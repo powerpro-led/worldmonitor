@@ -1490,8 +1490,7 @@ function buildVsCodeEmbedShim(localToken) {
  * Serves the plain web build's dist/ over real HTTP — what lets the VS Code
  * extension's <iframe> (and any plain browser tab, e.g. the login flow's
  * real-navigation leg) load the dashboard without going through Tauri's own
- * protocol handler. Auth-exempt by design (see the call site's comment) —
- * matches the existing precedent for /api/hls-proxy and /api/youtube-embed:
+ * protocol handler. Auth-exempt by design (see the call site's comment):
  * a bare `<iframe src>`/browser GET can't carry custom headers, and static
  * assets carry no secrets.
  */
@@ -1541,92 +1540,6 @@ async function dispatch(requestUrl, req, routes, context) {
   // Health check — exempt from auth to support external monitoring tools
   if (requestUrl.pathname === '/api/service-status') {
     return handleLocalServiceStatus(context);
-  }
-
-  // HLS proxy — exempt from auth because <video src="..."> cannot carry
-  // custom headers.  Proxies HLS manifests and segments from allowlisted CDN
-  // hosts, adding the required Referer header that browsers cannot set.
-  // Desktop-only (sidecar); web uses YouTube fallback.
-  if (requestUrl.pathname === '/api/hls-proxy') {
-    const ALLOWED_HLS_HOSTS = new Set(['cdn-ca2-na.lncnetworks.host']);
-    const upstreamRaw = requestUrl.searchParams.get('url');
-    if (!upstreamRaw) return new Response('Missing url param', { status: 400, headers: { 'content-type': 'text/plain', ...makeCorsHeaders(req) } });
-    let upstream;
-    try { upstream = new URL(upstreamRaw); } catch { return new Response('Invalid url', { status: 400, headers: { 'content-type': 'text/plain', ...makeCorsHeaders(req) } }); }
-    if (upstream.protocol !== 'https:' || !ALLOWED_HLS_HOSTS.has(upstream.hostname)) {
-      return new Response('Host not allowed', { status: 403, headers: { 'content-type': 'text/plain', ...makeCorsHeaders(req) } });
-    }
-    try {
-      const hlsResp = await new Promise((resolve, reject) => {
-        const reqOpts = {
-          hostname: upstream.hostname,
-          port: 443,
-          path: upstream.pathname + upstream.search,
-          method: 'GET',
-          headers: { 'Referer': 'https://livenewschat.eu/', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
-          family: 4,
-        };
-        const r = https.request(reqOpts, (res) => {
-          const chunks = [];
-          res.on('data', c => chunks.push(c));
-          res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
-        });
-        r.on('error', reject);
-        r.setTimeout(10000, () => r.destroy(new Error('HLS upstream timeout')));
-        r.end();
-      });
-      if (hlsResp.status < 200 || hlsResp.status >= 300) {
-        return new Response(`Upstream ${hlsResp.status}`, { status: hlsResp.status, headers: { 'content-type': 'text/plain', ...makeCorsHeaders(req) } });
-      }
-      const ct = hlsResp.headers['content-type'] || '';
-      const isManifest = upstreamRaw.endsWith('.m3u8') || ct.includes('mpegurl') || ct.includes('x-mpegurl');
-      if (isManifest) {
-        const basePath = upstream.pathname.substring(0, upstream.pathname.lastIndexOf('/') + 1);
-        const baseOrigin = upstream.origin;
-        let manifest = hlsResp.body.toString('utf-8');
-        manifest = manifest.replace(/^(?!#)(\S+)/gm, (match) => {
-          const full = match.startsWith('http') ? match : `${baseOrigin}${basePath}${match}`;
-          return `/api/hls-proxy?url=${encodeURIComponent(full)}`;
-        });
-        manifest = manifest.replace(/URI="([^"]+)"/g, (_m, uri) => {
-          const full = uri.startsWith('http') ? uri : `${baseOrigin}${basePath}${uri}`;
-          return `URI="/api/hls-proxy?url=${encodeURIComponent(full)}"`;
-        });
-        return new Response(manifest, { status: 200, headers: { 'content-type': 'application/vnd.apple.mpegurl', 'cache-control': 'no-cache', ...makeCorsHeaders(req) } });
-      }
-      return new Response(hlsResp.body, { status: 200, headers: { 'content-type': ct || 'application/octet-stream', 'cache-control': 'no-cache', ...makeCorsHeaders(req) } });
-    } catch (e) {
-      context.logger.warn('[hls-proxy] error:', e.message);
-      return new Response('Proxy error', { status: 502, headers: { 'content-type': 'text/plain', ...makeCorsHeaders(req) } });
-    }
-  }
-
-  // YouTube embed bridge — exempt from auth because iframe src cannot carry
-  // Authorization headers.  Serves a minimal HTML page that loads the YouTube
-  // IFrame Player API from a localhost origin (which YouTube accepts, unlike
-  // tauri://localhost).  No sensitive data is exposed.
-  if (requestUrl.pathname === '/api/youtube-embed') {
-    const videoId = requestUrl.searchParams.get('videoId');
-    if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
-      return new Response('Invalid videoId', { status: 400, headers: { 'content-type': 'text/plain' } });
-    }
-    const autoplay = requestUrl.searchParams.get('autoplay') === '0' ? '0' : '1';
-    const mute = requestUrl.searchParams.get('mute') === '0' ? '0' : '1';
-    const vq = ['small','medium','large','hd720','hd1080'].includes(requestUrl.searchParams.get('vq') || '') ? requestUrl.searchParams.get('vq') : '';
-    const origin = `http://localhost:${context.port}`;
-    // parentOrigin is the actual parent window origin (tauri://localhost, asset://localhost, etc.)
-    // passed by the frontend so window.parent.postMessage reaches it. Only accept known desktop
-    // schemes; fall back to '*' if absent or unrecognised.
-    const rawParentOrigin = requestUrl.searchParams.get('parentOrigin') || '';
-    const isAllowedParentOrigin = /^(tauri|asset):\/\/localhost$/.test(rawParentOrigin)
-      || /^https?:\/\/localhost(:\d{1,5})?$/.test(rawParentOrigin)
-      || /^https?:\/\/[\w-]+\.tauri\.localhost(:\d{1,5})?$/.test(rawParentOrigin);
-    const parentOrigin = isAllowedParentOrigin ? rawParentOrigin : '*';
-    const safeVideoId = JSON.stringify(String(videoId));
-    const safeOrigin = JSON.stringify(origin);
-    const safeParentOrigin = JSON.stringify(parentOrigin);
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}#player{width:100%;height:100%}#play-overlay{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.15)}#play-overlay svg{width:72px;height:72px;opacity:0.9;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5))}#play-overlay.hidden{display:none}</style></head><body><div id="player"></div><div id="play-overlay" class="hidden"><svg viewBox="0 0 68 48"><path d="M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55C3.97 2.33 2.27 4.81 1.48 7.74.06 13.05 0 24 0 24s.06 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C67.94 34.95 68 24 68 24s-.06-10.95-1.48-16.26z" fill="red"/><path d="M45 24L27 14v20" fill="#fff"/></svg></div><script>function tryStorageAccess(){if(document.requestStorageAccess){document.requestStorageAccess().catch(function(){})}}tryStorageAccess();var tag=document.createElement('script');tag.src='https://www.youtube.com/iframe_api';document.head.appendChild(tag);var player,overlay=document.getElementById('play-overlay'),started=false,muteSyncId,retryTimers=[];var obs=new MutationObserver(function(muts){for(var i=0;i<muts.length;i++){var nodes=muts[i].addedNodes;for(var j=0;j<nodes.length;j++){if(nodes[j].tagName==='IFRAME'){var a=nodes[j].getAttribute('allow')||'';if(a.indexOf('autoplay')===-1){nodes[j].setAttribute('allow','autoplay; encrypted-media; picture-in-picture; storage-access'+(a?'; '+a:''));console.log('[yt-embed] patched iframe allow=autoplay+storage-access')}obs.disconnect();return}}}});obs.observe(document.getElementById('player'),{childList:true,subtree:true});function hideOverlay(){overlay.classList.add('hidden')}function readMuted(){if(!player)return null;if(typeof player.isMuted==='function')return player.isMuted();if(typeof player.getVolume==='function')return player.getVolume()===0;return null}function stopMuteSync(){if(muteSyncId){clearInterval(muteSyncId);muteSyncId=null}}function startMuteSync(){if(muteSyncId)return;var last=readMuted();if(last!==null)window.parent.postMessage({type:'yt-mute-state',muted:last},${safeParentOrigin});muteSyncId=setInterval(function(){var m=readMuted();if(m!==null&&m!==last){last=m;window.parent.postMessage({type:'yt-mute-state',muted:m},${safeParentOrigin})}},500)}function tryAutoplay(){if(!player||!player.playVideo)return;try{player.mute();player.playVideo();console.log('[yt-embed] tryAutoplay: mute+play')}catch(e){}}function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:${safeVideoId},host:'https://www.youtube.com',playerVars:{autoplay:${autoplay},mute:${mute},playsinline:1,rel:0,controls:1,modestbranding:1,enablejsapi:1,origin:${safeOrigin},widget_referrer:${safeOrigin}},events:{onReady:function(){console.log('[yt-embed] onReady');window.parent.postMessage({type:'yt-ready'},${safeParentOrigin});${vq ? `if(player.setPlaybackQuality)player.setPlaybackQuality(${JSON.stringify(vq)});` : ''}if(${autoplay}===1){tryAutoplay();retryTimers.push(setTimeout(function(){if(!started)tryAutoplay()},500));retryTimers.push(setTimeout(function(){if(!started)tryAutoplay()},1500));retryTimers.push(setTimeout(function(){if(!started){console.log('[yt-embed] autoplay failed after retries');window.parent.postMessage({type:'yt-autoplay-failed'},${safeParentOrigin})}},2500))}startMuteSync()},onError:function(e){console.log('[yt-embed] error code='+e.data);stopMuteSync();window.parent.postMessage({type:'yt-error',code:e.data},${safeParentOrigin})},onStateChange:function(e){window.parent.postMessage({type:'yt-state',state:e.data},${safeParentOrigin});if(e.data===1||e.data===3){hideOverlay();started=true;retryTimers.forEach(clearTimeout);retryTimers=[]}}}})}setTimeout(function(){if(!started)overlay.classList.remove('hidden')},4000);window.addEventListener('message',function(e){if(!player||!player.getPlayerState)return;var m=e.data;if(!m||!m.type)return;switch(m.type){case'play':player.playVideo();break;case'pause':player.pauseVideo();break;case'mute':player.mute();break;case'unmute':player.unMute();break;case'loadVideo':if(m.videoId)player.loadVideoById(m.videoId);break;case'setQuality':if(m.quality&&player.setPlaybackQuality)player.setPlaybackQuality(m.quality);break}});window.addEventListener('beforeunload',function(){stopMuteSync();obs.disconnect();retryTimers.forEach(clearTimeout)})<\/script></body></html>`;
-    return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'permissions-policy': 'autoplay=*, encrypted-media=*, storage-access=(self "https://www.youtube.com")', ...makeCorsHeaders(req) } });
   }
 
   // ── Global auth gate ────────────────────────────────────────────────────
@@ -1809,60 +1722,6 @@ async function dispatch(requestUrl, req, routes, context) {
     } catch (e) {
       context.logger.error(`[register-interest] error: ${e.message}`);
       return json({ error: 'Registration service unreachable' }, 502);
-    }
-  }
-
-  // YouTube live detection. A Docker deployment of this sidecar (mode ===
-  // 'docker') genuinely may run on datacenter infra where YouTube blocks the
-  // outbound IP, so that mode keeps the original always-proxy-to-cloud
-  // behavior verbatim (see the docker-mode test in local-api-server.test.mjs
-  // asserting exactly that). But the VS Code extension's sidecar runs as a
-  // local child process on the operator's own machine, on an ordinary
-  // residential/office IP, exactly like vite.config.ts's youtubeLivePlugin
-  // dev-server route (which the branch below mirrors) — confirmed live that
-  // it can fetch YouTube directly fine. Unconditionally proxying to a cloud
-  // relay that isn't configured for local installs made every channel whose
-  // hardcoded fallbackVideoId had gone stale silently show "Error 150" for
-  // every VS Code install, instead of resolving today's real live video ID.
-  if (requestUrl.pathname === '/api/youtube/live') {
-    if (context.mode === 'docker') {
-      const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'youtube-live needs relay');
-      if (cloudResponse) return cloudResponse;
-      return json({ error: 'YouTube live detection unavailable' }, 503);
-    }
-
-    const channel = requestUrl.searchParams.get('channel');
-    if (!channel) return json({ error: 'Missing channel parameter' }, 400);
-
-    try {
-      const channelHandle = channel.startsWith('@') ? channel : `@${channel}`;
-      const liveUrl = `https://www.youtube.com/${channelHandle}/live`;
-      const ytRes = await fetchWithTimeout(liveUrl, { headers: { 'User-Agent': CHROME_UA } }, 12000);
-
-      if (!ytRes.ok) {
-        return json({ videoId: null, channel }, 200, { 'Cache-Control': 'public, max-age=300' });
-      }
-
-      const html = await ytRes.text();
-
-      // Scope both fields to the same videoDetails block so we don't combine
-      // a videoId from one object with isLive from another (same care as the
-      // vite dev-server route this mirrors).
-      let videoId = null;
-      const detailsIdx = html.indexOf('"videoDetails"');
-      if (detailsIdx !== -1) {
-        const block = html.substring(detailsIdx, detailsIdx + 5000);
-        const vidMatch = block.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-        const liveMatch = block.match(/"isLive"\s*:\s*true/);
-        if (vidMatch && liveMatch) videoId = vidMatch[1];
-      }
-
-      return json({ videoId, isLive: videoId !== null, channel }, 200, { 'Cache-Control': 'public, max-age=300' });
-    } catch (e) {
-      context.logger.warn(`[youtube-live] direct fetch failed, trying cloud relay: ${e.message}`);
-      const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'youtube-live direct fetch failed');
-      if (cloudResponse) return cloudResponse;
-      return json({ error: 'YouTube live detection unavailable' }, 503);
     }
   }
 

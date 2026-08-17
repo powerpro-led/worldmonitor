@@ -78,9 +78,7 @@ layer streams tile imagery from a separate CDN
 (the deployed `maps.` subdomain/Cloudflare R2), and that dependency exists in the
 real product regardless of this extension — narrowing the webview's CSP to
 block it wouldn't change the underlying app, just make map tiles fail to
-load. One additional narrow exception: `/api/youtube/live` always proxies
-to the cloud regardless of any fallback flag (YouTube blocks datacenter/
-loopback IPs directly) — unrelated to the dashboard's own data domains.
+load.
 
 ## Usage
 

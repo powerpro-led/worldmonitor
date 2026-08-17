@@ -346,20 +346,6 @@
       "removal_issue": null
     },
     {
-      "path": "api/youtube/embed.js",
-      "category": "non-json",
-      "reason": "YouTube oEmbed passthrough — shape dictated by YouTube's oEmbed response, served as-is.",
-      "owner": "@SebastienMelki",
-      "removal_issue": null
-    },
-    {
-      "path": "api/youtube/live.js",
-      "category": "non-json",
-      "reason": "Streams YouTube live metadata — chunked text response, not a typed JSON payload.",
-      "owner": "@SebastienMelki",
-      "removal_issue": null
-    },
-    {
       "path": "api/brief/carousel/[userId]/[issueDate]/[page].ts",
       "category": "non-json",
       "reason": "Rendered carousel page image for brief social posts. Binary image response, dynamic path segments.",

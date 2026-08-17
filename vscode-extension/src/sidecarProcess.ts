@@ -45,16 +45,12 @@ export class SidecarProcess {
 
   get baseUrl(): string {
     // 'localhost', not the bare '127.0.0.1' IP — same loopback socket
-    // (Node's own server does no Host-header validation, confirmed), but
-    // YouTube's IFrame Player widget bridge (www-widgetapi.js) only
-    // recognizes 'localhost' as a trusted postMessage-target hostname, not
-    // a raw IP. Using 127.0.0.1 here silently broke the widget's parent
-    // handshake (it fell back to targeting 'https://www.youtube.com',
-    // which never matches our real origin) with no player ever rendering,
-    // even though the network side worked and looked fine — found live
-    // debugging the VS Code embed's Live News panel staying empty for
-    // every channel. local-api-server.mjs's own /api/youtube-embed route
-    // already used 'localhost' for exactly this reason.
+    // (Node's own server does no Host-header validation, confirmed). This
+    // originally mattered because YouTube's IFrame Player widget bridge
+    // only recognized 'localhost' as a trusted postMessage-target hostname;
+    // that route (local-api-server.mjs's /api/youtube-embed) was removed
+    // along with the Live News/Live Webcams panels, but 'localhost' is kept
+    // here since nothing depends on switching back to the raw IP.
     return `http://localhost:${this.port}`;
   }
 

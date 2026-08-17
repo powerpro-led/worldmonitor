@@ -166,14 +166,25 @@ function loadFromStorage(): CachedTheaterPosture | null {
 }
 
 function saveToStorage(data: CachedTheaterPosture): void {
+  // Mirrors the breaker's own `shouldCache` predicate below — an empty
+  // result must never overwrite a real cached posture, or every reload
+  // re-primes the breaker from a poisoned "0 theaters" localStorage entry
+  // (see recordSuccess guard below) and the panel gets stuck on "acquiring
+  // data" indefinitely, even once the upstream starts returning real data.
+  if (!data.postures.length) return;
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ data, savedAt: Date.now() }));
   } catch { /* quota exceeded - ignore */ }
 }
 
-// Prime breaker from localStorage on module load
+// Prime breaker from localStorage on module load. Guarded the same way as
+// the breaker's own `shouldCache` predicate in fetchCachedTheaterPosture —
+// recordSuccess() bypasses shouldCache entirely, so an empty stored entry
+// (possible from before this guard existed, or from a future localStorage
+// write outside this module) would otherwise mark the breaker "fresh" with
+// zero theaters and skip every real fetch for a full cacheTtlMs window.
 const stored = loadFromStorage();
-if (stored) breaker.recordSuccess(stored);
+if (stored?.postures.length) breaker.recordSuccess(stored);
 
 export async function fetchCachedTheaterPosture(signal?: AbortSignal): Promise<CachedTheaterPosture | null> {
   if (signal?.aborted) throw createAbortError();

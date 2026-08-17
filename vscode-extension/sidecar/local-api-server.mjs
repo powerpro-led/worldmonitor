@@ -662,6 +662,7 @@ const cloudPreferredPrefixes = !process.env.WS_RELAY_URL
     '/api/infrastructure/v1/',
     '/api/news/v1/',
     '/api/research/v1/',
+    '/api/military/v1/',
   ]
   : [];
 const cloudPreferredExact = !process.env.WS_RELAY_URL

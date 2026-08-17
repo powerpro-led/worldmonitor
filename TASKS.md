@@ -15,6 +15,120 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔖 HANDOFF (2026-08-17, end of nineteenth session) — read this first, before anything below
+
+**Both pieces of work the eighteenth session left uncommitted are now committed** (operator's
+explicit go-ahead this session, "let's commit first"):
+- `1634654` — the Live News/Live Webcams panel removal + Discord footer widget removal described
+  in the eighteenth-session block just below. Verified via a fresh `git stash` A/B before
+  committing: typecheck clean; test:data 40 vs 39 baseline failures, and the one delta
+  (`readBootstrapTierObject` in `tests/bootstrap-r2-reader.test.mjs`) confirmed pre-existing/flaky
+  by reproducing it in isolation on unmodified `main` too — not a regression.
+- `754916f` — the "deliberately deferred" backend cleanup below, done as a follow-up in the same
+  session (see corrected scope below).
+
+**Correction to the eighteenth-session entry below: `api/webcam/v1/[rpc].js` is NOT dead code.**
+That flag was wrong — it conflated the deleted `LiveWebcamsPanel` (TV-style live webcam viewer,
+correctly removed) with `PinnedWebcamsPanel` (a separate, still-active "pin a webcam to the map"
+feature — the `windy-webcams` panel, still registered in a mission preset, lazy-loaded from
+`panel-layout.ts`). **Do not delete `api/webcam/*` or its generated client/server code** — it's
+load-bearing. Corrected in Claude memory (`vscode_live_news_debugging_session.md`) this session.
+
+**Actually completed this session (commit `754916f`):**
+- Deleted `api/youtube/live.js`, `api/youtube/embed.js` (+ test) — confirmed dead Vercel edge
+  routes, nothing in `src/` calls them post-removal. Dropped their `api-route-exceptions.json`
+  entries and their generated registrations in `gcp/api/routes.generated.ts` (regenerated via
+  `scripts/generate-nitric-routes.mjs`) and `test:sidecar`'s file list.
+- Removed the VS Code sidecar's dead `/api/hls-proxy`, `/api/youtube-embed`, `/api/youtube/live`
+  route handlers from `local-api-server.mjs` (143 lines) plus matching stale-comment cleanup in
+  `sidecarProcess.ts`, `panel.ts`, `vscode-extension/README.md`, and the one now-invalid assertion
+  in `local-api-server.test.mjs`.
+- Verified independently (not just trusting the doing agent): `tsc --noEmit` clean, sebuf API
+  contract lint clean (confirms the exceptions-manifest edit didn't orphan anything), sidecar test
+  suite 49/50 (1 failure is a real `EADDRINUSE` from an unrelated sidecar process already running
+  on the operator's machine — confirmed via stash A/B, not a regression), biome lint clean on
+  touched files (1 pre-existing unrelated warning from an Aug-10 commit, untouched by this diff).
+
+**Still deliberately deferred, now for a real reason (not just "didn't get to it"):**
+- `server/worldmonitor/aviation/v1/get-youtube-live-stream-info.ts` + its `.proto` and
+  `src/generated/**/aviation/**` code — a genuinely dead sebuf-generated RPC (no frontend caller
+  found), discovered this session. Removing it needs `buf`/`sebuf` codegen tooling (`buf` isn't
+  installed on this machine — confirmed via `which buf`); hand-editing generated output would
+  diverge from what a real regen produces. Low priority (small, harmless, orphaned), pick up only
+  if `buf`/`sebuf` tooling is ever set up locally.
+
+**Repo state**: `main` is now **4 commits ahead of `origin/main`** (not pushed — same standing
+"hold for explicit go-ahead" discipline; ask before pushing).
+
+**Then the session got redirected a third time** (156-seed-source initiative still not started —
+see NEXT INITIATIVE below, unchanged) into live panel-by-panel debugging via the VS Code
+extension, operator's own screenshots/devtools/Output-channel logs throughout (same collaborative
+method as session 18). Found and fixed 4 real bugs, none of them in the Strategic Posture panel's
+own code — all four were sidecar/local-dev-environment plumbing:
+
+1. **`isHealthy()`'s stale-orphan check was too loose** (`sidecarProcess.ts`). It checked
+   `resp.status !== 401`, meant to mean "token doesn't match." But an orphan sidecar whose
+   `LOCAL_API_TOKEN` was never set at all answers every request with 503 "Service misconfigured"
+   — also `!== 401`, so `ensureRunning()`'s self-healing `killStaleOccupant()` never fired and a
+   broken orphan could linger forever across reloads, 503ing everything. Fixed: check for exactly
+   404 (the one real healthy signature), not merely "not 401."
+2. **The sidecar child process never loaded `.env`** (`sidecarProcess.ts`'s `spawn()`) — it only
+   inherited `process.env` from however VS Code itself was launched. A terminal-launched VS Code
+   (with `.env` already sourced) worked fine; a Dock/Spotlight/Finder launch didn't, so every
+   secret-gated route (`wm-session`, `bootstrap`, etc.) failed closed with 503, sidecar-wide, no
+   code bug behind any of it. Fixed: added `--env-file-if-exists=.env` to the spawn args — the
+   same flag the repo's other local dev processes (`gcp/api/main.ts`) already use.
+3. **`local-sync.mjs`'s `SYNC_PREFIXES` mirror whitelist never included `theater-posture:` /
+   `theater_posture:`** (two spellings — the live/backup keys use a hyphen, the stale key an
+   underscore). Structurally never synced to the local SQLite mirror regardless of credentials —
+   this was the actual reason the Strategic Posture panel read empty theaters forever locally.
+   Fixed: added both prefixes, ran the sync once live (confirmed 9 real theaters — Iran, Taiwan,
+   Baltic, Black Sea, Korea, etc. — now in `local-cache.db`).
+4. **A client-side cache-poisoning bug** in `src/services/cached-theater-posture.ts`: both
+   `saveToStorage()` and the module-load `breaker.recordSuccess(stored)` priming call wrote/primed
+   *unconditionally*, bypassing the same `shouldCache` guard the breaker's own `execute()` already
+   respected elsewhere. Once a real empty result got cached (pre-fix-#3), every reload re-primed
+   the breaker as "fresh" with zero theaters and skipped the network call entirely for a full
+   `cacheTtlMs` window — meaning fix #3 alone wouldn't have been visible without this too. Fixed:
+   guarded both call sites on `data.postures.length > 0`, matching the existing predicate.
+
+Also added `/api/military/v1/` to `local-api-server.mjs`'s `cloudPreferredPrefixes` — **harmless
+but NOT actually load-bearing for this fix**: the operator's sidecar runs with `cloudFallback:
+false` by design (confirmed live in the sidecar's own boot log), so that allowlist never engages
+for this setup. Left in since it's still correct/consistent with the 5 existing entries and could
+matter for a different `cloudFallback: true` configuration.
+
+**Infrastructure finding, not a code bug — operator already acted on it**: the session's own
+Output-channel logs surfaced `ERR max requests limit exceeded. Limit: 500000, Usage: 500000`
+repeated across `checkRateLimit`, digest caching, and resilience-ranking's cache-warm job — the
+account's Upstash Redis REST quota was fully exhausted, account-wide (same instance backs
+production, not just local dev). Not caused by this session (already exhausted before the first
+`local-sync` run). **Operator upgraded the Upstash plan mid-session — resolved.**
+
+**Not yet re-verified**: a batch of RSS feed fetches (Guardian, Hill, Euronews, ABC, NBC, PBS, Le
+Monde, FT, VentureBeat) failed both direct-fetch and relay-fetch simultaneously in the same
+Output-channel log — too broad a spread to be a per-feed issue. Best working theory, unconfirmed:
+resource contention from this same Claude Code session running heavy tool calls on the operator's
+machine concurrently (the same log window also shows repeated "extension host unresponsive" +
+Claude-Code-CPU-usage warnings) — not a product bug. Worth a clean re-check once no heavy agent
+work is running alongside the live app, before spending more time on it.
+
+**Genuinely separate, still open**: `WM_SESSION_SECRET` does not exist anywhere in `.env` — the
+sidecar's `.env`-loading fix (#2 above) can't produce a value that was never there. `wm-session`
+will likely keep 503ing locally until the operator adds it (or confirms local session/login isn't
+meant to work at all for the sidecar). Not fabricated a value — that's a security-relevant call
+for the operator, not this session.
+
+**Repo state**: this HANDOFF block itself plus all 4 fixes above are the diff about to be
+committed this session (on top of the already-committed `1634654`/`754916f`). `main` will be
+**5 commits ahead of `origin/main`** after — still not pushed, same standing discipline.
+
+**Next up (STILL not started — now deferred a THIRD time):** the 156-seed-source review, see NEXT
+INITIATIVE below, unchanged. Operator wants sources reviewed **in an order they'll specify**, and
+still needs to define what "review a source" means (live run / read-only / code audit).
+
+---
+
 ## 🔖 HANDOFF (2026-08-17, end of eighteenth session) — read this first, before anything below
 
 **The eighteenth session did NOT start the 156-seed-source initiative** (see that section further

@@ -156,6 +156,15 @@ const SYNC_PREFIXES = [
   'risk:',
   'rss:',
   'forecast:',
+  // Both spellings needed — get-theater-posture.ts's own live/backup keys
+  // use a hyphen ('theater-posture:sebuf:v1'/':backup:v1') but its stale
+  // key uses an underscore ('theater_posture:sebuf:stale:v1'). Missing
+  // from this list entirely until found live: the Strategic Posture panel
+  // read empty theaters forever in the VS Code sidecar, no error, because
+  // the key it needs was never mirrored down from Upstash to begin with —
+  // not a bug in the panel or the RPC handler, just an absent prefix here.
+  'theater-posture:',
+  'theater_posture:',
 ];
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */

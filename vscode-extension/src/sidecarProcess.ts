@@ -112,12 +112,26 @@ export class SidecarProcess {
     if (this.proc) return;
     const sidecarScript = path.join(this.repoRoot, 'vscode-extension', 'sidecar', 'local-api-server.mjs');
     const sqlitePath = path.join(this.repoRoot, 'vscode-extension', 'sidecar', 'local-cache.db');
+    const dotenvPath = path.join(this.repoRoot, '.env');
     this.outputChannel.appendLine(`[sidecar] starting: node ${sidecarScript}`);
     this.outputChannel.appendLine(`[sidecar] LOCAL_SQLITE_PATH=${sqlitePath}`);
 
     this.proc = spawn(
       process.execPath,
-      [sidecarScript],
+      // --env-file-if-exists loads secrets (WM_SESSION_SECRET, Supabase/
+      // Upstash keys, etc.) straight from the repo's own .env — the same
+      // flag the repo's other local dev processes already use (e.g.
+      // gcp/api/main.ts). Without it, this child only inherits
+      // process.env from however VS Code itself was launched: a
+      // terminal that already sourced .env passes those secrets through
+      // fine, but a GUI launch (Dock/Spotlight/Finder) does not, so every
+      // secret-gated route (wm-session, bootstrap, and anything else that
+      // fails closed without its own env var) 503s sidecar-wide — found
+      // live, the dashboard looked completely broken with no code bug at
+      // all behind it. "-if-exists" (not the throwing --env-file) so a
+      // missing .env degrades to today's inherited-env behavior instead
+      // of crashing the spawn.
+      [`--env-file-if-exists=${dotenvPath}`, sidecarScript],
       {
         cwd: this.repoRoot,
         env: {
@@ -174,8 +188,17 @@ export class SidecarProcess {
    * activation still holding the port (see ensureRunning) — /api/sidecar-health
    * is auth-exempt, so an orphan answers it happily and then 401s every real
    * request. Any unrouted /api path is enough to settle it: the global auth
-   * gate runs before routing, so a wrong/absent token gives 401 and a matching
-   * one falls through to a plain 404. Also ~1ms, and it reaches no data source.
+   * gate runs before routing, so a wrong token gives 401 and a matching one
+   * falls through to a plain 404. Also ~1ms, and it reaches no data source.
+   *
+   * Check for exactly 404, not merely "not 401" — an orphan can also be one
+   * whose own LOCAL_API_TOKEN was never set at all (e.g. a previous
+   * activation's child process spawned before this env var existed, or one
+   * killed mid-spawn), which answers every request with 503 "Service
+   * misconfigured" rather than 401. `!== 401` treats that 503 as healthy too,
+   * so ensureRunning's killStaleOccupant() never fires and the misconfigured
+   * orphan is left running indefinitely, 503ing every real request forever
+   * — found live, see local-api-server.mjs's LOCAL_API_TOKEN-unset branch.
    */
   private async isHealthy(): Promise<boolean> {
     if (!(await this.isAlive())) return false;
@@ -184,7 +207,7 @@ export class SidecarProcess {
         headers: { [LOCAL_API_TRANSPORT_HEADER]: this.token },
         signal: AbortSignal.timeout(2000),
       });
-      return resp.status !== 401;
+      return resp.status === 404;
     } catch {
       return false;
     }

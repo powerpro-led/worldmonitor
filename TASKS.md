@@ -228,32 +228,102 @@ despite being as real/load-bearing as the other tracked files, was never added t
 
 ---
 
-## 🔖 NEXT INITIATIVE (deferred a second time, now starting nineteenth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+## 🔖 NEXT INITIATIVE (deferred a THIRD time, now starting twentieth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
 
-**Still not started — this entry exists to hand off cold, not as a status report.** Originally queued
-for the eighteenth session, which got redirected into unrelated live-debugging work instead (see the
-HANDOFF block above this one). Everything below is still fully accurate and unchanged. Operator wants
-the next session to work through the data-source seed scripts individually. Grounded, not guessed:
+**Still not started — this entry exists to hand off cold, not as a status report.** Queued for the
+eighteenth session (redirected into Live News/Webcams removal — see [[vscode_live_news_debugging_session]]
+in memory), queued again for the nineteenth (redirected into VS Code sidecar debugging — see
+[[vscode_sidecar_theater_posture_debugging]]). **Both blocking questions are now resolved — nothing
+left to ask, start executing immediately:**
 
-- `ls scripts/seed-*.mjs | wc -l` → **156 files**, confirmed this session. 17 of them are
-  `seed-bundle-*.mjs` (aggregate multiple sources per script — e.g. `seed-bundle-climate.mjs`,
-  `seed-bundle-macro.mjs`), so the true distinct-source count is likely higher than 156, not lower.
-- `scripts/railway-services.json` has 31 entries with `"entry": "scripts/seed-*"` (either
-  `deployMode: "dockerfile"` with a dedicated `Dockerfile.*`, or `"nixpacks-root-repo"` for
-  standalone Railway cron services) — the rest run some other way (need to check per-script: cron
-  workflow, manual, or dead code — don't assume).
-- Existing tooling to build on, not reinvent: `scripts/check-seed-freshness.mjs` hits the live
-  `/api/health?compact=1` endpoint and reports any `STALE_SEED` problems — this is a live-production
-  monitor, not a local per-source test harness. `.github/workflows/seed-freshness-monitor.yml` runs
-  it on a schedule. There is **no existing local dry-run/test convention per seed script** (checked:
-  only 2 of the 156 mention `--dry-run`/`dryRun` at all) — "test a data source" isn't a pattern this
-  codebase already has; it needs defining, not just running.
-- **Before starting**: get the operator to define what "test" means for a source — does it mean (a)
-  run the script live once and confirm it writes fresh Redis data without error, (b) something
-  read-only/local that doesn't touch production Redis, (c) audit the script's error handling/fallback
-  behavior by reading it, or (d) something else. 156 items is large enough that the definition of
-  "done" per item matters a lot for how this gets scoped (one session, many sessions, or a
-  Workflow-based fan-out) — don't assume and start executing before that's confirmed.
+- **What "test a source" means**: operator confirmed directly (multiple-choice, nineteenth session)
+  — **(a) run it live once, confirm it writes fresh Redis data without error.** Not read-only, not a
+  code-only audit.
+- **What order to test in**: operator confirmed **grouped by domain/category** (nineteenth session).
+  Full grouping below — built from each script's name plus its actual `CANONICAL_KEY`/cache-key
+  prefix where the name was ambiguous (spot-checked via grep, not guessed). Treat category
+  boundaries as a first pass, not gospel — reassign a script on sight if its real behavior clearly
+  belongs elsewhere once you're actually reading it.
+
+**Grounded facts, still accurate:**
+- `ls scripts/seed-*.mjs | wc -l` → **156 files**. 17 are `seed-bundle-*.mjs` (aggregate multiple
+  sources per script) — testing a bundle exercises all its underlying sources at once, so treat
+  bundles as a checkpoint that covers several individual entries below, not a fully separate item.
+- `scripts/railway-services.json` has 31 entries wired to `scripts/seed-*` (dedicated
+  `Dockerfile.*` or standalone `nixpacks-root-repo` cron services) — the other ~125 run some other
+  way, not yet determined per-script.
+- No existing local dry-run/test convention (only 2 of 156 mention `--dry-run`/`dryRun`) —
+  `scripts/check-seed-freshness.mjs` is a live-production monitor (hits `/api/health?compact=1`),
+  not a per-source test harness. "Run it live once, confirm it writes fresh Redis data without
+  error" (per the confirmed definition above) means literally executing
+  `node --env-file=.env scripts/seed-<name>.mjs` (or whatever its actual invocation is — check each
+  script's own header/shebang comment first) and checking it exits clean and the Redis write
+  actually landed, not inventing a new dry-run mode that doesn't exist in this codebase.
+- The [[vscode_live_news_debugging_session]] "test panels one by one via real VS Code UI rendering"
+  method was established for a *different* kind of testing (dashboard panels, not data-source
+  scripts) — confirm with the operator whether they want that same live-collaborative style here,
+  or a more scripted/batch approach, before assuming it transfers.
+
+### The order (grouped by domain/category, 156 total)
+
+**1. Energy & Fuel (24)** — `bundle-energy-sources`, `co2-monitoring`, `eia-petroleum`,
+`electricity-prices`, `ember-electricity`, `energy-crisis-policies`, `energy-disruptions`,
+`energy-intelligence`, `energy-spine`, `fossil-electricity-share`, `fuel-prices`, `fuel-shortages`,
+`gas-storage-countries`, `gie-gas-storage`, `iea-oil-stocks`, `jodi-gas` (see
+[[jodi_seed_source_contracts]] — 2 known URL bugs already fixed, China coverage gate still open),
+`jodi-oil` (same), `low-carbon-generation`, `owid-energy-mix`, `pipelines-gas`, `pipelines-oil`,
+`power-reliability`, `spr-policies`, `storage-facilities`
+
+**2. Climate & Environment (11)** — `bundle-climate`, `climate-anomalies`, `climate-disasters`,
+`climate-news`, `climate-ocean-ice`, `climate-zone-normals`, `weather-alerts`, `fire-detections`,
+`natural-events`, `earthquakes`, `radiation-watch`
+
+**3. Health (5)** — `bundle-health`, `disease-outbreaks`, `health-air-quality`, `vpd-tracker`,
+`recall-benchmark`
+
+**4. Military, Conflict & Security (18)** — `aviation`, `conflict-intel`, `cyber-threats`,
+`defense-patents`, `fatf-listing`, `gdelt-intel`, `hormuz`, `iran-events`, `military-bases`,
+`military-cii`, `military-flights`, `military-maritime-news`, `sanctions-pressure`,
+`security-advisories`, `submarine-cables`, `thermal-escalation`, `ucdp-events`, `unrest-events`
+
+**5. Supply Chain, Trade & Ports/Chokepoints (13)** — `bundle-portwatch`,
+`bundle-portwatch-port-activity`, `portwatch`, `portwatch-chokepoints-ref`, `portwatch-disruptions`,
+`portwatch-port-activity`, `chokepoint-baselines`, `chokepoint-flows`, `hs2-chokepoint-exposure`,
+`supply-chain-trade`, `global-tenders`, `comtrade-bilateral-hs4`, `trade-flows`
+
+**6. Economic Indicators & Central Banks (35)** — `bis-data`, `bis-extended`, `bis-lbs`,
+`bls-series`, `bundle-ecb-eu`, `bundle-imf-extended`, `bundle-macro`, `china-macro`,
+`china-release-calendar`, `china-coverage-health`, `consumer-prices`, `ecb-fx-rates`,
+`ecb-short-rates`, `economic-calendar`, `economy`, `eurostat-country-data`, `eurostat-gov-debt-q`,
+`eurostat-house-prices`, `eurostat-industrial-production`, `fao-food-price-index`, `fsi-eu`,
+`fx-rates`, `fx-yoy`, `imf-external`, `imf-growth`, `imf-labor`, `imf-macro`, `national-debt`,
+`sovereign-wealth`, `usa-spending`, `wb-external-debt`, `wb-indicators`, `yield-curve-eu`,
+`grocery-basket`, `bigmac`
+
+**7. Markets & Finance (21)** — `aaii-sentiment`, `bundle-market-backup`, `commodity-quotes`, `cot`,
+`crypto-quotes`, `crypto-sectors`, `earnings-calendar`, `etf-flows`, `fear-greed`,
+`gold-cb-reserves`, `gold-etf-flows`, `gulf-quotes`, `hyperliquid-flow`, `market-breadth`,
+`market-quotes`, `prediction-markets`, `stablecoin-markets`, `token-panels`, `forecast-bets`,
+`forecast-resolutions`, `forecasts`
+
+**8. Resilience & Recovery Scores (12)** — `bundle-resilience`, `bundle-resilience-energy-v2`,
+`bundle-resilience-recovery`, `bundle-resilience-validation`, `resilience-scores`,
+`resilience-static`, `recovery-external-debt`, `recovery-fiscal-space`, `recovery-fuel-stocks`,
+`recovery-import-hhi`, `recovery-reexport-share`, `recovery-reserve-adequacy`
+
+**9. News, Intel & Briefs (7)** — `digest-notifications`, `insights`, `regional-briefs`,
+`regional-snapshots`, `regulatory-actions`, `research`, `displacement-summary`
+
+**10. Infrastructure & Misc (7)** — `infra`, `internet-outages`, `service-statuses`, `webcams` (NOT
+the removed Live-Webcams-panel — this seeds the still-active Pinned Webcams / `api/webcam`
+feature, see [[vscode_live_news_debugging_session]]'s correction), `bundle-regional`,
+`bundle-relay-backup`, `bundle-static-ref`
+
+**11. Cross-Cutting / Derived Signals (3)** — `correlation` (aggregates military + escalation +
+economic + disaster into one card), `cross-source-signals` (feeds the CII/military risk score —
+see `_cii-risk-cache-keys.mjs`), `bundle-derived-signals`. Test these LAST in the whole run, not
+first — they read from the other categories' own output, so testing them before their inputs exist
+would just confirm "no data yet," not a real pass/fail.
 
 ---
 

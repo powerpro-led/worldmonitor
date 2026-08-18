@@ -15,7 +15,335 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔖 HANDOFF (2026-08-18, twenty-third session — category 8 of 11 DONE) — read this first
+## 🔧 HANDOFF (2026-08-18, twenty-fifth session prep — FIX MODE) — read this first
+
+**Mode change, operator-directed at the end of session 24**: the testing sweep (11/11 categories,
+156/156 scripts, each run once) is done and stays done — do not re-run scripts that already came
+back healthy. **The next session's job is to close out every remaining finding below until
+production Upstash Redis is fully populated** — i.e., actually fix things, not just characterize
+them further. Everything in this section is sequenced so a cold agent can start at item 1 and work
+down without re-investigating; the fuller evidence for each item is in the category-8/9/10/11 log
+sections further down this file (search for the bolded key name, e.g. `resilience:ranking:v25`).
+
+### ⛔ Prerequisite — resolve this FIRST, it gates the two highest-value items
+
+**No Railway CLI is installed and no `RAILWAY_TOKEN` exists anywhere in this checkout** (`which
+railway` → not found, `.env` has no `RAILWAY_*` var). Items 1 and 2 below were both explicitly
+diagnosed as "needs the Railway service's recent run logs" — that diagnosis is impossible without
+either (a) `npm i -g @railway/cli`, `railway login`, and a token added to `.env`, or (b) the operator
+pulling the relevant logs manually (Railway dashboard → `seed-bundle-resilience` /
+`seed-bundle-derived-signals` services → Deployments → Logs) and pasting them in. **Ask the operator
+for one of these two before spending time on items 1-2** — don't guess at log access or skip
+straight to "fix" without seeing what's actually happening on the deployed side; both P1s might be a
+one-line fix (e.g. a stale key-prefix bump) or something structural, and the logs are the only way
+to tell which.
+
+### The fix list, in priority order
+
+1. **P1 — `resilience:score:v25:*` / `resilience:ranking:v25` empty in production.** Deployed
+   (`seed-bundle-resilience`), monitored (`api/health.js:269`+`:545`, `maxStaleMin: 840`), fully
+   absent. Full evidence in the category-8 HANDOFF section below (search `WORLDMONITOR_SEED_REFRESH_KEY
+   is required`). Once Railway logs are available: if the cause is a missing/rotated
+   `WORLDMONITOR_SEED_REFRESH_KEY` on the Railway service itself, that's an operator credential fix,
+   not a code fix. If the logs show a code-level failure, fix it and force one manual run to confirm
+   `resilience:ranking:v25` populates before considering this closed.
+
+2. **P1-adjacent — `correlation:cards-bootstrap:v1` / `intelligence:cross-source-signals:v1` empty
+   in production.** Deployed (`seed-bundle-derived-signals`, 5min/15min cron), monitored
+   (`maxStaleMin: 30` both), fully absent — confirmed via `EXISTS`/`TTL` before AND after a local run
+   this session. Full evidence in the category-11 section below (search `P1-adjacent severity`).
+   Same unblock path as item 1. If the Railway logs show the same "Redis pipeline read timeout" this
+   session reproduced locally, that's a real production issue (not the local-throttle artifact it
+   would be if only reproduced locally) and likely means chunking the pipeline read the way category
+   8's `seed-resilience-scores.mjs` already does (`PIPE_BATCH = 50`) versus its sibling
+   `seed-resilience-static.mjs`'s unchunked ~199-command version — see the "Robustness finding" note
+   in the category-8 section for the precedent, then decide whether `seed-correlation.mjs` /
+   `seed-cross-source-signals.mjs` need the same chunking fix.
+
+3. **`military:bases` R2 bucket is empty — direct, executable fix, no Railway access needed.**
+   `worldmonitor-data` R2 bucket exists (created 2026-08-17) but has zero objects — confirmed by
+   listing it directly with the already-set `CLOUDFLARE_R2_TOKEN`/`CLOUDFLARE_R2_ACCOUNT_ID`. Full
+   evidence in the category-10 section below (search `The specified key does not exist`). **Fix**:
+   run `node scripts/build-military-bases-final.mjs` to generate
+   `scripts/data/military-bases-final.json`, then upload it to
+   `worldmonitor-data/seed-data/military-bases-final.json` via the R2 API (`PUT` to the same URL
+   `seed-military-bases.mjs:10` constructs for `GET`, or `aws s3 cp` / `rclone` against the R2
+   S3-compatible endpoint using the same credentials). Then run `node --env-file=.env
+   scripts/seed-military-bases.mjs` (or the `bundle-static-ref` section) to confirm
+   `military:bases:active` populates. **Caveat carried from session 24**: the bucket's very recent
+   creation date suggests this might be mid-flight work from a session not reflected in this file —
+   worth a quick check with the operator before assuming it's simply unfinished, in case someone else
+   is already mid-upload.
+
+4. **Groq model 404s — code fix across 9 files, needs one operator decision first (replacement
+   model), then it's mechanical.** `llama-3.1-8b-instant` and `llama-3.3-70b-versatile` are both
+   dead on the live API for the account's `GROQ_API_KEY`. Full file list and reasoning in the
+   category-9 section below (search `does not exist or you do not have access to it`). **Before
+   touching code**: ask the operator which model to switch to — `openai/gpt-oss-20b` was confirmed
+   working live this session and is the obvious default, but reading the model from an env var
+   (mirroring how the Ollama provider already does `process.env.OLLAMA_MODEL`) may be the better
+   long-term fix so a future Groq deprecation doesn't require another 9-file patch. Once decided,
+   update all 9 sites (`server/_shared/llm.ts:96` is live-request-path — chat/summarize/deduction —
+   so re-run its relevant tests after editing, not just the seed scripts).
+
+5. **Orphaned crons — each needs a scheduling decision, not a code fix.** `regulatory-actions`,
+   `internet-outages`, `webcams`, likely `infra` (probably retire instead of schedule — see below)
+   are all working scripts registered in zero Railway services and zero bundles. For each, the fix
+   is either (a) add a new standalone `nixpacks-root-repo` entry to `scripts/railway-services.json`
+   + provision the actual Railway service (needs Railway dashboard access, not just this repo), or
+   (b) fold it into an existing bundle with a sensible interval, or (c) an explicit operator decision
+   that it's intentionally not scheduled (in which case remove it from `api/health.js`'s monitor
+   tables so it stops looking like a silent failure). `internet-outages` and `webcams` also need
+   their credential gaps closed first (`CLOUDFLARE_API_TOKEN`, `WINDY_API_KEY` — both unset
+   locally, unknown whether set on Railway; ask the operator). **`infra` is a special case**:
+   evidence in the category-10 section suggests 2 of its 3 warm-ping targets are already covered by
+   `ais-relay.cjs`'s own continuous loop, making the script likely dead code rather than something to
+   schedule — confirm `list-temporal-anomalies` has no other warm path before deciding, then either
+   delete `seed-infra.mjs` or fold just that one RPC into the relay loop.
+
+6. **Lower-priority / needs re-verification, not confirmed bugs — don't spend time here until 1-5
+   are closed.** `news:digest*` reading empty (category 9) is plausibly just a 900s on-demand cache
+   behaving normally, not a bug — re-verify per the category-9 section's suggested probe
+   (`WORLDMONITOR_RELAY_KEY` set + immediate read) before treating it as broken. Submarine-Cables'
+   timeout in `bundle-static-ref` (category 10) is plausibly the standard local network throttle —
+   re-check from a non-throttled connection before concluding anything. `seed-service-statuses`
+   reading empty is explicitly by-design (on-demand, excluded from strict alarms) — not on this list
+   at all, do not "fix" it.
+
+### Consolidated credential checklist — resolve what you can before starting item 1
+
+Ask the operator for these, or confirm they're already set on the relevant Railway service (a var
+being unset in this local `.env` does NOT mean it's unset in production — check before assuming):
+- `CLOUDFLARE_API_TOKEN` — blocks `internet-outages` (item 5)
+- `WINDY_API_KEY` — blocks `webcams` (item 5)
+- `WORLDMONITOR_RELAY_KEY` — blocks local verification of `insights`/`infra`/`service-statuses`
+  warm-ping RPCs and the `news:digest` re-check (item 6); Railway almost certainly has this set
+  already since those features work in production, but it's needed here to verify locally
+- `WORLDMONITOR_SEED_REFRESH_KEY` — blocks local diagnosis of item 1
+- Railway CLI/token — see the Prerequisite section above, blocks items 1 and 2
+
+### ✅ Deferred item B RESOLVED — `resend` was never actually missing; the handoff's diagnosis across three sessions was wrong
+
+Sessions 22/23/this session's own start all recorded "`resend` is not in `node_modules` and not in
+`package.json` — the script can never start, needs `pnpm add resend`." **All three were reading the
+wrong manifest.** This repo has two `package.json` files: the root one (the web app) and
+**`scripts/package.json`** (the Railway relay/seeder package, name `worldmonitor-railway-relay`).
+`resend: "^4"` has been declared in `scripts/package.json` **the whole time** —
+`Dockerfile.digest-notifications` installs it with `npm ci --prefix scripts --omit=dev`, exactly as
+documented in the Dockerfile's own header comment ("Install scripts/ runtime dependencies (resend,
+convex, etc.)"). The *deployed* cron was never broken. The only real gap was that
+`scripts/node_modules/` (gitignored) had never been installed in this local checkout.
+
+**Fix applied**: ran `npm ci --prefix scripts --omit=dev` (175 packages, `resend@4.8.0` present).
+No `pnpm add` — this project uses npm (`package-lock.json`, no `pnpm-lock.yaml`), and adding
+`resend` to the *root* manifest would have created a second, driftable declaration. **Zero tracked
+files changed** — `scripts/node_modules/` is gitignored (`.gitignore:1`).
+
+**`RESEND_API_KEY` added to `.env`** (operator supplied it this session — `re_KmzsJoS8...`).
+`RESEND_FROM_EMAIL`/`RESEND_FROM_BRIEF` deliberately left unset (they must be a Resend-verified
+sender domain; leaving them unset exercises the documented `WorldMonitor Brief <brief@$APP_DOMAIN>`
+fallback in `normalizeResendSender`, which is correct behavior to test, not a gap to fill blind).
+
+**Verification, safe by construction**: `DIGEST_CRON_ENABLED=0 node --env-file=.env
+scripts/seed-digest-notifications.mjs` proved the full ~40-file import graph (createRequire +
+static imports across `shared/`, `server/_shared/`, `api/`) resolves cleanly — that kill switch
+exits *after* every top-level import but *before* `main()`, so it's a zero-side-effect import-graph
+smoke test for a 3010-line script. Then ran it for real (see category 9 table below) — it reached
+`main()`, ran the watchlist scan, and exited clean at "No digest rules found" because
+`SUPABASE_SERVICE_ROLE_KEY` is unset locally, which makes `getSupabaseAdmin()` return `null` and
+`fetchDigestRules()` fail-closed to `[]` **before any Resend send is reachable**. Confirmed this by
+reading `scripts/lib/supabase-admin.cjs` *before* running — this is a fail-closed guard, not a
+lucky no-op, so it was safe to run for real rather than only smoke-test.
+
+### ▶ Category 9 EXECUTION LOG — 2026-08-18 (session 24)
+
+**✅ Category 9, News, Intel & Briefs (7 scripts) — DONE.** All 7 exercised.
+
+| Script | Result |
+|---|---|
+| `regulatory-actions` | ✅ 55 records — **FILLED AN ABSENT PRODUCTION KEY**. 4/6 RSS feeds succeeded (SEC, Fed, FDIC×partial, FINRA); CFTC×2 → HTTP 403 from Cloudflare (verified: 403 regardless of UA/headers — a Cloudflare bot-challenge on the outbound IP, not a header bug); FDIC → one timeout, non-fatal (`Promise.allSettled`, needs only 1/6 to succeed) |
+| `research` | ✅ healthy — arXiv (3 categories, 150 papers), GitHub Trending (3 langs), HN top+best, dev.events (99), Techmeme timed out (non-fatal) |
+| `displacement-summary` | "Failed gracefully" — network timeout after 3 retries, TTL extended on existing 2 keys, no data loss. Consistent with the documented local throttle; already healthy in production via category-3's `bundle-health` |
+| `bundle-regional` (regional-snapshots + regional-briefs) | ran 36.7s — regional-snapshots persisted 8/8 regions; regional-briefs correctly cooldown-skipped (4.9d < 6.5d) |
+| `insights` | ✅ 8 records, healthy — digest warm-cache RPC 401'd locally (`WORLDMONITOR_RELAY_KEY` unset, long-standing deferred item D), correctly fell back to LKG (reused existing insights) rather than failing |
+| `digest-notifications` | ran to completion, exit 0 — see resend section above. `resend` import resolved; exited safely at "No digest rules found" (Supabase creds gap, fail-closed, expected) |
+
+Two pre-identified problem areas from the pre-analysis, now resolved/explained:
+
+**1. `regulatory-actions` "produces nothing in production" — NOT a code bug, it's an orphaned
+cron.** The seeder itself works (55 records this run, clean data). Checked
+`scripts/railway-services.json` (36 entries) and every `seed-bundle-*.mjs`'s section table
+(`grep -c "script: 'seed-regulatory"` across all bundles → **0**): `seed-regulatory-actions.mjs` is
+registered in **no Railway service and no bundle**. Nothing on any schedule ever invokes it — that's
+why `seed-meta:regulatory:actions` was absent, not a runtime failure. This needs an operator
+decision (new standalone Railway cron, or fold into an existing bundle like
+`bundle-derived-signals`) — not something to wire up unprompted.
+
+**2. `news:digest*` "empty in production" — a plausible ephemeral-cache explanation, not confirmed
+either way; worth the next relevant session verifying rather than assuming brokenness.**
+`news:digest:v1:full:en` is written by `server/worldmonitor/news/v1/list-feed-digest.ts` via
+`cachedFetchJson` with a **900s (15min) TTL**, populated on-demand by live traffic (the frontend's
+`src/app/data-loader.ts` calls this RPC directly — this is a real user-facing endpoint, not
+seed-only). Critically, `cachedFetchJson`'s fetcher returns `null` when `buildDigest()` yields zero
+items, which **explicitly skips the Redis write** and caches a 120s negative-sentinel instead — so
+if upstream RSS is thin at generation time, the canonical key legitimately stays absent even under
+live traffic. A point-in-time probe catching this key empty is therefore expected/normal behavior
+for a short-TTL, demand-driven cache, not proof of an outage — unlike `resilience:ranking:v25`
+(category 8's P1), which has no such short-TTL/on-demand design and an explicit 14h staleness
+monitor. `seed-insights.mjs`'s LKG fallback (this session, and presumably production) means
+insights' own health is decoupled from digest's momentary state, which is why `news:insights:v1`
+reads fresh while `news:digest*` reads empty — they're on different cadences by design, not one
+masking a failure in the other. **Next step if this needs a real answer**: with
+`WORLDMONITOR_RELAY_KEY` set, run `insights` (which calls the warm-cache RPC) and immediately GET
+`news:digest:v1:full:en` before the 900s TTL lapses, to see whether it actually populates.
+
+### ⚠️ NEW FINDING — two hardcoded Groq model names return HTTP 404 against the live API (confirmed with the key added this session)
+
+Verified directly against `https://api.groq.com/openai/v1/chat/completions` with `GROQ_API_KEY`
+(already set in `.env` from a prior session, unrelated to the resend work above):
+
+```
+llama-3.1-8b-instant        -> HTTP 404 "does not exist or you do not have access to it"
+llama-3.3-70b-versatile     -> HTTP 404 "does not exist or you do not have access to it"
+openai/gpt-oss-20b          -> HTTP 200 (works)
+```
+
+`GET /v1/models` on this key lists only: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`,
+`openai/gpt-oss-safeguard-20b`, `qwen/qwen3.6-27b`, `allam-2-7b`, `groq/compound`,
+`groq/compound-mini`, plus audio/guard/orpheus models — **no `llama-*` chat model exists on this
+account at all.** This surfaced because `bundle-regional`'s run this session logged
+`[narrative] groq: HTTP 404` for all 8 regions (falling through to "shipping empty narrative" since
+`OPENROUTER_API_KEY` is also unset locally).
+
+**Blast radius — both literals are hardcoded (not read from an env var) in 9 files**, split across
+live-request-path server code and seed/relay scripts:
+- `server/_shared/llm.ts:96` — **live API path**: `groq` is 3rd in the `['ollama', 'openrouter',
+  'groq', 'generic']` chain (`PROVIDER_CHAIN`), used by chat/summarize/deduction endpoints as the
+  free-tier outage fallback
+- `scripts/regional-snapshot/narrative.mjs:76` (`llama-3.3-70b-versatile`) — regional narrative,
+  reproduced live this session
+- `scripts/regional-snapshot/weekly-brief.mjs:47` (`llama-3.3-70b-versatile`)
+- `scripts/seed-insights.mjs:94` (`GROQ_MODEL = 'llama-3.3-70b-versatile'`)
+- `scripts/seed-forecast-resolutions.mjs:509` (`FORECAST_RESOLUTION_JUDGE_MODEL_GROQ` default)
+- `scripts/seed-forecasts.mjs:14645` (`llama-3.3-70b-versatile`) **and** `:14753`
+  (`llama-3.1-8b-instant`, a second distinct hardcoded literal in the same file)
+- `scripts/ais-relay.cjs:3738` (`llama-3.3-70b-versatile`)
+
+**Why this hasn't been an alarming outage**: Groq sits as a fallback/safety-net tier everywhere it
+appears (never the primary provider), and every call site degrades gracefully — fall through to the
+next provider, or ship an empty narrative/summary — rather than throwing. That's exactly why it went
+unnoticed: it silently removes a safety-net tier project-wide rather than breaking anything outright.
+Whether this is a Groq-account-specific restriction or a platform-wide deprecation of the `llama-*`
+chat models wasn't determined here (not verified against a second Groq account) — but the
+`/v1/models` response containing zero `llama-*` entries at all is at minimum strong evidence.
+
+**Deliberately not fixed this session** — same posture as category 8's P1: this is a genuine,
+independently-corroborated finding (live 404, live models list, live production log line), but
+`server/_shared/llm.ts` is live-request-path code touching chat/summarize/deduction endpoints, and a
+proper fix means picking a real replacement model (likely `openai/gpt-oss-20b`, confirmed working
+above, or reading the model from an env var like the Ollama provider already does) across all 9
+sites consistently — an operator call on scope and replacement model, not a single-line patch.
+
+### ▶ Category 10 EXECUTION LOG — 2026-08-18 (session 24)
+
+**✅ Category 10, Infrastructure & Misc (7 scripts) — DONE.** All 7 exercised (`bundle-regional`
+already covered in category 9). Read-only production probe done first per the established method:
+of 12 `seed-meta:*`/canonical keys checked, **6 were absent** (`infra:service-statuses`,
+`infra:outages`, `webcam:cameras:geo`, `infrastructure:submarine-cables`, `military:bases` — plus
+their canonical keys), a much higher hit rate than any prior category. Traced every one to a root
+cause rather than assuming brokenness:
+
+| Script | Result |
+|---|---|
+| `infra` | 0/3 warm-pings OK — `WORLDMONITOR_RELAY_KEY` 401 (deferred item D). Also: this script is **likely dead code** — 2 of its 3 RPC targets (`list-service-statuses`, `get-cable-health`) are already warm-pinged continuously by `ais-relay.cjs`'s own loop (`CABLE_HEALTH_RPC_URL`/`SERVICE_STATUSES_RPC_URL`, both 30min); `seed-infra.mjs` itself is registered in zero Railway services and zero bundles |
+| `internet-outages` | Clean skip — `CLOUDFLARE_API_TOKEN` unset locally (new credential gap; the script itself checks first and exits 0 before any write). **Confirmed genuinely orphaned**: `seed-internet-outages.mjs` appears in zero Railway services and zero bundle section tables (`grep` across all `seed-bundle-*.mjs`), same shape as category 9's `regulatory-actions` — except `infra:outages:v1` carries a strict **30-minute** `maxStaleMin` alarm in `api/health.js:351`, tighter than any other orphan found so far |
+| `service-statuses` | Failed gracefully — `WORLDMONITOR_RELAY_KEY` 401, TTL-extend was a no-op (production key genuinely absent). **Not a bug**: `api/health.js:380` and `:641` explicitly document this key as `ON_DEMAND — RPC-populated, no dedicated seed, goes stale when no users visit` and exclude it from strict staleness alarms. `seed-service-statuses.mjs`'s own header says "Standalone fallback — primary seeder is the AIS relay loop," which runs continuously in production; local absence is expected without live traffic or the relay key |
+| `webcams` | Clean skip — `WINDY_API_KEY` unset locally (new credential gap). **Confirmed genuinely orphaned**: `seed-webcams.mjs` is referenced nowhere in the codebase except itself, `.env.example`, and the `api/health.js` monitor (`maxStaleMin: 1440`) — zero Railway services, zero bundles. Distinguish from [[vscode_live_news_debugging_session]]'s correction: the `api/webcam` *serving* endpoint is confirmed still live for `PinnedWebcamsPanel`; this is about the *seeder* that's supposed to keep its cache warm, which has no scheduling path at all |
+| `bundle-relay-backup` | ✅ clean — ran 3/5 sections (Climate-News 86 records, USA-Spending 15, Global-Tenders 242), correctly cooldown-skipped 2 already-fresh from earlier categories (UCDP-Events, WB-Indicators). 0 failures |
+| `bundle-static-ref` | **Mixed — one real finding.** Defense-Patents/Chokepoint-Baselines correctly skipped (not due yet, per their WEEK/400-day intervals). **Submarine-Cables**: failed gracefully after 4 retries / 130s against TeleGeography — plausibly the standard local network throttle (not confirmed either way; production's own key was also already absent before this run, so this deserves a re-check from a non-throttled connection rather than being written off). **Military-Bases: genuine FAILURE, exit 1** — see below |
+
+### ⚠️ NEW FINDING — `military:bases` R2 data bucket is empty; created one day before this session, never populated
+
+`seed-military-bases.mjs` failed hard (exit 1, not graceful) trying every fallback in order: no
+Railway volume file, no local `scripts/data/military-bases-final.json` (gitignored, never
+generated in this checkout), then an R2 download that returned **HTTP 404**. Verified this is not a
+credential or URL-shape bug — `CLOUDFLARE_R2_TOKEN`/`CLOUDFLARE_R2_ACCOUNT_ID` are both set, and
+curling the exact URL the script constructs returns a well-formed Cloudflare error, not an
+auth/routing failure:
+```
+{"success":false,"errors":[{"code":10007,"message":"The specified key does not exist."}]}
+```
+Listing the bucket directly confirms why: **`worldmonitor-data` is a real, existing R2 bucket
+(`creation_date: 2026-08-17T12:41:04Z` — literally the day before this session) that is completely
+empty** (`GET .../objects` → `result: []`). This isn't a broken seeder — it's a provisioning gap:
+someone stood up the R2 bucket and wired the seeder's fallback path to it, but the actual data
+asset was never generated and uploaded. The generator exists and is unrun: `scripts/build-
+military-bases-final.mjs` (header: "Output: scripts/data/military-bases-final.json"). **Fix path,
+not executed this session** (generating + uploading a production data asset is a bigger step than
+"test a seeder," and the R2 bucket's very recent creation date suggests this may be mid-flight work
+from a session not reflected in this file — worth asking the operator before assuming it's simply
+unfinished): run `node scripts/build-military-bases-final.mjs`, then upload the resulting JSON to
+`worldmonitor-data/seed-data/military-bases-final.json` via the R2 API or `rclone`/`aws s3 cp`
+against the R2 S3-compatible endpoint.
+
+### ▶ Category 11 EXECUTION LOG — 2026-08-18 (session 24) — LAST CATEGORY, INITIATIVE NOW COMPLETE
+
+**✅ Category 11, Cross-Cutting / Derived Signals (3 scripts) — DONE.** Read-only probe first:
+`seed-meta:correlation:cards` and `seed-meta:intelligence:cross-source-signals` both **absent**,
+`seed-meta:intelligence:regional-snapshots` fresh (131min ago, correctly within its 360min
+interval). Ran `bundle-derived-signals` (exercises all 3 scripts in one process):
+
+| Section | Result |
+|---|---|
+| Correlation | Failed gracefully after 3 retries / 51.7s — Redis pipeline read timed out |
+| Cross-Source-Signals | Failed gracefully after 3 retries / 73.3s — Redis pipeline read timed out |
+| Regional-Snapshots | Correctly skipped (131min ago vs 360min interval, already covered in category 9) |
+
+### ⚠️ NEW FINDING — `correlation` and `cross-source-signals` both empty in production, on a deployed+tightly-monitored bundle; same P1-shaped pattern as category 8
+
+**What's NOT in question**: the local timeout is a genuine reproduction of the documented network
+throttle. Both failures are Redis-pipeline reads (`AbortSignal.timeout` 10s/15s respectively)
+against Upstash's REST endpoint — the exact same failure shape category 8 already root-caused for
+`seed-resilience-static.mjs` (an unchunked ~199-command pipeline choking under the 6-10 KB/s local
+throttle). Neither script calls a 3rd-party upstream at this step; they're reading their own prior
+Redis state. Both are architecturally resilient to *missing individual source keys* — each only
+needs "any data available" among ~20+ possible source keys (`cross-source-signals`'s `SOURCE_KEYS`
+list includes several keys already confirmed healthy from earlier categories) — so a normal-latency
+run should not fail this way.
+
+**What IS the open question, and why it's flagged at P1-adjacent severity rather than dismissed as
+the same local-throttle non-issue**: unlike category 8's finding (where only a *rare recovery-path*
+timeout was reproduced locally, and the production key itself was healthy), here **both canonical
+outputs were already completely absent in production BEFORE this session touched anything** —
+confirmed via `EXISTS`/`TTL` both before and after the run (still `0`/`-2`). Both keys sit on:
+- an **actively deployed** vehicle (`seed-bundle-derived-signals` has its own Railway
+  `nixpacks-root-scripts` service, confirmed in `scripts/railway-services.json` — not an orphan
+  like several category 9/10 findings)
+- a **tight cron cadence** (5min for Correlation, 15min for Cross-Source-Signals, per the bundle's
+  own section table)
+- a **tight staleness alarm** (`api/health.js:463` `maxStaleMin: 30` for correlationCards — the
+  comment there even documents the threshold was already tuned down once after bundle-jitter false
+  positives, i.e., this alarm is actively maintained, not a stale config; cross-source-signals
+  carries the same 30min threshold per `api/health.js:477`, checked in category 9)
+
+If both sections have genuinely been failing on every production cycle, that's a currently-active
+monitored alarm, structurally identical to category 8's P1 — same escalation path applies: **check
+the `seed-bundle-derived-signals` Railway service's recent run logs** to see whether it's timing out
+there too (would indicate a real production issue, e.g., Upstash-side latency or an oversized
+unchunked pipeline read) or succeeding cleanly (which would mean the absence predates this session
+for some other reason, e.g., a recent key-prefix bump with no backfill — the same "cold start after
+cache key bump" shape category 8's P1 hypothesized for resilience). **Not diagnosable further from
+here** — this session had no way to distinguish those two explanations without production log
+access, same limitation as the category 8 P1.
+
+**Initiative status**: this closes category 11, the last of 11. Every one of the 156
+`scripts/seed-*.mjs` files has now been run at least once across sessions 20-24. See the "START
+HERE" section at the top of this file for the consolidated list of what's still open across all
+categories — that list, not this per-category log, is the authoritative next-steps summary.
+
+---
+
+## 🔖 HANDOFF (2026-08-18, twenty-third session — category 8 of 11 DONE) — SUPERSEDED by the session-24 block above; kept for its category-8 findings and P1
 
 ### ▶ START HERE — next session, in order
 
@@ -1390,11 +1718,14 @@ despite being as real/load-bearing as the other tracked files, was never added t
 
 ---
 
-## 🔖 NEXT INITIATIVE (IN PROGRESS, **8 of 11 categories done — 139 of 156 scripts — as of twenty-third session**): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+## ✅ TESTING SWEEP COMPLETE (**11 of 11 categories, 156 of 156 scripts, as of twenty-fourth session**) — superseded by the FIX MODE handoff at the top of this file; that's the live status
 
-**Status/results live in the consolidated twentieth-session HANDOFF block at the top of this file
-— this section is now just the reference list (method, order, full per-category script names), not
-a status report.** Deferred twice before this session started it for real: queued for the eighteenth
+**The testing sweep itself is closed — do not re-run scripts that already came back healthy.**
+End-of-session-24, the operator redirected this initiative into fix mode: work the prioritized fix
+list in the HANDOFF block at the top of this file until production Upstash Redis is fully
+populated, rather than continuing to test already-tested sources. This section below is now purely
+historical reference (method, order, full per-category script names). Deferred twice before this
+session started it for real: queued for the eighteenth
 session (redirected into Live News/Webcams removal — see [[vscode_live_news_debugging_session]]
 in memory), queued again for the nineteenth (redirected into VS Code sidecar debugging — see
 [[vscode_sidecar_theater_posture_debugging]]). Both blocking questions got resolved at the end of

@@ -95,14 +95,31 @@ test('a sub-object extra key is not flagged (seed-sanctions-pressure)', () => {
 
 test('a from-scratch extra key is not flagged (seed-iea-oil-stocks)', () => {
   // raw {members, dataMonth, seededAt}; canonical buildIndex → {dataMonth, updatedAt, members}.
-  // The only flaggable field is `seededAt`, and no extra-key payload carries it.
-  const raw = { members: [{ iso2: 'DE' }], dataMonth: '2026-06', seededAt: 123 };
+  // parseRecord() stamps `seededAt` onto every member (not just top-level) — that's the
+  // fixture that matters below. The only flaggable field is `seededAt`.
+  const raw = { members: [{ iso2: 'DE', seededAt: 123 }], dataMonth: '2026-06', seededAt: 123 };
   const published = { dataMonth: '2026-06', updatedAt: 123, members: [{ iso2: 'DE' }] };
   const analysis = { updatedAt: 123, dataMonth: '2026-06', ieaMembers: [], belowObligation: [], regionalSummary: {}, shockScenario: null };
 
   assert.deepEqual(findLeakedPrePublishFields(raw, published, analysis), []);
   assert.deepEqual(findLeakedPrePublishFields(raw, published, { fetchedAt: 1, recordCount: 0 }), []);
-  assert.deepEqual(findLeakedPrePublishFields(raw, published, raw.members[0]), []);
+});
+
+// The incident this shipped as (2026-08-17 seed-source review): the fixture above used to
+// pass a member WITHOUT `seededAt`, so it never exercised the real shape and the guard's
+// green test suite coexisted with a live-broken seeder for an unknown number of cycles.
+// COUNTRY_EXTRA_KEYS' transform used to be `data.members.find(...)` verbatim — the raw
+// member, `seededAt` included — which fails against the real fixture below every time.
+test('the real per-country extraKey payload (raw member, seededAt included) is caught, and the fix clears it', () => {
+  const raw = { members: [{ iso2: 'DE', seededAt: 123 }], dataMonth: '2026-06', seededAt: 123 };
+  const published = { dataMonth: '2026-06', updatedAt: 123, members: [{ iso2: 'DE' }] };
+
+  // Bug: extraKey transform returned the raw member as-is.
+  assert.deepEqual(findLeakedPrePublishFields(raw, published, raw.members[0]), ['seededAt']);
+
+  // Fix: extraKey transform strips `seededAt` before returning (seed-iea-oil-stocks.mjs).
+  const { seededAt, ...fixed } = raw.members[0];
+  assert.deepEqual(findLeakedPrePublishFields(raw, published, fixed), []);
 });
 
 test('a null/non-object extra-key payload never throws', () => {

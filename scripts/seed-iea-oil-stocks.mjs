@@ -228,10 +228,21 @@ async function fetchIeaOilStocks() {
 
 // Declared up front so runSeed can extend their TTL on fetch failure or
 // validation skip — keeps country keys alive as long as the index lives.
+// transform strips `seededAt`: it's on the raw parseRecord() member (for the
+// analysis/index builders below, which need a per-fetch timestamp) but is not
+// part of the published shape, no downstream reader touches it on this
+// per-country key, and re-exporting it trips runSeed's leaked-pre-publish-field
+// contract check (top-level `seededAt` on the raw fetcher result vs. `updatedAt`
+// on the canonical index — see findLeakedPrePublishFields in _seed-utils.mjs).
 const COUNTRY_EXTRA_KEYS = Object.values(COUNTRY_MAP).map(iso2 => ({
   key: `energy:iea-oil-stocks:v1:${iso2}`,
   ttl: TTL_SECONDS,
-  transform: (data) => data.members?.find(m => m.iso2 === iso2) ?? null,
+  transform: (data) => {
+    const member = data.members?.find(m => m.iso2 === iso2);
+    if (!member) return null;
+    const { seededAt, ...published } = member;
+    return published;
+  },
 }));
 
 // Analysis key included in extraKeys so runSeed extends its TTL on fetch

@@ -1531,7 +1531,15 @@ async function orefBootstrapHistoryWithRetry() {
     console.warn('[Relay] OREF Redis bootstrap failed:', err?.message || err);
   }
 
-  // Phase 2: upstream with retry + exponential backoff
+  // Phase 2: upstream with retry + exponential backoff — requires a proxy (OREF blocks
+  // non-Israeli IPs directly); without OREF_PROXY_AUTH this always fails on a malformed
+  // `-x http://` curl flag, so skip straight to empty history instead of burning 3
+  // guaranteed-failing attempts (~21s) on every relay start, same gate as orefFetchAlerts().
+  if (!OREF_PROXY_AVAILABLE) {
+    console.log('[Relay] OREF upstream bootstrap skipped — no proxy configured (OREF_PROXY_AUTH unset)');
+    return;
+  }
+
   const MAX_ATTEMPTS = 3;
   const BASE_DELAY_MS = 3000;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {

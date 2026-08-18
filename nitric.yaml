@@ -30,7 +30,12 @@ services:
     start: node $SERVICE_PATH
     runtime: seed-bundle-portwatch-port-activity
   - match: scripts/seed-bundle-resilience-validation.mjs
-    start: node $SERVICE_PATH
+    # Sensitivity-Suite (validate-resilience-sensitivity.mjs) dynamically imports
+    # ../server/*.ts — needs the tsx ESM loader registered via NODE_OPTIONS so
+    # _bundle-runner.mjs's spawned node children inherit it too (spawn() inherits
+    # process.env by default). Mirrors Dockerfile.seed-bundle-resilience-validation's
+    # ENV NODE_OPTIONS wiring, which local `node $SERVICE_PATH` never had.
+    start: NODE_OPTIONS=--import=file://$PWD/node_modules/tsx/dist/loader.mjs node $SERVICE_PATH
     runtime: seed-bundle-resilience-validation
   - match: scripts/publish-bootstrap-tiers.mjs
     start: node $SERVICE_PATH --loop

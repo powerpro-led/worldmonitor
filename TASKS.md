@@ -15,52 +15,56 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔧 HANDOFF (2026-08-18, twenty-fifth session prep — FIX MODE) — read this first
+## 🔀 HANDOFF (2026-08-18, twenty-fifth session — CONTEXT CORRECTION + FIX MODE continues) — read this first
 
-**Mode change, operator-directed at the end of session 24**: the testing sweep (11/11 categories,
-156/156 scripts, each run once) is done and stays done — do not re-run scripts that already came
-back healthy. **The next session's job is to close out every remaining finding below until
-production Upstash Redis is fully populated** — i.e., actually fix things, not just characterize
-them further. Everything in this section is sequenced so a cold agent can start at item 1 and work
-down without re-investigating; the fuller evidence for each item is in the category-8/9/10/11 log
-sections further down this file (search for the bolded key name, e.g. `resilience:ranking:v25`).
+**Everything below the "Prerequisite"/Railway framing in the old version of this section was
+built on a false premise.** Operator confirmed directly this session: this repo is a **fork of the
+official worldmonitor.app**, mid-refactor. Convex/Clerk → Supabase is done (see
+`retire_convex_saas_complete.md`). **Railway has been abandoned entirely** — the "production
+Upstash Redis" that items 1-2 below assumed was deployed-and-monitored never existed in the form
+this file described. All cron/seed-bundle orchestration is moving to **Nitric-SDK-managed GCP
+infra**, currently still local-dev-only: `nitric.yaml` (scaffold, "no `nitric up` has been run")
++ `nitric start` run locally is the actual dev workflow. **Do not ask for Railway logs or install
+the Railway CLI — there is nothing there.** Fuller narrative: memory `fork_and_nitric_gcp_refactor.md`.
 
-### ⛔ Prerequisite — resolve this FIRST, it gates the two highest-value items
+**What this session actually did, working directly against a live local `nitric start`** (was
+already running, 8.5h stale — restarted to pick up `.env` changes; **restart `nitric start` after
+any `.env` edit**, it does not hot-reload):
 
-**No Railway CLI is installed and no `RAILWAY_TOKEN` exists anywhere in this checkout** (`which
-railway` → not found, `.env` has no `RAILWAY_*` var). Items 1 and 2 below were both explicitly
-diagnosed as "needs the Railway service's recent run logs" — that diagnosis is impossible without
-either (a) `npm i -g @railway/cli`, `railway login`, and a token added to `.env`, or (b) the operator
-pulling the relevant logs manually (Railway dashboard → `seed-bundle-resilience` /
-`seed-bundle-derived-signals` services → Deployments → Logs) and pasting them in. **Ask the operator
-for one of these two before spending time on items 1-2** — don't guess at log access or skip
-straight to "fix" without seeing what's actually happening on the deployed side; both P1s might be a
-one-line fix (e.g. a stale key-prefix bump) or something structural, and the logs are the only way
-to tell which.
+1. ~~P1 — resilience:score/ranking empty~~ — **reclassified, not investigated further this
+   session**. The "empty in production" framing doesn't apply (no production existed to be empty).
+   Whether this resolves once the Nitric/GCP dev stack actually runs the resilience bundle for a
+   full cycle is untested — pick this up by watching `.nitric/services.log` for
+   `Bundle:resilience` output during a `nitric start` session, not by chasing Railway.
+2. ~~P1-adjacent — correlation/cross-source-signals empty~~ — **root-caused and fixed differently
+   than hypothesized.** Not a "199-command unchunked pipeline" problem (these pipelines are only
+   9-20 keys) — the actual cause is 2 large individual values
+   (`market:stocks-bootstrap:v1` ~180KB + `market:commodities-bootstrap:v1` ~227KB) moving over a
+   **destination-specific local network throttle to Upstash** (~9-11 KB/s measured, confirmed NOT
+   VPN-routing via the `local-network-optimizer` skill — bypassing the tunnel made no difference;
+   confirmed NOT GCP-wide — `storage.googleapis.com` ran 8x faster on the same link). No further
+   network-level fix exists locally (private Redis instance, no mirror possible). **Mitigated**:
+   bumped `seed-correlation.mjs` (10s→45s) and `seed-cross-source-signals.mjs` (15s→45s) pipeline
+   timeouts, comment explains why. Once run against real cloud infra this class of timeout should
+   simply not occur (normal cloud-to-cloud bandwidth) — don't carry the 45s number forward as a
+   "real" requirement, it's a local-throttle accommodation.
+3. **Two unrelated real bugs found + fixed while investigating the above**, both committed:
+   `scripts/ais-relay.cjs`'s OREF history bootstrap was missing a proxy-availability guard its
+   sibling function already had (wasted ~21s/relay-start on guaranteed-fail curl calls);
+   `nitric.yaml`'s `seed-bundle-resilience-validation` entry was missing the `NODE_OPTIONS`
+   tsx-loader wiring its Railway Dockerfile counterpart sets, so its Sensitivity-Suite step always
+   failed importing a `.ts` file. **Treat `nitric.yaml` gaps like this as a bug class** — it was
+   hand-written to approximate the old Railway Dockerfiles rather than derived from them, so other
+   entries may have similar silent gaps if failures surface.
 
-### The fix list, in priority order
+Items 3-6 below (military:bases R2, Groq 404s, orphaned crons, lower-priority re-verify list) were
+**not touched this session** — still open, but re-read them with the corrected context: any
+"deployed on Railway" framing inside them is stale. `military:bases` R2 upload and Groq 404s are
+still directly actionable regardless of Railway/Nitric status (they're not deployment-dependent).
 
-1. **P1 — `resilience:score:v25:*` / `resilience:ranking:v25` empty in production.** Deployed
-   (`seed-bundle-resilience`), monitored (`api/health.js:269`+`:545`, `maxStaleMin: 840`), fully
-   absent. Full evidence in the category-8 HANDOFF section below (search `WORLDMONITOR_SEED_REFRESH_KEY
-   is required`). Once Railway logs are available: if the cause is a missing/rotated
-   `WORLDMONITOR_SEED_REFRESH_KEY` on the Railway service itself, that's an operator credential fix,
-   not a code fix. If the logs show a code-level failure, fix it and force one manual run to confirm
-   `resilience:ranking:v25` populates before considering this closed.
+### The fix list, in priority order (items 1-2 above are now historical — see reclassification)
 
-2. **P1-adjacent — `correlation:cards-bootstrap:v1` / `intelligence:cross-source-signals:v1` empty
-   in production.** Deployed (`seed-bundle-derived-signals`, 5min/15min cron), monitored
-   (`maxStaleMin: 30` both), fully absent — confirmed via `EXISTS`/`TTL` before AND after a local run
-   this session. Full evidence in the category-11 section below (search `P1-adjacent severity`).
-   Same unblock path as item 1. If the Railway logs show the same "Redis pipeline read timeout" this
-   session reproduced locally, that's a real production issue (not the local-throttle artifact it
-   would be if only reproduced locally) and likely means chunking the pipeline read the way category
-   8's `seed-resilience-scores.mjs` already does (`PIPE_BATCH = 50`) versus its sibling
-   `seed-resilience-static.mjs`'s unchunked ~199-command version — see the "Robustness finding" note
-   in the category-8 section for the precedent, then decide whether `seed-correlation.mjs` /
-   `seed-cross-source-signals.mjs` need the same chunking fix.
-
-3. **`military:bases` R2 bucket is empty — direct, executable fix, no Railway access needed.**
+3. **`military:bases` R2 bucket is empty — direct, executable fix, no deployment access needed.**
    `worldmonitor-data` R2 bucket exists (created 2026-08-17) but has zero objects — confirmed by
    listing it directly with the already-set `CLOUDFLARE_R2_TOKEN`/`CLOUDFLARE_R2_ACCOUNT_ID`. Full
    evidence in the category-10 section below (search `The specified key does not exist`). **Fix**:
@@ -88,39 +92,44 @@ to tell which.
 
 5. **Orphaned crons — each needs a scheduling decision, not a code fix.** `regulatory-actions`,
    `internet-outages`, `webcams`, likely `infra` (probably retire instead of schedule — see below)
-   are all working scripts registered in zero Railway services and zero bundles. For each, the fix
-   is either (a) add a new standalone `nixpacks-root-repo` entry to `scripts/railway-services.json`
-   + provision the actual Railway service (needs Railway dashboard access, not just this repo), or
-   (b) fold it into an existing bundle with a sensible interval, or (c) an explicit operator decision
-   that it's intentionally not scheduled (in which case remove it from `api/health.js`'s monitor
-   tables so it stops looking like a silent failure). `internet-outages` and `webcams` also need
-   their credential gaps closed first (`CLOUDFLARE_API_TOKEN`, `WINDY_API_KEY` — both unset
-   locally, unknown whether set on Railway; ask the operator). **`infra` is a special case**:
-   evidence in the category-10 section suggests 2 of its 3 warm-ping targets are already covered by
+   are all working scripts registered in zero Railway services and zero bundles — **note
+   `scripts/railway-services.json` itself is now stale given Railway's abandonment; whatever
+   "scheduled" means going forward is a `nitric.yaml`/`gcp/scheduler/main.ts` question, not a
+   Railway one.** For each, the fix is either (a) add scheduling in the new Nitric/GCP scheme once
+   that's mature enough, (b) fold it into an existing bundle with a sensible interval, or (c) an
+   explicit operator decision that it's intentionally not scheduled (in which case remove it from
+   `api/health.js`'s monitor tables so it stops looking like a silent failure). `internet-outages`
+   and `webcams` also need their credential gaps closed first (`CLOUDFLARE_API_TOKEN`,
+   `WINDY_API_KEY` — both unset locally; ask the operator). **`infra` is a special case**: evidence
+   in the category-10 section suggests 2 of its 3 warm-ping targets are already covered by
    `ais-relay.cjs`'s own continuous loop, making the script likely dead code rather than something to
    schedule — confirm `list-temporal-anomalies` has no other warm path before deciding, then either
    delete `seed-infra.mjs` or fold just that one RPC into the relay loop.
 
-6. **Lower-priority / needs re-verification, not confirmed bugs — don't spend time here until 1-5
+6. **Lower-priority / needs re-verification, not confirmed bugs — don't spend time here until 3-5
    are closed.** `news:digest*` reading empty (category 9) is plausibly just a 900s on-demand cache
    behaving normally, not a bug — re-verify per the category-9 section's suggested probe
    (`WORLDMONITOR_RELAY_KEY` set + immediate read) before treating it as broken. Submarine-Cables'
    timeout in `bundle-static-ref` (category 10) is plausibly the standard local network throttle —
-   re-check from a non-throttled connection before concluding anything. `seed-service-statuses`
-   reading empty is explicitly by-design (on-demand, excluded from strict alarms) — not on this list
-   at all, do not "fix" it.
+   this session confirmed that exact throttle is real and destination-specific to Upstash (see the
+   handoff above), so it's very plausibly the same cause here too; re-check once/if the throttle is
+   ever resolved rather than assuming it's a code bug. `seed-service-statuses` reading empty is
+   explicitly by-design (on-demand, excluded from strict alarms) — not on this list at all, do not
+   "fix" it.
 
-### Consolidated credential checklist — resolve what you can before starting item 1
+### Consolidated credential checklist — resolve what you can before starting item 3
 
-Ask the operator for these, or confirm they're already set on the relevant Railway service (a var
-being unset in this local `.env` does NOT mean it's unset in production — check before assuming):
+Ask the operator for these (a var being unset in this local `.env` may or may not be set wherever
+this eventually deploys — check before assuming either way, and don't assume Railway has it, that
+platform is abandoned):
 - `CLOUDFLARE_API_TOKEN` — blocks `internet-outages` (item 5)
 - `WINDY_API_KEY` — blocks `webcams` (item 5)
 - `WORLDMONITOR_RELAY_KEY` — blocks local verification of `insights`/`infra`/`service-statuses`
-  warm-ping RPCs and the `news:digest` re-check (item 6); Railway almost certainly has this set
-  already since those features work in production, but it's needed here to verify locally
-- `WORLDMONITOR_SEED_REFRESH_KEY` — blocks local diagnosis of item 1
-- Railway CLI/token — see the Prerequisite section above, blocks items 1 and 2
+  warm-ping RPCs and the `news:digest` re-check (item 6) — confirmed unset in this session's live
+  `nitric start` run too (`.nitric/services.log` shows repeated 401s from `ais-relay.cjs`'s
+  warm-ping loops: `[CII]`, `[CableHealth]`, `[Chokepoints]`, `[ServiceStatuses]`)
+- `WORLDMONITOR_SEED_REFRESH_KEY` — blocks local diagnosis of item 1 (now lower priority, see
+  reclassification above)
 
 ### ✅ Deferred item B RESOLVED — `resend` was never actually missing; the handoff's diagnosis across three sessions was wrong
 

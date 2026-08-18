@@ -165,7 +165,11 @@ async function readAllSourceKeys() {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(pipeline),
-    signal: AbortSignal.timeout(15_000),
+    // Same market:stocks-bootstrap:v1 + market:commodities-bootstrap:v1 pair (~400KB)
+    // dominates this pipeline too — see the matching comment in seed-correlation.mjs
+    // for the measured local-throttle numbers. 45s fits well inside the 120s outer
+    // per-section budget in seed-bundle-derived-signals.mjs.
+    signal: AbortSignal.timeout(45_000),
   });
   if (!resp.ok) throw new Error(`Redis pipeline: HTTP ${resp.status}`);
   const results = await resp.json();

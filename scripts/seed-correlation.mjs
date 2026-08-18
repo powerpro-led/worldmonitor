@@ -29,7 +29,14 @@ async function fetchInputData() {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(pipeline),
-    signal: AbortSignal.timeout(10_000),
+    // market:stocks-bootstrap:v1 + market:commodities-bootstrap:v1 alone run ~400KB
+    // combined. 10s only ever worked on cloud-to-cloud bandwidth; some local dev
+    // links (measured: ISP/host-specific throttle to Upstash, ~9-11KB/s, confirmed
+    // not VPN-routing — same GCP account's storage.googleapis.com ran 8x faster on
+    // the same link) need ~40s+ for this payload. 45s comfortably fits the 60s
+    // outer per-section budget in seed-bundle-derived-signals.mjs and costs nothing
+    // on a fast link — it only matters when something really is slow.
+    signal: AbortSignal.timeout(45_000),
   });
   if (!resp.ok) throw new Error(`Redis pipeline: HTTP ${resp.status}`);
   const results = await resp.json();

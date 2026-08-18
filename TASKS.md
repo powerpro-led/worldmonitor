@@ -15,21 +15,72 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-18, twenty-fifth session — CONTEXT CORRECTION + FIX MODE continues) — read this first
+## 🔀 HANDOFF (2026-08-18, twenty-fifth session end) — read this first
 
-**Everything below the "Prerequisite"/Railway framing in the old version of this section was
-built on a false premise.** Operator confirmed directly this session: this repo is a **fork of the
-official worldmonitor.app**, mid-refactor. Convex/Clerk → Supabase is done (see
-`retire_convex_saas_complete.md`). **Railway has been abandoned entirely** — the "production
-Upstash Redis" that items 1-2 below assumed was deployed-and-monitored never existed in the form
-this file described. All cron/seed-bundle orchestration is moving to **Nitric-SDK-managed GCP
-infra**, currently still local-dev-only: `nitric.yaml` (scaffold, "no `nitric up` has been run")
-+ `nitric start` run locally is the actual dev workflow. **Do not ask for Railway logs or install
-the Railway CLI — there is nothing there.** Fuller narrative: memory `fork_and_nitric_gcp_refactor.md`.
+**Repo context, confirmed by the operator this session (don't re-litigate)**: this repo is a
+**fork of the official worldmonitor.app**, mid-refactor. Convex/Clerk → Supabase is done (see
+`retire_convex_saas_complete.md`). **Railway has been abandoned entirely** — any "production
+Upstash Redis is deployed and monitored" framing you find in older sections below this one is
+stale; that deployment never existed in the form described. All cron/seed-bundle orchestration is
+moving to **Nitric-SDK-managed GCP infra**, currently still local-dev-only: `nitric.yaml`
+(scaffold, "no `nitric up` has been run") + `nitric start` run locally is the actual dev workflow.
+**Do not ask for Railway logs or install the Railway CLI — there is nothing there.** Fuller
+narrative: memory `fork_and_nitric_gcp_refactor.md`.
 
-**What this session actually did, working directly against a live local `nitric start`** (was
-already running, 8.5h stale — restarted to pick up `.env` changes; **restart `nitric start` after
-any `.env` edit**, it does not hot-reload):
+**Git state**: `main` is 7 commits ahead of `origin/main`, 0 behind, working tree clean as of this
+handoff. Operator pushes manually — don't push unprompted.
+
+**`nitric start` is currently running** (PID varies — `pgrep -fl "^nitric start$"`), live since this
+session's second restart. **Restart it after any `.env` edit** — it does not hot-reload; verify a
+new value took effect by checking `pgrep -f "scripts/ais-relay.cjs"` respawned after the restart.
+`.nitric/services.log` is a JSON-lines log (grows large — 50MB+/8h) with one line per event; pipe
+through a Python `Counter` on normalized `msg` text before triaging rather than reading raw.
+
+**Resolved this session** (5 commits `1d3fa0f`..`24b94d2` — see each item's full writeup below for
+what was actually done, this is just the index; numbers refer to the fix-list items further down):
+- Fix-list items 1-2 (former "P1"s) reclassified — not empty production, root-caused differently.
+- Fix-list item 3, `military:bases` R2 bucket, populated with a real (if smaller-than-intended)
+  dataset.
+- `RELIEFWEB_APPNAME` (not on the original numbered fix list — a separate credential the operator
+  received approval for mid-session) approved + wired up, `climate-disasters` pulls real ReliefWeb
+  data again.
+- Fix-list item 4, Groq model 404s, fixed across all 7 live call sites, `GROQ_MODEL` env var added.
+
+**Still open, in priority order for the next session**:
+- **`WORLDMONITOR_RELAY_KEY`** unset — blocks local verification of several warm-ping RPCs and the
+  `news:digest` re-check (item 6). Single highest-leverage credential ask left on the whole list.
+- **Orphaned crons** (item 5) — scheduling decisions, not code fixes.
+- **`military:bases` full coverage** — two independent gaps, both external: the Polyglobe
+  `SUPABASE_ANON_KEY` (nobody has it, operator doesn't know where Polyglobe's site is either), and
+  OSM's regional-partition fetch (code is correct and committed, just needs to run from a machine
+  without this session's network throughput ceiling — see item 3's full writeup).
+- **Lower-priority re-verify list** (item 6) — `news:digest`, Submarine-Cables timeout.
+
+**New finding from this session, not yet triaged — quantified log noise nobody has looked at
+individually.** While debugging the live `nitric start` log (see item 2's writeup for method), a
+`Counter` over 8.5h of `.nitric/services.log` surfaced several recurring errors that were *not*
+investigated this session (all effort went to items 1-4 above). Rough frequency, in one 8.5h
+window, most-frequent first:
+- `[Sector] Yahoo quoteSummary <TICKER> HTTP 401` — all 12 sector ETF tickers (XLK, XLF, XLE, XLV,
+  XLY, XLI, XLP, XLU, XLB, XLRE, XLC, SMH), ~1,294 occurrences each. Looks like Yahoo Finance now
+  requires auth (crumb/cookie) this code path doesn't send — a real, likely-fixable bug, not
+  investigated.
+- `[scenario-worker] BLMOVE error` — two distinct variants seen (`max requests limit exceeded` and
+  plain `fetch failed`), ~1,161 occurrences. Possibly a polling-frequency issue against Upstash's
+  REST API (which doesn't support true blocking commands) burning through request quota fast.
+- `[TheaterPosture] OpenSky failed: OpenSky proxy 503 for WESTERN` — ~1,035 occurrences. Upstream
+  proxy issue, not diagnosed.
+- `[UCDP-Events] v# failed: UCDP GED API error` — ~969 occurrences, not diagnosed.
+- `military:flights:v1 read returned no flights, no prior intelligence:military-cii:v1 — skipped
+  publish` — ~855 occurrences. Likely cascades from one of the above rather than its own root
+  cause — check whether a flights-source failure upstream explains this before treating it
+  separately.
+None of these were confirmed as real bugs vs. expected-degraded-mode vs. another instance of this
+session's network-throughput-ceiling finding (see item 2) — that's the first thing to check for
+each, the same way item 2 turned out not to be the bug it first looked like.
+
+**What this session actually did on items 1-4, working directly against a live local `nitric
+start`** (was already running, 8.5h stale at session start — restarted to pick up `.env` changes):
 
 1. ~~P1 — resilience:score/ranking empty~~ — **reclassified, not investigated further this
    session**. The "empty in production" framing doesn't apply (no production existed to be empty).
@@ -57,10 +108,9 @@ any `.env` edit**, it does not hot-reload):
    hand-written to approximate the old Railway Dockerfiles rather than derived from them, so other
    entries may have similar silent gaps if failures surface.
 
-Items 3-6 below (military:bases R2, Groq 404s, orphaned crons, lower-priority re-verify list) were
-**not touched this session** — still open, but re-read them with the corrected context: any
-"deployed on Railway" framing inside them is stale. `military:bases` R2 upload and Groq 404s are
-still directly actionable regardless of Railway/Nitric status (they're not deployment-dependent).
+Items 3 and 4 below (military:bases R2, Groq 404s) were resolved later in this same session — see
+their own ✅ writeups. Items 5-6 (orphaned crons, lower-priority re-verify list) were not touched —
+still open, and any "deployed on Railway" framing inside them is stale.
 
 ### The fix list, in priority order (items 1-2 above are now historical — see reclassification)
 

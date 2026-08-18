@@ -15,6 +15,952 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔖 HANDOFF (2026-08-18, twenty-second session — category 7 of 11 DONE) — read this first
+
+### ▶ START HERE — next session, in order
+
+1. **Re-verify repo state; do not trust these numbers.**
+   `git fetch && git rev-list --left-right --count origin/main...main` and `git status --short`.
+   At the end of this session: `main` **6 ahead / 0 behind**, **13 files dirty** (12 modified +
+   1 untracked `tests/seed-comtrade-route-family.test.mjs`). **Nothing committed.**
+
+2. **Landing the working tree is now the top candidate.** It spans **seven** bug fixes across three
+   sessions. See "⛔ CANNOT FIX HERE" item G.
+
+3. **Baseline the test suite BEFORE blaming yourself.** The full unit suite is
+   `APP_DOMAIN=example.test npx tsx --test --test-concurrency=16 tests/*.test.mjs tests/*.test.mts api/security/report.test.mjs`
+   → **13730 tests, 13684 pass, 40 fail, 6 skipped**. Those **40 failures are PRE-EXISTING on a
+   clean tree** — verified this session by `git stash`-ing everything (0 files dirty) and re-running:
+   identical 40. They live in exactly 7 suites:
+   `bootstrap.test.mjs`, `ci-workflow-coverage.test.mts`, `edge-functions.test.mjs`,
+   `railway-services-registry-coverage.test.mts`, `browser-bundle-secret-guard.test.mts`,
+   `no-non-timing-safe-secret-compare.test.mts`, `renewable-energy-last-known-good.test.mts`.
+   **Do not attribute them to your changes, and do not fix them as part of seed testing** — they
+   are a separate, unexamined workstream. `tsc --noEmit` is clean.
+
+4. **Resume seed testing at category 8.** Categories 1-7 done = **127 of 156 scripts**.
+   Invocation is always `node --env-file=.env scripts/seed-<name>.mjs` — bare `node` fails every
+   script identically (aborts at "Missing UPSTASH_REDIS_REST_URL", harmlessly, before any write).
+
+5. **Read the network caveat before calling anything a bug.** This machine throttles nearly every
+   upstream to **6-10 KB/s**; Finnhub and Cloudflare are the exceptions. A local timeout is NOT
+   evidence of a bug — check `seed-meta:<domain>:<resource>` in Redis for a recent production
+   success first. This session that check correctly exonerated `seed-forecasts` (exit 75).
+
+6. **Know the three traps this session hit**, they generalize to every remaining category:
+   - **Exit 0 ≠ healthy.** `aaii-sentiment` exited 0 with `state:OK, recordCount:52` while serving
+     4.5-month-old hardcoded data. Judge on `recordCount` **and** real source lines in the log.
+   - **A green test suite proves nothing about upstreams.** 29 AAII assertions passed against
+     fixtures built to match the parsers' own assumptions while the integration was 100% broken.
+   - **Local runs WRITE TO PRODUCTION Redis** and can downgrade a live key. Read a key's current
+     value before re-running a seeder you suspect.
+
+7. **Method that worked for a bundle category** (reuse it): run the bundle first; every section
+   that gate-skips gets run individually in pass 2; run any dependency chain last, in order.
+   Peer seeders can run in parallel where the lock check shows distinct `domain:resource`.
+
+8. **Alpha Vantage budget**: free tier is **25/day AND ~5/minute**. ~22 of 25 were spent on
+   2026-08-18. If you resume on the same day, expect rate-limit warnings that are **not** bugs.
+
+### What changed this session
+Two credentials added and verified (`FINNHUB_API_KEY`, `ALPHA_VANTAGE_API_KEY`), category 7 fully
+executed (21/21 scripts), **6 fixes applied** (see "✅ FIXES APPLIED"), **7 items deferred** (see
+"⛔ CANNOT FIX HERE"), and **one earlier handoff claim corrected** — `seed-forecasts` does *not*
+write `news:digest:v1:full:en`; it reads it. Category 3's `recall-benchmark` is blocked on a
+900-second request-driven API cache, not on any seeder.
+
+---
+
+## 🔖 HANDOFF (2026-08-17/18, twenty-first session — categories 5 AND 6 of 11 done) — SUPERSEDED by the session-22 handoff above; kept for its method notes and category 5/6 findings
+
+### ▶ START HERE — next session, in order
+
+1. **Re-verify repo state first; do not trust these numbers blindly.**
+   `git fetch && git rev-list --left-right --count origin/main...main` and `git status --short`.
+   As of the end of this session: `main` **6 commits ahead of `origin/main`**, 0 behind, and
+   **11 uncommitted files** (10 modified + 1 new test). **Nothing is committed — the standing
+   discipline in this repo is to hold for the operator's explicit go-ahead.** The 11 files carry
+   all SIX bug fixes from sessions 20–21; ask about committing before starting new work, because
+   the pile is getting large.
+2. **Read the network caveat immediately below** before running any seed script. On this machine a
+   timeout is *not* evidence of a bug.
+3. **Resume the sweep at category 7, Markets & Finance (21 scripts).** Categories 1–6 are done
+   (106 of 156 scripts). Do not restart from category 1. The per-category script lists are in the
+   NEXT INITIATIVE section further down.
+4. **Use the two-pass bundle method** (see the category 6 entry) — pass 1 bundles, then pass 2 for
+   every gate-skipped section individually. Skipping pass 2 silently tests almost nothing.
+
+**Method, unchanged and operator-confirmed**: run each script live once with
+`node --env-file=.env scripts/seed-<name>.mjs` (bare `node` fails every script identically),
+confirm it writes fresh Redis data without error, batch-run a whole category, then review the
+category together. Default on a real finding: fix + verify + hold the commit; flag anything that
+is an operator decision.
+
+**Verified state at handoff**: `npx tsc --noEmit` clean; all four comtrade suites **88/88**;
+`node --test tests/seed-comtrade-bilateral-freshness-gate.test.mjs` **18/18**. Nitric restarted and
+healthy (PID 77333, all 7 long-running services up).
+
+**Open decisions waiting on the operator** (none block category 7):
+- Commit / push the 11 files.
+- `pnpm add resend` — undeclared dep; `seed-digest-notifications` can never start without it.
+- Add `IRAN_EVENTS_ENABLED=false` to `.env` — `publish-bootstrap-tiers` has published nothing for 8+ days.
+- `api/health.js:474` `maxStaleMin: 34560` (24d) vs the 30d comtrade cron — will report stale ~6 days per cycle.
+- Still-unset credentials: `RELIEFWEB_APPNAME`, `PROXY_URL`, `WORLDMONITOR_RELAY_KEY`.
+- Run the full comtrade seeder in production (see "How to actually run the full comtrade seeder").
+
+### ⚠️ Read before trusting ANY live-run verdict from this machine
+
+**This machine's network throttles nearly every upstream to 6–10 KB/s, or times it out entirely.**
+Measured 2026-08-17 across six hosts on the same link within one minute:
+
+| host | result | throughput |
+|---|---|---|
+| Cloudflare speedtest | 500,000 B in 4.2s | **117.4 KB/s** ✅ |
+| UN Comtrade | 269,552 B in 43.2s | 6.1 KB/s |
+| npm registry | 55,804 B in 6.2s | 8.7 KB/s |
+| Upstash (558 KB key) | 558,947 B in 56–78s | 9.4 KB/s |
+| GitHub codeload | **timeout** at 45s | — |
+| `storage.googleapis.com` | **timeout** at 45s | — |
+
+A full-tunnel VPN is active (`utun8`, gateway `172.27.232.1`; physical gateway `192.168.123.1`).
+Both fast and slow hosts route through it, so the tunnel is not uniformly bad — Cloudflare is the
+lone fast destination. Per-destination route bypasses were investigated and **rejected**: they'd
+have to be repeated for every upstream in the initiative. Operator's decision (this session):
+**keep the VPN and keep testing**, classifying payload/latency failures as environment artifacts.
+
+**Consequence for the method**: a seed script failing on a timeout here is NOT evidence of a bug.
+Confirm against `seed-meta:<domain>:<resource>` in Redis first — if production seeded it recently,
+the local failure is an artifact. That single check is what correctly saved `chokepoint-flows`
+from a wrong "fix" this session. Also note one control host is not enough to localise a network
+fault — Cloudflare's speed made a link-wide throttle look destination-specific.
+
+**Re-test list (operator: flag, don't re-run now).** These were logged in categories 1–4 as
+upstream/external blockers, but all match the throttle profile above and their verdicts should NOT
+be trusted as upstream problems: `ember-electricity` (category 1 — its blocker host,
+`storage.googleapis.com`, times out here), `jodi-oil` (category 1, 6 retries aborting at 30s),
+`sanctions-pressure` (197s), `submarine-cables` (131s), `thermal-escalation` (81s), `fatf-listing`
+(all category 4). Re-verify each on a healthy link before concluding anything about the upstream.
+
+### Category 5 — Supply Chain, Trade & Ports/Chokepoints (13 scripts) — DONE
+
+13 scripts covered by **9 runs**, because bundles spawn their component scripts as subprocesses.
+Three ordering facts worth reusing for later categories:
+- **The lock is `seed-lock:<domain>:<resource>`**, not `seed-lock:<domain>` (`_seed-utils.mjs:1608`)
+  — finer-grained than earlier handoffs imply. All 9 `runSeed` users here had distinct pairs, so
+  the only real collision risk is a bundle against the components it spawns. Bundles therefore ran
+  sequentially, never in parallel with their own sections.
+- **Run bundles BEFORE their components.** `_bundle-runner.mjs:275` skips any section seeded within
+  `intervalMs * 0.8`; individual `runSeed` scripts have no such gate. Components-first makes the
+  bundle a no-op "pass" that tests nothing.
+- **A bundle section can skip because *production* seeded it**, not because of your run
+  (`PW-Disruptions` skipped as "last seeded 10min ago"). Skipped sections need individual runs.
+
+Results — 7 pass, 2 environment artifacts, 1 real bug, 1 degraded, plus 1 budget artifact:
+
+- ✅ `bundle-portwatch` (76s) — PW-Main 13 records / 491 KB. Other 2 sections gate-skipped, both
+  re-run individually in pass 2 and clean: `portwatch-disruptions` (5 records),
+  `portwatch-chokepoints-ref` (28 records).
+- ✅ `bundle-portwatch-port-activity` (124s) — 30 countries, 0 errors. Ran in **designed cap-mode**:
+  cold cache → 144 countries dropped for no prior payload, `PARTIAL PERSIST: 30/50 below
+  canonical-publish floor`, so `supply_chain:portwatch-ports:v1:_countries` was NOT rewritten.
+  Correct behaviour (~6 runs to fully rotate), but **a single local run can never exercise this
+  seeder's canonical write** — don't read that as a failure.
+- ✅ `chokepoint-baselines` (5s) — 7 records, read-back verified.
+- ✅ `global-tenders` (131s) — 256 records. Its 312 KB payload tripped the same "verification read
+  returned null" warning; write confirmed OK first.
+- ✅ `supply-chain-trade` (17s) — 9 records, but **DEGRADED: `WTO_API_KEY` not set** (×22), giving
+  `Trade flows: 0 pairs` and `Tariff trends: 0 countries`. New credential gap.
+- ⚠️ `chokepoint-flows` (rc=75) — **NOT a bug, environment artifact.** `fetchAll` does 3 Redis GETs
+  with a flat `AbortSignal.timeout(10_000)`; one is the 558 KB `supply_chain:portwatch:v1`, which
+  measured 56–78s here. Production seeded this 12.1h ago with all 7 chokepoints through the same
+  10s timeout. **Do not bump this timeout** — unlike the UCDP/defense-patents fixes (upstream-side
+  latency that also hits production), this latency is purely local.
+- ⚠️ `trade-flows` (rc=143 twice) — **testing-budget artifact, not a script failure.** Its own
+  `TRADE_FLOW_FETCH_PHASE_TIMEOUT_MS` is 25 min (1500s) and my pass-2 watchdog was also 1500s, so I
+  killed it exactly at its own deadline. Matrix is only 84 requests with a 252s pacing floor
+  (~5–7 min on a healthy link); it overran solely because each request crawls (27 requests hit the
+  15s per-request timeout, concentrated on the largest responses — Semiconductors is 269 KB, which
+  needs ~18–20s at the measured 6.1 KB/s). Lock released cleanly both times, no orphan. Re-run with
+  a >1800s budget on a healthy link. `seed-meta:trade:comtrade-flows` is ABSENT in Redis.
+- ❌ `hs2-chokepoint-exposure` (rc=1) — two stacked causes: starved by the comtrade bug below
+  (`Comtrade data loaded for 0/197 countries`), then timed out in `redisPipeline` writing 1971 keys
+  (`seed-hs2-chokepoint-exposure.mjs:187`), plausibly the same throttle. Re-test after both the
+  comtrade credential and a healthy link are in place.
+- ❌ `comtrade-bilateral-hs4` — **real bug, fixed this session. See below.**
+
+### Bug #4 of the initiative — `comtrade-bilateral-hs4` silently dark for 21 days (FIXED, uncommitted)
+
+**Symptom**: `seed-meta:comtrade:bilateral-hs4` read `{fetchedAt: 21.2d ago, recordCount: 0,
+status: 'ok'}` — reporting healthy while having published nothing, and invisible to freshness
+monitoring precisely because it claimed OK.
+
+**Root cause, in two independent layers:**
+1. **Credential gap** — `COMTRADE_API_KEYS` is unset, so `usePublicApi` selects
+   `comtradeapi.un.org/public/v1/preview/...`. Reproduced directly: that endpoint returns
+   **HTTP 200 `{"count":0,"data":[],"error":""}`** for every keyless variant tried, and HTTP 500
+   whenever a `period` is supplied. The authenticated endpoint returns 401 without a key. **This
+   seeder structurally cannot produce data without `COMTRADE_API_KEYS`.**
+2. **Code bug (the fixed part)** — zero rows for every reporter throws no exception, so the catch
+   block's correct `writeMeta(0, 'error')` was unreachable, and the success path ran
+   `writeMeta(writtenCount)` with the default `status='ok'`, stamping `fetchedAt=now`. Because
+   `checkSeedMetaFreshness` compared **only `fetchedAt`**, a totally-failed run armed the 24-day
+   gate and suppressed its own retries. The failure disabled its own recovery.
+
+**Fix** (2 files): the gate now also rejects `status !== 'ok'` and `recordCount <= 0`
+(`seed-comtrade-bilateral-hs4.mjs:120`), which additionally **self-heals the already-stuck
+production record** instead of waiting out its remaining ~2.8 days; and the writer records
+`'error'` on a zero-write run (`:368`). Failing open here is safe against the UN Comtrade 500
+calls/month quota because the script's own comment states the monthly cron is the primary guard
+and this gate is only secondary.
+
+**Verified**: gate suite 15/15 (was 10 — added 5), `comtrade-bilateral-hs4` + `seed-comtrade-5xx-retry`
+66/66, `tsc --noEmit` clean, and a `git stash` A/B confirming the 3 bug-pinning tests fail against
+the unfixed script while the 2 over-correction guards pass either way.
+
+**Why `FORCE_RESEED=true` was deliberately NOT run**: it would spend ~23 min and ~396 requests to
+reproduce all-zeros already proven in 3 API calls, and would rewrite `fetchedAt=now` — extending
+the blackout by a fresh 24 days. Don't run it until `COMTRADE_API_KEYS` exists.
+
+**Same test-fixture blind spot as bug #1 (`iea-oil-stocks`)**: all 9 pre-existing gate tests passed
+`recordCount: 180, status: 'ok'`, so a thorough-looking green suite never exercised the shape
+production actually produced. Worth checking fixtures against real output in later categories.
+
+### Credential gaps found in category 5 — BOTH RESOLVED 2026-08-18
+
+- **`COMTRADE_API_KEYS`** — ✅ operator supplied both keys (comma-separated, so the seeder's
+  rotation doubles the effective 500/month-per-key quota). Was blocking `comtrade-bilateral-hs4`
+  completely and transitively `hs2-chokepoint-exposure`. **Note: the key alone was not enough —
+  see bugs #5 and #6 below.**
+- **`WTO_API_KEY`** — ✅ operator supplied (primary; secondary kept as a comment in `.env`).
+  `supply-chain-trade` re-run now yields 159 tariff-trend countries and 256 trade-flow pairs.
+
+### Category 6 — Economic Indicators & Central Banks (35 scripts) — DONE
+
+35 scripts covered by **29 runs** (14 in pass 1, 15 in pass 2). 3 bundles cover 21 of the 35;
+`bundle-macro` and `bundle-imf-extended` both spawn `seed-imf-macro.mjs`, so bundles never ran
+concurrently. **Pass 2 was essential and will be for later categories too**: pass 1's bundles
+freshness-skipped 16 of their 23 sections (production seeds these on schedule), so the bundles
+alone tested almost nothing. Individual `runSeed` scripts have no gate, so pass 2 ran them for real.
+
+**Result: 31 of 35 clean with verified data; 1 guarded by design; 2 blocked by a missing
+credential; 1 environment artifact.**
+
+- ✅ Clean, read-back verified (records in parens): `bis-data` (11), `bis-extended` (32),
+  `ecb-fx-rates` (7), `ecb-short-rates` (168), `yield-curve-eu` (6), `fsi-eu` (252), `fx-rates` (47),
+  `fx-yoy` (45), `economic-calendar` (7), `usa-spending` (15), `wb-indicators` (6 keys, older
+  logging convention with no `seed_complete` envelope — its absence is NOT a failure signal),
+  `china-coverage-health` (12), `economy` (2 + stress-index composite 8.6, 6/6 components),
+  `china-macro` (4), `bls-series` (2), `eurostat-country-data` (10), `eurostat-house-prices` (28),
+  `eurostat-gov-debt-q` (28), `eurostat-industrial-production` (26), `fao-food-price-index` (12),
+  `national-debt` (186), `wb-external-debt` (119), `bis-lbs` (200), `imf-macro` (191),
+  `imf-growth` (191), `imf-labor` (191), `imf-external` (190). All 3 bundles exited 0.
+- ⚠️ `sovereign-wealth` — exits clean with 6 records, but match quality is **6 OK / 2 partial /
+  4 MISS**; the misses include Norway and Saudi Arabia, whose NBIM and PIF are among the largest
+  sovereign funds in the world. A data-quality gap that reports success, so no freshness check will
+  ever flag it. Not investigated — flagged for the operator.
+- 🛡️ `consumer-prices` — **deliberately guarded, NOT run.** It refuses without `--force`: "This
+  script overwrites Redis keys with short TTLs (10-60 min), stomping the authoritative publish.ts
+  26h TTLs. Only run manually when publish.ts is broken." Forcing it would degrade live data to
+  score a green tick. Treat like category 4's `iran-events` (deliberately disabled ≠ broken).
+- ⚠️ `china-release-calendar` — rc=75 both passes, `NBS_REQUIRED_SOURCE_UNAVAILABLE:FETCH_FAILED`
+  against `www.stats.gov.cn`. **Environment artifact**: production seeded it 38.6h ago with 154
+  records, so the code path works. Same seed-meta test that exonerated `chokepoint-flows`.
+- ❌ `bigmac` (rc=1) and `grocery-basket` (no write) — **both blocked solely by `EXA_API_KEYS`**,
+  documented at `.env.example:625` but absent from `.env`. Every one of bigmac's ~45 countries
+  returned "EXA error: EXA_API_KEYS or EXA_API_KEY not set".
+
+### ⚠️ Production gap found while triaging the EXA failures — worth acting on
+
+`economic:bigmac:v1`, `seed-meta:economic:bigmac`, and `economic:grocery-basket:v1` **all return
+`exists=0` in Redis.** These two data sources are dark in production, not merely untestable
+locally — nothing has ever been published, or it expired long ago. The seeders' own
+graceful-degradation masked it: `grocery-basket` logs "existing cache TTL extended", but the
+warning right above it (`2 key(s) were expired/missing — EXPIRE was a no-op; manual seed required`)
+is the real signal — last-good preservation had no last-good to preserve. Setting `EXA_API_KEYS`
+is the prerequisite for both.
+
+**Checked and cleared, NOT a second comtrade-style bug**: `grocery-basket` logs "seed-meta
+refreshed (recordCount=0)", which pattern-matches bug #4. But it has no freshness gate of its own
+and is not a bundle section, so nothing consumes that meta as a retry gate — the write comes from
+shared `_seed-utils.mjs:1884` and is deliberate last-good preservation
+(see the design note at `_seed-utils.mjs:1458`). What made comtrade a bug was the *gate that read
+`fetchedAt` and blocked retries for 24 days*, not the zero-record write itself. Worth re-applying
+that distinction whenever this log line shows up again.
+
+### New credential gaps from category 6
+
+- **`EXA_API_KEYS`** — ✅ **RESOLVED 2026-08-18** (operator supplied; both dark sources now live).
+
+### 2026-08-18 — operator supplied 3 credentials; 2 more real bugs found in comtrade-bilateral-hs4
+
+Operator provided `EXA_API_KEYS`, `WTO_API_KEY` (+ secondary, kept as a comment) and
+`COMTRADE_API_KEYS` (both keys, comma-separated so the seeder's rotation doubles the effective
+quota). All three added to `.env` and **verified by direct API reproduction**, not by re-running
+the seeders: WTO `GET /timeseries/v1/reporters` -> 200, 288 reporters; Exa `POST /search` -> 200.
+
+**Credential re-runs — the two dark sources are now LIVE in Redis:**
+- `bigmac` — rc=0, **47 records**, `economic:bigmac:v1` now `exists=1` (was 0).
+- `grocery-basket` — rc=0, **24 records**, `economic:grocery-basket:v1` now `exists=1` (was 0).
+- `supply-chain-trade` — ✅ rc=0 in **16.5 min** (993858ms), 9 records verified. WTO now doing real
+  work: `WTO reporters: 278 economies`, `Tariff trends: 159 countries` (was 0), `Trade flows: 256
+  pairs` (was 0), plus per-country `trade:tariffs:v1:<code>:all:10` extra keys and
+  `trade:customs-revenue:v1`. Note the canonical recordCount stays 9 (shipping indices) either way —
+  **the WTO gain is entirely in the extra keys**, so recordCount alone would not have shown it.
+  Budget note: the first re-run SIGTERM'd at 701s, which was sized when WTO was a no-op; it needs
+  >=1200s now.
+
+### Bug #5 — `comtrade-bilateral-hs4` sent the classification revision where the API route family belongs
+
+The new key alone would NOT have fixed this seeder. It interpolated
+`STRATEGIC_PRODUCT_METADATA.classification.code` (`H6` = HS2022, a *classification revision*) into
+the URL path, where Comtrade expects its *API route family* (`HS`). Measured live on otherwise
+identical queries:
+
+```
+.../data/v1/get/C/A/H6  ->  HTTP 500 {"count":-1,"error":{...}}   every request
+.../data/v1/get/C/A/HS  ->  HTTP 200 count=25158
+```
+
+Two independent faults produced the same "zero records" symptom, which is why bug #4 hid so well:
+the missing key made the keyless preview return empty 200s, and the `H6` path would have 500'd even
+*with* a key. Fixing either alone leaves the seeder dark.
+
+**The repo already knew the right answer in two places** — `seed-trade-flows.mjs:14` ("API route
+family; metadata tracks the active H6/HS2022 revision separately") and
+`_bilateral-hs4-lazy.ts:20`, which uses `/C/A/HS` for the same data. Fix is the URL path only;
+`comtrade-strategic-products.json`'s `H6` is correct provenance and was deliberately left alone.
+
+**Verified**: new `tests/seed-comtrade-route-family.test.mjs` (4 tests), assertion-level A/B (all 4
+fail when flipped back to `H6`), and the decisive check — the seeder's OWN `fetchBilateral()`
+against Iceland returned **1,428 records** across all 5 requested HS4 codes.
+
+### Bug #6 — data TTL (72h) far shorter than the monthly cron, so keys were absent ~27 of every 30 days
+
+`TTL_SECONDS` was `259200` (72h) while the Railway service `seed-comtrade-bilateral-hs4` runs
+monthly. Every per-country key therefore expired 3 days after a run and stayed gone for the rest of
+the cycle — about 10% availability. Confirmed live: `comtrade:bilateral-hs4:{CN,US,DE}:v1` all
+returned TTL `-2` (key does not exist).
+
+**Why nobody noticed**: `api/health.js:243` deliberately probes the **seed-meta** key for this
+domain ("meta-only aggregate: payloads are sharded by country"), so the vanished data keys were
+structurally invisible to health. And `_bilateral-hs4-lazy.ts` silently refetches missing keys
+per-request (concurrency 1, 5s timeout), keeping panels populated via an expensive degraded
+fallback. Same masking pattern as bugs #4 and #5.
+
+**Nothing wanted 72h.** Gate 24d; seed-meta TTL 25d; `api/health.js:474` `maxStaleMin: 34560` (24d);
+`api/seed-health.js:104` `intervalMin: 17280` (12d); and the lazy fallback writes the SAME namespace
+with `SUCCESS_TTL = 2592000` (30d) — the seeder was undercutting its own fallback's lifetime.
+
+**Fix**: added `CRON_PERIOD_SECONDS = 30d` (pinning the Railway cadence, which lives in Railway's UI
+not the repo) and `TTL_SECONDS = CRON_PERIOD_SECONDS + 5d` = **35 days**. Raising the TTL is the only
+available lever: one run is 394 authenticated calls (197 countries x 2 batches) against a 500/month
+**per-key** quota, so with 2 keys the ceiling is 2 runs/month — the cron cannot simply run more often.
+
+**Verified**: 3 new invariant tests in the freshness-gate suite (TTL outlives cron with >=3d slack;
+TTL >= the lazy fallback's `SUCCESS_TTL`, parsed from its source; TTL covers the full gate window),
+assertion-level A/B (all 3 fail at the old 72h value). Also **updated a stale test**:
+`comtrade-bilateral-hs4.test.mjs` pinned `TTL_SECONDS = 259200` "to match the cache interval" — a
+bare literal-pin with no consumer behind it; it now asserts the literal cannot return and that TTL
+derives from `CRON_PERIOD_SECONDS`. All comtrade suites: **88/88 pass**, `tsc --noEmit` clean.
+
+### How to actually run the full comtrade seeder (answered for the operator 2026-08-18)
+
+- **Not on this machine.** 394 calls; China's authenticated response alone is 22.5 MB, which at this
+  link's 6-10 KB/s is 40-60 min for ONE request. A local run would burn most of the monthly quota
+  and still not finish.
+- **Preferred**: trigger the Railway service `seed-comtrade-bilateral-hs4`
+  (`scripts/railway-services.json`, `nixpacks-root-repo`) after these fixes deploy.
+- **Alternative**: locally with the VPN off — ~10 min of pacing plus transfer, so 20-40 min total.
+- **`FORCE_RESEED=true` is no longer needed**: the bug #4 gate fix treats the stuck
+  `recordCount=0` record as not-fresh, so the run proceeds on its own.
+- **Cadence**: monthly. 1 run/month = 197 calls/key (39% of the 500 quota); 2 runs/month = 394/key
+  (79%, fits); 3 runs/month = 591/key (exceeds). Monthly is also generous versus the data itself —
+  these are *annual* series (`freqCode=A`) that UN Comtrade updates with a 1-2 year lag.
+
+**⚠️ Related inconsistency, flagged NOT fixed (monitoring policy, operator's call)**: with a 30-day
+cron, `api/health.js:474`'s `maxStaleMin: 34560` (24d) will report this domain stale for the last
+~6 days of every cycle. Either the health threshold should be ~2x the cron (60d, matching the
+convention used by its neighbours) or the cron should tighten to ~24d. Not changed unprompted.
+
+### 2026-08-18 — Nitric fully restarted (operator's call: "too stale, couple of days")
+
+`.env` is read by services only at process start (`nitric.yaml:11,14` -> `npx tsx watch
+--env-file=.env`). Verified empirically that **`.env` is NOT watched**: `touch .env` left the API
+worker PID unchanged. The running instance (PID 18199, up since **Aug 10 21:55**; newest worker
+reloaded Aug 17 11:02) therefore predated the 2026-08-18 12:09 credential edit and could not see it.
+
+Two of the three new credentials ARE read by Nitric-served code — `WTO_API_KEY`
+(`server/worldmonitor/trade/v1/_shared.ts:50`) and `EXA_API_KEYS`
+(`server/worldmonitor/market/v1/stock-news-search.ts:285`). `COMTRADE_API_KEYS` is seeder-only
+(the lazy fallback uses the keyless public endpoint), so it needed no restart.
+
+**Restart done**: SIGTERM to 18199 (clean exit in 3s), three orphaned children
+(`npm exec tsx` x2, `scenario-worker`) terminated before restart so they could not conflict — same
+orphan shape as the session-19 sidecar work. New instance PID 77333, port 4001 up in 4s, detached
+via `nohup`. **Zero `WTO_API_KEY not set` / `EXA_API_KEYS not set` warnings in the new log** —
+credentials confirmed live.
+
+**⚠️ Nitric's local supervisor does NOT respawn a service that exits.** Correct accounting of the
+10 declared services (an earlier note in this session overstated this as "half the tree died" by
+counting one-shot seeders as casualties — they exit by design):
+
+- **7 long-running** (the real steady-state count): `gcp/api/main.ts`, `gcp/scheduler/main.ts`,
+  `ais-relay.cjs`, `publish-bootstrap-tiers.mjs --loop`, `scenario-worker.mjs`,
+  `process-simulation-tasks.mjs` and `process-deep-forecast-tasks.mjs` (both log `once=false`).
+- **2 one-shot** bundle runs that complete and exit normally:
+  `seed-bundle-portwatch-port-activity.mjs`, `seed-bundle-resilience-validation.mjs`.
+- **1 permanently broken**: `seed-digest-notifications.mjs` (missing `resend`, see below).
+
+**Real finding: the 8-day-old instance was running 5 of the 7 long-running services** — it had
+silently lost `process-simulation-tasks` and `process-deep-forecast-tasks`, the two task
+processors, with the parent still healthy and all ports open. The fresh instance runs all 7, so the
+restart recovered both. **Uptime is a misleading health signal here — check the 7 long-running
+names are present via `pgrep -P <nitric pid>`, not just a raw child count** (a raw count drifts
+legitimately as the one-shot bundles finish).
+
+**Three errors the restart made visible (all pre-existing, none caused by it):**
+1. `seed-digest-notifications` — crashes instantly with `Cannot find module 'resend'`. Confirmed
+   `resend` is **not in `package.json`** and not in `node_modules`, so this service can never start.
+   Fix would be `pnpm add resend` — NOT done, it is a dependency change and the operator's call.
+2. `publish-bootstrap-tiers` — both tiers fail: `Bootstrap publisher requires explicit
+   IRAN_EVENTS_ENABLED=true|false`. Documented at `.env.example:234` as `IRAN_EVENTS_ENABLED=false`
+   but **absent from `.env`**, and the publisher refuses to default. Process stays up publishing
+   nothing, and has been doing so for at least 8 days. One-line `.env` fix — NOT done, operator's call.
+3. `ais-relay` — `WORLDMONITOR_RELAY_KEY not set`, warm-pings will 401. Already flagged in category 4.
+
+Nitric log for this instance: `scratchpad/nitric-start.log` (session scratchpad — the operator may
+prefer re-running `nitric start` in their own terminal for live visibility).
+
+### ▶ Category 7 pre-analysis — done 2026-08-18 so the next session does not re-derive it
+
+All 21 files exist. **21 scripts are covered by 13 runs in pass 1**, plus a pass 2 for whichever
+bundle sections gate-skip.
+
+**`bundle-market-backup` spawns 8 of them** — `crypto-quotes`, `hyperliquid-flow`,
+`stablecoin-markets`, `etf-flows`, `gulf-quotes`, `token-panels`, `gold-etf-flows`,
+`gold-cb-reserves`. Section timeouts 60-180s each; **no `maxBundleMs`**, so worst case is the
+900s sum. Run the bundle FIRST (sections skip if seeded within `intervalMs * 0.8`), then pass 2
+each skipped section individually.
+
+**The other 12 run standalone**: `aaii-sentiment`, `commodity-quotes`, `cot`, `crypto-sectors`,
+`earnings-calendar`, `fear-greed`, `market-breadth`, `market-quotes`, `prediction-markets`,
+`forecasts`, `forecast-resolutions`, `forecast-bets`.
+
+**Lock check: no peer collisions.** Every `runSeed` caller has a distinct `domain:resource`
+(mostly `market:*`, plus `prediction:markets`, `forecast:resolutions`, `forecast:predictions`).
+Only the bundle-vs-its-own-8-components can collide, so keep the bundle out of any parallel batch.
+`bundle-market-backup` and `forecast-bets` do not call `runSeed` at all.
+
+**⚠️ Real dependency chain — run these four IN THIS ORDER, last:**
+`commodity-quotes` → `forecasts` → `forecast-resolutions` → `forecast-bets`
+- `forecast-resolutions` reads `forecast:predictions:history:v1` (from `forecasts`) and
+  `market:commodities-bootstrap:v1` (from `commodity-quotes`), and writes `forecast:resolutions:v1`
+  + `forecast:scorecard:v1`.
+- `forecast-bets` reads `forecast:resolutions:v1` (from `forecast-resolutions`).
+Out of order these fail for dependency reasons, exactly like `hs2-chokepoint-exposure` did in
+category 5 — do not log that as a bug.
+
+**🎁 Cross-category bonus**: `seed-forecasts.mjs` writes `news:digest:v1:full:en` (lines 370, 952),
+which is the missing input that blocked **category 3's `recall-benchmark`**. Once `forecasts` has
+run, go back and test `recall-benchmark` — that closes the last open category-3 item.
+(`seed-insights.mjs` in category 9 writes the same key.)
+
+**Credential pre-flight for category 7** (checked 2026-08-18):
+- `FINNHUB_API_KEY` — ✅ **SET 2026-08-18** (`.env:60`), operator-supplied. Live-verified against
+  all four endpoints the repo calls, on both auth forms (`?token=` and the `X-Finnhub-Token`
+  header that `scripts/ais-relay.cjs:2124` uses): `/quote`, `/search`, `/calendar/earnings`,
+  `/stock/insider-transactions` all HTTP 200 on the free tier. Finnhub is also one of the few
+  hosts NOT throttled on this machine (~1.8s), so local runs of `market-quotes` /
+  `earnings-calendar` are trustworthy.
+  - **Free tier does NOT cover candles**: `/stock/candle` and `/crypto/candle` return HTTP 403
+    `"You don't have access to this resource."`. `scripts/seed-economy.mjs:419` uses those for
+    BTC/QQQ/XLP, but *only* as Yahoo-failure fallbacks, and it degrades to `[]` → status
+    `UNKNOWN`. Same behaviour as with no key at all — not a regression, but do not log it as a
+    new bug when Yahoo is down.
+  - **Restart required for the relay**: `scripts/ais-relay.cjs:1898` reads the key into a
+    module-level const at load. The relay running since before 2026-08-18 still logs
+    `finnhub: no` and will keep using the Yahoo-only path until restarted.
+- `ALPHA_VANTAGE_API_KEY` — ✅ **SET 2026-08-18** (`.env:69`), operator-supplied. Free tier.
+  Live-verified per function family:
+  - ✅ **Physical commodities** (`WTI`, `BRENT`, `NATURAL_GAS`, `COPPER`, `ALUMINUM`, `GOLD`,
+    `SILVER`) — HTTP 200, real daily-close data. Used by `commodity-quotes` + `gulf-quotes`.
+  - ✅ **`FX_DAILY`** — HTTP 200, real series. Used by `gulf-quotes`.
+  - ❌ **`REALTIME_BULK_QUOTES` is PREMIUM** — and it does **not** return an error. It returns
+    **HTTP 200 with fabricated sample data** (`{endpoint, message, data:[...]}`, prices stamped
+    `2024-10-18`) for exactly the symbols you asked for. Neither guard in
+    `scripts/_shared-av.mjs:135-141` catches it: there is no `Information` key, and `json.data`
+    *is* an array.
+    - **Why nothing is poisoned anyway**: the parser reads `item.price` and
+      `item['previous close']`, but the payload carries `close` / `previous_close`. Every row
+      fails `Number.isFinite(price)` and is skipped. **Empirically confirmed** by running the real
+      `fetchAvBulkQuotes()` against the real captured response — returns an **empty Map**.
+    - **So this is a latent trap, not an active corruption**: the field-name mismatch is the only
+      thing standing between the artificial data and Redis. Anyone "fixing" the field names to
+      match AV's schema, without first adding a premium-gate guard, turns a silent no-op into
+      silent fake-price ingestion across `market-quotes`, `etf-flows` and `commodity-quotes`.
+    - **Fix (NOT applied — operator's call, and it is a behaviour change):** reject in
+      `fetchAvBulkQuotes` when `json.message` is absent/not `success`, or when `json.endpoint`
+      is present alongside a non-`success` message. Do that BEFORE any field-name correction.
+
+**⚠️ Alpha Vantage free tier = 25 requests/DAY, shared across every script.** Measured call
+volume for one full category-7 pass:
+| script | AV calls | note |
+|---|---|---|
+| `commodity-quotes` | 7 physical + 1 bulk = **8** | 7 of 33 symbols map to AV physical |
+| `gulf-quotes` | **8** | 2 `oil` + 6 `currency` of 14 (`index` skips AV) |
+| `market-quotes` | **1** per 100 symbols | bulk — premium-gated, returns nothing |
+| `etf-flows` | **1** | bulk — premium-gated, returns nothing |
+| **total** | **~18** | plus up to 2x on retry (`_shared-av.mjs:22` retries once) |
+**3 of those ~18 are guaranteed-useless bulk calls.** A single pass fits in 25/day only if it is
+not repeated. If a rerun is needed the same day, expect `json.Information` rate-limit warnings and
+AV-sourced rows to silently vanish — **do not log that as a seeder bug**, check the quota first.
+- `INFOWAY_API_KEY` — ✅ set. Expect `market-quotes` and `earnings-calendar` to run degraded rather
+  than fail outright; confirm against `seed-meta` before calling either a bug.
+
+### ⛔ CANNOT FIX HERE — needs an operator decision or a credential
+
+Ordered by value. Each says exactly what is blocked and what unblocks it.
+
+**A. `seed-aaii-sentiment` XLS parser — needs a new dependency.** `parseXlsRows` cannot read a real
+AAII `.xls`: the SST string table never resolves (so no text cell survives, so the
+"Bullish/Bearish" header is never found) and MULRK/MULBLANK records are unhandled. Proven against
+the fully-downloaded 1.28 MB file, so this is **not** a network artifact. `exceljs@^4.4.0` is
+already present but reads xlsx/csv only — **legacy BIFF `.xls` needs a SheetJS-class reader**.
+*Impact while deferred*: the HTML path (fix 1) supplies a correct **current** week, so the panel is
+healthy, but `weeks`/`avg8w`/`extremes` are computed from a single row instead of 52.
+*Unblock*: approve adding an `.xls` reader, then restore the multi-week history path.
+
+**B. `pnpm add resend`** — `seed-digest-notifications` crashes instantly with
+`Cannot find module 'resend'` and can never start. Dependency change = operator's call. Unchanged
+from session 21.
+
+**C. `R2_BOOTSTRAP_*` credentials** — blocks `publish-bootstrap-tiers` (see fix 6). Also
+`CLOUDFLARE_R2_BUCKET` / `CLOUDFLARE_R2_TRACE_BUCKET` unset disables R2 trace storage in
+`seed-forecasts` (account id + token ARE set; only bucket names are missing).
+
+**D. Still-unset credentials**: `RELIEFWEB_APPNAME`, `PROXY_URL`, `WORLDMONITOR_RELAY_KEY`
+(ais-relay warm-pings 401 without it), `WM_SESSION_SECRET`, `WM_API_BASE_URL`.
+
+**E. AV per-minute pacing — deliberately NOT fixed.** `seed-gulf-quotes.mjs:50` and
+`seed-commodity-quotes.mjs:167` fire 7-8 AV calls back-to-back with no delay and trip the free
+tier's per-minute cap after ~2. The obvious fix (a `sleep` between calls) needs ~12s spacing × 8
+calls ≈ 96s, which risks blowing the bundle **section timeouts (60-180s)** for a path that
+currently costs nothing: both seeders fall through to Yahoo and reach full coverage (14/14 and
+33/33). Fixing pacing without first raising those section timeouts would convert a harmless warning
+into a real timeout. Needs a decision, not a patch.
+
+**F. `api/health.js:474` staleness threshold vs the 30-day comtrade cron** — carried from
+session 21, untouched.
+
+**G. Committing the working tree.** Now **13 files** spanning seven bug fixes across three sessions.
+Nothing is committed; held for explicit go-ahead per standing discipline. This pile is large enough
+that landing it early next session is advisable.
+
+### ✅ FIXES APPLIED 2026-08-18 (session 22) — all verified, none committed
+
+**1. `scripts/seed-aaii-sentiment.mjs` — HTML fallback URL** (`:14`)
+`/sentimentsurvey` → `/sentimentsurvey/sent_results`. Verified: `HTML scraped: 1 rows` →
+`{2026-08-13, bull 34.7, neutral 27.4, bear 37.9}`. Parser unchanged; it was already correct.
+
+**2. `scripts/seed-aaii-sentiment.mjs` — `validate()` now rejects `fallback === true`**
+This is the fix for the *invisibility*, which mattered more than the URL. Publishing fallback used
+to overwrite last-good data AND arm `seed-meta` with `fetchedAt = now`, so health read fresh over a
+months-old payload. Returning `false` routes into `runSeed`'s validate-fail branch
+(`scripts/_seed-utils.mjs:1829`), which is purpose-built for exactly this: it does **not** publish,
+extends the TTL on existing keys, and mirrors canonical's **original** `fetchedAt` into `seed-meta`
+so `STALE_SEED` fires naturally.
+**Verified live** — a fallback run now prints:
+`SKIPPED: validation failed ... seed-meta mirrors canonical (fetchedAt=...) ... === Done (no write) ===`
+*Trade-off, deliberate*: if both upstreams fail AND the canonical key has expired (7-day TTL), the
+panel shows nothing rather than April data. Preferred over silently serving stale numbers as fresh.
+
+**3. `scripts/seed-aaii-sentiment.mjs` — HTML failure is no longer silent**
+A non-2xx response logged nothing at all, and a 200-with-0-rows logged nothing either — which is
+why defect 1 survived. Both now warn. Immediately paid off: the next run printed
+`HTML scrape: HTTP 200 but 0 parsable rows (6058B)`, revealing AAII was serving a 6 KB stub.
+
+**4. `scripts/_shared-av.mjs` — REALTIME_BULK_QUOTES premium-gate whitelist**
+Refuses any response whose `message` is not literally `"success"`. **Whitelist, not blacklist**: if
+AV changes its gate wording we degrade to "no data", never to fake data. Verified against the real
+captured premium payload → **rejected with a warning** (previously silent).
+
+**5. `scripts/_shared-av.mjs` — bulk-quote field names**
+The parser read `item.price` / `item['previous close']`; AV's documented schema is `close` /
+`previous_close` / `change_percent`, so the loop dropped every row **even on a paid plan**. Now
+accepts both spellings. **Safe only because fix 4 lands first** — widening the parser without the
+guard is precisely the change that would turn the silent no-op into fake-price ingestion.
+Verified: artificial payload → 0 rows; simulated paid-shape payload → parsed correctly.
+
+**6. `.env` — `IRAN_EVENTS_ENABLED=false`** (value from `.env.example:234`)
+`publish-bootstrap-tiers.mjs` refuses to default and both tiers had been failing for 8+ days.
+**⚠️ This was only the FIRST of two blockers** — the earlier note calling it "a one-line fix" was
+incomplete. With the flag set, the publisher now gets further and fails on the *next* one:
+`[R2] Config: accountId=MISSING, bucket=MISSING` → `fatal: Bootstrap publisher R2 credentials are
+missing`. It needs the `R2_BOOTSTRAP_*` profile (`.env.example:229-244`) — a **different** profile
+from the `CLOUDFLARE_R2_*` keys that are set. Operator must supply; cannot be fabricated.
+
+**Production repair**: `market:aaii-sentiment:v1` had been left holding the stale fallback this
+session wrote. Repaired with genuine AAII data captured at 05:31Z (real upstream bytes, replayed
+because AAII had begun rate-limiting). Now `fallback:false, source:html, latest 2026-08-13`.
+
+### ▶ Category 7 EXECUTION LOG — 2026-08-18 (session 22)
+
+Method: bundle first, then pass 2 for gate-skipped sections, then the dependency chain last.
+All runs `node --env-file=.env scripts/seed-<name>.mjs`. Exit 0 alone is NOT the pass criterion —
+`recordCount` + real source lines in the log are.
+
+**`bundle-market-backup`** — exit 0 in 8.6s, `ran:0 skipped:8 deferred:0 failed:0`. All 8 sections
+gate-skipped (last seeded 0-585min ago, all inside `intervalMs * 0.8`). The skip timestamps are
+themselves evidence that all 8 are alive in production. → pass 2 ran each individually.
+
+**Pass 1 standalone (7, run in parallel — lock check held, no collisions):**
+| script | exit | recordCount | notes |
+|---|---|---|---|
+| `aaii-sentiment` | 0 | 52 | ❌ **BUG #7** — fallback data, see above |
+| `cot` | 0 | 9 | real CFTC positioning, date=2026-08-11 |
+| `crypto-sectors` | 0 | 8 | clean |
+| `market-breadth` | 0 | 9 | Barchart 3/3 readings, history appended |
+| `earnings-calendar` | 0 | 100 | **Finnhub key working** — 100 of 1398 entries |
+| `fear-greed` | 0 | 1 | all sources live; `AAII bull=34.7` exposed BUG #7 |
+| `prediction-markets` | 0 | 75 | kalshi 38 markets, 273 raw → 75 |
+
+**Pass 2 — the 8 bundle sections individually (all exit 0, all real data):**
+`crypto-quotes` 10 · `hyperliquid-flow` 14 · `stablecoin-markets` 5 · `token-panels` 10 ·
+`gold-etf-flows` 1 · `gold-cb-reserves` 20 (IMF IRFCL, 92 countries) · `etf-flows` 10 ·
+`gulf-quotes` 14.
+
+**`market-quotes`** — exit 0, 59 records. Source split: **Yahoo 34 / Finnhub 25 / Infoway 2 / AV 0**.
+The new Finnhub key supplies 42% of this panel. Note Infoway, the documented *primary*, returned
+only 2 — worth a look later, not investigated this session.
+
+### ⚠️ Alpha Vantage: free tier trips a PER-MINUTE limit, not just the 25/day cap
+
+`gulf-quotes` fired its 8 AV calls back-to-back and got **2 successes then 6 rate-limit rejections**:
+`"Please consider spreading out your free API requests more sparingly"`. `_shared-av.mjs` only has
+`AV_BATCH_DELAY_MS` *between bulk batches* — the per-symbol loops in `seed-gulf-quotes.mjs:50` and
+`seed-commodity-quotes.mjs:167` have **no inter-call delay at all**, so on the free tier they are
+guaranteed to trip the limit after ~2 calls.
+**Not data loss** — both seeders fall through to Yahoo and reached full coverage (14/14 symbols).
+It is wasted quota plus alarming-looking warnings. A `sleep()` in those loops would fix it;
+**not applied** — it changes runtime behaviour of two production seeders.
+
+`etf-flows` confirmed the premium-bulk finding live: **zero AV log lines**, because
+`REALTIME_BULK_QUOTES` returns its HTTP-200 artificial payload, the field-name mismatch drops every
+row, and the empty Map is indistinguishable from "no data". One AV call silently wasted per run.
+
+### ❌ CORRECTION — the "cross-category bonus" was WRONG. `seed-forecasts` does NOT write `news:digest:v1:full:en`
+
+The category-7 pre-analysis claimed running `forecasts` would retroactively unblock category 3's
+`recall-benchmark`. **That is false and should not be retried.** Verified this session:
+- `scripts/seed-forecasts.mjs:370` is an entry in the array of **input keys to READ**, sitting
+  among `news:insights:v1`, `unrest:events:v1`, etc. Line 952 just assigns the parsed value
+  (`newsDigest: parsedByKey[...]`). Both are **reads**.
+- `scripts/seed-insights.mjs` is *also* only a reader (`readDigestFromRedis`, line 200) — the
+  earlier note that it "writes the same key" is wrong too.
+- **The only producer is an API route**: `server/worldmonitor/news/v1/list-feed-digest.ts:1047`
+  writes it via `cachedFetchJson(digestCacheKey, 900, ...)` — a **request-driven cache with a
+  900-second TTL**.
+
+**Consequence**: `news:digest:v1:full:en` only exists for 15 minutes after someone actually requests
+the news-digest API with `variant=full&lang=en`. Confirmed `exists = 0` right now, even though
+production seeded `forecasts` successfully ~2.5h ago. **Category 3's `recall-benchmark` is
+therefore blocked on an ephemeral request-cache, not on any seeder.** To test it, hit the digest
+endpoint first and run `recall-benchmark` inside the 15-minute window. That a seeder depends on a
+short-lived request cache is itself worth a design look.
+
+### ▶ Category 7 dependency chain — results (run in the mandated order)
+
+| script | exit | outcome |
+|---|---|---|
+| `commodity-quotes` | 0 | 33/33 commodities. AV: 3 success / 3 rate-limited, Yahoo covered 30. |
+| `forecasts` | **75** | **Failed gracefully — network, NOT a bug.** See below. |
+| `forecast-resolutions` | 0 | 14 records, `forecast:resolutions:v1` + `scorecard` written. |
+| `forecast-bets` | 0 | 18 shadow bets [energy:4, market:10, macro:4]. No `seed_complete` line — expected, it does not call `runSeed`. |
+
+**`forecasts` exit 75 is EX_TEMPFAIL, and the script behaved correctly.** Three full retries of the
+fetch phase, each dying on `Reading input data from Redis... aborted due to timeout`, then
+`FETCH FAILED: fetch phase exceeded 360000ms deadline` → `Failed gracefully (362725ms)`. It
+**refused to publish** and **extended TTL on 4 keys (21600s)** to keep existing data alive.
+**Verified not a bug**: `seed-meta:forecast:predictions` shows `fetchedAt` ~2.5h before this run
+(`recordCount: 2`, `sourceVersion: detectors+llm-pipeline`) — production seeds it fine. This is the
+documented 6-10 KB/s local throttle; `forecasts` reads far more input keys than any other seeder,
+so it is the one that cannot fit inside the deadline locally. **Do not "fix" this deadline.**
+Downstream still worked because `forecast:predictions:history:v1` already held production's data.
+
+### 📋 Config gaps surfaced by `seed-forecasts` (non-fatal, degrade gracefully)
+
+- **`CLOUDFLARE_R2_BUCKET` / `CLOUDFLARE_R2_TRACE_BUCKET` unset** → `scripts/_r2-storage.mjs:160`
+  logs `[R2] Config: accountId=set, bucket=MISSING` and returns `null`, disabling R2 trace storage.
+  R2 is **half-configured**: `CLOUDFLARE_R2_ACCOUNT_ID` and `CLOUDFLARE_R2_TOKEN` *are* in `.env`,
+  the bucket names are not. Both documented at `.env.example:214-215`. Operator's call.
+- **`WM_API_BASE_URL` unset** (documented `.env.example:729`) → `[Chokepoints] Warm-ping skipped`.
+  Harmless locally; the warm-ping only matters against a deployed API.
+
+### 🔍 Why the test suite never caught BUG #7 — a coverage-shape lesson
+
+`tests/seed-aaii-sentiment.test.mjs` is **29 passing assertions, all against synthetic fixtures**
+that are built to match each parser's own assumptions: `extractSentimentData` gets hand-made rows
+with a correct header, `parseHtmlSentiment` gets hand-written "AAII-style HTML", and `parseXlsRows`
+is only ever given an **empty buffer** and **non-XLS data**. Nothing asserts the upstream contract —
+not which URL is fetched, not that a real AAII `.xls` parses, not that `fallback === true` is a
+failure condition. So the unit tests stayed 100% green while the integration was 100% broken.
+Same lesson as the session-21 comtrade TTL: **a green suite says the parsers agree with their
+fixtures, not that the seeder works.**
+
+### 🐛 BUG #7 — `seed-aaii-sentiment.mjs`: BOTH upstream paths dead, silent fallback (2026-08-18)
+
+**Symptom**: run reports `state: OK`, `recordCount: 52`, "Verified: data present in Redis" — while
+serving **hardcoded `FALLBACK_DATA` whose newest week is 2026-04-03**, ~4.5 months stale.
+
+**Two independent defects, either one sufficient to break it** (defect 1 fixed, defect 2 open):
+
+1. **HTML fallback scraped the wrong URL — ✅ FIXED (one line, `scripts/seed-aaii-sentiment.mjs:14`).**
+   `AAII_HTML_URL` pointed at `https://www.aaii.com/sentimentsurvey` (the landing page): returns
+   HTTP 200 / 93 KB with **zero** `td.tableTxt` cells, so `parseHtmlSentiment()` yielded `[]` and
+   fell through silently. The numbers live at `/sentimentsurvey/sent_results` (46 KB, HTTP 200).
+   **`scripts/seed-fear-greed.mjs:112` already used the correct URL** — the two scripts disagreed,
+   and fear-greed's `AAII bull=34.7` in the same batch is what exposed it.
+   Verified after the fix: `HTML scraped: 1 rows` → `{date:2026-08-13, bullish:34.7, neutral:27.4,
+   bearish:37.9, spread:-3.2}`. The existing parser needed **no** change — it was already written
+   for the sent_results layout.
+
+2. **XLS primary path is broken independent of the network — ❌ NOT FIXED (needs a decision).**
+   Proven with the real 1.28 MB file fully downloaded to disk (so throttling is ruled out):
+   `parseXlsRows()` returns 391 rows but only 1061 non-null cells of 3910, **all numeric, no
+   strings**. `extractSentimentData()` scans the first 20 rows for the literal headers
+   "bullish"/"bearish"/"neutral"; no string ever resolves, so `headerIdx = -1` and it returns `[]`.
+   Root causes in the hand-rolled BIFF scanner (`seed-aaii-sentiment.mjs:15`):
+   - **SST/LABELSST resolution fails** — `strings[sstIdx]` is `undefined`, so every text cell
+     becomes `null`. This alone kills the header lookup.
+   - **MULRK (`0x00BD`, 2433 records) and MULBLANK (`0x00BE`, 1662) are unhandled** — only single
+     NUMBER/RK/LABELSST are parsed, so most numeric cells (including the date column) are missed.
+   - The file is an **OLE2 compound document**; the scanner walks raw bytes rather than the
+     workbook stream, which is why it half-works.
+   **Fix requires a real BIFF reader.** `exceljs@^4.4.0` is already a dependency but reads
+   xlsx/csv only, **not legacy .xls** — so this means a new dependency (SheetJS-class). That is a
+   `package.json` change and therefore **the operator's call**, same class as the deferred
+   `pnpm add resend`.
+
+**Net effect of the fix applied**: the panel is no longer pinned to April data — it now gets a
+current weekly reading. But `recordCount` drops 52 → 1, because the HTML page carries only the
+latest week; `weeks`, `avg8w` and `extremes` are computed from a single row until the XLS path is
+repaired. **This is a real trade-off to be aware of, not a regression** — the 52 rows it replaced
+were fabricated.
+
+**⚠️ Method hazard discovered — local runs WRITE TO PRODUCTION Redis.** Seeding from this machine
+(6-10 KB/s throttle) can *downgrade* a live key: this session's first `aaii-sentiment` run replaced
+the live payload with the stale fallback. Worse, **`seed-meta:market:aaii-sentiment` is stamped
+`fetchedAt: <now>` with `recordCount: 52` even on a pure-fallback run** — the freshness gate reads
+healthy while the payload is 4.5 months old. Same failure shape as the session-21
+`comtrade-bilateral-hs4` bug (zero-record run stamping `status:ok` and arming its own gate).
+**Consider making `seed-meta` refuse to arm when `fallback === true`.** Not done — behaviour change.
+
+**AAII is rate-limit sensitive**: after ~6 requests it began returning a 6 KB stub for the XLS and
+failing the HTML scrape. Space out probes; a failure right after repeated hits is not a bug.
+**Production Redis was left holding fallback data** because the final local run coincided with that
+throttling — the next production cron (unthrottled, with the URL fix deployed) will correct it.
+
+**✅ Category 7, Markets & Finance (21 scripts) — DONE 2026-08-18 (session 22).** All 21 exercised:
+bundle (8 sections gate-skipped) + 8 individually in pass 2 + 12 standalone. 20 of 21 healthy with
+real data; `aaii-sentiment` was the one real bug (BUG #7, half-fixed). `forecasts` exit-75 is the
+local network throttle, verified against production `seed-meta` — not a bug.
+
+**Resume point: category 8** — categories 1–7 done (**127 of 156 scripts**). Do not restart from
+category 1. Carry forward into category 8:
+1. Re-verify repo state first; do not trust these numbers.
+2. Read the network caveat — Finnhub and Cloudflare are fast here; nearly everything else is
+   6-10 KB/s. Check `seed-meta:<domain>:<resource>` for a recent production success before calling
+   any local timeout a bug.
+3. Alpha Vantage free tier: **25/day AND a per-minute cap**. ~22 of 25 were spent on 2026-08-18 (≈18 by seeders + 4 manual probes) — a same-day rerun of category 7 will rate-limit.
+4. Local runs write to PRODUCTION Redis and can downgrade a live key. See the BUG #7 method hazard.
+
+---
+
+## 🔖 HANDOFF (2026-08-17, twentieth session — consolidated, categories 1–4 of 11 done)
+
+**Repo state**: `main` is **6 commits ahead of `origin/main`, 0 behind** (re-verified via `git
+fetch` + `git rev-list --left-right --count` this session — don't trust an older number blindly).
+**6 files uncommitted**, all from this session, holding for explicit go-ahead per this repo's
+standing discipline: `TASKS.md` (this handoff), `scripts/seed-iea-oil-stocks.mjs` +
+`tests/seed-extra-key-leak-guard.test.mjs` (fix #1), `scripts/seed-ucdp-events.mjs` (fix #2),
+`scripts/seed-defense-patents.mjs` + `scripts/_defense-patents-source.mjs` (fix #3). `.env` and
+`.env.example` also changed (several new credential lines in `.env`, gitignored, not part of any
+commit; one new documented placeholder in `.env.example` — see below).
+
+**What this session did, in order**: started the 156-seed-source initiative for real (queued three
+times across sessions 18–19 before this). Batch-ran categories 1–4 live (58 of 156 scripts) with
+operator review after each category, found and fixed 2 real reproducing bugs, then did two rounds
+of local-credential setup with the operator (adding real API keys/tokens to `.env` and diagnosing
+each one live against its real provider) between categories 4 and 5.
+
+### Category-by-category results (156-script list itself is unchanged, see NEXT INITIATIVE below)
+
+**1. Energy & Fuel (24 scripts) — done.** 20 clean passes, 2 with a transient non-fatal
+"verification read returned null" warning (`pipelines-gas`, `storage-facilities` — write itself
+succeeded; Upstash read-after-write race, not data loss), 1 real bug fixed (see below), 2 flagged
+external blockers: `jodi-oil` (6 straight retries all aborted at 30s against JODI's API — didn't
+hammer further, worth one clean retry from a fresh session) and `ember-electricity` (couldn't reach
+`storage.googleapis.com` from this machine — 3 full attempts each hung the entire 5-min timeout;
+every other category-1 script worked fine over the same window, so this reads as host-specific, not
+a general outage — the `local-network-optimizer` skill exists for exactly this shape of problem if
+it recurs).
+
+**2. Climate & Environment (11 scripts) — done.** 7 clean passes, 4 fails tracing to 2 independent
+root causes, no code bugs: (a) live Open-Meteo 429 rate-limiting blocks `climate-zone-normals`,
+which cascades into `bundle-climate` (times out, runs zone-normals as a sub-source) and
+`climate-anomalies` (fails fast and correctly — a deliberate dependency guard refusing to compute
+anomalies without a baseline, not a bug); retry order when picked up: zone-normals first, then
+anomalies, then re-verify bundle-climate. (b) `climate-disasters` blocked by `RELIEFWEB_APPNAME`
+(documented, was unset — still is, operator deferred) plus its other source's Redis read timing out
+under this session's own heavy concurrent traffic.
+
+**3. Health (5 scripts) — done.** 3 clean passes, 1 real reproducing bug flagged (not fixed —
+operator said flag and move on): `vpd-tracker`'s write to `health:vpd-tracker:realtime:v1` (the
+single largest real production payload at 3.14 MB, per `tests/seed-extra-key-leak-guard.test.mjs`'s
+own comment) times out against the shared write path's flat 15s `AbortSignal.timeout`
+(`_seed-utils.mjs:259`) — reproduced twice with zero concurrent Redis traffic, so it's systemic, not
+a flake. Worth a real fix (timeout scaled to payload size, or chunking) whenever picked up. Also 1
+cross-category dependency block, same shape as climate-anomalies: `recall-benchmark` needs
+`news:digest:v1:full:en`, written by category 7's `seed-forecasts.mjs` or category 9's
+`seed-insights.mjs`, neither of which has run yet in this sweep.
+
+**4. Military/Conflict/Security (18 scripts) — done, by far the messiest category.** 6 clean passes
+(`conflict-intel`, `cyber-threats`, `hormuz`, `military-flights`, `security-advisories`,
+`military-cii`), 2 pass-but-degraded (`gdelt-intel` 0 records/graceful; `military-maritime-news`
+warm-pings 401 on missing `WORLDMONITOR_RELAY_KEY`, still unset, not pursued), 1 deliberately
+disabled (`iran-events` — `IRAN_EVENTS_ENABLED` off, feature sunset 2026-07, not a bug), 4 live
+external timeouts/blocks not credential-related (`fatf-listing` 403+503, `sanctions-pressure` 197s,
+`submarine-cables` 131s, `thermal-escalation` 81s — none retried further), and originally 6 fails
+tracing to missing local `.env` credentials — see the credential-review section below for what
+happened to each. **`military-cii`'s initial fail was a pure testing-timing artifact, not a bug**:
+it ran alphabetically before `military-flights` in the batch and found no data, but
+`military-flights` writes its live key with a deliberately short 600s TTL (correct design for
+real-time aircraft positions) which had simply expired by the time the rest of the 18-script batch
+finished. Running both back-to-back confirmed clean. Don't trust a `military-cii` fail unless
+tested within ~10 min of a real `military-flights` run.
+
+### 3 real bugs found and fixed this session (all uncommitted, all verified live)
+
+1. **`scripts/seed-iea-oil-stocks.mjs`** (found in category 1) — its per-country `extraKey`
+   transform (`COUNTRY_EXTRA_KEYS`) returned the raw `parseRecord()` member verbatim, which carries
+   a `seededAt` field the canonical index's `publishTransform` deliberately strips. `runSeed`'s
+   contract-mode leak guard correctly caught this every run and aborted the entire seed (zero
+   country keys written, not even partial). Confirmed `seededAt` is unused by every downstream
+   reader. Fixed by destructuring it out of the transform's return value. **Root cause of why this
+   shipped undetected**: the existing regression test for this exact guard
+   (`tests/seed-extra-key-leak-guard.test.mjs`) used a fixture member without `seededAt` — not what
+   `parseRecord()` actually produces — so the test's green result never exercised the real shape.
+   Fixed the fixture and added a new test pinning both the bug and the fix. Verified: `node --test`
+   (44 tests pass), `tsc --noEmit` clean, live re-run — all 32 country keys + 2 analysis keys wrote
+   and verified in Redis.
+2. **`scripts/seed-ucdp-events.mjs`** (found only after the operator added `UCDP_ACCESS_TOKEN` —
+   see credential review below) — `UCDP_PAGE_SIZE = 1000` combined with a 90s
+   `AbortSignal.timeout` on every page fetch; a single `pagesize=1000` page measured ~105s via
+   direct `curl`, so every fetch was guaranteed to abort regardless of GED version tried, previously
+   masquerading as "UCDP is down" when the real symptom (before the token was added) was 401s.
+   Fixed: bumped to a named `UCDP_FETCH_TIMEOUT_MS = 180_000`. Also bumped a second, tighter 5s
+   timeout on the post-write verification read-back to 15s (matching the SET call right above it)
+   — this one didn't fully resolve on retest (still times out occasionally under this session's own
+   40+-seed-runs-in-a-few-hours Redis load, the same benign "write succeeds, read-back races" shape
+   seen 3 other times this session), but the actual write is independently confirmed via `Redis SET
+   result: OK` before that read-back ever runs, and the script already treats it as non-fatal by
+   design (caught, `exit(0)`) — not chased further. Verified: `tsc --noEmit` clean, 2 live end-to-end
+   runs — second one wrote 2000 real conflict events to `conflict:ucdp-events-bootstrap:v1`.
+3. **`scripts/seed-defense-patents.mjs` + `scripts/_defense-patents-source.mjs`** (found only after
+   the operator got a working `USPTO_API_KEY` — see credential review below). Two-part timeout bug,
+   same family as the UCDP one but compounded: (a) `_defense-patents-source.mjs`'s per-request
+   `AbortSignal.timeout(20_000)` — a single OR-heavy CPC-category query measured ~64s via direct
+   `curl` (448KB response; USPTO's own search latency, not a transfer-size issue), so every category
+   fetch was guaranteed to abort; (b) `fetchAllPatents` fetches 5 CPC categories **sequentially**
+   with a deliberate 3s courtesy delay between each — even after fixing (a), worst case ~5×90s +
+   4×3s ≈ 462s exceeds `runSeed`'s own default fetch-phase deadline (~240s, the issue #4786
+   backstop), which is a separate ceiling from the per-request timeout, not a duplicate of it. Fixed
+   both: bumped the per-request timeout to a named `USPTO_FETCH_TIMEOUT_MS = 90_000`, and passed an
+   explicit `fetchPhaseTimeoutMs: 540_000` in the seeder's `runSeed(...)` opts. Verified: `tsc
+   --noEmit` clean, `node --test tests/seed-defense-patents.test.mjs` (16 tests pass), live
+   end-to-end run — `=== Done (401604ms) ===`, 71 real patents written and verified in Redis across
+   4 of 5 categories (F42B individually failed and was gracefully skipped — `fetchAllPatents` only
+   hard-fails if *every* category fails, so a single flaky category doesn't block the whole write;
+   same graceful-degradation shape as `jodi-gas`/`jodi-oil` in category 1).
+
+### Credential review (between categories 4 and 5) — operator added 5 credentials to `.env`
+
+All confirmed via direct API reproduction (curl against the real provider, not just re-running the
+seed script), not guessed:
+
+- **`AVIATIONSTACK_API`** — added, valid and active (confirmed: an unfiltered API call returns real
+  data), but `aviation` still can't fully pass: the seeder's per-airport query includes
+  `flight_date=<today>` (`scripts/seed-aviation.mjs:421`), and replaying that exact request returns
+  AviationStack's own `"function_access_restricted": "Your current subscription plan does not
+  support this API function"` — a free-tier plan limit, not fixable without a paid subscription.
+  **Operator: not today, stays flagged.** `aviation` still partially succeeds regardless — FAA
+  delays (5 alerts) and aviation news (37 articles) write fine independent of this.
+- **`CLOUDFLARE_R2_ACCOUNT_ID` + `CLOUDFLARE_R2_TOKEN`** — added; `military-bases` progressed
+  through 3 distinct failure states as the operator worked through it live: (1) 403 "Please enable
+  R2 through the Cloudflare Dashboard" → operator enabled R2 on the account; (2) 404, `"buckets":[]`
+  — the account had zero R2 buckets, meaning `worldmonitor-data` (holding
+  `seed-data/military-bases-final.json`) lives in a different, presumably-production Cloudflare
+  account → operator created a `worldmonitor-data` bucket in this account; (3) confirmed via direct
+  `GET .../objects` that the new bucket exists but is **empty** (`"result":[]`) — creating it was
+  necessary but not sufficient, the actual data file still needs to be uploaded into it from
+  wherever the real one lives (or dropped locally at `scripts/data/military-bases-final.json`, which
+  the script checks *before* ever trying R2). **Still flagged, needs the operator to source the file
+  or point at the real production account.**
+- **`ACLED_EMAIL` + `ACLED_PASSWORD`** — added (operator logs into ACLED via Google, so used the
+  email+password OAuth route rather than the 24h-expiring static-token fallback). OAuth exchange
+  against `https://acleddata.com/oauth/token` succeeds every time (valid signed JWT returned), but
+  the data endpoint (`https://acleddata.com/api/acled/read`) returns `{"message":"Access denied"}`
+  even on the simplest possible request, verified byte-for-byte against ACLED's own docs
+  (fetched live: https://acleddata.com/api-documentation/getting-started). Request format is
+  provably correct — the block is on the account's own API entitlement, which only someone logged
+  into that ACLED account can diagnose further (check account settings for an API-access
+  toggle/agreement, or contact their support). **Operator: "still not idea how to make it work, let
+  it flag it."**
+- **`UCDP_ACCESS_TOKEN`** — added, with the operator supplying the exact (non-standard) auth
+  mechanism: a custom `x-ucdp-access-token` header, not Bearer. The script already sent it
+  correctly, so this unblocked cleanly — see bug #2 above for what was found once auth started
+  working.
+- **`USPTO_API_KEY`** — added later in the session (operator got a key after initially deferring it
+  for id.me verification). Also fixed the doc gap: added a placeholder line + comment to
+  `.env.example` (right after the neighboring `UCDP_ACCESS_TOKEN` entry) since it was confirmed
+  missing from there entirely. See bug #3 above for the real timeout bug this surfaced once the key
+  worked.
+- **`RELIEFWEB_APPNAME`** — operator said "not today," still deferred, unchanged.
+- **`PROXY_URL`, `WORLDMONITOR_RELAY_KEY`** — flagged in category 4, not brought up again this
+  round, still unset. `PROXY_URL` blocks GDELT inside `unrest-events` plus 3 datacenter-blocked
+  sources in category 1's `fuel-prices`; it needs an actual provisioned Railway-side CONNECT proxy,
+  not just a value, so there's no quick local fix here regardless.
+
+### Testing-harness lessons (not product bugs, but will bite again if not remembered)
+
+- **Invocation**: `scripts/_seed-utils.mjs`'s `loadEnvFile()` only checks `.env.local` (never plain
+  `.env`) plus one hardcoded fallback path that doesn't exist on this machine. This repo only has
+  `.env`. **Always run `node --env-file=.env scripts/seed-<name>.mjs`** — the bare form fails every
+  script identically with a misleading "Missing UPSTASH_REDIS_REST_URL" error that looks like N/N
+  broken sources when it's actually a wrong invocation.
+- **Don't SIGKILL a slow-but-legitimate seed script.** Several scripts legitimately run past a naive
+  90–240s budget (`ember-electricity` has a 5-*minute* per-attempt fetch timeout with zero console
+  output until parsing succeeds; several `bundle-*` scripts chain many sub-fetches). SIGKILL-ing one
+  mid-run skips its `finally { releaseLock(...) }` and orphans its Redis concurrency lock
+  (`seed-lock:<domain>`, 10–20 min TTL) — every retry within that window then correctly-but-
+  confusingly self-skips with "Lock held by another run." **Fix**: switched the batch-runner
+  watchdog to SIGTERM-first (10s grace before SIGKILL) starting category 2 — zero new orphaned locks
+  since. If one does get orphaned: `PTTL seed-lock:<domain>` against Upstash to confirm it's
+  genuinely stale (not a real concurrent run), then `DEL` it directly rather than waiting out the
+  TTL blind.
+- **This session generated unusually heavy Redis load** (40+ seed runs in a few hours against the
+  same Upstash instance) — a pattern normal production cron scheduling never produces. Several
+  "verification read timed out / returned null" warnings across categories 1, 2, 3, and the
+  ucdp-events fix are almost certainly artifacts of that, not real bugs — each time, the actual
+  *write* was independently confirmed successful before the read-back stumbled. Don't over-invest in
+  chasing these unless one recurs outside a similarly heavy testing burst.
+
+**Resume point: category 5, Supply Chain/Trade/Ports/Chokepoints (13 scripts)** — see NEXT
+INITIATIVE section directly below for the full 156-script list (unchanged, still accurate). Do not
+restart from category 1.
+
+---
+
 ## 🔖 HANDOFF (2026-08-17, end of nineteenth session) — read this first, before anything below
 
 **Both pieces of work the eighteenth session left uncommitted are now committed** (operator's
@@ -228,13 +1174,18 @@ despite being as real/load-bearing as the other tracked files, was never added t
 
 ---
 
-## 🔖 NEXT INITIATIVE (deferred a THIRD time, now starting twentieth session): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+## 🔖 NEXT INITIATIVE (IN PROGRESS, **7 of 11 categories done — 127 of 156 scripts — as of twenty-second session**): test each of the 156 `scripts/seed-*.mjs` data sources one by one
 
-**Still not started — this entry exists to hand off cold, not as a status report.** Queued for the
-eighteenth session (redirected into Live News/Webcams removal — see [[vscode_live_news_debugging_session]]
+**Status/results live in the consolidated twentieth-session HANDOFF block at the top of this file
+— this section is now just the reference list (method, order, full per-category script names), not
+a status report.** Deferred twice before this session started it for real: queued for the eighteenth
+session (redirected into Live News/Webcams removal — see [[vscode_live_news_debugging_session]]
 in memory), queued again for the nineteenth (redirected into VS Code sidecar debugging — see
-[[vscode_sidecar_theater_posture_debugging]]). **Both blocking questions are now resolved — nothing
-left to ask, start executing immediately:**
+[[vscode_sidecar_theater_posture_debugging]]). Both blocking questions got resolved at the end of
+the nineteenth session, and the twentieth session executed categories 1–4 (58 of 156 scripts) plus
+a credential-review round. The twenty-first session executed categories 5 and 6 (48 scripts, 106
+of 156 cumulative) — **resume at category 7** (Markets & Finance, 21 scripts), don't
+restart from category 1:
 
 - **What "test a source" means**: operator confirmed directly (multiple-choice, nineteenth session)
   — **(a) run it live once, confirm it writes fresh Redis data without error.** Not read-only, not a

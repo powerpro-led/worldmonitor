@@ -12,8 +12,11 @@ const CANONICAL_KEY = 'climate:disasters:v1';
 const NATURAL_EVENTS_KEY = 'natural:events:v1';
 const CACHE_TTL = 64800; // 18h — 3x the 6h cron interval (gold standard)
 
+// v1 was permanently decommissioned by ReliefWeb (confirmed 2026-08-18: every
+// request now returns 410 "The API version 'v1' has been decommissioned.
+// Please use version 'v2' instead.") -- not transient, so it's not worth
+// trying first and burning a guaranteed-failing request every run.
 const RELIEFWEB_ENDPOINTS = [
-  'https://api.reliefweb.int/v1/disasters',
   'https://api.reliefweb.int/v2/disasters',
 ];
 

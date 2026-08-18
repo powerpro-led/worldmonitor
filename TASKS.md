@@ -1506,7 +1506,18 @@ seed script), not guessed:
   `.env.example` (right after the neighboring `UCDP_ACCESS_TOKEN` entry) since it was confirmed
   missing from there entirely. See bug #3 above for the real timeout bug this surfaced once the key
   worked.
-- **`RELIEFWEB_APPNAME`** — operator said "not today," still deferred, unchanged.
+- ✅ **`RELIEFWEB_APPNAME`** — RESOLVED 2026-08-18 (twenty-fifth session). Operator applied for and
+  received an approved appname (`kcelectronic_L2cSNzTFKnjW`), added to local `.env`. Also found:
+  `RELIEFWEB_ENDPOINTS`' first entry (`api.reliefweb.int/v1/disasters`) is now permanently
+  decommissioned by ReliefWeb (confirmed via direct curl: `410 "The API version 'v1' has been
+  decommissioned. Please use version 'v2' instead."`) — removed it from
+  `scripts/seed-climate-disasters.mjs` so every run doesn't burn a guaranteed-failing request
+  before falling through to v2. Verified end-to-end: `node --env-file=.env
+  scripts/seed-climate-disasters.mjs` → `[ReliefWeb] 61 disasters from 62 rows`, seed completed
+  `state: OK`, data confirmed present in Redis. (Separately, that same run also hit
+  `[NaturalEvents] Redis read failed: The operation was aborted due to timeout` — same class of
+  local-throughput-ceiling issue diagnosed earlier this session for Upstash/Overpass, not a new
+  bug; already gracefully degrades (warns, returns `[]`, doesn't fail the seed) so left untouched.)
 - **`PROXY_URL`, `WORLDMONITOR_RELAY_KEY`** — flagged in category 4, not brought up again this
   round, still unset. `PROXY_URL` blocks GDELT inside `unrest-events` plus 3 datacenter-blocked
   sources in category 1's `fuel-prices`; it needs an actual provisioned Railway-side CONNECT proxy,

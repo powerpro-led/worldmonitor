@@ -21,11 +21,12 @@ Related Claude memory entries (fuller narrative/context per item):
 
 1. **Re-verify repo state; do not trust these numbers.**
    `git fetch && git rev-list --left-right --count origin/main...main` and `git status --short`.
-   At the end of this session: `main` **6 ahead / 0 behind**, **13 files dirty** (12 modified +
-   1 untracked `tests/seed-comtrade-route-family.test.mjs`). **Nothing committed.**
+   As of session 23 (2026-08-18): `main` **13 ahead / 0 behind**, **working tree CLEAN**.
 
-2. **Landing the working tree is now the top candidate.** It spans **seven** bug fixes across three
-   sessions. See "⛔ CANNOT FIX HERE" item G.
+2. **~~Landing the working tree~~ — DONE (session 23).** The seven bug fixes from sessions 20-22
+   are committed as seven separate commits (`be399f3`..`c40d855`); see "⛔ CANNOT FIX HERE" item G
+   for the per-commit map. **Deliberately not pushed** — the operator pushes manually. The next
+   session's first step is therefore category 8, not committing.
 
 3. **Baseline the test suite BEFORE blaming yourself.** The full unit suite is
    `APP_DOMAIN=example.test npx tsx --test --test-concurrency=16 tests/*.test.mjs tests/*.test.mts api/security/report.test.mjs`
@@ -552,11 +553,16 @@ into a real timeout. Needs a decision, not a patch.
 **F. `api/health.js:474` staleness threshold vs the 30-day comtrade cron** — carried from
 session 21, untouched.
 
-**G. Committing the working tree.** Now **13 files** spanning seven bug fixes across three sessions.
-Nothing is committed; held for explicit go-ahead per standing discipline. This pile is large enough
-that landing it early next session is advisable.
+**G. ~~Committing the working tree.~~ ✅ RESOLVED 2026-08-18 (session 23).** Operator gave the
+go-ahead; all 13 files landed as **seven commits, one per fix**, on `main`, deliberately NOT pushed
+(operator pushes manually). Verified before committing: the 5 touched suites pass 93/93 and
+`tsc --noEmit` is clean. `be399f3` comtrade bilateral HS4 (route family + TTL + empty-run gate),
+`8363954` iea-oil-stocks extraKey leak, `0e21dd4` ucdp-events timeouts, `49ab19b` defense-patents
+timeouts + `USPTO_API_KEY` in `.env.example`, `25fd81b` aaii-sentiment fallback publishing,
+`5714af7` alpha vantage premium-sample guard, `c40d855` this handoff. Tree clean, **`main` 13 ahead
+/ 0 behind `origin/main`**.
 
-### ✅ FIXES APPLIED 2026-08-18 (session 22) — all verified, none committed
+### ✅ FIXES APPLIED 2026-08-18 (session 22) — all verified, ALL COMMITTED session 23 (see item G)
 
 **1. `scripts/seed-aaii-sentiment.mjs` — HTML fallback URL** (`:14`)
 `/sentimentsurvey` → `/sentimentsurvey/sent_results`. Verified: `HTML scraped: 1 rows` →

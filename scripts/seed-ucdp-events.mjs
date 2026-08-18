@@ -17,6 +17,11 @@ const BOOTSTRAP_KEY = 'conflict:ucdp-events-bootstrap:v1';
 const BOOTSTRAP_META_KEY = 'seed-meta:conflict:ucdp-events-bootstrap';
 const UCDP_PAGE_SIZE = 1000;
 const MAX_PAGES = 6;
+// A single pagesize=1000 page measured ~105s in production (2026-08-17 seed-source
+// review) — the previous 90s AbortSignal timeout guaranteed every page would abort,
+// masquerading as a UCDP outage/auth failure. 180s leaves real margin above the
+// measured latency without being unbounded.
+const UCDP_FETCH_TIMEOUT_MS = 180_000;
 const MAX_EVENTS = 2000; // Redis payload guard; widening needs live UCDP volume + Upstash payload validation.
 // Retained Redis input window. CII v8's classifier accepts a 2-year window, but
 // this writer fetches the newest pages only and keeps at most MAX_EVENTS from a
@@ -69,7 +74,7 @@ async function fetchGedPage(version, page, token) {
   if (token) headers['x-ucdp-access-token'] = token;
   const resp = await fetch(
     `https://ucdpapi.pcr.uu.se/api/gedevents/${version}?pagesize=${UCDP_PAGE_SIZE}&page=${page}`,
-    { headers, signal: AbortSignal.timeout(90_000) },
+    { headers, signal: AbortSignal.timeout(UCDP_FETCH_TIMEOUT_MS) },
   );
   if (!resp.ok) throw new Error(`UCDP GED API error (${version}, page ${page}): ${resp.status}`);
   return resp.json();
@@ -289,7 +294,9 @@ async function main() {
 
   const getResp = await fetch(`${redisUrl}/get/${encodeURIComponent(REDIS_KEY)}`, {
     headers: { Authorization: `Bearer ${redisToken}` },
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(15_000), // match the SET call's budget above — this
+    // read-back is verification-only (the write above already returned OK), but a too-
+    // tight timeout here throws a scary top-level FATAL over a purely cosmetic recheck.
   });
   if (getResp.ok) {
     const getData = await getResp.json();

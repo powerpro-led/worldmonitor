@@ -15,7 +15,216 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔖 HANDOFF (2026-08-18, twenty-second session — category 7 of 11 DONE) — read this first
+## 🔖 HANDOFF (2026-08-18, twenty-third session — category 8 of 11 DONE) — read this first
+
+### ▶ START HERE — next session, in order
+
+1. **Re-verify repo state; do not trust these numbers.**
+   `git fetch && git rev-list --left-right --count origin/main...main` and `git status --short`.
+   End of session 23: the seven bug fixes from sessions 20-22 were COMMITTED this session
+   (`be399f3`..`c40d855`, plus bookkeeping `852ce98`) on operator go-ahead, and the operator then
+   **PUSHED them** — `origin/main` is at `852ce98`, verified via `git branch -vv`. Only this
+   handoff commit (`657df0e`) sits ahead, so `main` is **1 ahead / 0 behind** with a clean tree.
+   Caveat that bit this session: `git fetch` failed here with an HTTP2 framing error while the
+   remote-tracking ref was already current — so re-verify with `git branch -vv` / `git log
+   origin/main` even when `fetch` errors, and do not trust a stale "N ahead" from an earlier turn.
+
+2. **Resume seed testing at category 9** (News, Intel & Briefs, 7 scripts). Categories 1-8 done =
+   **139 of 156 scripts**. Do not restart from category 1.
+   **The category 9 pre-analysis is ALREADY DONE** — see "▶ Category 9 pre-analysis" below. It has
+   the read-only production probe, the credential pre-flight, the bundle map, and a suggested run
+   order. Two problem areas are already pinpointed (`regulatory-actions` produces nothing;
+   `news:digest*` is empty and is category 3's blocker). Start there; do not re-derive it.
+
+3. **Carry forward, unchanged from session 22**: the 6-10 KB/s local network throttle (check
+   `seed-meta:<domain>:<resource>` for a recent production success before calling a local timeout a
+   bug); local runs write to PRODUCTION Redis; exit 0 ≠ healthy; the 40 pre-existing test failures.
+
+4. **The single most valuable thing this session did was a read-only production probe BEFORE
+   running anything.** Reading `seed-meta:*` + canonical-key TTLs for the whole category up front
+   predicted exactly which bundle sections would gate-skip, found two absent keys, and surfaced the
+   P1 below without spending a single upstream call. Do this first in every remaining category.
+
+### ⚠️ P1 FOUND — resilience scores/ranking produce NOTHING in production (monitored outage)
+
+`resilience:score:v25:*` → **0 keys**. `resilience:ranking:v25` → **absent**. `resilience:score:v24:*`
+and `:v23:*` → 0 keys (so this is not a namespace-bump artifact leaving data under an old prefix).
+Both `seed-meta:resilience:scores` and `seed-meta:resilience:ranking` are **absent**, not merely
+stale — and the meta TTL is 12h, so there has been no successful run in at least that long.
+
+**This is monitored and should already be alarming**: `api/health.js:269` tracks
+`resilience:ranking:v25` and `api/health.js:545` tracks `seed-meta:resilience:ranking` with
+`maxStaleMin: 840` (14h). The feature is fully live — `server/worldmonitor/resilience/v1/*`,
+the map choropleth, and `CountryDeepDivePanel` all consume it. `seed-bundle-resilience` IS deployed
+(`scripts/railway-services.json`, nixpacks-root-scripts).
+
+**Independently corroborated three times** by the validation bundle, which is entirely downstream:
+- External-Benchmark: "No ranking data in Redis … cold start after cache key bump" → graceful skip
+- Outcome-Backtest: "only **0/196** scores in Redis — scores seeder likely hasn't run yet" → skip
+- Sensitivity-Suite: "Only 0 countries scored (need >= 20)" → **FATAL exit 1**
+
+**Not diagnosable from here**: `seed-resilience-scores.mjs` fails closed at
+`WORLDMONITOR_SEED_REFRESH_KEY is required` (unset locally, correct fail-closed behaviour, logs a
+structured `reason:missing_seed_refresh_key` — NOT a code bug). It drives the LIVE API
+(`${API_BASE}/api/resilience/v1/get-resilience-ranking?refresh=1`) and the SERVER writes the cache,
+so the seeder cannot be exercised without both that secret and a valid production API key.
+`API_BASE_URL`/`WORLDMONITOR_API_KEY` are also unset; the local `WORLDMONITOR_VALID_KEYS` value is a
+placeholder that returns **HTTP 401 Invalid API key** against `https://api.worldmonitor.app`.
+
+**Unblock**: check the `seed-bundle-resilience` Railway service's recent run logs. The
+"cold start after cache key bump" hint suggests the v25 prefix bump may never have been repopulated.
+
+### 📌 Robustness finding (NOT a confirmed bug — do not "fix" on local evidence alone)
+
+`seed-resilience-static.mjs:937` `redisPipeline` sends **~199 commands unchunked** with a fixed
+**15s** `AbortSignal.timeout`, for both the recovery READ (198 GETs) and the publish WRITE. Its
+sibling `seed-resilience-scores.mjs:273` chunks the identical operation at `PIPE_BATCH = 50`.
+Consequence when it does trip: `recoverFailedDatasets` is the **safety net** that carries prior
+per-country values forward when a dataset fails — so the one path designed to degrade gracefully is
+the one that throws, converting a partial failure into `FATAL` + exit 1.
+Production hit this exact signature 21.9 days ago; a local run reproduced it verbatim
+(`Dataset(s) (wgi, iea) failed and Redis pipeline read also failed: aborted due to timeout`).
+**But the local repro is fully explained by the 6-10 KB/s throttle**, and on Railway ~200 GETs
+would normally complete well inside 15s — so one production occurrence is not proof the timeout is
+categorically too tight. Chunking it to match the sibling is cheap and low-risk, but it is a
+judgment call, deliberately left for the operator.
+
+### ▶ Category 8 EXECUTION LOG — 2026-08-18 (session 23)
+
+**✅ Category 8, Resilience & Recovery Scores (12 scripts) — DONE.** All 12 exercised.
+
+| Script | Result |
+|---|---|
+| `bundle-resilience` | ran — Scores FAILED (missing local secret, fails closed), Static gate-skipped |
+| `bundle-resilience-energy-v2` | ran — 3/3 gate-skip (1420-1425min ago vs 10080min interval) |
+| `bundle-resilience-recovery` | ran 1337s — **ran:2 skipped:5 failed:0** |
+| `bundle-resilience-validation` | ran — 2 graceful skips + 1 FATAL, all downstream of the P1 |
+| `resilience-scores` | **BLOCKED** — see P1 |
+| `resilience-static` | reproduced production's exact failure; **no data loss** (TTL extended on 198 keys, 196 countries preserved, meta honestly re-recorded `status:error`) |
+| `recovery-fiscal-space` | ✅ 191 records |
+| `recovery-reserve-adequacy` | ✅ 163 records |
+| `recovery-external-debt` | ✅ 100 records (drops 4 countries with debt=0 — HIC out-of-IDS-scope, would have falsely scored 100) |
+| `recovery-fuel-stocks` | ✅ 26 records (from IEA index, dataMonth 2026-05) |
+| `recovery-import-hhi` | ✅ **167 records — FILLED AN ABSENT PRODUCTION KEY** |
+| `recovery-reexport-share` | ✅ 1 record — **FILLED AN ABSENT PRODUCTION KEY** |
+
+All four pass-2 recovery seeders returned **record counts identical to production** (191/163/100/26),
+which is good evidence they are healthy and deterministic rather than merely "exited 0".
+
+**Two production gaps filled by this session's runs.** `resilience:recovery:import-hhi:v1` and
+`resilience:recovery:reexport-share:v1` were both **completely absent** (meta + canonical +
+checkpoint) before the run and are now live (167 records / 90d TTL, and 1 record / 35d TTL).
+Since both keys were absent, there was no live data to downgrade — the run was safe by inspection,
+not by luck. Why they were absent in production is **still unexplained** and worth a look.
+
+`reexport-share` publishing only 1 of its 2-country cohort is CORRECT, not a miss: AE published at
+35.5% (Y=2023, RX $167.0B / M $470.5B); PA was omitted at 2.46%, below the documented 5% floor.
+
+**Import-HHI cost + quota note.** 239 reporters, 2 keys, 2 workers, 1.5s per-key pacing → ~120
+calls/key, 1284s locally (7 errors, 4 of them visible local-throttle timeouts SK/ES/TR/GB; 1
+reporter `MF` hit a Comtrade quota/auth status). Publish floor is 135, so 167 published safely.
+**Three seeders share `COMTRADE_API_KEYS`** against the Free tier's **500 calls/month PER KEY**:
+`comtrade-bilateral-hs4` (~197/key/month), `recovery-import-hhi` (~120/key), `recovery-reexport-share`
+(~2/key) ≈ **319 of 500**, ~36% headroom. This session's local run consumed ~120/key on top of that
+for August 2026 — still within budget, but a second full local import-hhi run this month would not be.
+
+**Invocation note for `bundle-resilience-validation`**: plain `node` is NOT enough — its three
+scripts are analysis tools (not seeders) that dynamically import `../server/*.ts`. Use the
+Dockerfile's own wiring, which works verbatim locally (tsx 4.21.0 is already in `node_modules`):
+`NODE_OPTIONS="--max-old-space-size=8192 --dns-result-order=ipv4first --import=file://$PWD/node_modules/tsx/dist/loader.mjs" node --env-file=.env scripts/seed-bundle-resilience-validation.mjs`
+
+**Scope notes**: `bundle-resilience-energy-v2`'s three sections (`low-carbon-generation`,
+`fossil-electricity-share`, `power-reliability`) are **category-1** scripts already exercised there,
+and production seeded all three successfully ~1 day ago — pass 2 for that bundle is already covered.
+`bundle-resilience-recovery` also carries `seed-sovereign-wealth` (category 6). Note too that
+`resilience:static` and the score namespace are **sharded per-country** (`resilience:static:XX`,
+`resilience:history:v20:XX`, 196 each) — a `:v1` miss on those is the expected shape, NOT a bug.
+
+### New credential gaps from category 8
+
+- **`WORLDMONITOR_SEED_REFRESH_KEY`** — blocks `seed-resilience-scores` entirely. Intentionally
+  stronger than the normal API-key allowlist: only this seed-only secret can force the expensive
+  ranking recompute. Needed to diagnose the P1 locally.
+- **`API_BASE_URL` / `WORLDMONITOR_API_KEY`** — unset; the `WORLDMONITOR_VALID_KEYS` fallback in
+  `.env` is a placeholder that 401s against production.
+- **`RESILIENCE_WHO_MEASLES_INDICATOR`** — unset (`seed-resilience-static.mjs:59`); did not block
+  the run, listed for completeness.
+
+---
+
+### ▶ Category 9 pre-analysis — done 2026-08-18 (session 23) so the next session does not re-derive it
+
+**Category 9 = News, Intel & Briefs (7 scripts)**: `digest-notifications`, `insights`,
+`regional-briefs`, `regional-snapshots`, `regulatory-actions`, `research`, `displacement-summary`.
+All 7 files exist. Sizes: digest-notifications **3010 lines** (by far the largest), insights 763,
+regulatory-actions 368, research 391, regional-snapshots 342, displacement-summary 248,
+regional-briefs 213.
+
+**Read-only production probe (already done — do NOT redo before starting):**
+
+| seed-meta | age | records | canonical key state |
+|---|---|---|---|
+| `news:insights` | 0.0d | 8 | `news:insights:v1` + `:CN` present (0.1d TTL) — healthy |
+| `intelligence:regional-snapshots` | 0.1d | 8 | `intelligence:regional-snapshots:summary:v1` present — healthy |
+| `intelligence:regional-briefs` | 4.9d | 7 | 7 × `intelligence:regional-briefs:v1:weekly:*` — healthy |
+| `research:tech-events` | 0.2d | 125 | `research:tech-events:v1` (0.8d) + bootstrap — healthy |
+| `displacement:summary` | 0.5d | 212 | `displacement:summary:v1:2026` present — healthy |
+| `regulatory:actions` | **ABSENT** | — | `regulatory:*` → **0 keys** ⚠️ |
+| `news:digest` | **ABSENT** | — | `news:digest*` → **0 keys** ⚠️ |
+
+⚠️ **Two pre-identified problem areas — start here, they are where the value is.**
+1. **`regulatory-actions` produces nothing in production**: meta absent AND zero keys in the whole
+   `regulatory:*` namespace. Needs no credentials (see below), so it should be directly runnable
+   and diagnosable locally — the best first target in this category.
+2. **`news:digest*` is empty**, which is the *same* `news:digest:v1:full:en` that
+   **category 3's `recall-benchmark` is blocked on**. Session 22 corrected the record: `seed-forecasts`
+   READS this key, it does not write it. `seed-insights.mjs` is the writer. Since `news:insights:v1`
+   is healthy and fresh (0.0d) while `news:digest*` is empty, the digest write path specifically is
+   worth tracing — fixing it may retroactively unblock category 3.
+
+**Do NOT repeat this session's near-miss**: a first pass called `displacement:summary:v1` and
+`intelligence:regional-snapshots:v1` "absent" — they are simply **suffixed differently**
+(`…:v1:2026`, `…:summary:v1`). Always `SCAN` the namespace before calling a canonical key missing.
+Only `regulatory:*` and `news:digest*` are genuinely empty.
+
+**Credential pre-flight (checked 2026-08-18):**
+- **5 of 7 need no env beyond Redis** — `regional-briefs`, `regional-snapshots`, `regulatory-actions`,
+  `research`, `displacement-summary` reference no `process.env.*` of their own. These should run
+  clean with the standard `node --env-file=.env scripts/seed-<name>.mjs`.
+- **`digest-notifications` — still hard-blocked (deferred item B).** Re-verified this session:
+  `resend` is **not in `node_modules` and not in `package.json`**, so the script cannot start. It
+  also wants the largest env surface in the category, ALL currently unset: `RESEND_API_KEY`,
+  `RESEND_FROM_EMAIL`, `RESEND_FROM_BRIEF`, `TELEGRAM_BOT_TOKEN`, `DIGEST_CRON_ENABLED`,
+  `AI_DIGEST_ENABLED`, `BRIEF_COMPOSE_ENABLED`, `BRIEF_LLM_ENABLED`, `BRIEF_URL_SIGNING_SECRET`,
+  `WORLDMONITOR_PUBLIC_BASE_URL`. (`RELAY_SHARED_SECRET` IS set.) Expect to defer this one again
+  unless the operator approves `pnpm add resend` **and** provides credentials.
+- **`insights`** wants `OLLAMA_API_KEY` / `OLLAMA_MODEL` (both UNSET), plus `API_BASE_URL` and
+  `WORLDMONITOR_RELAY_KEY` (both UNSET — the latter is long-standing deferred item D). Check whether
+  it degrades gracefully without the LLM or fails closed; its Redis output is currently healthy.
+- **`GROQ_API_KEY` IS SET (56 chars)**; `OPENROUTER_API_KEY` and `ANTHROPIC_API_KEY` are unset.
+  `bundle-regional` documents "GROQ and/or OPENROUTER" for the narrative + brief LLM, so the LLM
+  path should work on Groq alone.
+
+**Bundle coverage is scattered — these 7 are NOT one tidy bundle:**
+- `seed-bundle-regional.mjs` = `regional-snapshots` (always) + `regional-briefs` (weekly, skipped if
+  the brief meta is younger than 6.5 days — it is **4.9d** now, so expect a SKIP). Railway cron 6h.
+  **Structural caveat worth knowing**: it imports both sub-seeders **in-process**, not via
+  `child_process.execFile`, precisely because they were refactored to throw instead of
+  `process.exit(1)`. If either re-introduces `process.exit()` inside `main()`, the bundle dies
+  before the second seeder runs.
+- `displacement-summary` is a section of **`bundle-health`** (category 3 — already run there), so it
+  has most likely already been exercised once; its production state is healthy.
+- `regional-snapshots` is also a section of **`bundle-derived-signals`** (category 11, to be run LAST).
+
+**Suggested order**: (1) `regulatory-actions` standalone — no creds, known-empty, best signal;
+(2) `research`, `displacement-summary` standalone — no creds, healthy baseline to compare against;
+(3) `bundle-regional` (expect Regional-Briefs to gate-skip at 4.9d), then `regional-snapshots` /
+`regional-briefs` individually in pass 2; (4) `insights` — watch the `news:digest` write path;
+(5) `digest-notifications` last, expected to be deferred on the missing `resend` dependency.
+
+---
+
+## 🔖 HANDOFF (2026-08-18, twenty-second session — category 7 of 11 DONE) — SUPERSEDED by the session-23 block above; kept for its category-7 findings and method notes
 
 ### ▶ START HERE — next session, in order
 
@@ -79,7 +288,8 @@ write `news:digest:v1:full:en`; it reads it. Category 3's `recall-benchmark` is 
 1. **Re-verify repo state first; do not trust these numbers blindly.**
    `git fetch && git rev-list --left-right --count origin/main...main` and `git status --short`.
    As of the end of this session: `main` **6 commits ahead of `origin/main`**, 0 behind, and
-   **11 uncommitted files** (10 modified + 1 new test). **Nothing is committed — the standing
+   **11 uncommitted files** (10 modified + 1 new test) *(as of session 21 — ALL COMMITTED in
+   session 23, see the top block)*. **Nothing is committed — the standing
    discipline in this repo is to hold for the operator's explicit go-ahead.** The 11 files carry
    all SIX bug fixes from sessions 20–21; ask about committing before starting new work, because
    the pile is getting large.
@@ -189,7 +399,7 @@ Results — 7 pass, 2 environment artifacts, 1 real bug, 1 degraded, plus 1 budg
   comtrade credential and a healthy link are in place.
 - ❌ `comtrade-bilateral-hs4` — **real bug, fixed this session. See below.**
 
-### Bug #4 of the initiative — `comtrade-bilateral-hs4` silently dark for 21 days (FIXED, uncommitted)
+### Bug #4 of the initiative — `comtrade-bilateral-hs4` silently dark for 21 days (FIXED, COMMITTED session 23 as `be399f3`)
 
 **Symptom**: `seed-meta:comtrade:bilateral-hs4` read `{fetchedAt: 21.2d ago, recordCount: 0,
 status: 'ok'}` — reporting healthy while having published nothing, and invisible to freshness
@@ -786,7 +996,7 @@ category 1. Carry forward into category 8:
 
 **Repo state**: `main` is **6 commits ahead of `origin/main`, 0 behind** (re-verified via `git
 fetch` + `git rev-list --left-right --count` this session — don't trust an older number blindly).
-**6 files uncommitted**, all from this session, holding for explicit go-ahead per this repo's
+**6 files uncommitted** *(as of session 20 — ALL COMMITTED in session 23, see the top block)*, all from this session, holding for explicit go-ahead per this repo's
 standing discipline: `TASKS.md` (this handoff), `scripts/seed-iea-oil-stocks.mjs` +
 `tests/seed-extra-key-leak-guard.test.mjs` (fix #1), `scripts/seed-ucdp-events.mjs` (fix #2),
 `scripts/seed-defense-patents.mjs` + `scripts/_defense-patents-source.mjs` (fix #3). `.env` and
@@ -845,7 +1055,7 @@ real-time aircraft positions) which had simply expired by the time the rest of t
 finished. Running both back-to-back confirmed clean. Don't trust a `military-cii` fail unless
 tested within ~10 min of a real `military-flights` run.
 
-### 3 real bugs found and fixed this session (all uncommitted, all verified live)
+### 3 real bugs found and fixed this session (verified live) — ⚠️ SUPERSEDED LABEL: these were COMMITTED in session 23 (`be399f3`..`c40d855`), ignore "uncommitted" below
 
 1. **`scripts/seed-iea-oil-stocks.mjs`** (found in category 1) — its per-country `extraKey`
    transform (`COUNTRY_EXTRA_KEYS`) returned the raw `parseRecord()` member verbatim, which carries
@@ -1180,7 +1390,7 @@ despite being as real/load-bearing as the other tracked files, was never added t
 
 ---
 
-## 🔖 NEXT INITIATIVE (IN PROGRESS, **7 of 11 categories done — 127 of 156 scripts — as of twenty-second session**): test each of the 156 `scripts/seed-*.mjs` data sources one by one
+## 🔖 NEXT INITIATIVE (IN PROGRESS, **8 of 11 categories done — 139 of 156 scripts — as of twenty-third session**): test each of the 156 `scripts/seed-*.mjs` data sources one by one
 
 **Status/results live in the consolidated twentieth-session HANDOFF block at the top of this file
 — this section is now just the reference list (method, order, full per-category script names), not

@@ -135,18 +135,35 @@ export async function fetchAvBulkQuotes(symbols, apiKey) {
         console.warn(`  [AV] Rate limit hit${remaining > 0 ? ` — dropping ${remaining} remaining symbols` : ''}: ${String(json.Information).slice(0, 80)}`);
         break;
       }
+      // REALTIME_BULK_QUOTES is a PREMIUM endpoint. On a free key it does NOT
+      // error — it returns HTTP 200 with a `data` array of ARTIFICIAL sample
+      // quotes for the exact symbols requested (values stamped 2024-10-18) and
+      // no `Information` key, so neither guard above catches it. Whitelist the
+      // documented success marker: anything that is not literally "success" is
+      // refused. Whitelisting (not blacklisting) matters here — if AV ever
+      // changes the gate wording we degrade to "no data", never to fake data.
+      if (String(json.message ?? '').toLowerCase() !== 'success') {
+        console.warn(`  [AV] REALTIME_BULK_QUOTES refused (premium endpoint or unknown response): ${String(json.message ?? '(no message)').slice(0, 80)}`);
+        break;
+      }
       if (!Array.isArray(json.data)) {
         console.warn('  [AV] Unexpected response:', JSON.stringify(json).slice(0, 200));
         continue;
       }
       for (const item of json.data) {
-        const price = parseFloat(item.price);
-        const prevClose = parseFloat(item['previous close']);
+        // AV's documented REALTIME_BULK_QUOTES schema uses `close` /
+        // `previous_close` / `change_percent`; the original code read `price` /
+        // `previous close`, which matched nothing, so this loop silently dropped
+        // every row even on a paid plan. Accept both spellings. Safe to widen
+        // ONLY because the premium-gate whitelist above now rejects the
+        // artificial sample payload before we get here.
+        const price = parseFloat(item.price ?? item.close);
+        const prevClose = parseFloat(item['previous close'] ?? item.previous_close);
         const volume = parseInt(item.volume || '0', 10);
         if (!Number.isFinite(price) || price <= 0) continue;
         const changePct = (Number.isFinite(prevClose) && prevClose > 0)
           ? ((price - prevClose) / prevClose) * 100
-          : parseFloat((item['change percent'] || '0').replace('%', ''));
+          : parseFloat(String(item['change percent'] ?? item.change_percent ?? '0').replace('%', ''));
         results.set(item.symbol, {
           price,
           change: Number.isFinite(changePct) ? changePct : 0,

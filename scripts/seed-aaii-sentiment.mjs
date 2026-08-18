@@ -7,7 +7,10 @@ const AAII_KEY = 'market:aaii-sentiment:v1';
 const AAII_TTL = 604800; // 7 days (weekly data)
 
 const AAII_XLS_URL = 'https://www.aaii.com/files/surveys/sentiment.xls';
-const AAII_HTML_URL = 'https://www.aaii.com/sentimentsurvey';
+// The /sentimentsurvey landing page carries no tableTxt cells — the survey
+// numbers live on /sent_results. Scraping the landing page returned HTTP 200
+// with zero parsable rows, so this silently fell through to FALLBACK_DATA.
+const AAII_HTML_URL = 'https://www.aaii.com/sentimentsurvey/sent_results';
 
 export function parseXlsRows(buffer) {
   const rows = [];
@@ -335,7 +338,11 @@ async function fetchAaiiSentiment() {
         if (data.length > 0) {
           source = 'html';
           console.log(`  HTML scraped: ${data.length} rows`);
+        } else {
+          console.warn(`  HTML scrape: HTTP 200 but 0 parsable rows (${html.length}B) — page layout may have changed`);
         }
+      } else {
+        console.warn(`  HTML scrape: HTTP ${resp.status}`);
       }
     } catch (e) {
       console.warn(`  HTML scrape failed: ${e.message}`);
@@ -387,6 +394,14 @@ async function fetchAaiiSentiment() {
 }
 
 function validate(data) {
+  // Reject pure-fallback payloads. FALLBACK_DATA is a hardcoded snapshot; publishing
+  // it overwrites last-good data AND arms seed-meta with fetchedAt=now, so health
+  // reads fresh while the payload is months old (found 2026-08-18: live key was
+  // serving 2026-04-03 data under a fresh gate). Returning false routes into
+  // runSeed's validate-fail branch, which does NOT publish, extends the TTL on the
+  // existing key, and mirrors canonical's ORIGINAL fetchedAt into seed-meta — so
+  // STALE_SEED fires naturally instead of being masked.
+  if (data?.fallback === true) return false;
   return data?.latest?.bullish != null && data?.weeks?.length > 0;
 }
 

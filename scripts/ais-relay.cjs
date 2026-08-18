@@ -3714,7 +3714,9 @@ function classifyCacheKey(title) {
 // LLM provider fallback chain — mirrors seed-insights.mjs LLM_PROVIDERS
 // Order: ollama → openrouter → groq (canonical chain since #4944, mirrors
 // server/_shared/llm.ts: DeepSeek V4 Flash primary with reasoning disabled,
-// groq llama-3.3-70b-versatile as the free-tier/outage fallback).
+// groq openai/gpt-oss-20b as the free-tier/outage fallback — llama-3.3-70b-versatile
+// retired from Groq's catalog 2026-08-18, live 404 confirmed against
+// /v1/models).
 const CLASSIFY_LLM_PROVIDERS = [
   {
     name: 'ollama',
@@ -3743,8 +3745,16 @@ const CLASSIFY_LLM_PROVIDERS = [
     name: 'groq',
     envKey: 'GROQ_API_KEY',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
+    // llama-3.3-70b-versatile retired from Groq's catalog (2026-08-18, live
+    // 404 confirmed against /v1/models). gpt-oss-20b is a reasoning model
+    // (unlike the retired llama models) — reasoning_effort: 'low' avoids it
+    // spending the classify budget (titles.length * 40) entirely on hidden
+    // reasoning and returning empty content (same failure mode as #4983's
+    // OpenRouter fix above, Groq's own param name/floor since it has no
+    // hard "off"). GROQ_MODEL env var overrides, mirrors OLLAMA_MODEL above.
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
     headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': CHROME_UA }),
+    extraBody: { reasoning_effort: 'low' },
     timeout: 30000,
   },
 ];

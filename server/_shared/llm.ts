@@ -93,10 +93,21 @@ export function getProviderCredentials(
     if (!apiKey) return null;
     return {
       apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-      model: overrides.model || 'llama-3.3-70b-versatile',
+      // llama-3.1-8b-instant / llama-3.3-70b-versatile were retired from this
+      // account's Groq catalog (2026-08-18: live 404, confirmed against
+      // /v1/models too — no llama-* chat model exists any more). gpt-oss-20b
+      // is the replacement; unlike the retired llama models it's a reasoning
+      // model (like OpenRouter's DeepSeek V4, see #4983) — same fix needed
+      // here as the openrouter block below, using Groq's own reasoning_effort
+      // param (Groq has no hard reasoning "off" switch, 'low' is the floor).
+      // GROQ_MODEL env var overrides, mirrors OLLAMA_MODEL above.
+      model: overrides.model || process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+      },
+      extraBody: {
+        ...(overrides.enableReasoning ? {} : { reasoning_effort: 'low' }),
       },
     };
   }
@@ -190,7 +201,7 @@ export function stripThinkingTags(text: string): string {
 
 
 // openrouter ahead of groq since #4944: core surfaces run DeepSeek V4 Flash
-// via OpenRouter; groq (llama-3.3-70b-versatile) is the free-tier/outage
+// via OpenRouter; groq (openai/gpt-oss-20b) is the free-tier/outage
 // fallback. Ollama stays first so self-hosted deployments are untouched —
 // it is skipped in cloud where OLLAMA_API_URL is unset.
 const PROVIDER_CHAIN = ['ollama', 'openrouter', 'groq', 'generic'] as const;

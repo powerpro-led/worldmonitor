@@ -91,7 +91,12 @@ const CACHE_TTL = 10800; // 3h — 6x the 30 min cron interval. Shorter = key ex
                          // is gated at brief-selection time (see pickBriefCluster + briefSystemPrompt
                          // in _insights-brief.mjs), not by aging out fast.
 const MAX_HEADLINE_LEN = 500;
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile retired from Groq's catalog (2026-08-18, live 404
+// confirmed against /v1/models). gpt-oss-20b is a reasoning model (unlike
+// the retired llama models) — see the groq provider's extraBody below for
+// the reasoning_effort fix (same failure mode as #4983's OpenRouter fix,
+// Groq's own param name/floor since it has no hard reasoning "off").
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 const TASK_NARRATION = /^(we need to|i need to|let me|i'll |i should|i will |the task is|the instructions|according to the rules|so we need to|okay[,.]\s*(i'll|let me|so|we need|the task|i should|i will)|sure[,.]\s*(i'll|let me|so|we need|the task|i should|i will|here)|first[, ]+(i|we|let)|to summarize (the headlines|the task|this)|my task (is|was|:)|step \d)/i;
 const PROMPT_ECHO = /^(summarize the top story|summarize the key|rules:|here are the rules|the top story is likely)/i;
@@ -252,6 +257,7 @@ const LLM_PROVIDERS = [
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     model: GROQ_MODEL,
     headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': CHROME_UA }),
+    extraBody: { reasoning_effort: 'low' },
     timeout: 15_000,
   },
 ];

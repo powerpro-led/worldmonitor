@@ -506,7 +506,13 @@ function createLiveJudgeModels(options = {}) {
       stage: 'forecast_resolution_judge_groq',
       providerOrder: ['groq'],
       modelOverrides: {
-        groq: process.env.FORECAST_RESOLUTION_JUDGE_MODEL_GROQ || 'llama-3.3-70b-versatile',
+        // llama-3.3-70b-versatile retired from Groq's catalog (2026-08-18,
+        // live 404 confirmed against /v1/models). See callForecastLLM in
+        // seed-forecasts.mjs for the reasoning_effort fix this model needs
+        // (inherited automatically — this call doesn't set extraBodyOverrides,
+        // so it falls through to the table entry's extraBody there).
+        // Cascade: stage-specific env > global GROQ_MODEL > hardcoded default.
+        groq: process.env.FORECAST_RESOLUTION_JUDGE_MODEL_GROQ || process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
       },
     }),
   ];

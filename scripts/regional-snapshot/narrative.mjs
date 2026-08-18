@@ -73,13 +73,21 @@ const DEFAULT_PROVIDERS = [
     name: 'groq',
     envKey: 'GROQ_API_KEY',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
+    // llama-3.3-70b-versatile retired from Groq's catalog (2026-08-18, live
+    // 404 confirmed against /v1/models). gpt-oss-20b is a reasoning model
+    // (unlike the retired llama models) — reasoning_effort: 'low' avoids it
+    // spending NARRATIVE_MAX_TOKENS entirely on hidden reasoning and
+    // returning empty content (same failure mode as #4983's OpenRouter fix
+    // above, Groq's own param name/floor since it has no hard "off").
+    // GROQ_MODEL env var overrides, mirrors OLLAMA_MODEL above.
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
     timeout: 20_000,
     headers: (key) => ({
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       'User-Agent': CHROME_UA,
     }),
+    extraBody: { reasoning_effort: 'low' },
   },
 ];
 

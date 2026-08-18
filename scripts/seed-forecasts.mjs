@@ -14629,8 +14629,9 @@ function selectForecastsForEnrichment(predictions, options = {}) {
 // ── Phase 2: LLM Scenario Enrichment ───────────────────────
 // openrouter-first since #4944 U6: forecast NARRATIVE (never probabilities —
 // detectors own those) runs DeepSeek V4 Flash with reasoning disabled; groq
-// llama-3.3-70b-versatile is the free-tier/outage fallback. Per-stage
-// FORECAST_LLM_*_PROVIDER_ORDER env still overrides.
+// openai/gpt-oss-20b is the free-tier/outage fallback (llama-3.3-70b-versatile
+// retired from Groq's catalog 2026-08-18, live 404 confirmed against
+// /v1/models). Per-stage FORECAST_LLM_*_PROVIDER_ORDER env still overrides.
 const FORECAST_LLM_PROVIDERS = [
   // `provider.sort: 'throughput'` makes OpenRouter dispatch to its fastest backend
   // instead of free-routing. Without it the SAME model lands on backends spanning
@@ -14642,7 +14643,18 @@ const FORECAST_LLM_PROVIDERS = [
   // same entry onto google/gemini-2.5-flash and must keep its 25s window). Flash uses
   // its own completion deadline via getLlmAttemptTimeoutMs — see _llm-model-timeouts.
   { name: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-v4-flash', timeout: 25_000, extraBody: { reasoning: { enabled: false }, provider: OPENROUTER_PROVIDER_ROUTING } },
-  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', timeout: 20_000 },
+  // llama-3.3-70b-versatile retired from Groq's catalog (2026-08-18, live 404
+  // confirmed against /v1/models). gpt-oss-20b is a reasoning model (unlike
+  // the retired llama models) — reasoning_effort: 'low' avoids it spending
+  // the stage's max_tokens entirely on hidden reasoning and returning empty
+  // content (same failure mode as #4983's OpenRouter fix above, Groq's own
+  // param name/floor since it has no hard "off"). This extraBody also
+  // protects the critical_signals pinned branch below — its
+  // extraBodyOverrides only touches openrouter, so groq inherits this table
+  // entry's extraBody unchanged. GROQ_MODEL env var overrides (mirrors
+  // OLLAMA_MODEL's pattern elsewhere), but see the critical_signals pin
+  // below — it deliberately does NOT inherit this global override.
+  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b', timeout: 20_000, extraBody: { reasoning_effort: 'low' } },
 ];
 
 // market_implications does NOT fall back to groq. Groq's free tier caps at 100k
@@ -14750,7 +14762,16 @@ function getForecastLlmCallOptions(stage = 'default') {
     return {
       providerOrder: ['groq', 'openrouter'],
       modelOverrides: {
-        groq: 'llama-3.1-8b-instant',
+        // llama-3.1-8b-instant retired from Groq's catalog (2026-08-18, live
+        // 404). Swapped to the same replacement as the table default above —
+        // this pin is about not moving this stage onto the DeepSeek/reasoning
+        // migration, not about the specific Groq model name, and the dead
+        // literal was never going to stay reproducible anyway. Inherits
+        // reasoning_effort: 'low' from FORECAST_LLM_PROVIDERS' groq entry
+        // (no groq key in extraBodyOverrides below, so nothing to change here).
+        // Deliberately reads its OWN env var, not the global GROQ_MODEL —
+        // same isolation rule as FORECAST_LLM_CRITICAL_MODEL_OPENROUTER below.
+        groq: process.env.FORECAST_LLM_CRITICAL_MODEL_GROQ || 'openai/gpt-oss-20b',
         // ONLY the stage-scoped model env may change the pinned fallback —
         // a global FORECAST_LLM_MODEL_OPENROUTER must not move the
         // probability-coupled stage either (review finding on #4965).

@@ -1565,7 +1565,7 @@ describe('forecast llm overrides', () => {
     // deadline that covers its measured distribution.
     assert.equal(providers[0]?.timeout, 40_000, 'Flash gets its measured completion deadline under pinned routing');
     assert.equal(providers[1]?.name, 'groq');
-    assert.equal(providers[1]?.model, 'llama-3.3-70b-versatile');
+    assert.equal(providers[1]?.model, 'openai/gpt-oss-20b');
     assert.equal(providers[1]?.timeout, 20_000, 'the fallback keeps its provider-specific window');
   });
 
@@ -1583,7 +1583,7 @@ describe('forecast llm overrides', () => {
 
     assert.deepEqual(options.providerOrder, ['groq', 'openrouter']);
     assert.equal(providers[0]?.name, 'groq');
-    assert.equal(providers[0]?.model, 'llama-3.1-8b-instant');
+    assert.equal(providers[0]?.model, 'openai/gpt-oss-20b');
     assert.equal(providers[1]?.name, 'openrouter');
     assert.equal(providers[1]?.model, 'google/gemini-2.5-flash');
     assert.equal(providers[1]?.timeout, 25_000, 'the DeepSeek stall cutoff must not change the pinned Gemini fallback');
@@ -1619,7 +1619,7 @@ describe('forecast llm overrides', () => {
     const providers = resolveForecastLlmProviders(options);
 
     assert.deepEqual(options.providerOrder, ['groq', 'openrouter']);
-    assert.equal(providers[0]?.model, 'llama-3.1-8b-instant');
+    assert.equal(providers[0]?.model, 'openai/gpt-oss-20b');
     assert.equal(providers[1]?.model, 'google/gemini-2.5-flash');
 
     delete process.env.FORECAST_LLM_PROVIDER_ORDER;
@@ -1636,7 +1636,7 @@ describe('forecast llm overrides', () => {
     const options = getForecastLlmCallOptions('critical_signals');
     const providers = resolveForecastLlmProviders(options);
 
-    assert.equal(providers[0]?.model, 'llama-3.1-8b-instant');
+    assert.equal(providers[0]?.model, 'openai/gpt-oss-20b');
     assert.equal(providers[1]?.model, 'google/gemini-2.5-flash');
     assert.deepEqual(providers[1]?.extraBody, { provider: OPENROUTER_PROVIDER_ROUTING });
 
@@ -1668,7 +1668,7 @@ describe('forecast llm overrides', () => {
     assert.equal(scenarioProviders[0]?.name, 'openrouter');
     assert.equal(scenarioProviders[0]?.model, 'deepseek/deepseek-v4-flash');
     assert.equal(scenarioProviders[0]?.timeout, 40_000, 'Flash completion deadline (see above); non-Flash overrides keep 25s');
-    assert.equal(scenarioProviders[1]?.model, 'llama-3.3-70b-versatile');
+    assert.equal(scenarioProviders[1]?.model, 'openai/gpt-oss-20b');
   });
 
   it('lets a global provider order and openrouter model apply to non-combined stages', () => {

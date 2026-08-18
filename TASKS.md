@@ -107,16 +107,39 @@ still directly actionable regardless of Railway/Nitric status (they're not deplo
      real ~79K+ dataset**: either source the Polyglobe key, or re-run the OSM regional fetch from
      an environment without this throughput ceiling.
 
-4. **Groq model 404s — code fix across 9 files, needs one operator decision first (replacement
-   model), then it's mechanical.** `llama-3.1-8b-instant` and `llama-3.3-70b-versatile` are both
-   dead on the live API for the account's `GROQ_API_KEY`. Full file list and reasoning in the
-   category-9 section below (search `does not exist or you do not have access to it`). **Before
-   touching code**: ask the operator which model to switch to — `openai/gpt-oss-20b` was confirmed
-   working live this session and is the obvious default, but reading the model from an env var
-   (mirroring how the Ollama provider already does `process.env.OLLAMA_MODEL`) may be the better
-   long-term fix so a future Groq deprecation doesn't require another 9-file patch. Once decided,
-   update all 9 sites (`server/_shared/llm.ts:96` is live-request-path — chat/summarize/deduction —
-   so re-run its relevant tests after editing, not just the seed scripts).
+4. ✅ **RESOLVED (2026-08-18, twenty-fifth session)** — Groq model 404s fixed, commit `6147e6b`.
+   Replaced `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` with `openai/gpt-oss-20b` across all
+   7 live call sites (not 9 — 2 of the originally-listed sites turned out to be the same file's 2
+   literals; a fresh grep also found `scripts/lib/llm-chain.cjs` had a matching literal, but it's
+   explicitly deferred, see below), each overridable via a new `GROQ_MODEL` env var (mirrors
+   `OLLAMA_MODEL`'s existing pattern) — operator's decision, confirmed live: gpt-oss-20b over
+   gpt-oss-120b (identical rate limits) and over Prompt Guard (ruled out — it's a classifier, not a
+   text generator, live-verified: asked for a summary, got a bare probability score back).
+   **Real complication found along the way**: gpt-oss models are *reasoning* models (unlike the
+   retired llama ones) — live-tested a 5-token budget spent entirely on hidden reasoning tokens,
+   returning empty content. Added `reasoning_effort: 'low'` to every groq `extraBody` (Groq's own
+   param, no hard "off" exists) — same failure class `server/_shared/llm.ts` already documents for
+   OpenRouter's DeepSeek V4 under `#4983`. Live-verified end-to-end via `callLlm()`: real content,
+   correct model, `finishReason: stop` (not truncated).
+   **Rate-limit correction**: confirmed via Groq's own docs that every real text-generation model on
+   this account's free tier (gpt-oss-20b, gpt-oss-120b, qwen3.6-27b) shares an identical 1,000
+   req/day cap — not model-specific, an account-tier constraint switching models doesn't escape.
+   Accepted given Groq is a last-resort fallback tier only. Also fixed a stale `.env.example`
+   comment claiming "14,400 req/day" for `GROQ_API_KEY` — that figure was actually Prompt Guard's
+   limit, not the chat models the key is used for.
+   **`scripts/lib/llm-chain.cjs` deliberately NOT touched** — its own comment says "Do not swap it
+   in isolation," gated on a separate DeepSeek migration (`#4944`), and its sole caller already pins
+   to openrouter (`skipProviders`), so the dead literal there is unreachable in practice.
+   **`critical_signals`** (a probability-coupled, review-pinned stage in `seed-forecasts.mjs`) got
+   its own `FORECAST_LLM_CRITICAL_MODEL_GROQ` env var rather than inheriting the global
+   `GROQ_MODEL` — preserves the existing isolation pattern (`FORECAST_LLM_CRITICAL_MODEL_OPENROUTER`
+   already works this way, review finding `#4965`).
+   Fixed 5 assertions in `tests/forecast-detectors.test.mjs` that were pinned to the old literals;
+   the other 4 test files referencing them needed no changes (self-consistent mock fixtures, not
+   real assertions) — confirmed via full run, 373/373 pass. Full-suite run also surfaced 1 more
+   failure than the documented 40-baseline, confirmed pre-existing and unrelated: a Railway-registry
+   coverage test expecting 3 Dockerfiles that moved into `nitric.yaml` back on 2026-08-06 (weeks
+   before this session) — not a regression from this fix, not touched.
 
 5. **Orphaned crons — each needs a scheduling decision, not a code fix.** `regulatory-actions`,
    `internet-outages`, `webcams`, likely `infra` (probably retire instead of schedule — see below)

@@ -34,6 +34,14 @@ if (isMain) {
       declareRecords,
       schemaVersion: 2,
       maxStaleMin: 25200,
+      // 5 CPC categories fetched sequentially (fetchAllPatents), each with a
+      // measured ~64s USPTO ODP latency (2026-08-17) and a deliberate 3s courtesy
+      // delay between them: worst case ~5*90s + 4*3s ≈ 462s against the
+      // per-request USPTO_FETCH_TIMEOUT_MS budget in _defense-patents-source.mjs.
+      // runSeed's default fetch-phase deadline (~240s, #4786) is too short for
+      // that even once the per-request timeout above is fixed — this is the
+      // outer ceiling, not a duplicate of it.
+      fetchPhaseTimeoutMs: 540_000,
     },
   ).catch((err) => {
     const cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : '';

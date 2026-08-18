@@ -2,6 +2,11 @@ import { CHROME_UA, sleep } from './_seed-utils.mjs';
 
 export const USPTO_ODP_API = 'https://api.uspto.gov/api/v1/patent/applications/search';
 export const MAX_PER_CATEGORY = 20;
+// A single category's OR-heavy assignee query measured ~64s in production
+// (2026-08-17 seed-source review) — USPTO's own search latency, not a transfer-size
+// issue (448KB response). The previous 20s AbortSignal timeout guaranteed every
+// category would abort. 90s leaves real margin above the measured latency.
+export const USPTO_FETCH_TIMEOUT_MS = 90_000;
 
 // Internal-only identity metadata. Symbols keep the canonical application key
 // out of the published patent contract while allowing cross-category results
@@ -150,7 +155,7 @@ export async function fetchCategoryPatents(category, {
       'User-Agent': CHROME_UA,
       Accept: 'application/json',
     },
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(USPTO_FETCH_TIMEOUT_MS),
   });
 
   // ODP uses 404 for a valid query with zero matching records.

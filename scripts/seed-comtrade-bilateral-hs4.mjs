@@ -20,7 +20,28 @@ const require = createRequire(import.meta.url);
 
 const META_KEY = 'seed-meta:comtrade:bilateral-hs4';
 const KEY_PREFIX = 'comtrade:bilateral-hs4:';
-const TTL_SECONDS = 259200; // 72h
+// Cron cadence this seeder is deployed on: the Railway service
+// `seed-comtrade-bilateral-hs4` (scripts/railway-services.json) runs monthly. The
+// schedule itself lives in Railway, not the repo, so it is pinned here as the value
+// the data TTL has to outlive. Keep the two in sync if the cron cadence ever changes.
+export const CRON_PERIOD_SECONDS = 30 * 86_400; // 30d — monthly Railway cron
+
+// Data TTL must OUTLIVE the cron period or the keys die between runs.
+// Discovered 2026-08-18: this was 259200 (72h) against a monthly cron, so every
+// per-country key expired 3 days after a run and stayed absent for the remaining ~27
+// — roughly 10% availability. Confirmed live: comtrade:bilateral-hs4:{CN,US,DE}:v1 all
+// returned TTL -2 (key does not exist). It looked healthy only because
+// server/worldmonitor/supply-chain/v1/_bilateral-hs4-lazy.ts silently refetches missing
+// keys per-request (concurrency 1, 5s timeout) — an expensive degraded fallback that
+// masked the gap. That module writes THE SAME key namespace with SUCCESS_TTL = 2592000
+// (30 days), so the seeder was also undercutting its own fallback's lifetime.
+//
+// Quota context (why the cron cannot simply run more often instead): one run is 394
+// authenticated calls (197 countries x 2 HS4 batches) and the UN Comtrade Free tier is
+// 500 calls/month PER KEY. With the 2-key rotation that is 197 calls/key/run, so 2
+// runs/month is the hard ceiling and monthly is the sane cadence. Raising the TTL is
+// therefore the only lever that closes the gap.
+export const TTL_SECONDS = CRON_PERIOD_SECONDS + 5 * 86_400; // 35d = monthly cron + 5d slack
 const LOCK_DOMAIN = 'comtrade:bilateral-hs4';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min
 
@@ -56,10 +77,24 @@ function getNextKey() {
 
 const usePublicApi = COMTRADE_KEYS.length === 0;
 const STRATEGIC_PRODUCT_METADATA = require('./shared/comtrade-strategic-products.json');
-const COMTRADE_CLASSIFICATION_CODE = STRATEGIC_PRODUCT_METADATA.classification.code;
+// The last URL path segment is Comtrade's API ROUTE FAMILY, not the classification
+// revision. They are different namespaces: the route family is 'HS', while
+// STRATEGIC_PRODUCT_METADATA.classification.code tracks which HS revision the product
+// list is curated against ('H6' = HS2022). seed-trade-flows.mjs:14 already draws this
+// distinction correctly; this file did not, and interpolated the revision code into the
+// path. Verified live 2026-08-17 against the authenticated endpoint, same query otherwise:
+//   .../data/v1/get/C/A/H6  -> HTTP 500 {"count":-1,"error":{...}}  (every request)
+//   .../data/v1/get/C/A/HS  -> HTTP 200 count=25158
+// So the H6 path 500s on every authenticated call regardless of credentials. The keyless
+// preview endpoint returns count=0 for this query under BOTH H6 and HS, so a valid
+// COMTRADE_API_KEYS remains a separate, independent prerequisite (see the freshness-gate
+// fix above for what a fully-empty run used to do to the 24-day gate).
+const COMTRADE_ROUTE_FAMILY = 'HS';
+export const COMTRADE_CLASSIFICATION_CODE = STRATEGIC_PRODUCT_METADATA.classification.code;
 const COMTRADE_FETCH_URL = usePublicApi
-  ? `https://comtradeapi.un.org/public/v1/preview/C/A/${COMTRADE_CLASSIFICATION_CODE}`
-  : `https://comtradeapi.un.org/data/v1/get/C/A/${COMTRADE_CLASSIFICATION_CODE}`;
+  ? `https://comtradeapi.un.org/public/v1/preview/C/A/${COMTRADE_ROUTE_FAMILY}`
+  : `https://comtradeapi.un.org/data/v1/get/C/A/${COMTRADE_ROUTE_FAMILY}`;
+export { COMTRADE_FETCH_URL, COMTRADE_ROUTE_FAMILY };
 const INTER_REQUEST_DELAY_MS = usePublicApi ? 3500 : 1500;
 
 const BILATERAL_PRODUCTS = STRATEGIC_PRODUCT_METADATA.products.filter((product) => product.bilateralHs4Code);
@@ -118,6 +153,23 @@ export async function checkSeedMetaFreshness(now = Date.now()) {
       return { fresh: false, ageMs: null, reason: 'no-fetchedAt' };
     }
     const ageMs = now - fetchedAt;
+    // A failed or empty run must NOT arm the gate. Discovered 2026-08-17:
+    // when every reporter returns zero rows (e.g. COMTRADE_API_KEYS unset, so
+    // the public preview endpoint answers HTTP 200 {"count":0,"data":[]}),
+    // main()'s success path still stamped fetchedAt=now with the default
+    // status='ok'. Because this gate previously keyed on fetchedAt alone, a
+    // totally-failed run silently suppressed every retry for the full 24 days
+    // — the failure disabled its own recovery, and freshness monitoring saw
+    // "ok". Treating error/empty meta as not-fresh also self-heals records
+    // already written by the old behaviour. Safe against the 500/month quota
+    // because, per the note above, the monthly cron is the primary guard and
+    // this gate is only the secondary one.
+    const status = typeof parsed?.status === 'string' ? parsed.status : null;
+    if (status && status !== 'ok') return { fresh: false, ageMs, reason: 'last-run-error' };
+    const recordCount = Number(parsed?.recordCount);
+    if (Number.isFinite(recordCount) && recordCount <= 0) {
+      return { fresh: false, ageMs, reason: 'last-run-empty' };
+    }
     if (ageMs < FRESHNESS_GATE_MS) return { fresh: true, ageMs, reason: 'within-gate' };
     return { fresh: false, ageMs, reason: 'stale' };
   } catch (err) {
@@ -370,7 +422,11 @@ export async function main() {
       await redisPipeline(commands);
     }
 
-    await writeMeta(writtenCount);
+    // Zero countries written means the run produced nothing, even though no
+    // exception was thrown (the catch below never sees this path). Record it
+    // honestly as 'error' so the gate above and any freshness monitoring both
+    // see a failed run rather than a successful empty one.
+    await writeMeta(writtenCount, writtenCount === 0 ? 'error' : 'ok');
 
     logSeedResult('comtrade:bilateral-hs4', writtenCount, Date.now() - startedAt, {
       countries: countries.length,

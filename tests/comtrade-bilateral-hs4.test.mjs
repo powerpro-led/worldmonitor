@@ -125,10 +125,27 @@ describe('Comtrade bilateral HS4 seeder (scripts/seed-comtrade-bilateral-hs4.mjs
     );
   });
 
-  it('TTL_SECONDS is 259200 (72 hours)', () => {
+  it('TTL_SECONDS outlives the monthly cron instead of the old 72h literal', () => {
+    // Changed 2026-08-18. This used to pin `TTL_SECONDS = 259200` (72h) "to match the
+    // cache interval", but no consumer ever wanted 72h:
+    //   - the in-file freshness gate is 24d, and seed-meta TTL is 25d
+    //   - api/health.js:474 allows maxStaleMin 34560 (24d) for this domain
+    //   - api/seed-health.js:104 records intervalMin 17280 (12d), noting the 24d gate
+    //   - _bilateral-hs4-lazy.ts writes the SAME comtrade:bilateral-hs4:* namespace
+    //     with SUCCESS_TTL = 2592000 (30d)
+    // Against the monthly Railway cron the 72h value left every per-country key absent
+    // for ~27 of each 30 days (verified live: CN/US/DE all returned TTL -2). It stayed
+    // invisible because health probes the seed-meta key, never the sharded data keys
+    // (see the "meta-only aggregate" note at api/health.js:243).
+    // Behavioural invariants live in tests/seed-comtrade-bilateral-freshness-gate.test.mjs;
+    // this source-level check only guards the literal from regressing.
     assert.ok(
-      src.includes('TTL_SECONDS = 259200'),
-      'seeder: TTL_SECONDS must be 259200 (72h) to match the cache interval',
+      !src.includes('TTL_SECONDS = 259200'),
+      'seeder: TTL_SECONDS must not regress to the 72h literal — it expires between monthly runs',
+    );
+    assert.ok(
+      /TTL_SECONDS\s*=\s*CRON_PERIOD_SECONDS\s*\+/.test(src),
+      'seeder: TTL_SECONDS must derive from CRON_PERIOD_SECONDS so cadence and TTL stay in sync',
     );
   });
 

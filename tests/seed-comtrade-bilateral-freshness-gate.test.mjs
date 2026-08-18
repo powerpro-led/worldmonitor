@@ -9,10 +9,15 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   checkSeedMetaFreshness,
+  CRON_PERIOD_SECONDS,
   FRESHNESS_GATE_MS,
   SEED_META_TTL_SECONDS,
+  TTL_SECONDS,
 } from '../scripts/seed-comtrade-bilateral-hs4.mjs';
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -102,6 +107,110 @@ test('checkSeedMetaFreshness: fetchedAt:0 (legacy bad write) treated as no-fetch
   const result = await checkSeedMetaFreshness(Date.now());
   assert.equal(result.fresh, false);
   assert.equal(result.reason, 'no-fetchedAt');
+});
+
+// ── Regression: a failed/empty run must not arm the gate ─────────────────────
+// Discovered 2026-08-17 while live-testing category 5 of the 156-seed-source
+// sweep. Production seed-meta read {fetchedAt: 21.2d ago, recordCount: 0,
+// status: 'ok'} — a run where every reporter returned zero rows (no
+// COMTRADE_API_KEYS, so the keyless public preview endpoint answers HTTP 200
+// with {"count":0,"data":[]}). main()'s success path stamped fetchedAt=now with
+// the default status='ok', and the gate keyed on fetchedAt alone, so the seeder
+// suppressed its own retries for 24 days. Every pre-existing test above passes
+// recordCount: 180 / status: 'ok', so none of them exercised this shape.
+
+test('checkSeedMetaFreshness: recent run with recordCount 0 does NOT arm the gate', async () => {
+  const now = Date.now();
+  mockRedisGet(JSON.stringify({ fetchedAt: now - 1 * 86_400_000, recordCount: 0, status: 'ok' }));
+  const result = await checkSeedMetaFreshness(now);
+  assert.equal(result.fresh, false, 'an empty run must not block the next attempt');
+  assert.equal(result.reason, 'last-run-empty');
+});
+
+test('checkSeedMetaFreshness: the exact stuck production record self-heals', async () => {
+  // Byte-for-byte the shape observed in Redis on 2026-08-17: inside the 24d
+  // gate, reporting ok, but holding zero records. Before the fix this returned
+  // fresh=true and blocked the re-seed that would have seeded real data.
+  const now = Date.now();
+  mockRedisGet(JSON.stringify({ fetchedAt: now - 21.2 * 86_400_000, recordCount: 0, status: 'ok' }));
+  const result = await checkSeedMetaFreshness(now);
+  assert.equal(result.fresh, false, 'the stuck record must not keep gating once the fix ships');
+});
+
+test('checkSeedMetaFreshness: recent run with status error does NOT arm the gate', async () => {
+  const now = Date.now();
+  mockRedisGet(JSON.stringify({ fetchedAt: now - 1 * 86_400_000, recordCount: 0, status: 'error' }));
+  const result = await checkSeedMetaFreshness(now);
+  assert.equal(result.fresh, false);
+  assert.equal(result.reason, 'last-run-error');
+});
+
+test('checkSeedMetaFreshness: a genuine successful run still arms the gate', async () => {
+  // Guard the other direction — the fix must not defeat the quota protection
+  // the gate exists for. A real run (records > 0, ok) inside the window skips.
+  const now = Date.now();
+  mockRedisGet(JSON.stringify({ fetchedAt: now - 1 * 86_400_000, recordCount: 180, status: 'ok' }));
+  const result = await checkSeedMetaFreshness(now);
+  assert.equal(result.fresh, true);
+  assert.equal(result.reason, 'within-gate');
+});
+
+test('checkSeedMetaFreshness: legacy meta without a status field still gates on records', async () => {
+  // Pre-status writes exist in the wild; absence of `status` must not be read
+  // as failure, so a legacy record with real data keeps working.
+  const now = Date.now();
+  mockRedisGet(JSON.stringify({ fetchedAt: now - 1 * 86_400_000, recordCount: 180 }));
+  const result = await checkSeedMetaFreshness(now);
+  assert.equal(result.fresh, true);
+  assert.equal(result.reason, 'within-gate');
+});
+
+// ── Regression: data TTL must outlive the cron period ────────────────────────
+// Discovered 2026-08-18. TTL_SECONDS was 259200 (72h) while the Railway cron runs
+// monthly, so every per-country key expired 3 days after a run and was absent for the
+// remaining ~27 — about 10% availability. Confirmed live at the time:
+// comtrade:bilateral-hs4:{CN,US,DE}:v1 all returned TTL -2 (key does not exist).
+// It never looked broken because _bilateral-hs4-lazy.ts refetches missing keys
+// per-request as a degraded fallback, masking the gap.
+
+test('invariant: data TTL outlives the cron period, with slack', () => {
+  assert.ok(
+    TTL_SECONDS > CRON_PERIOD_SECONDS,
+    `TTL_SECONDS (${TTL_SECONDS}s = ${TTL_SECONDS / 86400}d) must exceed the cron period ` +
+    `(${CRON_PERIOD_SECONDS}s = ${CRON_PERIOD_SECONDS / 86400}d), or keys die between runs`,
+  );
+  const slackDays = (TTL_SECONDS - CRON_PERIOD_SECONDS) / 86400;
+  assert.ok(
+    slackDays >= 3,
+    `need >=3d slack for a missed tick or a late cron; got ${slackDays}d`,
+  );
+});
+
+test('invariant: data TTL is not shorter than the lazy fallback it supersedes', () => {
+  // _bilateral-hs4-lazy.ts writes THE SAME comtrade:bilateral-hs4:* namespace on a
+  // cache miss. If the seeder's TTL were shorter, the authoritative writer would be
+  // undercutting its own fallback's lifetime — which is exactly what the 72h bug did.
+  const lazySrc = readFileSync(
+    join(import.meta.dirname, '..', 'server', 'worldmonitor', 'supply-chain', 'v1', '_bilateral-hs4-lazy.ts'),
+    'utf-8',
+  );
+  const match = lazySrc.match(/const\s+SUCCESS_TTL\s*=\s*(\d+)/);
+  assert.ok(match, 'could not read SUCCESS_TTL from _bilateral-hs4-lazy.ts');
+  const lazyTtl = Number(match[1]);
+  assert.ok(
+    TTL_SECONDS >= lazyTtl,
+    `seeder TTL (${TTL_SECONDS / 86400}d) must be >= lazy fallback SUCCESS_TTL (${lazyTtl / 86400}d)`,
+  );
+});
+
+test('invariant: data TTL also covers the full freshness-gate window', () => {
+  // The gate can suppress a re-seed for up to FRESHNESS_GATE_MS. Data must survive at
+  // least that long, otherwise the gate blocks a refill while the keys are already gone.
+  assert.ok(
+    TTL_SECONDS > FRESHNESS_GATE_MS / 1000,
+    `TTL_SECONDS (${TTL_SECONDS / 86400}d) must exceed the gate window ` +
+    `(${FRESHNESS_GATE_MS / 86400000}d)`,
+  );
 });
 
 test('invariant: SEED_META_TTL_SECONDS strictly outlives FRESHNESS_GATE_MS', () => {

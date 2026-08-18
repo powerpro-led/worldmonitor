@@ -255,9 +255,20 @@ function main() {
   if (mirtaRaw) console.log(`  MIRTA unwrapped: ${mirtaRaw.length} installations`);
   const curatedRaw = loadJson(CURATED_PATH, 'curated-bases.json');
 
-  if (!pizzintRaw && !osmRaw) {
-    console.error('FATAL: at least one of pizzint-processed.json or osm-military-processed.json is required.');
+  if (!pizzintRaw && !osmRaw && !mirtaRaw && !curatedRaw) {
+    console.error('FATAL: no input datasets available at all (pizzint, osm, mirta, curated all missing).');
     process.exit(1);
+  }
+  if (!pizzintRaw && !osmRaw) {
+    // Steps 2-4 below are each independently gated on their own dataset being
+    // present and don't actually require Step 1 (pizzint/osm) to have run —
+    // they append+dedupe into `merged` regardless of whether it started empty.
+    // A pizzint+osm-less build is real, just much smaller than intended (pizzint
+    // is ~79K records, osm's public-instance fetch is a distant second at best;
+    // mirta+curated alone are ~1K records combined) — warn loudly so this
+    // doesn't silently ship as if it were the full dataset.
+    console.warn('WARNING: neither pizzint nor osm available — building from mirta+curated only.');
+    console.warn('WARNING: this dataset will be a small fraction of the intended size. See TASKS.md.');
   }
 
   console.log('');

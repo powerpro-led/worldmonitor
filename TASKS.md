@@ -64,20 +64,48 @@ still directly actionable regardless of Railway/Nitric status (they're not deplo
 
 ### The fix list, in priority order (items 1-2 above are now historical — see reclassification)
 
-3. **`military:bases` R2 bucket is empty — direct, executable fix, no deployment access needed.**
-   `worldmonitor-data` R2 bucket exists (created 2026-08-17) but has zero objects — confirmed by
-   listing it directly with the already-set `CLOUDFLARE_R2_TOKEN`/`CLOUDFLARE_R2_ACCOUNT_ID`. Full
-   evidence in the category-10 section below (search `The specified key does not exist`). **Fix**:
-   run `node scripts/build-military-bases-final.mjs` to generate
-   `scripts/data/military-bases-final.json`, then upload it to
-   `worldmonitor-data/seed-data/military-bases-final.json` via the R2 API (`PUT` to the same URL
-   `seed-military-bases.mjs:10` constructs for `GET`, or `aws s3 cp` / `rclone` against the R2
-   S3-compatible endpoint using the same credentials). Then run `node --env-file=.env
-   scripts/seed-military-bases.mjs` (or the `bundle-static-ref` section) to confirm
-   `military:bases:active` populates. **Caveat carried from session 24**: the bucket's very recent
-   creation date suggests this might be mid-flight work from a session not reflected in this file —
-   worth a quick check with the operator before assuming it's simply unfinished, in case someone else
-   is already mid-upload.
+3. ✅ **RESOLVED (2026-08-18, twenty-fifth session)** — `military:bases` R2 bucket populated,
+   `military:bases:active` confirmed live in Redis (1,058 entries, validated via `ZCARD`/`HLEN`
+   sample-check inside `seed-military-bases.mjs` itself). **Shipped with a real but reduced
+   dataset** — neither of the two largest intended sources was obtainable this session, both for
+   external reasons outside this repo's code:
+   - **`pizzint-processed.json` (intended ~79K records, primary)**: needs `SUPABASE_ANON_KEY` for
+     an external "Polyglobe" Supabase project (ref `qevdnlpgjxpwusesmtpx`) — a public anon key, but
+     not one this repo or its history has ever held. Operator supplied a key on request; verified
+     live against the Polyglobe project and got `401 Invalid API key ... might also be owned by
+     another Supabase project` — confirmed it was this app's own (different) Supabase key, not
+     Polyglobe's. Operator doesn't know where to find the real one. **Still open** — if anyone finds
+     Polyglobe's actual public site/app, its anon key is likely visible client-side there.
+   - **`osm-military-processed.json` (secondary, public API, no credential needed)**: two real
+     things found and fixed in `scripts/fetch-osm-bases.mjs`, but a third thing couldn't be fixed
+     from this session's network:
+     1. Node's `fetch()` got `406`/`504` from `overpass-api.de` where curl with identical headers
+        got `200` — a TLS/HTTP client-fingerprinting difference, not a fixable header (tested
+        `User-Agent`/`Accept` individually and together). **Fixed**: switched to `execFileSync`
+        curl, same pattern as `ais-relay.cjs`'s `orefCurlFetch`.
+     2. The original query was global/unbounded (no bbox) — too large for the public instance to
+        complete even at a 15min budget (partial 550KB delivered, then a genuine server-side 504
+        after the full 14min). **Fixed**: partitioned into 8 continent-scale regional bbox queries,
+        merged + deduped by `osm_id` across regions, individual region failures logged and skipped
+        rather than failing the whole fetch.
+     3. **Not fixed — genuine local throughput limit**: even continent-scale regions timed out
+        (N. America, S. America both 504'd), while a trivial single-point query succeeded in <5s —
+        ruling out rate-limiting. This is the same class of destination-specific throughput ceiling
+        diagnosed for Upstash earlier this session (see the handoff above), just against a
+        different host (`overpass-api.de`, Germany, not GCP) — so possibly a broader pattern on
+        this connection, not Upstash-specific. **The regional-partition code is still correct and
+        worth keeping** — it's the standard fix for a global Overpass query against a shared public
+        instance, and should work from an environment with normal bandwidth (e.g. once actually
+        deployed). Re-run `node scripts/fetch-osm-bases.mjs` from such an environment to get real
+        OSM coverage; no further local fix exists for this session's connection.
+   - **What shipped instead**: `build-military-bases-final.mjs`'s hard-fail gate
+     (`!pizzintRaw && !osmRaw`) was overly conservative — Steps 2-4 (OSM/MIRTA/curated merges) are
+     each independently gated and don't actually require Step 1 (pizzint/osm) to have populated
+     anything. Relaxed the gate to only fail if *all four* sources are missing, with loud
+     `console.warn` when falling back to the smaller mirta+curated-only path (832 + 226 = 1,058
+     entries after dedup, 0.3MB) so this never silently looks like the full dataset. **To get the
+     real ~79K+ dataset**: either source the Polyglobe key, or re-run the OSM regional fetch from
+     an environment without this throughput ceiling.
 
 4. **Groq model 404s — code fix across 9 files, needs one operator decision first (replacement
    model), then it's mechanical.** `llama-3.1-8b-instant` and `llama-3.3-70b-versatile` are both

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMapUrlState, buildMapUrl } from '../src/utils/urlState.ts';
+import { parseMapUrlState, buildMapUrl, withPreservedFragment } from '../src/utils/urlState.ts';
 
 const EMPTY_LAYERS = {
   conflicts: false, bases: false, cables: false, pipelines: false,
@@ -99,10 +99,70 @@ describe('buildMapUrl expanded param', () => {
     assert.equal(params.has('expanded'), false);
   });
 
+  it('preserves query params it does not own, e.g. an in-flight Supabase OAuth callback', () => {
+    // Regression: event-handlers.ts's debounced auto-sync calls buildMapUrl
+    // on almost every map interaction, including right after initial load.
+    // It used to build the query string from a fresh empty URLSearchParams,
+    // silently discarding anything already on the URL -- including a
+    // `?code=...&state=...` PKCE callback mid-exchange -- before
+    // detectSessionInUrl could consume it. Every GitHub sign-in attempt
+    // failed silently as a result (2026-08-19).
+    const url = buildMapUrl(`${base}?code=abc123&state=xyz789`, { ...baseState, country: 'IR' });
+    const params = new URL(url).searchParams;
+    assert.equal(params.get('code'), 'abc123');
+    assert.equal(params.get('state'), 'xyz789');
+    assert.equal(params.get('country'), 'IR', 'still sets its own known keys');
+  });
+
   it('includes chokepoint when present', () => {
     const url = buildMapUrl(base, { ...baseState, chokepoint: 'hormuz_strait' });
     const params = new URL(url).searchParams;
     assert.equal(params.get('chokepoint'), 'hormuz_strait');
+  });
+
+  it('passes a fragment through untouched (getShareUrl is what strips it)', () => {
+    // Documents why withPreservedFragment() assigns .hash instead of
+    // concatenating: buildMapUrl does NOT drop a fragment on its own, so the
+    // clipboard-safety of getShareUrl() rests entirely on its own
+    // `origin + pathname + search` construction, not on this function.
+    const url = buildMapUrl(`${base}#access_token=secret`, baseState);
+    assert.equal(new URL(url).hash, '#access_token=secret');
+  });
+});
+
+describe('withPreservedFragment', () => {
+  // Regression: Supabase Auth runs in IMPLICIT flow here (supabase-client.ts
+  // never overrides @supabase/auth-js's `flowType` default), so a completed
+  // GitHub sign-in returns `#access_token=...` in the FRAGMENT, not as the
+  // `?code=` query param the buildMapUrl comment above describes. The
+  // debounced URL auto-sync in event-handlers.ts fires 250ms after load and
+  // wrote buildMapUrl's fragment-less output straight back via
+  // history.replaceState — destroying the tokens well before
+  // auth-provider.ts's requestIdleCallback-deferred (up to 4000ms) Supabase
+  // client construction could run detectSessionInUrl. Every GitHub sign-in
+  // failed silently as a result; the earlier query-param fix hardened the
+  // wrong half of the URL (2026-08-19).
+  const mapUrl = 'https://example.test/dashboard?view=global&zoom=2.00';
+
+  it('re-attaches an implicit-flow OAuth fragment', () => {
+    const out = withPreservedFragment(mapUrl, '#access_token=abc&refresh_token=xyz');
+    assert.equal(new URL(out).hash, '#access_token=abc&refresh_token=xyz');
+    assert.equal(new URL(out).searchParams.get('view'), 'global', 'query state still wins');
+  });
+
+  it('leaves the URL untouched when there is no fragment', () => {
+    assert.equal(withPreservedFragment(mapUrl, ''), mapUrl);
+    assert.equal(withPreservedFragment(mapUrl, '#'), mapUrl, 'a bare "#" is not a fragment');
+  });
+
+  it('normalizes a fragment passed without its leading #', () => {
+    assert.equal(new URL(withPreservedFragment(mapUrl, 'access_token=abc')).hash, '#access_token=abc');
+  });
+
+  it('replaces an existing fragment rather than appending a second one', () => {
+    const out = withPreservedFragment(`${mapUrl}#stale`, '#access_token=abc');
+    assert.equal(new URL(out).hash, '#access_token=abc');
+    assert.equal(out.match(/#/g)?.length, 1);
   });
 });
 

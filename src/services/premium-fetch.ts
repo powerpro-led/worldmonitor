@@ -140,32 +140,8 @@ export function proFreshRpcFetch(
   return premiumFetch(input, { ...init, forcePremium: true });
 }
 
-function uniqueNonEmptyKeys(keys: Array<string | null | undefined>): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const raw of keys) {
-    const key = raw?.trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    result.push(key);
-  }
-  return result;
-}
-
-async function loadTesterKeys(): Promise<string[]> {
-  try {
-    if (_testProviders?.getTesterKeys) {
-      return uniqueNonEmptyKeys(_testProviders.getTesterKeys());
-    }
-    if (_testProviders?.getTesterKey) {
-      return uniqueNonEmptyKeys([_testProviders.getTesterKey()]);
-    }
-    const { getBrowserTesterKeys } = await import('@/services/widget-store');
-    return uniqueNonEmptyKeys(getBrowserTesterKeys());
-  } catch {
-    return [];
-  }
-}
+// uniqueNonEmptyKeys()/loadTesterKeys() removed alongside the Pro-tier tester
+// key ladder in premiumFetch() — see the "(removed)" note at step 2 there.
 
 // Delay before the single auth-token retry (see step 3 in premiumFetch).
 // Long enough for the boot-window token-generation rotation to settle, short
@@ -237,19 +213,20 @@ export async function premiumFetch(
     } catch { /* not available — fall through */ }
   }
 
-  // 2. Legacy in-memory test seam. In production, tester/widget keys are
-  // HttpOnly cookies and ride along through credentials: 'include'.
-  const testerKeys = await loadTesterKeys();
-  for (const testerKey of testerKeys) {
-    const testerHeaders = new Headers(existing);
-    testerHeaders.set('X-WorldMonitor-Key', testerKey);
-    const res = await globalThis.fetch(input, { ...withCredentials(requestInit), headers: testerHeaders });
-    if (res.status !== 401) {
-      reportServerError(res, input);
-      return res;
-    }
-    // 401 → try the next tester key, then fall through to Supabase if none work.
-  }
+  // 2. (removed) Pro-tier "tester key" ladder.
+  //
+  // This used to loop over VITE_PRO_WIDGET_KEY / VITE_WIDGET_AGENT_KEY,
+  // sending a REAL request per key and treating each 401 as "try the next
+  // one". This fork has no Pro tier and those inherited upstream keys are not
+  // recognised by its gateway (verified live: X-WorldMonitor-Key with that
+  // value returns the same 401 as sending no credentials at all), so the
+  // ladder could only ever burn one guaranteed-401 round trip per configured
+  // key before falling through. With both keys set that was two wasted
+  // requests on every premium call — enough to trip the gateway's rate
+  // limiter and turn recoverable calls into 429s (2026-08-19).
+  //
+  // Anything that still needs a static key sets an explicit Authorization or
+  // X-WorldMonitor-Key header on the request, which is honoured above.
 
   // 3. Supabase session token — ONLY for premium paths. For non-premium
   //    endpoints, attaching Bearer would suppress the wm-session

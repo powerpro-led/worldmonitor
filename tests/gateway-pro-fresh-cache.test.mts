@@ -1,27 +1,30 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 
 import { issueSessionToken } from '../api/_session.js';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '../src/shared/pro-fresh-rpc.ts';
 
 const ORIGINAL_ENV = {
   SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET,
+  SUPABASE_JWT_PUBLIC_JWK: process.env.SUPABASE_JWT_PUBLIC_JWK,
   WM_SESSION_SECRET: process.env.WM_SESSION_SECRET,
 };
 
 const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
-const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
 const ISSUER = `${SUPABASE_URL}/auth/v1`;
-const secretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+// Real ES256 keypair -- see tests/auth-session.test.mts for why this must be
+// generated, not a fixed HS256 string fixture, now that the module under
+// test verifies against a hardcoded public key (server/auth-session.ts).
+const { publicKey, privateKey } = await generateKeyPair('ES256', { extractable: true });
+const publicJwk = await exportJWK(publicKey);
 
 let anonymousSessionToken = '';
-// server/auth-session.ts reads SUPABASE_JWT_SECRET/SUPABASE_URL into
+// server/auth-session.ts reads SUPABASE_JWT_PUBLIC_JWK/SUPABASE_URL into
 // module-scope consts at first import, so `../server/gateway.ts` (which
 // transitively imports it) must be dynamically imported AFTER the env vars
 // below are set -- a static top-of-file import would capture an empty
-// secret and every bearer-token verification would fail closed.
+// key and every bearer-token verification would fail closed.
 let handler: (req: Request) => Promise<Response>;
 
 function request(path: string, headers: HeadersInit): Request {
@@ -41,18 +44,18 @@ function assertPrivateCache(res: Response): void {
 
 async function signSupabaseToken(userId: string): Promise<string> {
   return new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'ES256' })
     .setIssuer(ISSUER)
     .setAudience('authenticated')
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime('1h')
-    .sign(secretKey);
+    .sign(privateKey);
 }
 
 before(async () => {
   process.env.SUPABASE_URL = SUPABASE_URL;
-  process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_PUBLIC_JWK = JSON.stringify(publicJwk);
   process.env.WM_SESSION_SECRET = 'pro-fresh-session-secret-at-least-32-chars';
   anonymousSessionToken = (await issueSessionToken()).token;
 

@@ -1,12 +1,13 @@
 /**
- * Tests for server/auth-session.ts (Supabase HS256 JWT verification with jose)
+ * Tests for server/auth-session.ts (Supabase ES256 JWT verification with jose,
+ * against a hardcoded public signing key -- no JWKS network fetch)
  *
  * Covers the full validation matrix:
- *  - Returns invalid when SUPABASE_JWT_SECRET is not set (fail-closed)
+ *  - Returns invalid when SUPABASE_JWT_PUBLIC_JWK is not set (fail-closed)
  *  - Valid Supabase session token → { valid: true, role: 'pro' } (no more
  *    plan/tier concept -- every verified user gets a fixed 'pro' role)
  *  - Expired token → { valid: false }
- *  - Wrong signing secret → { valid: false }
+ *  - Wrong signing key → { valid: false }
  *  - Wrong issuer → { valid: false }
  *  - Wrong audience → { valid: false }
  *  - Missing `sub` claim → { valid: false }
@@ -15,19 +16,24 @@
 
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
-import { SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 
 const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
-const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
 const ISSUER = `${SUPABASE_URL}/auth/v1`;
-const secretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+
+// A real ES256 (P-256) keypair, generated fresh per test run -- not a fixed
+// fixture, since only the PUBLIC half ever needs to match what the module
+// under test is configured with; the private half only exists here, to sign
+// test tokens the same way Supabase's real Auth server would.
+const { publicKey, privateKey } = await generateKeyPair('ES256', { extractable: true });
+const publicJwk = await exportJWK(publicKey);
 
 // ---------------------------------------------------------------------------
-// Suite 1: fail-closed when SUPABASE_JWT_SECRET is NOT set
+// Suite 1: fail-closed when SUPABASE_JWT_PUBLIC_JWK is NOT set
 // ---------------------------------------------------------------------------
 
-// Clear env BEFORE dynamic import so the module captures an empty secret.
-delete process.env.SUPABASE_JWT_SECRET;
+// Clear env BEFORE dynamic import so the module captures an empty key.
+delete process.env.SUPABASE_JWT_PUBLIC_JWK;
 delete process.env.SUPABASE_URL;
 
 let validateBearerTokenNoEnv: (token: string) => Promise<{ valid: boolean; userId?: string; role?: string }>;
@@ -37,8 +43,8 @@ before(async () => {
   validateBearerTokenNoEnv = mod.validateBearerToken;
 });
 
-describe('validateBearerToken (no SUPABASE_JWT_SECRET)', () => {
-  it('returns invalid when SUPABASE_JWT_SECRET is not set', async () => {
+describe('validateBearerToken (no SUPABASE_JWT_PUBLIC_JWK)', () => {
+  it('returns invalid when SUPABASE_JWT_PUBLIC_JWK is not set', async () => {
     const result = await validateBearerTokenNoEnv('some-random-token');
     assert.equal(result.valid, false);
     assert.equal(result.userId, undefined);
@@ -61,10 +67,10 @@ describe('validateBearerToken (no SUPABASE_JWT_SECRET)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Suite 2: full HS256 validation against the shared Supabase JWT secret
+// Suite 2: full ES256 validation against the hardcoded public signing key
 // ---------------------------------------------------------------------------
 
-describe('validateBearerToken (Supabase HS256)', () => {
+describe('validateBearerToken (Supabase ES256)', () => {
   let validateBearerToken: (token: string) => Promise<{
     valid: boolean;
     userId?: string;
@@ -76,7 +82,7 @@ describe('validateBearerToken (Supabase HS256)', () => {
 
   before(async () => {
     process.env.SUPABASE_URL = SUPABASE_URL;
-    process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
+    process.env.SUPABASE_JWT_PUBLIC_JWK = JSON.stringify(publicJwk);
 
     // Dynamic import with cache-busting query param to get a fresh module
     // instance that captures the env vars set above at module scope.
@@ -86,24 +92,24 @@ describe('validateBearerToken (Supabase HS256)', () => {
 
   after(() => {
     delete process.env.SUPABASE_URL;
-    delete process.env.SUPABASE_JWT_SECRET;
+    delete process.env.SUPABASE_JWT_PUBLIC_JWK;
   });
 
   function signToken(claims: Record<string, unknown>, opts?: {
     expiresIn?: string;
-    key?: Uint8Array;
+    key?: CryptoKey;
     issuer?: string;
     audience?: string;
   }) {
     const builder = new SignJWT(claims)
-      .setProtectedHeader({ alg: 'HS256' })
+      .setProtectedHeader({ alg: 'ES256' })
       .setIssuer(opts?.issuer ?? ISSUER)
       .setAudience(opts?.audience ?? 'authenticated')
       .setSubject(claims.sub as string ?? 'user-test-uuid')
       .setIssuedAt()
       .setExpirationTime(opts?.expiresIn ?? '1h');
 
-    return builder.sign(opts?.key ?? secretKey);
+    return builder.sign(opts?.key ?? privateKey);
   }
 
   it('accepts a valid Supabase session token and always returns role pro', async () => {
@@ -124,21 +130,24 @@ describe('validateBearerToken (Supabase HS256)', () => {
 
   it('rejects an expired token', async () => {
     const token = await new SignJWT({ sub: 'user-expired' })
-      .setProtectedHeader({ alg: 'HS256' })
+      .setProtectedHeader({ alg: 'ES256' })
       .setIssuer(ISSUER)
       .setAudience('authenticated')
       .setSubject('user-expired')
       .setIssuedAt(Math.floor(Date.now() / 1000) - 7200) // 2h ago
       .setExpirationTime(Math.floor(Date.now() / 1000) - 3600) // expired 1h ago
-      .sign(secretKey);
+      .sign(privateKey);
 
     const result = await validateBearerToken(token);
     assert.equal(result.valid, false);
   });
 
-  it('rejects a token signed with the wrong secret', async () => {
-    const wrongKey = new TextEncoder().encode('a-completely-different-secret-value-xxxxxxxx');
-    const token = await signToken({ sub: 'user-wrongkey' }, { key: wrongKey });
+  it('rejects a token signed with the wrong key', async () => {
+    // A second, unrelated ES256 keypair -- the module under test is
+    // configured with `publicKey`'s pair, not this one, so a token signed
+    // with this private key must fail signature verification.
+    const { privateKey: wrongPrivateKey } = await generateKeyPair('ES256', { extractable: true });
+    const token = await signToken({ sub: 'user-wrongkey' }, { key: wrongPrivateKey });
     const result = await validateBearerToken(token);
     assert.equal(result.valid, false);
   });
@@ -157,12 +166,12 @@ describe('validateBearerToken (Supabase HS256)', () => {
 
   it('rejects a token with no sub claim', async () => {
     const token = await new SignJWT({})
-      .setProtectedHeader({ alg: 'HS256' })
+      .setProtectedHeader({ alg: 'ES256' })
       .setIssuer(ISSUER)
       .setAudience('authenticated')
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(secretKey);
+      .sign(privateKey);
 
     const result = await validateBearerToken(token);
     assert.equal(result.valid, false);
@@ -201,17 +210,21 @@ describe('validateBearerToken (Supabase HS256)', () => {
   });
 
   it('rejects a token signed with a mismatched algorithm', async () => {
-    // HS256 verification with `algorithms: ['HS256']` must reject a token
-    // whose header claims a different alg even if some other secret/key
+    // ES256 verification with `algorithms: ['ES256']` must reject a token
+    // whose header claims a different alg even if a validly-signed key
     // could theoretically be persuaded to verify it (algorithm confusion).
+    // ES384 is a real, validly-signed alternative -- not a malformed token --
+    // so this specifically exercises the algorithm allowlist, not signature
+    // failure.
+    const { privateKey: es384PrivateKey } = await generateKeyPair('ES384', { extractable: true });
     const token = await new SignJWT({ sub: 'user-alg-confusion' })
-      .setProtectedHeader({ alg: 'HS384' })
+      .setProtectedHeader({ alg: 'ES384' })
       .setIssuer(ISSUER)
       .setAudience('authenticated')
       .setSubject('user-alg-confusion')
       .setIssuedAt()
       .setExpirationTime('1h')
-      .sign(new TextEncoder().encode(SUPABASE_JWT_SECRET));
+      .sign(es384PrivateKey);
 
     const result = await validateBearerToken(token);
     assert.equal(result.valid, false);

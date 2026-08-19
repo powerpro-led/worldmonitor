@@ -5,11 +5,11 @@
  * shared bearer-token validator from `server/auth-session.ts`. Returns the
  * resolved session identity on success, or null on any failure.
  *
- * Activated by setting SUPABASE_JWT_SECRET + SUPABASE_URL env vars (Supabase
- * HS256 shared-secret verification -- see `server/auth-session.ts`). When
- * not set, all calls return null and the gateway falls back to
- * API-key-only auth. Mirrors the old CLERK_JWT_ISSUER_DOMAIN gate this
- * module replaced.
+ * Activated by setting SUPABASE_JWT_PUBLIC_JWK + SUPABASE_URL env vars
+ * (Supabase ES256 asymmetric-key verification against a hardcoded public
+ * key -- see `server/auth-session.ts`). When not set, all calls return null
+ * and the gateway falls back to API-key-only auth. Mirrors the old
+ * CLERK_JWT_ISSUER_DOMAIN gate this module replaced.
  */
 
 import { validateBearerToken } from '../auth-session';

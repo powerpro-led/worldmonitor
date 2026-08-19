@@ -168,6 +168,6 @@ test('__resetWmSessionForTests restores the default mint timeout', async () => {
 // gateway when Clerk never responds" test was removed here. Its premise
 // (an external Clerk Backend API round-trip inside validateBearerToken, with
 // a timeout + 5-minute plan cache) no longer exists -- server/auth-session.ts
-// now does a single local HS256 `jwtVerify` against SUPABASE_JWT_SECRET with
-// no network call and nothing to time out or cache. Coverage of the new
+// now does a single local ES256 `jwtVerify` against SUPABASE_JWT_PUBLIC_JWK
+// with no network call and nothing to time out or cache. Coverage of the new
 // verification path lives in tests/auth-session.test.mts.

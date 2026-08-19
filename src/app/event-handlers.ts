@@ -27,6 +27,7 @@ import { LlmStatusIndicator } from '@/components/LlmStatusIndicator';
 import type { PredictionPanel } from '@/components/PredictionPanel';
 import {
   buildMapUrl,
+  withPreservedFragment,
   debounce,
   saveToStorage,
   getCurrentTheme,
@@ -237,7 +238,12 @@ export class EventHandlerManager implements AppModule {
   private readonly debouncedUrlSync = debounce(() => {
     const shareUrl = this.getShareUrl();
     if (!shareUrl) return;
-    try { history.replaceState(null, '', shareUrl); } catch { }
+    // getShareUrl() intentionally drops the fragment (its value is also
+    // copied to the clipboard by the share button, and must never carry an
+    // access token) — but writing that fragment-less URL back to the address
+    // bar wipes an in-flight Supabase implicit-flow OAuth callback. See
+    // withPreservedFragment() in urlState.ts for the full race.
+    try { history.replaceState(null, '', withPreservedFragment(shareUrl, window.location.hash)); } catch { }
   }, 250);
 
   private readonly debouncedWebcamReload = debounce(() => {
@@ -1259,7 +1265,12 @@ export class EventHandlerManager implements AppModule {
     if (!this.ctx.map) return null;
     const state = this.ctx.map.getState();
     const center = this.ctx.map.getCenter();
-    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    // Includes the current search string (not just origin+pathname) so
+    // buildMapUrl's param seeding can preserve query params it doesn't own —
+    // see urlState.ts's buildMapUrl for why (an in-flight Supabase OAuth
+    // `?code=`/`&state=` callback was being wiped here before it could be
+    // consumed, silently breaking every GitHub sign-in attempt).
+    const baseUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
     const briefPage = this.ctx.countryBriefPage;
     const isCountryVisible = briefPage?.isVisible() ?? false;
     return buildMapUrl(baseUrl, {

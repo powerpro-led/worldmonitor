@@ -63,6 +63,27 @@ export async function initAuthProvider(): Promise<void> {
 }
 
 /**
+ * True when the current URL looks like a return leg from an OAuth provider.
+ *
+ * Covers BOTH Supabase flows on purpose. This app currently runs implicit
+ * flow (supabase-client.ts leaves @supabase/auth-js's `flowType` at its
+ * 'implicit' default), which returns `#access_token=...` in the fragment;
+ * PKCE returns `?code=...` in the query string. Checking both means
+ * switching flowType later can't silently reintroduce the race this guards.
+ */
+function hasPendingOAuthResponse(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (hash.has('access_token') || hash.has('error') || hash.has('error_description')) return true;
+    const query = new URLSearchParams(window.location.search);
+    return query.has('code') || query.has('error') || query.has('error_description');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Schedule auth-provider init off the critical path. Unlike clerk.ts's
  * scheduleClerkLoad(), there's no ~3 MB external bundle to defer —
  * `@supabase/supabase-js` ships in our own JS bundle — but boot-sequence
@@ -75,6 +96,21 @@ export function scheduleAuthProviderLoad(): void {
     void initAuthProvider();
     installVsCodeGithubTokenListener();
   };
+  // An in-flight OAuth response lives in the URL and nowhere else until
+  // detectSessionInUrl consumes it, so deferring init by up to 4s leaves a
+  // 4s window in which anything touching history.replaceState() destroys the
+  // sign-in. That is not hypothetical: event-handlers.ts's debounced URL
+  // auto-sync (250ms, fires on plain page load) silently killed every GitHub
+  // sign-in until 2026-08-19 — twice, once for the query string and again
+  // for the fragment. Init immediately on the OAuth return leg so the
+  // session no longer depends on every current and future URL writer
+  // remembering to preserve parts of the URL it doesn't own. Costs nothing
+  // on a normal boot: this branch is only taken coming back from the
+  // provider.
+  if (hasPendingOAuthResponse()) {
+    start();
+    return;
+  }
   const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
   if (typeof ric === 'function') {
     ric(start, { timeout: 4000 });

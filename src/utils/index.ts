@@ -187,7 +187,7 @@ export function shuffle<T>(arr: T[]): T[] {
 }
 
 export { proxyUrl, fetchWithProxy, rssProxyUrl } from './proxy';
-export { buildMapUrl, parseMapUrlState } from './urlState';
+export { buildMapUrl, parseMapUrlState, withPreservedFragment } from './urlState';
 export { withTimeout, TimeoutError } from './with-timeout';
 export type { ParsedMapUrlState } from './urlState';
 export { CircuitBreaker, createCircuitBreaker, getCircuitBreakerStatus, getCircuitBreakerCooldownInfo } from './circuit-breaker';

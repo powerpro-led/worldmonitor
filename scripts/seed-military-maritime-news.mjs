@@ -28,9 +28,9 @@ loadEnvFile(import.meta.url);
 const API_BASE = resolveApiOrigin(process.env.APP_DOMAIN);
 const TIMEOUT = 30_000;
 
-// Defense-in-depth auth — see seed-infra.mjs for the same pattern + rationale.
-// Set WORLDMONITOR_RELAY_KEY on the Railway service to a value already
-// present in Vercel's WORLDMONITOR_VALID_KEYS.
+// Defense-in-depth auth — see seed-service-statuses.mjs for the same pattern + rationale.
+// WORLDMONITOR_RELAY_KEY is a DEDICATED relay<->gateway secret, not a
+// WORLDMONITOR_VALID_KEYS entry — see seed-service-statuses.mjs for the full rationale.
 const RELAY_API_KEY = process.env.WORLDMONITOR_RELAY_KEY || '';
 
 function warmPingHeaders() {

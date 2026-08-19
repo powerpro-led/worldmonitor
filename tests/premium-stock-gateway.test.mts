@@ -1,38 +1,41 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, before, after, mock } from 'node:test';
-import { SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 
 import { issueSessionToken } from '../api/_session.js';
 import { createRedisFetch } from './helpers/fake-upstash-redis.mts';
 
-// server/auth-session.ts reads SUPABASE_JWT_SECRET/SUPABASE_URL into
+// server/auth-session.ts reads SUPABASE_JWT_PUBLIC_JWK/SUPABASE_URL into
 // module-scope consts at first import, so `../server/gateway.ts` (which
 // transitively imports it) must be dynamically imported AFTER the env vars
 // below are set -- a static top-of-file import would capture an empty
-// secret and every bearer-token verification in this file would fail
+// key and every bearer-token verification in this file would fail
 // closed regardless of what the test signs.
 const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
-const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
 const SUPABASE_JWT_ISSUER = `${SUPABASE_URL}/auth/v1`;
-const supabaseSecretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+// Real ES256 keypair -- see tests/auth-session.test.mts for why this must be
+// generated, not a fixed HS256 string fixture, now that the module under
+// test verifies against a hardcoded public key (server/auth-session.ts).
+const { publicKey: supabasePublicKey, privateKey: supabasePrivateKey } = await generateKeyPair('ES256', { extractable: true });
+const supabasePublicJwk = await exportJWK(supabasePublicKey);
 process.env.SUPABASE_URL = SUPABASE_URL;
-process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
+process.env.SUPABASE_JWT_PUBLIC_JWK = JSON.stringify(supabasePublicJwk);
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 
 const { createDomainGateway } = await import('../server/gateway.ts');
 
-/** Signs a Supabase-shaped HS256 bearer token. Every verified token gets
+/** Signs a Supabase-shaped ES256 bearer token. Every verified token gets
  * role 'pro' post-Stage-1 (server/auth-session.ts) -- there is no more
  * plan/tier claim to vary, so callers only need to supply `sub`. */
 function signSupabaseToken(userId: string): Promise<string> {
   return new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'ES256' })
     .setIssuer(SUPABASE_JWT_ISSUER)
     .setAudience('authenticated')
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime('1h')
-    .sign(supabaseSecretKey);
+    .sign(supabasePrivateKey);
 }
 
 /** SHA-256 hex digest -- mirrors server/_shared/user-api-key.ts's hashing so
@@ -448,10 +451,10 @@ describe('premium gateway bearer token auth', () => {
 
   // A garbage/mismatched-signature string is a stand-in for "invalid or
   // expired bearer token" post-Stage-1: server/auth-session.ts does local
-  // HS256 verification against a fixed secret, so there is no longer a
+  // ES256 verification against a fixed public key, so there is no longer a
   // second signing key whose signature would still parse-but-mismatch the
   // way the old Clerk RS256 "wrong key" fixture did -- any string that
-  // doesn't verify against SUPABASE_JWT_SECRET fails identically.
+  // doesn't verify against SUPABASE_JWT_PUBLIC_JWK fails identically.
   const INVALID_TOKEN = 'not-a-real-supabase-token';
 
   it('valid Pro bearer token unlocks tier-1 entitlement-gated endpoints without a Postgres row', async () => {

@@ -64,10 +64,11 @@ const DIGEST_KEY = 'news:digest:v1:full:en';
 const CHINA_COVERAGE_KEY = 'news:insights:v1:CN';
 const CHINA_NEWS_DIGEST_LANGUAGE = 'zh';
 
-// Defense-in-depth auth — see seed-infra.mjs for the same pattern + rationale.
-// Set WORLDMONITOR_RELAY_KEY on the Railway service (must match a value in
-// Vercel's WORLDMONITOR_VALID_KEYS). Origin alone is no longer reliable
-// because CF/Vercel intermediaries may strip it and CF can cache the 401.
+// Defense-in-depth auth — see seed-service-statuses.mjs for the same pattern + rationale.
+// WORLDMONITOR_RELAY_KEY is a DEDICATED relay<->gateway secret, not a
+// WORLDMONITOR_VALID_KEYS entry — see seed-service-statuses.mjs for the full rationale.
+// Origin alone is no longer reliable because CF/Vercel intermediaries may
+// strip it and CF can cache the 401.
 const RELAY_API_KEY = process.env.WORLDMONITOR_RELAY_KEY || '';
 
 // Digest items store proto enum strings (THREAT_LEVEL_HIGH etc.) from toProtoItem().

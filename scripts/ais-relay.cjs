@@ -4772,6 +4772,47 @@ function startCableHealthWarmPingLoop() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Temporal Anomalies Warm-Ping — keeps temporal:anomalies:v1 fresh so
+// health.js does not report STALE_SEED. Added 2026-08-19 (session 26):
+// this was previously seed-infra.mjs's ONLY non-redundant target (its other
+// two -- Service Statuses, Cable Health -- duplicate the loops above and
+// were never this RPC's sole warm path) -- see TASKS.md's "orphaned crons"
+// item 5. seed-infra.mjs itself is now retired; folded its one unique
+// warm-ping in here instead of giving the whole script its own schedule.
+// Interval = health.js's 45min alarm / 3, same margin convention as
+// CableHealth (90min alarm / 30min interval).
+// ─────────────────────────────────────────────────────────────
+const TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS = 15 * 60 * 1000; // 15 min
+const TEMPORAL_ANOMALIES_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/list-temporal-anomalies`;
+
+async function seedTemporalAnomaliesWarmPing() {
+  try {
+    const resp = await fetch(TEMPORAL_ANOMALIES_RPC_URL, {
+      method: 'POST',
+      headers: warmPingHeaders({ 'Content-Type': 'application/json' }),
+      body: '{}',
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!resp.ok) {
+      console.warn(`[TemporalAnomalies] Warm-ping failed: HTTP ${resp.status}${RELAY_API_KEY ? '' : ' (WORLDMONITOR_RELAY_KEY not set — 401 expected; set it on the relay AND the Vercel api project)'}`);
+      return;
+    }
+    const data = await resp.json();
+    const count = data?.anomalies?.length ?? 0;
+    console.log(`[TemporalAnomalies] Warm-ping OK: ${count} anomalies`);
+    // seed-meta is written by the list-temporal-anomalies handler itself on
+    // a live fetch (same reasoning as CableHealth above) -- not written here.
+  } catch (e) {
+    console.warn('[TemporalAnomalies] Warm-ping error:', e?.message || e);
+  }
+}
+
+function startTemporalAnomaliesWarmPingLoop() {
+  console.log(`[TemporalAnomalies] Warm-ping loop starting (interval ${TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS / 1000 / 60}min)`);
+  startBootSeedLoop('TemporalAnomalies', 'seed-meta:temporal:anomalies', TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS, seedTemporalAnomaliesWarmPing, (e) => console.warn('[TemporalAnomalies] Initial warm-ping error:', e?.message || e), (e) => console.warn('[TemporalAnomalies] Warm-ping error:', e?.message || e));
+}
+
+// ─────────────────────────────────────────────────────────────
 // Weather Alerts Seed — NWS API → Redis every 15 min
 // ─────────────────────────────────────────────────────────────
 const WEATHER_SEED_INTERVAL_MS = 15 * 60 * 1000; // 15 min
@@ -11475,6 +11516,7 @@ server.listen(PORT, () => {
   startCiiWarmPingLoop();
   startChokepointWarmPingLoop();
   startCableHealthWarmPingLoop();
+  startTemporalAnomaliesWarmPingLoop();
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
   startServiceStatusesSeedLoop();

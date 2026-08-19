@@ -193,6 +193,9 @@ const SEEDERS = [
   ['CII', "'seed-meta:intelligence:risk-scores'", 'CII_WARM_PING_INTERVAL_MS', 'seedCiiWarmPing'],
   ['Chokepoints', "'seed-meta:supply_chain:chokepoints'", 'CHOKEPOINT_WARM_PING_INTERVAL_MS', 'seedChokepointWarmPing'],
   ['CableHealth', "'seed-meta:cable-health'", 'CABLE_HEALTH_WARM_PING_INTERVAL_MS', 'seedCableHealthWarmPing'],
+  // Added 2026-08-19 (session 26): folded in from the retired seed-infra.mjs
+  // (its only non-redundant target -- see TASKS.md "orphaned crons" item 5).
+  ['TemporalAnomalies', "'seed-meta:temporal:anomalies'", 'TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS', 'seedTemporalAnomaliesWarmPing'],
   ['TheaterPosture', "'seed-meta:theater-posture'", 'THEATER_POSTURE_SEED_INTERVAL_MS', 'seedTheaterPosture'],
   ['Weather', "'seed-meta:weather:alerts'", 'WEATHER_SEED_INTERVAL_MS', 'seedWeatherAlerts'],
   ['Spending', "'seed-meta:economic:spending'", 'SPENDING_SEED_INTERVAL_MS', 'seedUsaSpending'],

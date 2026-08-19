@@ -493,15 +493,17 @@ export function installWebApiRedirect(): void {
         return { ...withCredentials(init), headers };
       }
     } catch { /* runtime-config unavailable — fall through */ }
-    // Legacy test seam. In production, tester keys live in HttpOnly cookies
-    // and are sent through credentials: 'include'.
-    const { getBrowserTesterKey } = await import('@/services/widget-store');
-    const testerKey = getBrowserTesterKey();
-    if (testerKey) {
-      headers.set('X-WorldMonitor-Key', testerKey);
-      return { ...withCredentials(init), headers };
-    }
-    // Supabase session: inject Bearer token (fallback for users without a tester key)
+    // Supabase session: inject Bearer token.
+    //
+    // A `VITE_PRO_WIDGET_KEY`/`VITE_WIDGET_AGENT_KEY` "tester key" branch used
+    // to sit here and won over the session. Those keys are inherited upstream
+    // Pro-tier cruft that this fork's gateway does not recognise — verified
+    // against the live local gateway, `X-WorldMonitor-Key: <that key>` returns
+    // the exact same 401 as sending no credentials at all. Because the branch
+    // returned early, every premium RPC shipped a dead key and never attached
+    // the Supabase Bearer, so a fully signed-in user got 401s on every panel
+    // (2026-08-19). This fork has no Pro tier, so the branch is gone rather
+    // than reordered.
     const token = await getAuthToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);

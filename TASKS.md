@@ -15,7 +15,447 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-18, twenty-fifth session end) — read this first
+## 🔀 HANDOFF (2026-08-19, twenty-eighth session end) — read this first, supersedes every block below
+
+**Scope**: picked up the twenty-seventh session's unresolved browser-login bug and **RESOLVED it**, then
+kept pulling the thread through two further, independent bugs that were masking each other. Ends with
+the operator's dashboard fully authenticating and every `401` gone from the browser console. Handing
+off a **new, larger, operator-requested initiative**: *"there is no longer Pro-tier in our fork, remove
+anything related Pro-tier."* That removal is scoped below but **barely started** — only the parts that
+were actively causing 401s were removed.
+
+**Git state**: 0 commits made (operator's standing "commit manually" discipline held). Working tree
+carries the twenty-seventh session's 22 modified files plus this session's. Files THIS session touched:
+`src/utils/urlState.ts`, `src/utils/index.ts`, `src/app/event-handlers.ts`, `src/services/auth-provider.ts`,
+`src/services/runtime.ts`, `src/services/premium-fetch.ts`, `tests/urlState.test.mts`, and `.env`
+(gitignored — 2 keys commented out, see below). `local.nitric.yaml` still untracked-but-meant-to-be-committed.
+`npx tsc --noEmit` clean at every step.
+
+### THE LOGIN BUG IS FIXED — root cause, after three sessions
+
+**Supabase Auth here runs IMPLICIT flow, not PKCE.** `src/services/supabase-client.ts:49` never sets
+`flowType`, and the installed `@supabase/auth-js` defaults to `'implicit'` (verified in
+`node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:24`). Proof from the wire, not inference: the
+Supabase edge log shows `GET /auth/v1/authorize?provider=github` with `?provider=github` as the **entire**
+query string — no `code_challenge`, which PKCE would always add. Implicit flow returns the session in the
+**URL FRAGMENT** (`#access_token=...`), never as `?code=`.
+
+`src/app/event-handlers.ts`'s `debouncedUrlSync` fires **unconditionally on plain page load**
+(`event-handlers.ts:1213`), and 250ms later called `history.replaceState()` with `getShareUrl()`, which
+builds `origin + pathname + search` — **no hash**. Meanwhile `scheduleAuthProviderLoad()` deferred the
+Supabase client construction (and thus `detectSessionInUrl`) behind `requestIdleCallback(..., {timeout: 4000})`.
+The fragment was destroyed seconds before auth-js ever looked for it.
+
+**The twenty-seventh session found the right function and hardened the wrong half of the URL** — it fixed
+query-param wiping and left comments saying "PKCE `?code=`". The payload was in the fragment the whole time.
+Generalizable lesson: confirm the payload's actual shape ON THE WIRE before assuming which branch is live.
+
+Fixes (all typechecked, `tests/urlState.test.mts` 21/21 green):
+- `withPreservedFragment()` in `src/utils/urlState.ts` (exported via `src/utils/index.ts`). Assigns `.hash`
+  rather than concatenating, so it normalizes a missing `#` AND replaces an existing fragment —
+  deliberate, because `buildMapUrl` does NOT strip fragments (a test proved my initial assumption wrong).
+- `event-handlers.ts:240` preserves `window.location.hash`. **Intentionally NOT folded into `getShareUrl()`**:
+  that value is also copied to the clipboard by the share button and must never carry an access token.
+- `auth-provider.ts`'s new `hasPendingOAuthResponse()` — when the URL carries an OAuth return, auth init runs
+  IMMEDIATELY instead of deferring up to 4s. Checks both `#access_token`/`#error` and `?code`/`?error` so a
+  future `flowType` switch can't silently reintroduce the race. Defense-in-depth: the session no longer
+  depends on every current and future URL writer preserving parts it doesn't own.
+
+**Verified live, not just by tests**: `Object.keys(localStorage).filter(k => k.startsWith('sb-'))` now returns
+`["sb-ixuezudybhjptisexgxx-auth-token"]` — the exact check that returned `[]` for two straight sessions.
+Avatar renders, panels unlock. (Corroborating fingerprint: a trailing bare `#` appears in the URL afterwards,
+which is auth-js's own `window.location.hash = ''` after it consumes the fragment.)
+
+**"It doesn't redirect to GitHub, it just reloads" was always a red herring** — GitHub already holds the
+authorization, so `authorize → github → callback → back` is four 302s with no consent screen, too fast to
+perceive. The twenty-seventh session flagged this as an unconfirmed assumption; it is now confirmed harmless.
+
+### THEN: two Pro-tier bugs were 401ing every panel even with a valid session
+
+Both were found only after the login worked. **Two independent code paths carried the same dead-key
+preference, so fixing one left the other producing identical 401s from a different call stack.**
+
+1. **`src/services/runtime.ts`'s `enrichInitForPremium`** short-circuited on a "tester key" BEFORE reaching
+   the Supabase Bearer — `if (testerKey) { set X-WorldMonitor-Key; return }`. The key comes from
+   `VITE_PRO_WIDGET_KEY`. **REMOVED** (deleted, not reordered).
+2. **`src/services/premium-fetch.ts`'s tester-key LADDER** (was step 2 of `premiumFetch`) looped over
+   `loadTesterKeys()` firing a **real network request per key**, treating each 401 as "try the next".
+   With both `VITE_PRO_WIDGET_KEY` and `VITE_WIDGET_AGENT_KEY` set that was **two guaranteed-401 round trips
+   on every premium call** — which also tripped the gateway's rate limiter and turned recoverable calls into
+   `429`s. **REMOVED**, along with the now-unused `loadTesterKeys()` and `uniqueNonEmptyKeys()` helpers.
+3. **`.env`**: `VITE_PRO_WIDGET_KEY` and `VITE_WIDGET_AGENT_KEY` commented out (with an explanatory comment).
+   **Requires a Vite restart** — `.env` is read once at startup (the known stale-`.env` trap). Backup of the
+   pre-edit `.env` is at the session scratchpad as `env.bak-protier`, NOT in the repo (it was briefly written
+   to the repo root as `.env.bak-protier` and moved out after `git check-ignore` showed it was NOT ignored —
+   **never leave an `.env` backup in this repo, `.env.bak*` is not gitignored**).
+   `PRO_WIDGET_KEY` / `WIDGET_AGENT_KEY` (non-`VITE_`, server-side) are **still live** in `.env` — deliberately
+   left, inert for this bug, belong in the bigger sweep.
+
+Proof these keys were dead, taken against the live local gateway (not assumed):
+`curl -H "X-WorldMonitor-Key: <VITE_PRO_WIDGET_KEY>" http://localhost:9001/api/intelligence/v1/list-market-implications`
+→ **401**, byte-identical to sending no credentials at all.
+
+**Operator-confirmed result after the final reload: every `401` is gone from the console.**
+
+### Method notes worth reusing
+
+- The single most valuable diagnostic was **DevTools' Initiator column**. `runtime.ts:548` pointed *inside*
+  the injection patch, proving the patch DID run and enrichment DID execute — which killed the boot-race
+  theory and redirected the search to why `getAuthToken()` returned null.
+- Three layers wrap `window.fetch`, each with its own auth opinion, and a stack trace reads outermost-last:
+  `premium-fetch.ts` → `wm-session.ts` → `runtime.ts` → native. Any auth debugging here must identify WHICH
+  layer attached (or refused to attach) a credential.
+- `import.meta` is unavailable in the DevTools console, but `await import('/src/services/foo.ts')` works in
+  Vite dev and returns the **same module instance the app uses** — this is how `getAuthToken()` was proven
+  healthy in isolation.
+
+### STILL OPEN — the operator's next initiative: remove Pro-tier entirely
+
+Operator's words: *"there is no longer Pro-tier in our fork, remove anything related Pro-tier."* Consistent
+with the already-completed Convex/SaaS/billing retirement (`getCurrentAuthUser().plan` is already hardcoded
+`'pro'` for every signed-in user).
+
+**Measured scope: 277 TRACKED source files.** An earlier "204" figure was inflated — `api/*/v1/[rpc].js` are
+**gitignored build artifacts** (`.gitignore:56`), so never count them. Breakdown by area:
+
+| Area | Files | What lives there |
+|---|---|---|
+| `src/components/**` | 36 | lock overlays, upsell UI |
+| `server/worldmonitor/**` | 36 | `isCallerPremium` gating per RPC |
+| `src/services/**` | 31 | `premium-fetch.ts`, `entitlements.ts`, `widget-store.ts` |
+| `src/locales/**` | 26 | the "登录以解锁" lock strings, 26 languages |
+| `server/_shared/**` | 11 | `premium-check.ts` — `isCallerPremium` definition |
+| `server/__tests__`, `tests/**` | ~15 | premium guards/fixtures |
+| `src/app`, `src/config`, `src/shared`, `api/mcp`, `api/v2` | ~21 | `premium-paths.ts` = `PREMIUM_RPC_PATHS` |
+
+**This removes SERVER-SIDE AUTH ENFORCEMENT — treat it as a security-relevant change, not a cleanup.**
+Suggested staging (not yet agreed with the operator): (1) client-side lock UI + locale strings, (2) client
+`premium-fetch`/`entitlements`/`widget-store`, (3) `PREMIUM_RPC_PATHS` + gateway `isCallerPremium`, each
+stage independently verifiable in the browser. Get sign-off on the server stage specifically.
+
+**Known trap for that work**: `tests/premium-fetch.test.mts` and `tests/premium-paths-guard.test.mts`
+**cannot execute at all** under `node --experimental-strip-types --test` — they die on module resolution
+(`Cannot find package '@/services'`; `Cannot find module 'server/_shared/redis'`). Confirmed pre-existing via
+`git stash` A/B (identical fail before and after this session's changes). **Consequence: the tester-key
+ladder removal above is NOT covered by any passing test** — it was verified live in the browser instead.
+Do not read those files' green/red status as signal; they need a runner with alias support (vitest or a loader).
+
+### Also unresolved, lower priority (unchanged by this session)
+
+- **`503` on `/api/gpsjam`, `/api/followed-countries`, `/api/latest-brief`, some `summarize-article`** — a
+  DIFFERENT failure class from the 401s (upstream/Redis data availability), never investigated.
+- **`429 Too Many Requests`** still appears on `classify-event` / `analyze-stock` / `summarize-article`.
+  Much of the pressure that caused it is gone with the tester-key ladder, but the underlying rate limit was
+  never examined; residual 429s may just be genuine burst load from first paint.
+- **`GET http://localhost:3000/script.js 404`** from `analytics.ts:180` — the analytics script is absent in
+  dev. Harmless noise, but it's 2 console errors on every load.
+- Anonymous `wm-session` cookie: confirmed working (`POST /api/wm-session` → 200, and
+  `get-eu-gas-storage` returns **401 without / 200 with** the cookie). Not a bug — recorded because it was
+  briefly a suspect and the next session shouldn't re-derive it.
+- Everything from the twenty-sixth session's block below (APP_DOMAIN/API_BASE_URL gap for seed scripts,
+  Yahoo Finance crumb flow, `military:bases` coverage) remains untouched.
+
+### Environment left running
+
+`nitric start --ci` on `:9001` (PID varies) and `npm run dev` (Vite) on `:3000`, restarted after the `.env`
+edit. Vite log at the session scratchpad `vite.log`. **Restart Vite after ANY `.env` change.**
+
+---
+
+## 🔀 HANDOFF (2026-08-19, twenty-seventh session end) — superseded by the block above; the login bug it describes is now FIXED
+
+**Scope this session**: entirely local-dev-environment debugging, triggered by trying to actually
+run `nitric start` + `npm run dev` together and log in through the browser for the first time (not
+just curl). Zero of the twenty-sixth session's "still open" items were touched. Ends UNRESOLVED —
+the operator explicitly asked to hand off after real, verified fixes still didn't clear the actual
+symptom (browser login never persists a session). Read the "STILL BROKEN" section below before
+attempting anything new — several plausible-looking theories are already ruled out with evidence,
+don't re-try them.
+
+**Git state**: 0 commits made, nothing staged, operator's standing "commit manually" discipline
+held throughout. Working tree has 22 modified files + `scripts/seed-infra.mjs` deleted (pre-existing
+from session 26, untouched this session) + one **untracked** file, `local.nitric.yaml` (see below —
+this one matters, it's not accidental cruft). Files this session actually touched:
+`.env` (gitignored, see credentials below), `server/auth-session.ts`, `server/_shared/auth-session.ts`,
+`server/gateway.ts` (only a comment touched by an earlier fix, not the JWT rewrite),
+`src/utils/urlState.ts`, `src/app/event-handlers.ts`, `.env.example`, and 5 test files
+(`tests/auth-session.test.mts`, `tests/gateway-pro-fresh-cache.test.mts`,
+`tests/premium-stock-gateway.test.mts`, `tests/usage-telemetry-emission.test.mts`,
+`tests/auth-resource-timeout.test.mts` — comment-only in the last one) plus a new
+`tests/urlState.test.mts` regression test. `npx tsc --noEmit` and `-p tsconfig.api.json` both clean.
+
+**`nitric start` is running**, PID varies — restarted ~8 times this session chasing the port issue
+below, always via `pgrep -fl "nitric start"` → kill → confirm zero survivors → relaunch with
+`nohup nitric start --ci > <logfile> 2>&1 &`. **`npm run dev` (Vite) is ALSO running, separately, in
+the operator's own foreground terminal** — the two are independent processes serving different
+things (see the port-pinning and Vite-sebuf-plugin findings below); don't assume killing one
+affects the other.
+
+**Resolved + verified this session, in order**:
+
+1. **`WM_SESSION_SECRET` was entirely unset** → `api/wm-session.js` fails closed with a 503
+   ("Session service not configured") by design → cascaded into 401s on every downstream route that
+   checks for a session. Generated fresh (`openssl rand -hex 32`, 64 hex chars, well above the
+   enforced 32-char minimum in `api/_session.js`), operator explicitly approved generating a random
+   value. **Verified live**: `curl -X POST .../api/wm-session` → `200`, real signed `wm-session=wms_...`
+   cookie.
+2. **Nitric's local API/MCP gateway ports are NOT stable across `nitric start` restarts** — spent a
+   long time brute-force-discovering the live port after every restart before finding the real fix:
+   the sibling repo `platform/backend` pins ports via a `local.nitric.yaml` file at the project root
+   (confirmed via `strings` on the `nitric` binary: `./local.nitric.yaml` is a real, hardcoded
+   discovery path, not a guess). Created one here too — **but the first attempt (`api: 4001, mcp: 4010`)
+   collided** with nitric's own auto-assigned internal service ports (it claims `4000-4009`
+   sequentially for this project's other 9 services before the pinned gateway gets a turn; confirmed
+   via `.nitric/services.log`: `"error mapping api to port 4001 ... address already in use"`).
+   **Fixed by moving to `9001`/`9010`** (mirrors the sibling repo's own safe-range choice) — confirmed
+   stable across a subsequent clean restart via `curl http://localhost:9001/api/health` → `200`.
+   `local.nitric.yaml` is **untracked but meant to be committed** (confirmed via `git ls-files` on the
+   sibling repo — it's real shared config, not a personal override).
+3. **`.env`'s `WM_API_BASE_URL`/`API_BASE_URL`/`VITE_WS_API_URL` all point at `http://localhost:9001`**
+   now (was `:4004`, an earlier now-invalidated ephemeral-port guess — superseded by item 2's pinning).
+   `VITE_WS_API_URL` specifically fixes browser `fetch('/api/...')` calls, which otherwise default to
+   same-origin (`:3000`, Vite) — and Vite's own `sebufApiPlugin` (`vite.config.ts:411`, an in-process
+   dev router for `/api/{domain}/v1/*`) calls RPC handlers **directly with zero auth/session layer**
+   (confirmed by reading its `matchedHandler(webRequest)` call site — no `createDomainGateway`
+   anywhere in that path). Without the redirect, requests either 404 (paths outside the sebuf shape,
+   e.g. `/api/wm-session`) or would silently bypass auth entirely (paths inside it) — neither is
+   correct. The redirect ensures every request actually goes through nitric's real, fully-auth-checked
+   gateway.
+4. **Supabase project migrated off legacy HS256 shared-secret JWT signing to asymmetric ES256 signing
+   keys** (operator confirmed via the dashboard's own "Legacy JWT secret" deprecation notice, then
+   supplied the real public JWK). `server/auth-session.ts` rewritten: `importJWK` + `jwtVerify` with
+   `algorithms: ['ES256']` against a **hardcoded public key** (`SUPABASE_JWT_PUBLIC_JWK` env var, a
+   single JWK object, JSON-encoded) — **explicit operator choice over Supabase's own recommended
+   `createRemoteJWKSet` pattern**, trading automatic recovery from key rotation for zero network
+   dependency on the verify path. This trade-off is documented directly in the file's header comment
+   — if auth ever silently breaks again after this was working, check whether the signing key was
+   rotated in the Supabase dashboard before assuming anything else. `server/_shared/auth-session.ts`'s
+   doc comment updated to match. **One real bug caught and fixed by `tsc -p tsconfig.api.json`
+   specifically** (the main `tsconfig.json` didn't catch it): an edit accidentally dropped the
+   `SessionResult` interface entirely.
+   Rewrote 5 test files off the old HS256-shared-secret-string fixture pattern onto a real
+   `generateKeyPair('ES256')` keypair (mint tokens with the private half, configure the module under
+   test with the exported public half) — **verified 2 ways**: `git stash` A/B on the 2 files with
+   pre-existing unrelated failures (14 + 12, confirmed identical before/after, not caused by this
+   session), and all 5 files run together at 28 pass / 29 pre-existing fail, matching exactly.
+   **Live-verified the real configured key** imports cleanly (`importJWK` against the actual `.env`
+   value → real `CryptoKey`, not a parse error) and a real `/api/wm-session` POST against the pinned
+   `:9001` gateway returns a genuine signed session — but see STILL BROKEN below, this was never
+   actually the blocker for the end-to-end symptom.
+5. **Real, verified, but INSUFFICIENT bug fix**: `src/app/event-handlers.ts`'s `debouncedUrlSync`
+   (fires 250ms after almost any map interaction, including initial load) calls
+   `history.replaceState()` with a URL rebuilt by `buildMapUrl()` (`src/utils/urlState.ts`), which
+   used to start from a **fresh, empty** `URLSearchParams()` — silently discarding any query param it
+   doesn't own itself (`zoom`/`view`/`timeRange`/`layers`/etc.), including an in-flight Supabase OAuth
+   `?code=...&state=...` PKCE callback mid-exchange. Fixed: `buildMapUrl` now seeds its param set from
+   whatever's already on the URL; `getShareUrl()` (the only real caller) now passes the current query
+   string through instead of stripping it via `${origin}${pathname}` first. **Verified as a real bug,
+   not a hunch**: added a regression test (`tests/urlState.test.mts`, "preserves query params it does
+   not own") that fails on a `git stash` of just this fix (15/16) and passes with it applied (16/16);
+   full existing suite (102 tests, 4 files) passes identically before/after — no regressions.
+   **This did NOT fix the reported symptom** — see below. It's still a real, worthwhile fix (this
+   exact race would eventually bite something), just not sufficient on its own.
+
+**STILL BROKEN, unresolved at session end — the actual thing the operator cares about**:
+Signing in via GitHub never results in a persisted session. Symptom, unchanged across every fix
+above: redirect to GitHub happens (confirmed via the exact `github.com/login/oauth/authorize?...`
+URL, correct `client_id`/`redirect_uri`/`scope`), **no visible consent screen** (assumed to be a
+normal "already authorized this app before" skip — the operator's avatar rendered successfully at
+least once earlier in this same session, so a prior real login did work at some point — but this
+assumption was never independently confirmed and deserves fresh scrutiny next session, since nothing
+tried since has fixed anything), lands back on `localhost:3000` at the exact pre-login URL with
+**zero visible trace** of `?code=`/`#access_token=`/`?error=`, login button still shows, every panel
+still shows "登录以解锁" (locked).
+
+**Ruled out, with direct evidence — do not re-investigate these**:
+- Server-side session verification (item 4 above) — curl-confirmed working in isolation.
+- Server-side OAuth completion itself — queried Supabase's own `auth_logs` directly via the Supabase
+  MCP tools (`mcp__claude_ai_Supabase__query_logs`, project `ixuezudybhjptisexgxx`): **every single
+  login attempt this session succeeded server-side**, repeated ~10 times over several hours,
+  including one at `09:47:04Z` — the operator's last attempt before requesting handoff. `/callback`
+  returns `302` every time; GoTrue logs `"msg":"Login"` with a real `user_id`
+  (`15ae70b6-2045-49e5-9381-7e426c1d8295`, `powerpro.led@gmail.com`) every time. This is the single
+  most important fact for the next session: **whatever is broken is 100% client-side**, the server
+  has never been the problem despite how much of this session was spent there.
+- The Supabase Redirect URLs allow-list — operator confirmed `http://localhost:3000/**` was already
+  added; verified the wildcard semantics against Supabase's own docs (`**` matches across `/` and `?`
+  both, separators are only `.` and `/`) so this pattern does cover a URL with a query string.
+- `localStorage` genuinely holds ZERO Supabase-shaped session data — checked both the specific
+  expected key (`sb-ixuezudybhjptisexgxx-auth-token`) AND an unprefixed sweep
+  (`Object.keys(localStorage).filter(k => k.startsWith('sb-'))` → `[]`). A stray
+  `sb-localhost-auth-token` **cookie** was found early and is a confirmed red herring — this app's
+  Supabase client (`src/services/supabase-client.ts:49`) uses `persistSession: true` with the default
+  `localStorage` backend, never cookies, so that cookie is leftover noise from something unrelated on
+  this machine, not this app's own session.
+- Item 5's URL-param-wiping bug — real and fixed, but confirmed (by the operator, after reload)
+  NOT the actual blocker. Something else is also wrong, or item 5 wasn't the only place stripping/
+  losing the OAuth response.
+
+**Not yet tried — concrete next steps, roughly in order**:
+- Confirm Vite actually picked up item 5's fix (HMR of `event-handlers.ts`/`urlState.ts` vs. needing
+  a full hard reload) before concluding it's insufficient rather than just not yet live.
+- The "no consent screen" detail was talked past rather than confirmed — check with Network tab
+  **Preserve log + Doc filter** whether the browser does a REAL full navigation to `github.com` at
+  all (a `Doc`-type request to `github.com/login/oauth/authorize`), versus something short-circuiting
+  before that ever happens. This was asked for twice this session and never actually delivered by the
+  operator — get it before theorizing further.
+- Re-examine `src/services/auth-provider.ts:107`'s `window.__wmVsCodeApi` branch — if that global is
+  ever truthy in a plain browser tab (shouldn't be, but never definitively ruled out this session),
+  `signInWithGithub()` silently `postMessage`s to a nonexistent VS Code host and returns, doing
+  nothing — total silence, no network request, no error. Cheap to check: `console.log(window.__wmVsCodeApi)`
+  in the browser before clicking sign-in.
+- Check **`sessionStorage`** (not just `localStorage`) for a PKCE `code_verifier`-shaped key —
+  supabase-js's PKCE flow needs one written before the GitHub redirect and read back after; never
+  explicitly checked this session.
+- Search more broadly for a SECOND place that might strip/redirect the URL early on boot — item 5's
+  `debouncedUrlSync` was the one found, but the search for `history.replaceState`/`pushState` callers
+  (`src/app/event-handlers.ts`, `src/bootstrap/sentry-init.ts`, `src/components/RouteExplorer/url-state.ts`,
+  `src/services/i18n.ts`) wasn't exhaustively traced past the one that matched the URL shape being
+  investigated — the other 3 files were never actually opened.
+- Late in the session, some RPC calls started returning `429 (Too Many Requests)` after several rapid
+  login retries — never investigated whether a rate limiter is also throttling the auth path itself
+  in a way that could be masking the real state.
+
+**Credentials/config added this session, all in local `.env` (gitignored)**:
+- `WM_SESSION_SECRET` — random, `openssl rand -hex 32`, operator-approved (item 1).
+- `SUPABASE_JWT_PUBLIC_JWK` — the project's real public ES256 signing key, operator-supplied from the
+  Supabase dashboard (item 4). Old `SUPABASE_JWT_SECRET` line replaced, not left dangling.
+- `WM_API_BASE_URL`/`API_BASE_URL`/`VITE_WS_API_URL` all set to `http://localhost:9001` (items 2-3).
+- `APP_DOMAIN=localhost:3000` (carried over from earlier the same session, before this handoff's
+  scope starts — see the domain-strategy conversation that opened this session for why: a dedicated
+  `monitor.led4signage.com` subdomain is the long-term intent once something is actually deployed
+  there, `localhost:3000` is correct for local dev right now).
+
+**Still open, in priority order for the next session**:
+- **The browser-login symptom above — top priority, this is what the operator actually asked for.**
+- Everything from the twenty-sixth session's handoff below is untouched and still open (APP_DOMAIN/
+  API_BASE_URL gap for seed scripts, Yahoo Finance crumb flow, `military:bases` coverage, untriaged
+  log-noise clusters) — not re-summarized here, read that block directly.
+
+---
+
+## 🔀 HANDOFF (2026-08-19, twenty-sixth session end) — superseded by the block above, still relevant, read after it
+
+**Repo context**: unchanged from the twenty-fifth session's block below — fork of official
+worldmonitor.app, Railway abandoned, Nitric/GCP still scaffold-only for THIS fork specifically
+(nothing of this fork's own is deployed anywhere). Read that block's repo-context paragraph if this
+is your first time in this file. One correction to it, found this session (see the APP_DOMAIN
+finding below): "nothing deployed" is true for this fork's own infra, but local `.env`'s
+`APP_DOMAIN=worldmonitor.app` still points seed scripts at the **original upstream project's real,
+live production site** by default — don't conflate the two when a script's RPC call behaves
+unexpectedly.
+
+**Git state**: `main` and `origin/main` are in sync (0 ahead, 0 behind) — this session made ZERO
+commits. **13 files changed in the working tree, nothing staged/committed**, per this repo's
+standing discipline (operator commits/pushes manually — don't do it unprompted). Full list:
+`.env.example`, `TASKS.md`, `api/health.js`, `scripts/ais-relay.cjs`,
+`scripts/seed-bundle-derived-signals.mjs`, `scripts/seed-infra.mjs` (deleted),
+`scripts/seed-insights.mjs`, `scripts/seed-military-maritime-news.mjs`,
+`scripts/seed-service-statuses.mjs`, `server/gateway.ts`, `tests/health-classify.test.mjs`,
+`tests/relay-boot-seed-freshness-guard.test.mjs`, `tests/seed-warm-ping-origin.test.mjs`. `.env`
+also has 3 new/changed lines (gitignored, won't show in `git status`) — see credentials below.
+
+**`nitric start` is running** (PID varies — `pgrep -fl "^nitric start$"`), restarted 3 times this
+session: once for `WORLDMONITOR_RELAY_KEY`, once for `PROXY_URL`, and once more at session end
+specifically so the live process would match the final working tree. (`CLOUDFLARE_API_TOKEN` never
+needed its own restart — verified via a standalone `node --env-file=.env
+scripts/seed-internet-outages.mjs` run, not through the live relay.) `ais-relay.cjs` runs as plain
+`node`, not `tsx watch` — it does NOT pick up source edits until restarted, unlike
+`gcp/api/main.ts`/`gcp/scheduler/main.ts` which auto-restart on save. **Confirmed via log**:
+`[TemporalAnomalies] Warm-ping loop starting` present,
+all 10 services + the relay respawned. **Standing gotcha, now observed 3 times across sessions,
+worth treating as a hard rule**: killing the `nitric start` parent does NOT reliably kill its
+`tsx watch` grandchildren (both the API and scheduler children have orphaned separately this
+session) — always `pgrep -fl "ais-relay.cjs|gcp/api/main.ts|gcp/scheduler/main.ts"` after any kill
+and explicitly kill survivors before restarting, or you'll end up running two generations of every
+service at once.
+
+**Credentials added this session (all live in local `.env`, verified working before use)**:
+- `WORLDMONITOR_RELAY_KEY` — self-generated (`openssl rand -hex 32`), NOT a `WORLDMONITOR_VALID_KEYS`
+  entry (dedicated relay↔gateway secret, least-privilege — see `server/gateway.ts`'s
+  `isRelayWarmPingRequest`).
+- `PROXY_URL` — operator-supplied Decodo datacenter proxy (`dc.decodo.com:10001`). Verified live via
+  direct `curl` before wiring in. **Does NOT fix Yahoo Sector 401s** (see below) but is real
+  infrastructure now available to 8 other scripts that share this config
+  (`scripts/_proxy-utils.cjs`'s `resolveProxyString`/`resolveProxyConfig`).
+- `CLOUDFLARE_API_TOKEN` — operator-supplied, read-only Radar/Analytics scope. Verified live against
+  all 3 Cloudflare Radar endpoint groups the `internet-outages` seed needs before use.
+
+**Resolved this session, in order** (numbers refer to items further down this file):
+1. **`WORLDMONITOR_RELAY_KEY`** (top "Still open" bullet from the prior handoff) — generated, wired,
+   verified via live log (`[Relay] WORLDMONITOR_RELAY_KEY configured`). Also fixed 5 stale comment
+   sites across `.env.example` + 4 seed scripts that documented the old, wrong "reuse a
+   `WORLDMONITOR_VALID_KEYS` value" approach.
+2. **`news:digest` re-verify (former item 6)** — re-verified with the key now set. Found the REAL
+   cause was never the missing key: `/api/news/v1/list-feed-digest` was simply never added to
+   `server/gateway.ts`'s `RELAY_WARM_PING_PATHS` allowlist. Fixed (operator-approved) — added it.
+   **This fix is UNVERIFIED** — see the APP_DOMAIN finding immediately below, discovered while trying
+   to verify it.
+3. **⚠️ NEW FINDING, significant, not fully resolved — seed scripts default to the REAL LIVE
+   upstream `api.worldmonitor.app`, not this fork's own code.** `resolveApiOrigin(APP_DOMAIN)`
+   (`scripts/_domain-config.mjs`) resolves to `https://api.worldmonitor.app` whenever
+   `API_BASE_URL`/`WM_API_BASE_URL` isn't explicitly overridden — confirmed live and answering
+   (`curl` → `HTTP 403`/`401` depending on path). No local override exists today, and no reachable
+   local address for the Nitric-managed gateway was found for scripts to target instead. **Any
+   earlier session's "verified against local nitric start" claim involving an actual RPC call
+   (not a direct Redis read) should be treated with suspicion** until re-checked with this in mind.
+   Full trace: category 9's writeup in the item-6 section further down.
+4. **Yahoo Finance `[Sector]` 401 cluster (from the prior handoff's untriaged log-noise list)** —
+   fully diagnosed after two rounds (first wrong, then corrected via direct testing — see the
+   writeup, it's a useful cautionary example about trusting dated code comments over live requests).
+   **Real cause: Yahoo's `quoteSummary` now requires a CSRF-style crumb+session-cookie**, confirmed
+   via direct `curl` (identical `"Invalid Crumb"` response with or without the new proxy). NOT the
+   IP-blocking the existing 2026-04-16 code comment describes — that may have been true then, isn't
+   now. **Not fixed** — needs a real code change (implement Yahoo's crumb flow) that wasn't
+   attempted this session. The `PROXY_URL` credential obtained while chasing this wrong-then-right
+   diagnosis is still real, live infrastructure, just not the fix for this specific item.
+5. **Orphaned crons — all 4 resolved** (was the prior handoff's item 5, "scheduling decisions, not
+   code fixes"):
+   - `infra`: `seed-infra.mjs`'s one non-redundant warm-ping (`list-temporal-anomalies`) folded into
+     `ais-relay.cjs`'s existing loop; **`seed-infra.mjs` deleted**, all 7 references to it elsewhere
+     fixed (comments, `.env.example`, `api/health.js`, 2 tests).
+   - `regulatory-actions` and `internet-outages`: both folded into `bundle-derived-signals` as new
+     members (2h and 30min intervals respectively), reusing its already-scheduled 5min outer cron —
+     no new schedule entries needed.
+   - `webcams`: operator decided not worth pursuing (missing `WINDY_API_KEY`) — removed its
+     `api/health.js` alarm so it stops looking like a silent failure.
+   - **Bonus bug found+fixed along the way**: `outages`' own `api/health.js` alarm had only a 1x
+     staleness margin (would false-alarm on any single missed run) — bumped to 3x, matching this
+     repo's usual convention.
+6. **Full unit suite baseline re-established rigorously**, twice — via `git stash`/`stash pop`
+   round-trips rather than trusting the prior session's approximate "~40-41" figure. True clean-tree
+   baseline: **exactly 40 failures across 7 suites** (1 flaky — `readBootstrapTierObject`,
+   appears/disappears across otherwise-identical `--test-concurrency=16` runs, unrelated to any code
+   — worth someone eventually diagnosing but not this session). With every change in this session
+   restored, the failing-suite list matches that baseline exactly both times checked — zero net-new
+   failures introduced. `npx tsc --noEmit` clean throughout.
+
+**Still open, in priority order for the next session**:
+- **APP_DOMAIN/API_BASE_URL gap (item 3 above)** — arguably the highest-leverage item now: until a
+  local `API_BASE_URL` override + reachable local gateway address exists, NO seed script's RPC-call
+  behavior can be verified against this fork's own code, only against upstream production. This
+  blocks confidently verifying item 2's fix and item 4's eventual crumb-flow fix, and calls into
+  question older "verified locally" claims. Not a quick fix — needs someone to decide what "this
+  fork's own local gateway" even means as a reachable URL under Nitric's dev model.
+- **Yahoo Finance crumb flow (item 4)** — concrete, scoped next step if Sector ETF data matters:
+  implement a real crumb+cookie fetch in `scripts/ais-relay.cjs`'s `fetchYahooQuoteSummary` (Yahoo's
+  documented pattern: fetch a session cookie + crumb token first, attach both to the `quoteSummary`
+  request). Not started.
+- **`military:bases` full coverage** — still externally blocked, unchanged from the prior handoff:
+  Polyglobe `SUPABASE_ANON_KEY` (nobody has it), OSM regional-fetch blocked by this machine's network
+  throughput ceiling to `overpass-api.de` (code is correct and committed, needs a normal-bandwidth
+  environment to actually run).
+- **Remaining untriaged log-noise clusters from the prior handoff, NONE touched this session** —
+  `[scenario-worker] BLMOVE error` (~1,161 occurrences/8.5h, possibly Upstash REST quota burn from a
+  polling-frequency issue), `[TheaterPosture] OpenSky failed: OpenSky proxy 503` (~1,035
+  occurrences), `[UCDP-Events] v# failed` (~969 occurrences), `military:flights` no-prior-data skip
+  (~855 occurrences, likely cascades from one of the above). Apply the same lesson this session
+  relearned twice: verify live behavior directly before trusting a hypothesis, dated comment, or
+  prior session's framing.
+
+---
+
+## 🔀 HANDOFF (2026-08-18, twenty-fifth session end) — superseded by the block above, kept for history
 
 **Repo context, confirmed by the operator this session (don't re-litigate)**: this repo is a
 **fork of the official worldmonitor.app**, mid-refactor. Convex/Clerk → Supabase is done (see
@@ -47,24 +487,86 @@ what was actually done, this is just the index; numbers refer to the fix-list it
 - Fix-list item 4, Groq model 404s, fixed across all 7 live call sites, `GROQ_MODEL` env var added.
 
 **Still open, in priority order for the next session**:
-- **`WORLDMONITOR_RELAY_KEY`** unset — blocks local verification of several warm-ping RPCs and the
-  `news:digest` re-check (item 6). Single highest-leverage credential ask left on the whole list.
-- **Orphaned crons** (item 5) — scheduling decisions, not code fixes.
+- ~~`WORLDMONITOR_RELAY_KEY` unset~~ — **resolved (2026-08-19, twenty-sixth session)**: generated a
+  dedicated random secret (`openssl rand -hex 32`, NOT a `WORLDMONITOR_VALID_KEYS` entry — see
+  `server/gateway.ts`'s `isRelayWarmPingRequest`), set in local `.env`, restarted `nitric start`
+  (killed an orphaned `ais-relay.cjs` child that survived the parent's death — check for this on any
+  future restart, `pgrep` the child scripts not just the parent). Verified via fresh log line
+  `[Relay] WORLDMONITOR_RELAY_KEY configured`. Also fixed 5 stale comment sites that documented the
+  old "reuse a `WORLDMONITOR_VALID_KEYS` value" approach + Railway framing (`.env.example`,
+  `seed-infra.mjs`, `seed-service-statuses.mjs`, `seed-military-maritime-news.mjs`,
+  `seed-insights.mjs`) — not committed yet, comment-only diff. Local verification of warm-ping RPCs
+  and the `news:digest` re-check (item 6) can now proceed.
+- ~~Orphaned crons~~ (item 5) — **all 4 resolved, 2026-08-19, twenty-sixth session**: `infra` folded
+  into `ais-relay.cjs`, `seed-infra.mjs` deleted; `regulatory-actions` and `internet-outages` both
+  folded into `bundle-derived-signals` (operator supplied `CLOUDFLARE_API_TOKEN` mid-session,
+  verified live before use); `webcams` alarm removed (operator's call, not worth pursuing). Also
+  fixed a real pre-existing bug found along the way: `outages`' health.js alarm had only a 1x
+  staleness margin, bumped to 3x. Full unit suite re-verified against a true clean-tree baseline (via
+  `git stash`) twice, typecheck clean both times. See item 5's full writeup for details.
 - **`military:bases` full coverage** — two independent gaps, both external: the Polyglobe
   `SUPABASE_ANON_KEY` (nobody has it, operator doesn't know where Polyglobe's site is either), and
   OSM's regional-partition fetch (code is correct and committed, just needs to run from a machine
   without this session's network throughput ceiling — see item 3's full writeup).
-- **Lower-priority re-verify list** (item 6) — `news:digest`, Submarine-Cables timeout.
+- ~~`news:digest` re-verify~~ — **re-verified (2026-08-19, twenty-sixth session), real gap found and
+  fixed, but the fix is UNVERIFIED — see the APP_DOMAIN finding below, it's the more important
+  result of this investigation.** `/api/news/v1/list-feed-digest` was never in `server/gateway.ts`'s
+  `RELAY_WARM_PING_PATHS`, so no value of `WORLDMONITOR_RELAY_KEY` could ever have warmed it —
+  confirmed empirically, then fixed with operator approval (1-line allowlist addition). Submarine-
+  Cables timeout still unverified — separate cause (network throttle), not re-checked this session.
+- **NEW, significant — seed scripts silently call the REAL LIVE upstream `api.worldmonitor.app`,
+  not this fork's own code**, unless a currently-nonexistent `API_BASE_URL` override is set. Found
+  while re-verifying the fix above (see category 9's writeup for the full trace). This means **any
+  earlier session's "verified against local nitric start" claim involving an RPC call — not a direct
+  Redis read — should be treated with suspicion** until re-checked with this in mind; the RPC leg
+  may have silently hit upstream production instead of this fork's local gateway the whole time.
+  Not investigated further this session (operator's explicit call) — the fix for it (a local
+  `API_BASE_URL` + reachable local gateway address) doesn't exist yet.
 
 **New finding from this session, not yet triaged — quantified log noise nobody has looked at
 individually.** While debugging the live `nitric start` log (see item 2's writeup for method), a
 `Counter` over 8.5h of `.nitric/services.log` surfaced several recurring errors that were *not*
 investigated this session (all effort went to items 1-4 above). Rough frequency, in one 8.5h
 window, most-frequent first:
-- `[Sector] Yahoo quoteSummary <TICKER> HTTP 401` — all 12 sector ETF tickers (XLK, XLF, XLE, XLV,
-  XLY, XLI, XLP, XLU, XLB, XLRE, XLC, SMH), ~1,294 occurrences each. Looks like Yahoo Finance now
-  requires auth (crumb/cookie) this code path doesn't send — a real, likely-fixable bug, not
-  investigated.
+- ~~`[Sector] Yahoo quoteSummary <TICKER> HTTP 401`~~ — **fully diagnosed (2026-08-19, twenty-sixth
+  session) after TWO rounds of investigation, both partially wrong before real testing settled it —
+  see the correction trail below, it's a useful cautionary example.**
+
+  **Round 1 (wrong)**: assumed the crumb/cookie hypothesis from the original untriaged note was
+  wrong, based on `fetchYahooQuoteSummary`'s 2026-04-16 code comment attributing this 401 to Yahoo
+  IP-blocking Railway's egress — without actually testing what Yahoo returns today. Got the operator
+  a real Decodo proxy credential (`dc.decodo.com`, a datacenter endpoint) on that theory, wired it
+  into `PROXY_URL`, restarted `nitric start`, confirmed the proxy fallback now genuinely executes
+  (new `"... proxy HTTP 401"` log line, not a silent no-op — the wiring itself is correct and the
+  credential is real/live, verified independently via `curl` against `ip.decodo.com`) — **but the
+  401 persisted even through the proxy.**
+
+  **Round 2 (correct, verified directly)**: `curl`'d Yahoo's `quoteSummary` endpoint directly, both
+  through the new proxy and with no proxy at all. **Identical response both ways**:
+  `{"finance":{"result":null,"error":{"code":"Unauthorized","description":"Invalid Crumb"}}}`. This
+  settles it — **it is not, or at least is no longer, IP-based blocking; it's Yahoo's CSRF-style
+  crumb+session-cookie requirement**, which is exactly the original untriaged note's hypothesis (the
+  one this session initially, wrongly, overrode). Neither `fetchYahooQuoteSummary` nor
+  `_yahooQuoteSummaryProxyFallback` (`scripts/ais-relay.cjs:2010-2112`) implement a crumb/cookie
+  flow at all — both just send `User-Agent`/`Accept` headers, so both were always going to 401
+  regardless of egress IP. The 2026-04-16 comment may have been accurate for what Yahoo enforced
+  *then*; it does not describe what's failing *now*.
+
+  **Net result**: the `PROXY_URL`/Decodo credential is now live in `.env`, real, and confirmed
+  working against an actual proxy-check service — worth keeping for the 8 other scripts that consume
+  it (`seed-military-flights.mjs`, `seed-economy.mjs`, `seed-resilience-static.mjs`,
+  `seed-bundle-portwatch-port-activity.mjs`, `seed-fuel-prices.mjs`, `seed-unrest-events.mjs`,
+  `seed-energy-intelligence.mjs`, `seed-portwatch-chokepoints-ref.mjs`, worth rechecking each
+  individually rather than assuming any of them are fixed by this). But it does **not** fix the
+  Sector/Yahoo 401 — that needs a real code change (implement Yahoo's crumb flow: fetch a session
+  cookie + crumb token from Yahoo first, attach both to the `quoteSummary` request), not a config
+  change. Not implemented this session — flagged as the next concrete step if this data source is
+  wanted; deliberately not attempted without discussing scope/effort first.
+
+  **Lesson for future sessions, stated plainly**: a dated code comment explains what was true when
+  it was written, not necessarily what's true now — verify current behavior with a real request
+  before trusting or overriding a hypothesis based on a comment alone. This session did that wrong
+  once (dismissed the correct hypothesis) before doing it right (direct `curl` test settled it).
 - `[scenario-worker] BLMOVE error` — two distinct variants seen (`max requests limit exceeded` and
   plain `fetch failed`), ~1,161 occurrences. Possibly a polling-frequency issue against Upstash's
   REST API (which doesn't support true blocking commands) burning through request quota fast.
@@ -191,21 +693,57 @@ still open, and any "deployed on Railway" framing inside them is stale.
    coverage test expecting 3 Dockerfiles that moved into `nitric.yaml` back on 2026-08-06 (weeks
    before this session) — not a regression from this fix, not touched.
 
-5. **Orphaned crons — each needs a scheduling decision, not a code fix.** `regulatory-actions`,
-   `internet-outages`, `webcams`, likely `infra` (probably retire instead of schedule — see below)
-   are all working scripts registered in zero Railway services and zero bundles — **note
-   `scripts/railway-services.json` itself is now stale given Railway's abandonment; whatever
-   "scheduled" means going forward is a `nitric.yaml`/`gcp/scheduler/main.ts` question, not a
-   Railway one.** For each, the fix is either (a) add scheduling in the new Nitric/GCP scheme once
-   that's mature enough, (b) fold it into an existing bundle with a sensible interval, or (c) an
-   explicit operator decision that it's intentionally not scheduled (in which case remove it from
-   `api/health.js`'s monitor tables so it stops looking like a silent failure). `internet-outages`
-   and `webcams` also need their credential gaps closed first (`CLOUDFLARE_API_TOKEN`,
-   `WINDY_API_KEY` — both unset locally; ask the operator). **`infra` is a special case**: evidence
-   in the category-10 section suggests 2 of its 3 warm-ping targets are already covered by
-   `ais-relay.cjs`'s own continuous loop, making the script likely dead code rather than something to
-   schedule — confirm `list-temporal-anomalies` has no other warm path before deciding, then either
-   delete `seed-infra.mjs` or fold just that one RPC into the relay loop.
+5. ~~**Orphaned crons**~~ — **all 4 resolved (2026-08-19, twenty-sixth session), operator decided
+   each individually:**
+   - ✅ **`infra`**: confirmed `list-temporal-anomalies` was genuinely `seed-infra.mjs`'s only
+     non-redundant target (the other 2 — `list-service-statuses`, `get-cable-health` — were already
+     duplicated by `ais-relay.cjs`'s own loop). Folded a 4th warm-ping (`seedTemporalAnomaliesWarmPing`
+     / `startTemporalAnomaliesWarmPingLoop`, 15min interval = the 45min health.js alarm ÷ 3, same
+     margin convention as CableHealth) directly into `ais-relay.cjs` (`scripts/ais-relay.cjs`, added
+     right after `startCableHealthWarmPingLoop`, invoked alongside the other 3 warm-ping loops at
+     startup). **`scripts/seed-infra.mjs` deleted.** Updated everything that referenced it: the
+     `RELAY_API_KEY` rationale comment (moved to `seed-service-statuses.mjs`, other 2 siblings
+     repointed there), `.env.example`, `api/health.js`'s `temporalAnomalies` alarm comment, and
+     `tests/seed-warm-ping-origin.test.mjs` (now reads `ais-relay.cjs` instead). Also had to fix
+     `tests/relay-boot-seed-freshness-guard.test.mjs`'s exact-wiring `SEEDERS` list (adding the new
+     loop; its "exactly N boot seeds, no drift" count self-corrects off `SEEDERS.length`).
+   - ✅ **`regulatory-actions`**: folded into `bundle-derived-signals` (`scripts/seed-bundle-derived-signals.mjs`)
+     as a new member, `intervalMs: 2*HOUR` matching health.js's existing 360min alarm — reuses the
+     bundle's already-scheduled 5min outer cron rather than needing a new schedule entry (each member
+     gates independently, e.g. its existing `Regional-Snapshots` member already sits at 6h in the
+     same bundle). No new files, no `nitric.yaml`/`railway-services.json` changes needed.
+   - ✅ **`internet-outages`**: operator supplied `CLOUDFLARE_API_TOKEN` later the same session.
+     Verified live before touching anything: `curl`'d all 3 Cloudflare Radar endpoint groups
+     (`radar/annotations/outages`, `radar/attacks/layer3/*`, `radar/traffic_anomalies`) directly —
+     all `HTTP 200` — then ran the real seed script end-to-end (`node --env-file=.env
+     scripts/seed-internet-outages.mjs`), confirmed all 3 keys written (`infra:outages:v1`,
+     `cf:radar:ddos:v1`, `cf:radar:traffic-anomalies:v1`), ~8s runtime. Folded into
+     `bundle-derived-signals` as a new member (`intervalMs: 30*MIN`, matching the script's own
+     `CACHE_TTL` comment — "6x the 30 min cron interval"), same pattern as Regulatory-Actions above.
+     **Also found and fixed a real pre-existing bug while investigating cadence**: `api/health.js`'s
+     `outages` alarm was `maxStaleMin: 30` on a 30min cadence — a 1x margin (any single missed run
+     would immediately false-alarm), inconsistent with this repo's usual 3-4x convention (its own
+     sibling entries `ddosAttacks`/`trafficAnomalies` already use 4x). Bumped to 90 (3x). Confirmed
+     via `tests/health-classify.test.mjs`'s existing `outages` tests that nothing depended on the old
+     value (the one test using a 200min-stale fixture exceeds both 30 and 90, so its assertion was
+     unaffected — only fixed a comment that cited the stale number).
+   - ✅ **`webcams`**: operator decided not worth pursuing (WINDY_API_KEY gap). Removed its
+     `maxStaleMin: 1440` alarm from `api/health.js`'s `SEED_META` table (was a permanent false
+     "looks broken" signal on a key nothing will ever populate) — the friendly-name key registry
+     entry (a separate table, `STANDALONE_KEYS`) was left alone, it's not tied to alerting.
+   - **All changes verified, including the internet-outages follow-up**: `npx tsc --noEmit` clean;
+     full unit suite re-run against a `git stash` clean-tree baseline for a true comparison (not
+     trusting the older ~40-41 approximate figure) — baseline was exactly 40 failures across 7 suites
+     (1 flaky: `readBootstrapTierObject`, appeared/disappeared across otherwise-identical runs under
+     `--test-concurrency=16`, unrelated to any code), all pre-existing and undiagnosed before this
+     session. With every change in this item restored, the failing-suite list is IDENTICAL to the
+     clean baseline both times (before and after the internet-outages follow-up) — the 2 tests the
+     `infra`/`webcams` work broke were fixed to describe the new intended behavior, not reverted or
+     skipped; zero net-new failures across the whole item.
+   - **`CLOUDFLARE_API_TOKEN` permission scope, for reference**: read-only, account-scoped Radar/
+     Analytics access, no Zone Resources, no write permissions — verified this is sufficient (all 3
+     endpoint groups returned real data with the token as configured). Cloudflare's dashboard wording
+     for this scope wasn't independently confirmed against a live token-creation screen.
 
 6. **Lower-priority / needs re-verification, not confirmed bugs — don't spend time here until 3-5
    are closed.** `news:digest*` reading empty (category 9) is plausibly just a 900s on-demand cache
@@ -306,6 +844,56 @@ reads fresh while `news:digest*` reads empty — they're on different cadences b
 masking a failure in the other. **Next step if this needs a real answer**: with
 `WORLDMONITOR_RELAY_KEY` set, run `insights` (which calls the warm-cache RPC) and immediately GET
 `news:digest:v1:full:en` before the 900s TTL lapses, to see whether it actually populates.
+
+**Re-run (2026-08-19, twenty-sixth session) — ran the probe above with the key now set. Result:
+still 401, but for a DIFFERENT reason than "key unset" — a real, previously-undiscovered gap, not
+the ephemeral-cache explanation above.** `seed-insights.mjs`'s warm-ping hits
+`/api/news/v1/list-feed-digest` (`scripts/seed-insights.mjs:459`) — but `server/gateway.ts`'s
+`RELAY_WARM_PING_PATHS` allowlist (lines 371-377) only contains 5 infra/intel endpoints
+(`list-service-statuses`, `get-cable-health`, `list-temporal-anomalies`, `get-risk-scores`,
+`get-chokepoint-status`); `list-feed-digest` was never added. `isRelayWarmPingRequest` returns
+`false` unconditionally for any path not in that set (`server/gateway.ts:618`), before it even
+looks at the key — so **no value of `WORLDMONITOR_RELAY_KEY` could ever have made this warm-ping
+succeed**, key-unset was never the actual blocker. Confirmed empirically: ran
+`node --env-file=.env scripts/seed-insights.mjs` live (`[Relay] WORLDMONITOR_RELAY_KEY configured`
+logged, so the key itself was correctly picked up) — got `Digest warm failed: HTTP 401` anyway, and
+an immediate `news:digest:v1:full:en` GET right after came back `ABSENT (ttl: -2)`, same as the
+untouched baseline taken moments before the run. Not a coincidence/timing issue — the request never
+reached `buildDigest()` at all.
+
+**Decision made, fix applied, but UNVERIFIED — see the APP_DOMAIN finding right below for why.**
+Operator approved adding `/api/news/v1/list-feed-digest` to `RELAY_WARM_PING_PATHS`
+(`server/gateway.ts:371-378`, committed shape matches the other 5 entries). Re-ran
+`node --env-file=.env scripts/seed-insights.mjs` after `tsx watch` auto-restarted on the source
+change (confirmed via `.nitric/services.log`: `[tsx] change in ./server/gateway.ts Restarting...`)
+— **still got HTTP 401**, same as before the fix. This is NOT evidence the fix is wrong; see below.
+
+### ⚠️ NEW FINDING — seed scripts default to the REAL LIVE upstream `api.worldmonitor.app`, not this fork's own (undeployed) local gateway
+
+While re-verifying the fix above, discovered the actual reason the re-test still 401'd: it was never
+exercising this repo's own code at all. `seed-insights.mjs`'s `warmDigestCache()` calls
+`resolveApiOrigin(process.env.APP_DOMAIN)` (`scripts/_domain-config.mjs:67-71`); local `.env` has
+`APP_DOMAIN=worldmonitor.app` and no `API_BASE_URL` override, so this resolves to
+`https://api.worldmonitor.app` — confirmed **live and answering** (`curl` → `HTTP 403`), not the
+local `nitric start` gateway process this session's `gateway.ts` edit lives in. Given this repo is a
+fork of the official worldmonitor.app (`fork_and_nitric_gcp_refactor.md`), the coherent explanation
+is `.env`'s `APP_DOMAIN` still points at the **original upstream project's real production site**,
+carried over from the fork, not at anything this fork operates — which has no live deployment at
+all per that same memory. No local port/URL for the Nitric-managed gateway was found for scripts to
+target instead (checked `.nitric/services.log`, `nitric.yaml` — no explicit local bind address
+surfaced).
+
+**Consequence, flagged not yet acted on**: any seed script using the default
+`resolveApiOrigin(APP_DOMAIN)` path without an explicit local `API_BASE_URL` override is silently
+calling the real upstream site, not this fork's code — meaning **any prior session's "verified
+against local nitric start" claim involving an actual RPC call (not a direct Redis read) deserves a
+second look**, since the RPC leg of that test may have hit upstream production rather than this
+fork's gateway. The `gateway.ts` fix above is left in place (correct by inspection, same pattern as
+5 pre-existing entries) but cannot be verified until either (a) this fork gets its own real
+deployment, or (b) a local `API_BASE_URL` override + a way to reach the Nitric-managed gateway's
+actual local address is set up — neither exists today. Operator's explicit call: keep the fix,
+document the gap, move on rather than chase the deeper APP_DOMAIN/API_BASE_URL question this
+session.
 
 ### ⚠️ NEW FINDING — two hardcoded Groq model names return HTTP 404 against the live API (confirmed with the key added this session)
 

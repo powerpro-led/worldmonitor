@@ -16,9 +16,14 @@ loadEnvFile(import.meta.url);
 const RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/list-service-statuses`;
 const CANONICAL_KEY = 'infra:service-statuses:v1';
 
-// Defense-in-depth auth — see seed-infra.mjs for the same pattern + rationale.
-// Set WORLDMONITOR_RELAY_KEY on the Railway service to a value already
-// present in Vercel's WORLDMONITOR_VALID_KEYS.
+// Defense-in-depth auth — Origin-trust alone broke globally on 2026-05-02
+// (CF/Vercel intermediaries can strip Origin and CF can cache the resulting
+// 401 for s-maxage, poisoning a POP). Send X-WorldMonitor-Key when configured;
+// fall through to Origin-only when unset to preserve local dev behaviour.
+// WORLDMONITOR_RELAY_KEY is a DEDICATED relay<->gateway secret, not a
+// WORLDMONITOR_VALID_KEYS entry (least privilege — see server/gateway.ts's
+// isRelayWarmPingRequest). Set the same value on this process and the
+// gateway. Same pattern as ais-relay.cjs.
 const RELAY_API_KEY = process.env.WORLDMONITOR_RELAY_KEY || '';
 
 function warmPingHeaders() {

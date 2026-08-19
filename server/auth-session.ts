@@ -1,24 +1,37 @@
 /**
  * Server-side session validation for the Vercel edge gateway.
  *
- * Validates Supabase-issued bearer tokens using local HS256 verification
- * against the project's shared JWT secret (`SUPABASE_JWT_SECRET`). No JWKS
- * fetch, no Convex round-trip, no external plan lookup.
+ * Validates Supabase-issued bearer tokens using local ES256 (asymmetric)
+ * verification against the project's public JWT signing key
+ * (`SUPABASE_JWT_PUBLIC_JWK`). No JWKS fetch, no Convex round-trip, no
+ * external plan lookup.
+ *
+ * Deliberately hardcoded rather than fetched from
+ * `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` (Supabase's own
+ * recommended `createRemoteJWKSet` pattern) -- an explicit operator
+ * trade-off (2026-08-19) favoring zero network dependency on the verify
+ * path over automatic recovery from key rotation. Consequence: if this
+ * project's signing key is ever rotated (Supabase dashboard: "rotate to a
+ * standby key, then revoke"), verification silently starts failing --
+ * every request looks anonymous, same symptom as an unset key -- until
+ * `SUPABASE_JWT_PUBLIC_JWK` is manually updated to the new public key and
+ * the service is redeployed. There is no automatic fallback by design.
  *
  * This module must NOT import anything from `src/` -- it runs in the
  * Vercel edge runtime, not the browser.
  */
 
-import { jwtVerify } from 'jose';
+import { importJWK, jwtVerify, type JWK } from 'jose';
 
 // Supabase project URL -- set in Vercel env vars. The JWT issuer is always
 // `${SUPABASE_URL}/auth/v1` for GoTrue-issued tokens.
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 
-// Supabase project's legacy HS256 JWT signing secret -- Project Settings ->
-// API -> JWT Secret in the Supabase dashboard. Server-only, never exposed
-// to the browser.
-const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? '';
+// Supabase project's public JWT signing key (JWKS `keys[0]`, JSON-encoded --
+// Project Settings -> API Keys -> JWT Settings -> JWT Signing Keys in the
+// Supabase dashboard). Public key material only (key_ops: ["verify"]) --
+// safe to have in a server env var, but still not sent to the browser.
+const SUPABASE_JWT_PUBLIC_JWK = process.env.SUPABASE_JWT_PUBLIC_JWK ?? '';
 
 // Supabase's default audience claim for authenticated user sessions.
 const SUPABASE_JWT_AUDIENCE = 'authenticated';
@@ -32,11 +45,30 @@ export interface SessionResult {
   name?: string;
 }
 
+// Imported once and memoized -- importJWK() is real async key-material work,
+// not a string parse, so every verification must not repeat it. A rejected
+// promise (bad JSON, wrong shape) is cached too: retrying per-request would
+// just repeat the same parse failure, so validateBearerToken() fails closed
+// on it rather than retrying import work that cannot succeed differently.
+let cachedPublicKey: Promise<CryptoKey | Uint8Array> | null = null;
+
+function getPublicKey(): Promise<CryptoKey | Uint8Array> | null {
+  if (!SUPABASE_JWT_PUBLIC_JWK) return null;
+  if (!cachedPublicKey) {
+    // Wrapped in Promise.resolve().then() so a synchronous JSON.parse
+    // failure (malformed env value) becomes a rejected promise like any
+    // other import failure, instead of throwing before validateBearerToken's
+    // try/catch is entered.
+    cachedPublicKey = Promise.resolve().then(() => importJWK(JSON.parse(SUPABASE_JWT_PUBLIC_JWK) as JWK, 'ES256'));
+  }
+  return cachedPublicKey;
+}
+
 function getSupabaseJwtVerifyOptions() {
   return {
     issuer: `${SUPABASE_URL}/auth/v1`,
     audience: SUPABASE_JWT_AUDIENCE,
-    algorithms: ['HS256'],
+    algorithms: ['ES256'],
   };
 }
 
@@ -60,8 +92,8 @@ function extractName(userMetadata: Record<string, unknown> | undefined): string 
 }
 
 /**
- * Validate a Supabase-issued bearer token using local HS256 verification
- * against the shared project JWT secret.
+ * Validate a Supabase-issued bearer token using local ES256 verification
+ * against the project's hardcoded public signing key.
  *
  * No plan/tier concept left: every verified token gets `role: 'pro'` (the
  * wire shape stays `{userId, orgId, role}` so the many frontend consumers
@@ -70,18 +102,16 @@ function extractName(userMetadata: Record<string, unknown> | undefined): string 
  * membership is enforced entirely at sign-up time via the Supabase
  * before-user-created hook, not per-request here.
  *
- * Fails closed: invalid/expired/unverifiable tokens, or an unconfigured
- * SUPABASE_JWT_SECRET, return { valid: false }.
+ * Fails closed: invalid/expired/unverifiable tokens, or an unconfigured/
+ * unparseable SUPABASE_JWT_PUBLIC_JWK, return { valid: false }.
  */
 export async function validateBearerToken(token: string): Promise<SessionResult> {
-  if (!SUPABASE_JWT_SECRET) return { valid: false };
+  const publicKey = getPublicKey();
+  if (!publicKey) return { valid: false };
 
   try {
-    const { payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(SUPABASE_JWT_SECRET),
-      getSupabaseJwtVerifyOptions(),
-    );
+    const key = await publicKey;
+    const { payload } = await jwtVerify(token, key, getSupabaseJwtVerifyOptions());
 
     const userId = payload.sub as string | undefined;
     if (!userId) return { valid: false };

@@ -374,6 +374,13 @@ export const RELAY_WARM_PING_PATHS = new Set<string>([
   '/api/infrastructure/v1/list-temporal-anomalies',
   '/api/intelligence/v1/get-risk-scores',
   '/api/supply-chain/v1/get-chokepoint-status',
+  // Added 2026-08-19: seed-insights.mjs has warm-pinged this since before this
+  // allowlist existed, but the path was never added here, so the warm-ping has
+  // always 401'd regardless of WORLDMONITOR_RELAY_KEY (isRelayWarmPingRequest
+  // rejects any path not in this set before it even checks the key). Read-only
+  // public data, same risk class as the 5 entries above -- see TASKS.md item 6
+  // for the investigation that found this.
+  '/api/news/v1/list-feed-digest',
 ]);
 
 /**

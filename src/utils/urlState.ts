@@ -144,6 +144,41 @@ export function parseMapUrlState(
   };
 }
 
+/**
+ * Re-attach a URL fragment that buildMapUrl() never carries.
+ *
+ * Supabase Auth runs in IMPLICIT flow here (supabase-client.ts leaves
+ * `flowType` at @supabase/auth-js's default), so a completed GitHub sign-in
+ * comes back as `#access_token=...&refresh_token=...` in the FRAGMENT — not
+ * as the `?code=` query param the sibling comment in buildMapUrl describes.
+ * auth-js reads that fragment in `_getSessionFromURL()` and clears it itself
+ * once consumed, but that only runs when the Supabase client is constructed,
+ * which auth-provider.ts defers behind `requestIdleCallback(..., 4000ms)`.
+ * The debounced URL auto-sync fires at 250ms — so any history.replaceState()
+ * on the way that drops the fragment destroys the session before auth-js
+ * ever looks for it (confirmed 2026-08-19 against Supabase's own edge logs:
+ * `/auth/v1/callback` 302'd every time, but the `/auth/v1/user` call auth-js
+ * makes while consuming the fragment only ever appeared for the one sign-in
+ * that happened to win the race).
+ *
+ * Deliberately NOT folded into buildMapUrl(): its result is also copied to
+ * the clipboard by the share button, which must never carry an access token.
+ */
+export function withPreservedFragment(url: string, fragment: string): string {
+  if (!fragment || fragment === '#') return url;
+  try {
+    const parsed = new URL(url);
+    // Assigning .hash (rather than concatenating) both normalizes a missing
+    // leading '#' and REPLACES any fragment already on `url` — buildMapUrl
+    // passes one through untouched, so a naive concat would produce a
+    // double-fragment the moment getShareUrl() stopped stripping it.
+    parsed.hash = fragment;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export function buildMapUrl(
   baseUrl: string,
   state: {
@@ -164,7 +199,14 @@ export function buildMapUrl(
     // window.location.origin can be "null" string in some in-app browsers / WebViews
     url = new URL(window.location.href);
   }
-  const params = new URLSearchParams();
+  // Seeded from whatever's already on the URL (not a fresh empty set) so
+  // params this function doesn't own -- most importantly an in-flight OAuth
+  // callback's `?code=`/`&state=` (Supabase's PKCE redirect) -- survive the
+  // debounced auto-sync in event-handlers.ts instead of being silently wiped
+  // by `url.search = params.toString()` below racing detectSessionInUrl's
+  // async code exchange. Every key this function owns is still explicitly
+  // .set() beneath, so current app state always wins for those.
+  const params = new URLSearchParams(url.search);
 
   if (state.center) {
     params.set('lat', state.center.lat.toFixed(4));

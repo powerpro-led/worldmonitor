@@ -17,38 +17,41 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, before, after, describe, it } from 'node:test';
-import { SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 
 import type { GatewayCtx } from '../server/gateway.ts';
 import { deriveCountry } from '../server/_shared/usage.ts';
 import { issueSessionToken } from '../api/_session.js';
 import { createRedisFetch } from './helpers/fake-upstash-redis.mts';
 
-// server/auth-session.ts reads SUPABASE_JWT_SECRET/SUPABASE_URL into
+// server/auth-session.ts reads SUPABASE_JWT_PUBLIC_JWK/SUPABASE_URL into
 // module-scope consts at first import, so `../server/gateway.ts` (which
 // transitively imports it) must be dynamically imported AFTER the env vars
 // below are set -- a static top-of-file import would capture an empty
-// secret and every bearer-token verification in this file would fail
+// key and every bearer-token verification in this file would fail
 // closed regardless of what a test signs.
 const SUPABASE_URL = 'https://ixuezudybhjptisexgxx.supabase.co';
-const SUPABASE_JWT_SECRET = 'test-supabase-jwt-secret-must-be-long-enough-xxxxxxxx';
 const SUPABASE_JWT_ISSUER = `${SUPABASE_URL}/auth/v1`;
-const supabaseSecretKey = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+// Real ES256 keypair -- see tests/auth-session.test.mts for why this must be
+// generated, not a fixed HS256 string fixture, now that the module under
+// test verifies against a hardcoded public key (server/auth-session.ts).
+const { publicKey: supabasePublicKey, privateKey: supabasePrivateKey } = await generateKeyPair('ES256', { extractable: true });
+const supabasePublicJwk = await exportJWK(supabasePublicKey);
 process.env.SUPABASE_URL = SUPABASE_URL;
-process.env.SUPABASE_JWT_SECRET = SUPABASE_JWT_SECRET;
+process.env.SUPABASE_JWT_PUBLIC_JWK = JSON.stringify(supabasePublicJwk);
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 
 const { createDomainGateway } = await import('../server/gateway.ts');
 
 function signSupabaseToken(userId: string): Promise<string> {
   return new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'ES256' })
     .setIssuer(SUPABASE_JWT_ISSUER)
     .setAudience('authenticated')
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime('1h')
-    .sign(supabaseSecretKey);
+    .sign(supabasePrivateKey);
 }
 
 // Anonymous browser access requires a wms_ session token (issue #3541).

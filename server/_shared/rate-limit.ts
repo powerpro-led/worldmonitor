@@ -172,8 +172,39 @@ function isLocalSidecarMode(): boolean {
   return process.env.LOCAL_API_MODE === 'tauri-sidecar';
 }
 
+/**
+ * Same rationale as isLocalSidecarMode above — a single operator hitting their
+ * own machine has no abuse surface to defend — extended to a local `nitric start`
+ * dev stack, which the sidecar flag does not cover.
+ *
+ * Deliberately a SEPARATE env var rather than reusing LOCAL_API_MODE: that value
+ * is also read in five places in server/_shared/redis.ts, where it means "no live
+ * Upstash at all". Setting it here to silence the limiter would disable the local
+ * Redis data layer as a side effect.
+ *
+ * Why this is needed at all in local dev: getClientIp() refuses to trust
+ * cf-connecting-ip / x-forwarded-for (GHSA-c267) and falls back to x-real-ip,
+ * which only a reverse proxy sets. There is no proxy in front of `nitric start`,
+ * so EVERY request collapses onto the UNKNOWN_CLIENT_IP sentinel and the whole
+ * dashboard — ~20 panels on first paint — shares a single per-IP bucket. The
+ * per-endpoint caps are sized for one user's share of production traffic, not
+ * for one user generating all of it (e.g. summarize-article allows 30/60s while
+ * a populated digest serves ~267 articles).
+ *
+ * Unset (the default) means production behaviour is completely unchanged.
+ */
+function isLocalDevRateLimitBypass(): boolean {
+  const raw = (process.env.RATE_LIMIT_LOCAL_DEV ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true';
+}
+
+/** True when this process should skip rate limiting entirely. */
+function rateLimitBypassed(): boolean {
+  return isLocalSidecarMode() || isLocalDevRateLimitBypass();
+}
+
 export async function checkRateLimit(request: Request, corsHeaders: Record<string, string>, opts: RateLimitOptions = {}): Promise<Response | null> {
-  if (isLocalSidecarMode()) return null;
+  if (rateLimitBypassed()) return null;
   const rl = getRatelimit();
   if (!rl) {
     if (opts.failClosed) {
@@ -383,7 +414,7 @@ export function hasEndpointRatePolicy(pathname: string): boolean {
 }
 
 export async function checkEndpointRateLimit(request: Request, pathname: string, corsHeaders: Record<string, string>, opts: EndpointRateLimitOptions = {}): Promise<Response | null> {
-  if (isLocalSidecarMode()) return null;
+  if (rateLimitBypassed()) return null;
   if (!hasEndpointRatePolicy(pathname)) return null;
 
   const rl = getEndpointRatelimit(pathname);
@@ -476,7 +507,7 @@ export interface ScopedRateLimitResult {
  * windows are visible in logs / Sentry.
  */
 export async function checkScopedRateLimit(scope: string, limit: number, window: Duration, identifier: string): Promise<ScopedRateLimitResult> {
-  if (isLocalSidecarMode()) return { allowed: true, limit, reset: 0, degraded: false };
+  if (rateLimitBypassed()) return { allowed: true, limit, reset: 0, degraded: false };
   const rl = getScopedRatelimit(scope, limit, window);
   if (!rl) {
     logScopedRateLimitMissingConfig(scope);

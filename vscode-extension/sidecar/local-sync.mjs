@@ -110,6 +110,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { Redis } from '@upstash/redis';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -118,6 +119,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_READONLY_TOKEN = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
 const SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || path.join(__dirname, 'local-cache.db');
+
+/**
+ * The rebuild is staged here and renamed over SQLITE_PATH only once the run
+ * has fully succeeded — see openDatabase() for why that matters now that this
+ * script runs unattended on a timer.
+ */
+const SQLITE_TMP_PATH = `${SQLITE_PATH}.tmp`;
 
 // Own retry/timeout layer — see header comment for why the SDK's built-in
 // `retry`/`signal` options don't work for this. RETRY_ATTEMPTS absorbs VPN
@@ -397,11 +405,33 @@ async function readValues(redis, entries) {
   return result;
 }
 
+/**
+ * Opens a SCRATCH database that is renamed over the live one only after a
+ * fully successful run.
+ *
+ * This used to open SQLITE_PATH directly and begin with `DELETE FROM
+ * kv_cache`, which was survivable while a human ran it and watched the
+ * output. Under a launchd timer it is not: the DELETE auto-commits
+ * immediately, so any failure afterwards — a network blip during the first
+ * prefix's SCAN, the watchdog firing, the machine sleeping — leaves the
+ * operator with an EMPTY or half-populated mirror and no one watching. Worse,
+ * a truncated rebuild writes a FRESH synced_at, so the staleness warning in
+ * server/_shared/sidecar-cache.ts would report it as healthy.
+ *
+ * Staging into a temp file and renaming makes the swap atomic: a crashed run
+ * leaves the previous good mirror completely untouched. Chosen over wrapping
+ * the whole rebuild in one transaction because a multi-second write
+ * transaction blocks the sidecar's read-only opener, and loadMirror()
+ * swallows that failure into an EMPTY mirror — trading a partial mirror for
+ * an empty one. A rename has no such interaction: a reader holds its old
+ * inode open and sees the new file on its next start.
+ */
 function openDatabase() {
-  const db = new DatabaseSync(SQLITE_PATH);
-  // Full rebuild every run (see main()), so a schema change here is
-  // non-breaking — old DB files just get dropped and recreated fresh next
-  // run, no migration needed.
+  // A leftover .tmp means a previous run died; it is scratch, so drop it.
+  fs.rmSync(SQLITE_TMP_PATH, { force: true });
+  const db = new DatabaseSync(SQLITE_TMP_PATH);
+  // Always a fresh file, so a schema change here is non-breaking — no
+  // migration is ever needed.
   db.exec(`
     CREATE TABLE IF NOT EXISTS kv_cache (
       key TEXT PRIMARY KEY,
@@ -443,8 +473,8 @@ async function main() {
 
   try {
     // Full rebuild — no incremental upsert, no stale-row bookkeeping. The
-    // table is always exactly what Upstash held as of this run.
-    db.exec('DELETE FROM kv_cache');
+    // table is always exactly what Redis held as of this run. No DELETE
+    // needed: openDatabase() started from an empty scratch file.
 
     for (const prefix of SYNC_PREFIXES) {
       const entries = await scanAllKeysWithType(redis, prefix);
@@ -465,10 +495,16 @@ async function main() {
     db.close();
   }
 
+  // Close first, then swap. Closing cleanly removes SQLite's journal
+  // sidecar files, so the single rename moves a self-contained database.
+  fs.renameSync(SQLITE_TMP_PATH, SQLITE_PATH);
+
   console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
 }
 
 main().catch((err) => {
   console.error('[local-sync] FATAL:', err.message);
+  // Discard the half-built scratch file; the live mirror was never touched.
+  fs.rmSync(SQLITE_TMP_PATH, { force: true });
   process.exit(1);
 });

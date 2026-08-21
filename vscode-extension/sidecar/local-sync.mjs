@@ -250,12 +250,10 @@ const SYNC_PREFIXES = [
   'positive-events:',
   'positive_events:',
 
-  // User-scoped brief content plus `brief:llm:description:*`. Included
-  // because the Latest Brief panel is otherwise empty in the sidecar, but
-  // flagged: unlike everything else here these rows are keyed by user UUID,
-  // so on a multi-operator deployment this mirrors other people's briefs
-  // onto one laptop. Drop this single line if that ever stops being
-  // acceptable.
+  // The ONLY user-scoped prefix here, and therefore the only one that is
+  // filtered rather than mirrored wholesale — see keepKey() below. Blanket
+  // `brief:*` would copy every user's brief content onto one laptop, which
+  // contradicts the read-only-token rationale in assertEnv().
   'brief:',
 
   // DELIBERATELY EXCLUDED, verified by reading the keys:
@@ -506,6 +504,47 @@ async function readValues(redis, entries) {
  * an empty one. A rename has no such interaction: a reader holds its old
  * inode open and sees the new file on its next start.
  */
+/**
+ * The operator this machine belongs to, recorded by the sidecar
+ * (local-api-server.mjs's recordOperatorIdentity) from the Supabase bearer the
+ * dashboard obtains by exchanging the VS Code GitHub session token. Read from
+ * beside the mirror, the one path both processes compute the same way.
+ *
+ * Null until the operator has made one authenticated request. That is a
+ * deliberate fail-closed cold start: with no known identity, NO user-scoped
+ * brief is mirrored at all rather than guessing or mirroring everyone's. The
+ * agent re-runs on its interval, so it self-heals on the next sync.
+ */
+function readOperatorUserId() {
+  try {
+    const raw = fs.readFileSync(path.join(path.dirname(SQLITE_PATH), 'operator-identity.json'), 'utf-8');
+    const id = JSON.parse(raw).userId;
+    return typeof id === 'string' && id ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+const OPERATOR_USER_ID = readOperatorUserId();
+
+/**
+ * Per-key admission filter, applied to everything SCAN returns.
+ *
+ * Only `brief:` needs one. Its keys come in three shapes, and exactly one of
+ * them is user-scoped:
+ *   brief:llm:description:<hash>  — shared LLM output, not user data
+ *   brief:latest:<userId>         — pointer, user-scoped
+ *   brief:<userId>:<slot>         — brief content, user-scoped
+ * Note the second and third are distinguished only by position, so this
+ * matches on the UUID wherever it appears rather than on segment count.
+ */
+function keepKey(key) {
+  if (!key.startsWith('brief:')) return true;
+  if (key.startsWith('brief:llm:')) return true;
+  if (!OPERATOR_USER_ID) return false;
+  return key.includes(OPERATOR_USER_ID);
+}
+
 function openDatabase() {
   // A leftover .tmp means a previous run died; it is scratch, so drop it.
   fs.rmSync(SQLITE_TMP_PATH, { force: true });
@@ -532,6 +571,12 @@ async function main() {
     console.log('[local-sync] server does not implement SCAN ... WITHTYPE — using a pipelined TYPE pass.');
   }
 
+  console.log(
+    OPERATOR_USER_ID
+      ? `[local-sync] operator identity ${OPERATOR_USER_ID} — brief: scoped to this user`
+      : '[local-sync] no operator identity recorded yet — mirroring brief:llm:* only, no user-scoped briefs. '
+        + 'Open the dashboard once (any authenticated request) and the next sync will pick it up.',
+  );
   console.log(`[local-sync] pulling prefixes: ${SYNC_PREFIXES.join(', ')}`);
 
   const db = openDatabase();
@@ -557,7 +602,14 @@ async function main() {
     // needed: openDatabase() started from an empty scratch file.
 
     for (const prefix of SYNC_PREFIXES) {
-      const entries = await scanAllKeysWithType(redis, prefix);
+      const scanned = await scanAllKeysWithType(redis, prefix);
+      const entries = scanned.filter((entry) => keepKey(entry.key));
+      const skipped = scanned.length - entries.length;
+      if (skipped > 0) {
+        console.log(OPERATOR_USER_ID
+            ? `[local-sync]   ${prefix}* -> skipped ${skipped} key(s) belonging to another user`
+            : `[local-sync]   ${prefix}* -> skipped ${skipped} user-scoped key(s) (no operator identity yet)`);
+      }
       totalFound += entries.length;
       console.log(`[local-sync]   ${prefix}* -> ${entries.length} keys found`);
 

@@ -99,3 +99,6 @@ tmp/
 vscode-extension/sidecar/local-cache.db
 
 playground-pricing.html
+
+# Operator identity recorded by the sidecar for scoping the local mirror (see local-sync.mjs)
+vscode-extension/sidecar/operator-identity.json

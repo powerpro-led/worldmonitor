@@ -693,6 +693,77 @@ function saveVerboseState() {
   try { writeFileSync(_verboseStatePath, JSON.stringify({ verboseMode })); } catch { /* ignore */ }
 }
 
+/**
+ * Records WHICH operator this machine belongs to, so local-sync.mjs can mirror
+ * only this user's `brief:<uuid>:*` rows instead of every user's.
+ *
+ * Briefs are the one user-scoped thing in the mirror. Blanket-mirroring
+ * `brief:*` would copy other people's brief content onto one laptop, which
+ * contradicts the read-only-Redis-token rationale in local-sync's assertEnv().
+ * The identity comes from the Supabase bearer the dashboard obtains by
+ * exchanging the VS Code GitHub session token, so it is the operator's real
+ * identity rather than a configured guess.
+ *
+ * Written beside the SQLite mirror (LOCAL_SQLITE_PATH's directory) rather than
+ * in dataDir, because that is the one path BOTH this process and the headless
+ * local-sync agent already know how to compute.
+ *
+ * The claims are decoded here, not cryptographically verified — verifying would
+ * need the Supabase JWKS. It does not need to: this only ever runs on the
+ * `/api/*` dispatch path (static responses return earlier), and every API route
+ * rejects a bearer it cannot validate. Recording is gated on a NON-ERROR status,
+ * so the handler having accepted the request is what stands in for validation.
+ * Measured: a correctly-shaped bearer with a bad signature returns 401 from all
+ * of intelligence, seismology, trade and research, and nothing is recorded.
+ *
+ * `exp` and `iss` are checked anyway, so a stale or foreign-issuer token cannot
+ * redirect the scope even if some future route stops validating bearers.
+ */
+let _identityPath = null;
+let _lastRecordedUserId = null;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function initOperatorIdentity(sqlitePath) {
+  if (!sqlitePath) return;
+  _identityPath = path.join(path.dirname(sqlitePath), 'operator-identity.json');
+  try {
+    _lastRecordedUserId = JSON.parse(readFileSync(_identityPath, 'utf-8')).userId || null;
+  } catch { /* absent on first run — recorded on the first authenticated request */ }
+}
+
+function jwtSubject(authHeader) {
+  if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) return null;
+  const parts = authHeader.slice(7).split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+    if (typeof claims.sub !== 'string' || !UUID_RE.test(claims.sub)) return null;
+    if (typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now()) return null;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    if (supabaseUrl && typeof claims.iss === 'string') {
+      try {
+        if (new URL(claims.iss).host !== new URL(supabaseUrl).host) return null;
+      } catch { return null; }
+    }
+    return claims.sub;
+  } catch {
+    return null;
+  }
+}
+
+function recordOperatorIdentity(authHeader, status) {
+  // Only on a non-error response: a handler that accepted the request is the
+  // closest thing available here to "this bearer was usable".
+  if (!_identityPath || status >= 400) return;
+  const sub = jwtSubject(authHeader);
+  if (!sub || sub === _lastRecordedUserId) return;
+  _lastRecordedUserId = sub;
+  try {
+    writeFileSync(_identityPath, JSON.stringify({ userId: sub, seenAt: new Date().toISOString() }, null, 2));
+  } catch { /* best effort — never fail a request over this */ }
+}
+
 function recordTraffic(entry) {
   trafficLog.push(entry);
   if (trafficLog.length > TRAFFIC_LOG_MAX) trafficLog.shift();
@@ -1915,6 +1986,7 @@ async function dispatch(requestUrl, req, routes, context) {
 export async function createLocalApiServer(options = {}) {
   const context = resolveConfig(options);
   loadVerboseState(context.dataDir);
+  initOperatorIdentity(process.env.LOCAL_SQLITE_PATH);
   const routes = await buildRouteTable(context.apiDir);
   let unregisterSelfFetchOrigins = null;
 
@@ -1945,6 +2017,7 @@ export async function createLocalApiServer(options = {}) {
     try {
       const response = await dispatch(requestUrl, req, routes, context);
       const durationMs = Date.now() - start;
+      recordOperatorIdentity(req.headers.authorization, response.status);
       let body = Buffer.from(await response.arrayBuffer());
       const headers = Object.fromEntries(response.headers.entries());
       const corsOrigin = getSidecarCorsOrigin(req);

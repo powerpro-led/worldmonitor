@@ -270,6 +270,18 @@ selector (`LOCAL_SYNC_REDIS_*`) was considered and **rejected by the operator**:
 answers this, and code must never branch on which Redis is in use. See
 `redis_env_not_codebase_switch.md`.
 
+### ⚠ `pkill -f local-api-server` kills the OPERATOR'S extension sidecar
+
+Learned the hard way 2026-08-21. Test sidecars share the script path with the one VS Code spawns
+(`Code Helper (Plugin) … local-api-server.mjs`, normally port **46123**), so a pattern kill hits both.
+
+**It misdiagnoses as a data problem.** The dashboard keeps rendering — the ServiceWorker serves HTML/JS
+from cache and cached panels still show values — so only the Network tab shows the truth: every `fetch`
+is `net::ERR_CONNECTION_REFUSED` while scripts are 200 `(ServiceWorker)`.
+
+Kill probes by captured PID or by port instead. And treat ERR_CONNECTION_REFUSED on *every* fetch as
+"nothing is listening", never as missing data — a mirror gap yields 200s with empty payloads.
+
 ### ✅ FIXED — panels with data in the browser but empty in the VS Code sidecar
 
 **Cause: the mirror is prefix-filtered and 27 data prefixes were missing.** The browser reads live

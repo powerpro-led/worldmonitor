@@ -1,0 +1,13 @@
+diff --git a/node_modules/@nitric/sdk/lib/index.js b/node_modules/@nitric/sdk/lib/index.js
+index 67c5321..458cd2d 100644
+--- a/node_modules/@nitric/sdk/lib/index.js
++++ b/node_modules/@nitric/sdk/lib/index.js
+@@ -13717,7 +13717,7 @@ var HttpContext = class extends BaseContext {
+     );
+     const query = http2.getQueryParamsMap().getEntryList().reduce(
+       (acc, [key, [val]]) => __spreadProps(__spreadValues({}, acc), {
+-        [key]: val.length === 1 ? decodeURIComponent(val[0]) : val.map((v) => decodeURIComponent(v))
++        [key]: val.length === 1 ? val[0] : val
+       }),
+       {}
+     );

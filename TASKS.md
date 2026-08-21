@@ -270,6 +270,40 @@ selector (`LOCAL_SYNC_REDIS_*`) was considered and **rejected by the operator**:
 answers this, and code must never branch on which Redis is in use. See
 `redis_env_not_codebase_switch.md`.
 
+### ✅ TRIAGED — `npm run build` failing on a clean tree (was "pre-existing, untriaged")
+
+**It is not a code bug, and `dist/` was unusable because of it.** `dist/` held only prerendered SEO
+pages and public files — **no `dashboard.html`, no `assets/`** — so the VS Code extension would have
+404'd the dashboard. Prior sessions recorded this as "`npx vite build` fails on a clean tree (hreflang
+alternates anchor, pre-existing, untriaged), don't use it as a verification step."
+
+**Root cause: a build-time `APP_DOMAIN` mismatch.** The `wm-variant-dashboard-html` plugin rewrites the
+built HTML's hreflang links using a regex built from `resolveWwwOrigin(process.env.APP_DOMAIN)`
+(`src/config/variant-dashboard-html.ts:89,126`). `.env` sets `APP_DOMAIN=localhost:3000` — correct and
+load-bearing for the local stack — while `index.html` still carries the apex production literals. Zero
+matches, and `replaceCounted` **fails closed** rather than silently emitting wrong canonical URLs. That
+is the plugin behaving correctly.
+
+**Working invocation — no tracked file changes, `.env` untouched:**
+
+```
+APP_DOMAIN=worldmonitor.app npm run build
+```
+
+Verified: exit 0, `dist/dashboard.html` (46,958 bytes) + 456 asset files, and served end to end through
+the sidecar — `GET /` 200, main JS asset 200 (1.04 MB), `list-cross-source-signals` 200 with real data,
+`[sidecar-cache] loaded 3357 keys ... (synced 2m ago)`.
+
+**Trap — pass the APEX, not the `www.` host.** `resolveWwwOrigin('www.worldmonitor.app')` returns
+`https://www.www.worldmonitor.app`; adding the `www.` is the function's job. Setting the `www.` form
+produces the identical "matched 0 time(s)" error and looks like the fix simply didn't work.
+
+Baking the production domain is safe for local use: `getApiBaseUrl()` returns `''` outside desktop
+runtime, so the dashboard calls the sidecar same-origin. Confirmed no production API origin is
+reachable from the built bundle. The alternative — running `scripts/sync-domain-literals.mjs`, which
+does cover `index.html` — would rewrite tracked files and reopens the de-branding cleanup the operator
+explicitly closed, so it was **not** done.
+
 ### ⚠ The sidecar runs PREBUILT bundles, not your source
 
 `local-api-server.mjs` imports `api/{domain}/v1/[rpc].js` — gitignored esbuild bundles that embed a

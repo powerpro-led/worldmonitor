@@ -229,17 +229,72 @@ was not truncation either; it is 196 now.
 (`{"level":"high","category":"infrastructure",…}`). Their counts grew between two runs minutes apart,
 which is independent evidence the LLM pipeline is live.
 
+### Questions 3, 4 and 5 — ALL CLOSED
+
+**Q5 (dev-vs-prod source) — verified end to end, not merely by reading the wiring.** Ran the sidecar
+against the real mirror: `[sidecar-cache] loaded 3358 keys`, and
+`/api/intelligence/v1/list-cross-source-signals` returned HTTP 200 with real signal data. The whole
+chain is live: Redis → `local-sync.mjs` → `local-cache.db` → `sidecar-cache.ts` → RPC.
+`sidecarProcess.ts:114` points `LOCAL_SQLITE_PATH` at exactly the file `local-sync` writes by default.
+**Asymmetry worth knowing**: the WRITER defaults that path, the READER does not — `loadMirror()` returns
+an empty mirror if `LOCAL_SQLITE_PATH` is unset, so a hand-started sidecar silently serves nothing.
+
+**Q4 (freshness/TTL) — closed, and it was a real gap.** `synced_at` was written on every row since the
+mirror existed and **read by nothing** — `loadMirror()` did not even SELECT it. That is precisely how a
+four-day-old mirror looked identical to a fresh one. The loader now reports the age and warns past 24h.
+It deliberately does **not** expire rows: serving a stale mirror is the point of an offline operator
+cache, and "static for the process's lifetime" is a documented, intentional tradeoff. Verified against a
+fixture in both directions — fresh logs `synced 14m ago` silently, a copy aged four days logs
+`synced 4d ago` plus the warning.
+
+**Q3 (automation) — a launchd agent, per operator decision.** `scripts/install-local-sync-agent.sh`
+installs `com.worldmonitor.local-sync` (LaunchAgent, user domain — it writes into the operator's repo, so
+a root LaunchDaemon would leave root-owned files in the tree; that is the one deliberate difference from
+`com.worldmonitor.firms-vpn-bypass`). `RunAtLoad` + 900s. **Explicitly NOT tied to VS Code extension
+start/stop** — the mirror is a property of the machine, and a lifecycle hook is where this class of
+failure hides. Verified live: `runs=1 exit 0` on load, and a temporary 60s interval proved `runs=2`, so
+the timer fires and not merely `RunAtLoad`.
+
+**Automating it forced a second fix.** The rebuild opened the LIVE database and began with an
+auto-committing `DELETE FROM kv_cache`, so any failure after that point left an empty or partial mirror
+— *and stamped it with a fresh `synced_at`, so the new staleness warning would have called the wreckage
+healthy*. Now staged into `<path>.tmp` and renamed only on full success. Proven by killing a run
+mid-flight: live mirror byte-identical, while the abandoned scratch held 622 KB of a 4.6 MB rebuild —
+about 13%, which under the old code would have *been* the mirror. Rename was chosen over one big
+transaction because a multi-second write txn blocks the sidecar's read-only opener and `loadMirror()`
+swallows that into an EMPTY mirror.
+
+**The source stays env-driven.** The agent runs the ordinary `local-sync` entry point and reads
+`UPSTASH_REDIS_REST_URL` from `.env` — Upstash in production, local Docker Redis in dev. A second
+selector (`LOCAL_SYNC_REDIS_*`) was considered and **rejected by the operator**: configuration already
+answers this, and code must never branch on which Redis is in use. See
+`redis_env_not_codebase_switch.md`.
+
+### ⚠ The sidecar runs PREBUILT bundles, not your source
+
+`local-api-server.mjs` imports `api/{domain}/v1/[rpc].js` — gitignored esbuild bundles that embed a
+**copy of `server/_shared/`**. They were dated **Aug 8** here, so the sidecar had been serving a
+two-week-old snapshot of shared server code, including every fix from sessions 30-32. Nothing rebuilds
+them automatically.
+
+**Run `npm run build:sidecar-handlers` after touching anything under `server/_shared/`, or your change is
+simply not live in the sidecar** — and it will fail in a way that looks like the fix didn't work.
+(Distinct from nitric, where tsx resolves the sibling `.ts` first and source edits ARE live.)
+
 ### Still open here
 
-- **Questions 3, 4 and 5 are untouched**: nothing automates the sync (still a manual
-  `npm run local-sync`); no freshness/TTL story is verified (`synced_at` is written but nothing observed
-  reads it, so a mirrored row can outlive its Redis TTL); and the dev-vs-prod source has not been
-  confirmed end to end from the sidecar's side.
 - **`risk:` has 0 keys in Redis.** Real prefix — `risk:scores:sebuf:v8` in `server/_shared/cache-keys.ts`.
   Everything found so far only *reads* it; the writer was not identified. Determine whether it is
-  seeded, computed on demand, or genuinely dead. **Not a sync bug** — the mirror is faithful.
-- **No regression test covers the shim's base64 encoding.** Testing it needs the container up, which is
-  why it was flagged rather than half-built. `test:sidecar` is the suite it would belong to.
+  seeded, computed on demand, or genuinely dead. **Not a sync bug** — the mirror is faithful, and
+  `get-risk-scores` still returns 200.
+- **No regression test covers the shim's base64 encoding**, nor the mirror-age warning. Both need
+  fixtures/containers; flagged rather than half-built. `test:sidecar` is the suite they belong to.
+- **The agent's node path is nvm-versioned** (`~/.nvm/versions/node/v22.16.0/bin/node`). A node upgrade
+  breaks it silently — launchd logs "No such file or directory" to
+  `/tmp/com.worldmonitor.local-sync.log` and nothing else mentions it. Re-run the installer after
+  upgrading node.
+- A resync does **not** reach a running sidecar; the mirror is read once per process. Restarting the
+  sidecar is still required to see fresh data.
 - Re-check: `seed-cross-source-signals` is **absent from `scripts/railway-services.json`** but is NOT an
   orphan — `seed-bundle-derived-signals.mjs:6` invokes it. Recording it so the next registry sweep does
   not "fix" it. (Same name-match trap as session 32.)

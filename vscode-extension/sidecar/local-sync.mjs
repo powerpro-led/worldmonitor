@@ -188,6 +188,86 @@ const SYNC_PREFIXES = [
   // panel alert levels — and /api/intelligence/v1/classify-event is one of the
   // LLM-spend-quota'd paths, so a miss costs a real model call.
   'classify:',
+
+  // ---------------------------------------------------------------------
+  // Added 2026-08-21 after auditing EVERY prefix in Redis against every
+  // server/worldmonitor/*/v1/*.ts handler, rather than adding prefixes one
+  // panel-complaint at a time. 19 domains were reading at least one prefix
+  // that was never mirrored, so those panels had data in the browser (live
+  // Redis) and nothing in the VS Code sidecar (mirror only) — the same
+  // silent failure as the theater-posture: note above, 19 times over.
+  //
+  // Each prefix below was classified by READING its keys, not by its name.
+  // That distinction is load-bearing: `acled:` looks like a data prefix and
+  // is deliberately absent, because its only key is `acled:oauth:token` — a
+  // credential, which mirroring would copy onto the operator's laptop and
+  // defeat the read-only-token rationale in assertEnv(). See the exclusion
+  // list at the bottom of this comment block.
+  // ---------------------------------------------------------------------
+
+  // Trade + customs. `trade:flows:v1:*` (256) and `trade:tariffs:v1:*` (159)
+  // are per-country composed keys; the singular `trade:restrictions:v1`,
+  // `trade:barriers:v1` and `trade:customs-revenue:v1` back the tariff and
+  // trade-policy panels. `comtrade:` holds bilateral flows and is read by
+  // BOTH the trade and supply-chain domains — which is why supply-chain was
+  // partially populated rather than blank: its own `supply_chain:` keys were
+  // already mirrored, only its comtrade half was missing.
+  'trade:',
+  'comtrade:',
+
+  // Security / conflict / defence.
+  'conflict:',
+  'unrest:',
+  'displacement:',
+  'military:',
+  'usni-fleet:',
+  'patents:',
+  'cyber:',
+
+  // Physical world + hazards.
+  'natural:',
+  'seismology:',
+  'radiation:',
+  'thermal:',
+  'weather:',
+  'aviation:',
+  'infra:',
+
+  // Economic / markets not already covered by economic: and market:.
+  'bls:',
+  'insider:',
+  'regulatory:',
+
+  // Analysis, research and editorial output.
+  'correlation:',
+  'research:',
+  'news:',
+  'intel:',
+  'prediction:',
+
+  // Both spellings exist, exactly like theater-posture:/theater_posture:
+  // above. Confirmed live in Redis, one key each — do not "tidy" one away.
+  'positive-events:',
+  'positive_events:',
+
+  // User-scoped brief content plus `brief:llm:description:*`. Included
+  // because the Latest Brief panel is otherwise empty in the sidecar, but
+  // flagged: unlike everything else here these rows are keyed by user UUID,
+  // so on a multi-operator deployment this mirrors other people's briefs
+  // onto one laptop. Drop this single line if that ever stops being
+  // acceptable.
+  'brief:',
+
+  // DELIBERATELY EXCLUDED, verified by reading the keys:
+  //   acled:        -> `acled:oauth:token`, a CREDENTIAL.
+  //   wm:           -> notification dedup, an events queue and locks.
+  //   story:        -> ~18.4k news-dedup tracking keys, no article content.
+  //   cache:        -> upstream fetch scratch (abuseipdb, cyber first-seen).
+  //   digest:       -> notification accumulator + last-run marker.
+  //   baseline:     -> internal statistical accumulator state.
+  //   seed-meta:, seed-routes:, seed-activated:  -> sync-job bookkeeping.
+  //   health:, rate:, llm:, relay:, cf:, shared:, ci-sebuf:, *smoke-test:
+  //                 -> infrastructure and probes.
 ];
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */

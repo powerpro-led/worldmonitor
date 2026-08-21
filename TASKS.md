@@ -288,8 +288,23 @@ would copy an OAuth token onto the operator's laptop and defeat the read-only-to
 `assertEnv()`. `wm:` is notification dedup / events queue / locks. Verified post-sync that `acled:`,
 `wm:`, `story:`, `cache:`, `digest:`, `baseline:` and `seed-*` all hold **0 rows**.
 
-`brief:` IS mirrored so the Latest Brief panel populates, but its rows are keyed by **user UUID** —
-on a multi-operator deployment that mirrors other people's briefs onto one laptop. One line to drop.
+`brief:` is the **only user-scoped prefix**, and is filtered rather than mirrored wholesale (operator
+decision, 2026-08-21). The sidecar records the operator's Supabase user id — obtained from the bearer
+the dashboard derives by exchanging the **VS Code GitHub session token** — to
+`vscode-extension/sidecar/operator-identity.json` (gitignored, beside the mirror, the one path both the
+sidecar and the headless agent compute identically). `local-sync` then mirrors `brief:llm:*` plus only
+that user's rows.
+
+Claims are decoded, not cryptographically verified, and need not be: recording runs only on the
+`/api/*` dispatch path (static responses return earlier) and is gated on a **non-error status**, so the
+handler having accepted the request stands in for validation — measured, a correctly-shaped bearer with
+a bad signature 401s from intelligence, seismology, trade and research alike and records nothing. `exp`
+and `iss` are checked regardless.
+
+**Cold start is fail-closed**: with no recorded identity, *no* user-scoped brief is mirrored at all
+rather than guessing. Self-heals on the agent's next run after one authenticated request. Verified in
+four states — no identity (29 keys, 9 skipped), wrong uuid (29, still skipped), correct uuid (38, 0
+skipped), and expired/foreign-issuer/bad-signature tokens never recorded.
 
 **Two categories that a prefix will never fix** (both verified, do not chase as mirror bugs):
 

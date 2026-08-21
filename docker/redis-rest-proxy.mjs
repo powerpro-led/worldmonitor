@@ -129,8 +129,45 @@ async function readBody(req) {
   return Buffer.concat(chunks).toString();
 }
 
+/**
+ * Upstash's REST API base64-encodes every string in a response when the caller
+ * sends `Upstash-Encoding: base64` — and @upstash/redis sends that header BY
+ * DEFAULT (its `responseEncoding` option defaults to "base64", and its decode()
+ * unconditionally base64-decodes every string it receives). Ignoring the header
+ * therefore does not degrade gracefully: the SDK decodes a value that was never
+ * encoded.
+ *
+ * What makes this worth a comment is that the corruption is INTERMITTENT, so the
+ * proxy looks correct almost all the time. The SDK's base64decode() leaves a
+ * string alone when it is not valid base64, and every Redis key in this repo
+ * contains ':', so keys always survive untouched. Only a value that happens to
+ * BE valid base64 is silently mangled. SCAN cursors are the clearest case:
+ * cursor "32208" is 5 characters, is not valid base64, and passes through — but
+ * the very next page returns "3432", which decodes to 3 junk bytes, and the
+ * following SCAN dies on `ERR invalid cursor`. Roughly a quarter of cursors have
+ * a length divisible by 4, which is why local-sync.mjs reached page 2 of the
+ * first prefix before failing. OAuth authorization codes and tokens are
+ * base64url by construction and would corrupt the same way.
+ *
+ * Numbers, booleans and null are left alone: decode() only transforms strings,
+ * so encoding a number would break the round trip rather than fix it.
+ */
+function encodeBase64Deep(value) {
+  if (typeof value === 'string') return Buffer.from(value, 'utf8').toString('base64');
+  if (Buffer.isBuffer(value)) return value.toString('base64');
+  if (Array.isArray(value)) return value.map(encodeBase64Deep);
+  return value;
+}
+
+function wantsBase64(req) {
+  return String(req.headers['upstash-encoding'] || '').toLowerCase() === 'base64';
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json');
+
+  // Errors are NOT encoded — the SDK reads body.error as a plain message.
+  const enc = wantsBase64(req) ? encodeBase64Deep : (v) => v;
 
   if (!checkAuth(req)) {
     res.writeHead(401);
@@ -144,7 +181,7 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req));
       const result = await runCommand(body);
       res.writeHead(200);
-      res.end(JSON.stringify({ result }));
+      res.end(JSON.stringify({ result: enc(result) }));
       return;
     }
 
@@ -155,7 +192,7 @@ const server = http.createServer(async (req, res) => {
       for (const cmd of commands) {
         try {
           const result = await runCommand(cmd);
-          results.push({ result });
+          results.push({ result: enc(result) });
         } catch (err) {
           results.push({ error: err.message });
         }
@@ -180,7 +217,7 @@ const server = http.createServer(async (req, res) => {
       }
       const results = await multi.exec();
       res.writeHead(200);
-      res.end(JSON.stringify(results.map((r) => ({ result: r }))));
+      res.end(JSON.stringify(results.map((r) => ({ result: enc(r) }))));
       return;
     }
 
@@ -202,7 +239,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await runCommand(parts);
       res.writeHead(200);
-      res.end(JSON.stringify({ result }));
+      res.end(JSON.stringify({ result: enc(result) }));
       return;
     }
 
@@ -218,7 +255,7 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await runCommand(parts);
       res.writeHead(200);
-      res.end(JSON.stringify({ result }));
+      res.end(JSON.stringify({ result: enc(result) }));
       return;
     }
 

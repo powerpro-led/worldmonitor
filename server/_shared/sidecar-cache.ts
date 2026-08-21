@@ -70,7 +70,7 @@ function evictLRU(incomingSize = 0): void {
   for (const k of keysToEvict) store.delete(k);
 }
 
-type MirrorRow = { key: string; value: string; type: string };
+type MirrorRow = { key: string; value: string; type: string; synced_at: number };
 type MirrorEntry = { value: string; type: string };
 
 /**
@@ -86,6 +86,38 @@ type MirrorEntry = { value: string; type: string };
  */
 const MIRROR_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirror');
 type GlobalWithMirror = typeof globalThis & { [MIRROR_GLOBAL_KEY]?: Map<string, MirrorEntry> };
+
+/**
+ * Age of the newest row in the mirror, measured when it was loaded. Null
+ * until the mirror is loaded, or if the table was empty.
+ *
+ * `synced_at` had been written by local-sync.mjs since the mirror existed
+ * and read by nothing — the loader did not even SELECT it. That is how a
+ * four-day-old mirror looked exactly like a fresh one: nothing automates
+ * `npm run local-sync`, so when it broke, every panel kept serving a
+ * point-in-time snapshot with no indication anywhere that it had frozen.
+ *
+ * This does not (and should not) expire rows. Serving a stale mirror is the
+ * whole point of an offline operator cache, and the mirror is deliberately
+ * static for the process's lifetime — see loadMirror() below. The gap being
+ * closed here is purely that its age was invisible.
+ */
+let mirrorAge: number | null = null;
+
+const STALE_MIRROR_WARN_MS = 24 * 60 * 60 * 1000;
+
+function formatAge(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/** Age of the loaded mirror in ms, or null if it has not been loaded or is empty. */
+export function sidecarMirrorAgeMs(): number | null {
+  return mirrorAge;
+}
 
 /**
  * Lazily loads the entire local-cache.db `kv_cache` table into memory on
@@ -115,12 +147,25 @@ function loadMirror(): Map<string, MirrorEntry> {
     }
     const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
     try {
-      const rows = db.prepare('SELECT key, value, type FROM kv_cache').all() as MirrorRow[];
-      for (const row of rows) mirror.set(row.key, { value: row.value, type: row.type });
+      const rows = db.prepare('SELECT key, value, type, synced_at FROM kv_cache').all() as MirrorRow[];
+      let newestSyncedAt = 0;
+      for (const row of rows) {
+        mirror.set(row.key, { value: row.value, type: row.type });
+        if (row.synced_at > newestSyncedAt) newestSyncedAt = row.synced_at;
+      }
+      mirrorAge = newestSyncedAt > 0 ? Date.now() - newestSyncedAt : null;
     } finally {
       db.close();
     }
-    console.warn(`[sidecar-cache] loaded ${mirror.size} keys from local mirror at ${dbPath}`);
+    const age = mirrorAge === null ? 'age unknown' : `synced ${formatAge(mirrorAge)} ago`;
+    console.warn(`[sidecar-cache] loaded ${mirror.size} keys from local mirror at ${dbPath} (${age})`);
+    if (mirrorAge !== null && mirrorAge > STALE_MIRROR_WARN_MS) {
+      console.warn(
+        `[sidecar-cache] WARNING: local mirror is ${formatAge(mirrorAge)} old — every panel is serving ` +
+          'data from that point in time. Refresh it with `npm run local-sync`, then restart the sidecar ' +
+          '(the mirror is read once per process).',
+      );
+    }
   } catch (err) {
     console.warn('[sidecar-cache] failed to load local SQLite mirror:', err instanceof Error ? err.message : String(err));
   }
@@ -135,6 +180,7 @@ function loadMirror(): Map<string, MirrorEntry> {
  */
 export function __resetMirrorForTests(): void {
   delete (globalThis as GlobalWithMirror)[MIRROR_GLOBAL_KEY];
+  mirrorAge = null;
 }
 
 /**

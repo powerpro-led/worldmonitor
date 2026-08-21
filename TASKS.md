@@ -15,6 +15,1105 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-08-21, THIRTY-SECOND session end) — read this first, supersedes every block below
+
+**Scope**: closed item G (Latest Brief) from the thirty-first session, then followed the consequences
+into the orphaned-seeder sweep that block had already flagged as "the single highest-value follow-up".
+`/api/health` went from **44 crit / 157 ok → ~24 crit / ~185 ok**. Twenty-nine seeders that nothing in
+the repo could invoke are now registered and running on their own cadences.
+
+**Git state**: 0 commits (operator's standing manual-commit discipline held). 60 files uncommitted —
+**but only ~14 are this session's**; the other ~46 were already modified when this session started
+(Umami removal, domain-config work from earlier sessions). Do not fold those into a commit message
+claiming they are session-32 work. `npx tsc --noEmit` clean; 214/215 on the registry/scheduler suites
+(the 1 failure is pre-existing, see "KNOWN PRE-EXISTING" below). Commit `0114fcf` still sits ahead of
+`origin/main` from an earlier session — not mine.
+
+### What got fixed
+
+| # | Item | Root cause |
+|---|---|---|
+| A | "Read brief" opened `https://nitric.internal/...` | `api/latest-brief.ts:167` falls back to `new URL(req.url).origin`, which under Nitric is the **synthetic** host `gcp/api/adapt-vercel-handler.ts:45` invents. Fixed by pinning `WORLDMONITOR_PUBLIC_BASE_URL=http://localhost:9001` in `.env` |
+| B | Digest sent 0 / brief was boilerplate | NOT a bug. `sensitivity: "critical"` matched **0 of 1284** stories in the 24h pool (2 of 2857 all-time). Operator switched to `high` → pool 81 |
+| C | Groq 404 on every call | `scripts/lib/llm-chain.cjs:45` was the **last** call site still on retired `llama-3.1-8b-instant`; the 2026-08-18 sweep missed it (it lives in `scripts/lib/`, not next to a seeder) |
+| D | Brief prose stuck on `level=3_stub` | `brief-llm.mjs` pins to OpenRouter via `skipProviders`, and no key existed. Key added; **`google/*` and `openai/*` return 403 on this account** (reproduced from two egress IPs), so `OPENROUTER_MODEL=deepseek/deepseek-v4-flash` was set — this IS the U4 brief-voice cutover, done via env so it reverts by deleting one line |
+| E | **29 orphaned seeders** | Present in `scripts/` but absent from every registry, bundle, npm script, scheduler entry, and GitHub workflow. Registered + cadenced; guard widened |
+| F | `seed-ember-electricity` always failed | 70 MB CSV, 5-min timeout demanded ≥234 KB/s. Deeper: the direct connection **decays** (83 KB/s → 21.8 KB/s over 300s ⇒ ~54 min needed). Fixed with direct-first/`PROXY_URL` fallback (454 KB/s, 21×) + separate direct/proxy timeout budgets |
+| G | `seed-security-advisories` silently fetched nothing | `RELAY_URL` unset → `resolveProxyOrigin(APP_DOMAIN)` → `:3000` (Vite, no `/rss` route). Set to `:3004` where `ais-relay.cjs:6822` actually serves it |
+| H | FIRMS 66× slower than control | VPN-throttled. Static route + LaunchDaemon (`com.worldmonitor.firms-vpn-bypass`), self-heal verified by delete-and-observe. 10.9 KB/s → 238 KB/s |
+
+### The two rules worth carrying forward
+
+**1. A name match is not a fact.** Every wrong turn this session came from treating a string match as
+semantics. Orphan detection found `seed-chokepoint-flows` referenced in `ais-relay.cjs` and I nearly
+double-registered it — that one is a real `execFile` at `:6566`, while `seed-aviation` /
+`seed-energy-spine` / `seed-cyber-threats` appear at `:11656` only in **comments** saying a standalone
+cron owns them (so those three ARE genuine orphans). Same failure mode built `requiredEnv` lists by
+regexing `process.env.X`, inventing three phantom "missing credentials" that were legacy fallbacks or
+optional degradation paths. **Open the call site and read the branch.**
+
+**2. `exit 0` is not evidence that work happened.** A killed run left an orphaned Redis lock; the next
+`seed-ember-electricity` printed "Lock held by another run, skipping" and **exited 0** having done
+nothing. Only `/api/health` still saying `SEED_ERROR` caught it. Related: a multi-source seeder fails
+only when *all* sources fail at once — `seed-unrest-events` exit 1 was GDELT 429 + ACLED 403
+simultaneously, and simply re-running it succeeded.
+
+### KNOWN PRE-EXISTING (do not chase, `git stash` A/B confirmed)
+
+- `tests/railway-services-registry-coverage.test.mts` → `every Dockerfile.* CMD has a matching registry
+  entry` **fails on a clean tree**. `Dockerfile.{process-deep-forecast-tasks,process-simulation-tasks,
+  scenario-worker}` exist (dated Aug 6) while those three services are registered as
+  `nixpacks-root-scripts`. Which artifact is authoritative is a deployment-contract decision — left alone.
+- This session **fixed** a different pre-existing failure in that file (`every script header-documented
+  Railway service is registered`) as a side effect of the registrations.
+
+### Environment left running
+
+Vite `:3000`, `ais-relay.cjs` `:3004`, docker redis+redis-rest `127.0.0.1:8079`, `nitric start --ci`
+`:9001`, and `scripts/clean-nitric-history.mjs`. **Relay trap:** nitric declares its own `ais-relay`
+service, so whichever starts second loses `:3004` and **crashes permanently — nitric never retries it**.
+While the standalone copy is alive nitric's is dead-on-arrival; the moment the standalone one exits,
+*nothing* owns `:3004` and no health check flags it. Restart it with
+`node --env-file=.env scripts/ais-relay.cjs` — plain `node` dies on `AISSTREAM_API_KEY not set`.
+
+### 🔭 STILL OPEN — pick these up first
+
+1. **Commit the work.** 60 files uncommitted, ~14 from this session across five themes:
+   (1) `WORLDMONITOR_PUBLIC_BASE_URL` pin, (2) `llm-chain.cjs` Groq model, (3) `OPENROUTER_MODEL` knob
+   (`llm-chain.cjs`, `server/_shared/llm.ts`, `ais-relay.cjs`, `seed-insights.mjs`, both
+   `regional-snapshot/*`, `.env.example`), (4) orphan sweep (`railway-services.json`,
+   `gcp/scheduler/main.ts`, `tests/railway-services-registry-coverage.test.mts`), (5)
+   `seed-ember-electricity.mjs`. Stage by explicit path — never `git add -A`, the other ~46 files
+   are earlier sessions' work.
+
+2. **ACLED is blocked on the operator, not on code.** OAuth token issues fine; every data call 403s
+   because `led4signage.com` sits on the **Open** tier, which has no API entitlement (ACLED's own
+   access table: API is ✓ only from Research up). An access-review email was sent 2026-08-21 asking
+   for Research level. Until it lands, `acledIntel` + `sanctionsPressure` stay EMPTY and
+   `seed-conflict-intel` exits 75 by design. **Do not re-test the credentials — they are correct.**
+   Optional small task: `seed-conflict-intel` logs a bare `ACLED API error: 403`, which reads like a
+   broken credential; a one-line hint at the call site would stop the next session re-diagnosing it.
+
+3. **Rotate credentials.** OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, and OpenSky keys were
+   pasted into the session-32 transcript in plaintext.
+
+4. **`gdeltIntel` EMPTY** — GDELT returns HTTP **429** (its own rate limiter), not a network fault.
+   Expected to self-resolve on the `0 */2 * * *` cron. Verify before treating as a bug.
+
+5. **The thirty-first session's NEXT INITIATIVE (Redis → local SQLite) is still unstarted** and its
+   measured baseline still stands — but re-measure it. Several of its 7 zero-row `SYNC_PREFIXES` were
+   plausibly empty *because the seeder that fills them never ran*; that is now fixed, so the baseline
+   in that block predates 29 newly-registered seeders.
+
+6. **Nine registered seeders still lack credentials** and skip cleanly until they exist (declared in
+   each entry's `requiredEnv`): `ENTSO_E_TOKEN` is **not needed** (vendor discourages it; the seeder
+   degrades to EIA-only, US prices only). The rest are genuinely absent.
+
+### Traps specific to this work
+
+- **Registration ≠ backfill.** Nitric's `schedule().every()` fires *after* the interval, not on
+  registration. A weekly seeder stays EMPTY for 7 days unless run by hand once.
+- **`exit=75` is `EX_TEMPFAIL`** (`scripts/_seed-utils.mjs:586`), not a crash — "fetch failed, last-good
+  TTL extended, retry". Three of five backfill "failures" were this.
+- **`nitric start` throws at module load** if any `nixpacks-*` registry entry lacks a `CADENCES` entry
+  in `gcp/scheduler/main.ts`. That is a feature: the scheduler starting proves the two files agree.
+- **The Bash tool caps at 10 min.** `seed-ember-electricity` needs ~4 min minimum on this link; a
+  foreground run gets SIGKILLed and **orphans its Redis lock** (`seed-lock:energy:ember`, 20 min TTL).
+  Run long seeders with `run_in_background`.
+
+---
+
+## 🔀 HANDOFF (2026-08-21, THIRTY-FIRST session end) — superseded by the thirty-second block above
+
+**Scope**: cleared every open item the thirtieth session handed off (A–E below), plus three more found
+while verifying (F, G, H). Dashboard panels that were blank now render. **Next initiative is a data-
+pipeline review — see "NEXT INITIATIVE" at the bottom of this block; it is scoped and has a measured
+baseline, so it can be picked up cold.**
+
+**Git state**: 0 commits (operator's standing manual-commit discipline held). ~46 modified, 4 deleted,
+3 untracked (`docker-compose.dev.yml`, `docker/`, `patches/`). `npx tsc --noEmit` clean on all three
+tsconfigs at session end. One pre-existing commit `0114fcf` sits ahead of `origin/main` from an
+earlier session — not mine.
+
+### What got fixed (details in items A–H below)
+
+| # | Item | Root cause |
+|---|---|---|
+| A | `classify-event` 500 on any `%` | Redundant `decodeURIComponent` in `@nitric/sdk` — patched via NEW `patches/` + `postinstall` |
+| B | Umami analytics | Deleted entirely, 21 files (operator's call) |
+| C | 预测 + 经济指标 empty | **Orphaned seeders** — registered + cadenced |
+| D | 2 dead RSS feeds | Dead upstream (Cloudflare / 404), URLs replaced both sides |
+| E | Premium Stock Analysis / Backtesting | **Two** Yahoo blockers: CSRF crumb + a UA-platform-token 429 |
+| F | 贸易政策 (WTO) | **Two more orphaned seeders** — registered + cadenced |
+| G | Latest Brief | Not a bug: needs a digest subscription (**operator action, still open**) |
+| H | Settings modal "won't save" | Read/write variant mismatch — real bug, fixed |
+
+### The theme of this session, and the two rules worth carrying forward
+
+**1. Four orphaned seeders.** `seed-economy`, `seed-prediction-markets`, `seed-supply-chain-trade`,
+`seed-trade-flows` were working scripts that **nothing ever invoked** — absent from
+`scripts/railway-services.json`, every `seed-bundle-*`, and npm scripts. Each emptied a panel. All
+four are now registered with cadences taken from **each script's own TTL comments** (they document the
+intended cron — read them, don't invent one). The guard that should have caught this,
+`tests/railway-services-registry-coverage.test.mts`, only inspects scripts carrying a
+`//   - Service name:` header — **3 of 318 did**; now 7. **Widening it to all `scripts/seed-*.mjs`
+would likely surface more orphans and is the single highest-value follow-up here.**
+
+**2. Every empty panel lied about why.** Four separate panels rendered an empty state naming a cause
+that had already been ruled out — Predictions ("加载预测失败" on `data.length === 0`), Premium Stock
+Analysis ("waiting for eligible watchlist symbols" on `results.length === 0`, behind a bare
+`catch {}`), Economic Indicators, Latest Brief ("composing" whenever a pointer is missing). **Never
+take a panel's empty-state text as a diagnosis — find the branch that renders it and read its actual
+condition.**
+
+### Environment left running
+
+`nitric start --ci` (:9001), Vite (:3000), `scripts/ais-relay.cjs` (:3004),
+`docker compose -f docker-compose.dev.yml` (redis + redis-rest on 127.0.0.1:8079), and
+**`node scripts/clean-nitric-history.mjs &`** — that last one must run alongside `nitric start` EVERY
+session. **`nitric start` wedged twice this session** (once from a 662-request dashboard load, once
+from `git stash` churn rewriting watched files): every route returns `000`/hangs while all processes
+stay alive. A restart is the only cure — and note a *hung* request fires neither `.then` nor `.catch`,
+so UI shows a spinner rather than an error. Symptom to recognise, not a bug to chase.
+
+---
+
+## 🔭 NEXT INITIATIVE — data-pipeline review: Redis → operator's local SQLite
+
+**The chain**: Upstash Redis (production) / local Redis (dev) → `vscode-extension/sidecar/local-sync.mjs`
+→ `vscode-extension/sidecar/local-cache.db` (`node:sqlite`, table `kv_cache`) → the sidecar's
+`local-api-server.mjs` → the VS Code dashboard. Read side also touches
+`server/_shared/sidecar-cache.ts` and `vscode-extension/src/sidecarProcess.ts`.
+`SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || <sidecar>/local-cache.db`.
+
+**Operator principle that constrains any design discussion** (do not re-litigate): Upstash =
+production, local Redis = dev, **switched by ENV (`UPSTASH_REDIS_REST_URL`), never by codebase logic.**
+
+**Measured baseline, 2026-08-21** — `local-cache.db` holds **548 rows** in one table (`kv_cache`;
+columns `key, value, type, synced_at`), last written **Aug 17**:
+
+| prefix | rows | | prefix | rows |
+|---|---|---|---|---|
+| `intelligence:` | 300 | | `portwatch:` | 1 |
+| `resilience:` | 102 | | `theater_posture:` | 1 |
+| `energy:` | 100 | | **`summary:`** | **0** |
+| `economic:` | 41 | | **`classify:`** | **0** |
+| `supply_chain:` | 3 | | | |
+
+**Concrete questions this baseline already raises** (all unverified — start here):
+1. **7 of 15 `SYNC_PREFIXES` have ZERO rows**: `market:`, `climate:`, `risk:`, `rss:`, `forecast:`,
+   `theater-posture:` (hyphen — the underscore twin *did* sync), and `supply_chain:` at 3 rows looks
+   truncated. Some may simply have had no Redis keys on Aug 17, but `rss:`, `market:` and `forecast:`
+   demonstrably have keys now. Is this a scan/pagination limit, a TTL/skip rule, or genuinely empty?
+2. **`summary:` / `classify:` are still 0.** The session-30 fix that added them to `SYNC_PREFIXES` is
+   in the working tree but **`local-sync` has not been run since** (db Aug 17 vs. fix Aug 20). These
+   are the content-hash-keyed LLM outputs — the whole economic point of a shared cache, since two
+   operators reading the same article derive the same key and one model call serves both. Re-run and
+   confirm they land.
+3. **Nothing automates the sync.** It is a manual `npm run local-sync` (`package.json:37`). Decide
+   whether that is intended (the file's own header calls it a "one-way, periodic pull") or whether it
+   needs a cadence — and if so, whether it belongs in the scheduler alongside the seeders.
+4. **No freshness/TTL story is verified.** `synced_at` exists per row; nothing observed reads it. What
+   happens when a mirrored row outlives its Redis TTL — does the sidecar serve indefinitely-stale data?
+5. **Confirm the dev-vs-prod source.** In dev, `local-sync` will pull from whatever
+   `UPSTASH_REDIS_REST_URL` points at — currently the LOCAL redis proxy. Verify the operator's SQLite
+   is being fed from the source they expect, and that the `# [switched-to-local-redis]` marker in
+   `.env` is the only switch involved.
+
+**Read before starting**: memory `local_redis_dev_stack.md`, `redis_env_not_codebase_switch.md`,
+`nitric_local_data_layer_lessons.md`, `local_pipeline_and_vscode_dagu_plan.md`
+(**do NOT delete any `dist/` — the sidecar serves it directly**), and `supabase_migration_stage1.md`
+(Rust-side `LOCAL_SQLITE_PATH` wiring + the stage-5 MCP/"local Agent" half are still open).
+
+**Traps that apply directly to this work**: iterate `SCAN` to cursor 0 or you get a false "0 keys";
+`EXISTS <prefix>` is meaningless when handlers compose `prefix:a:b` keys — check how the key is built
+before testing for it; and `node --env-file` does not expand `${VAR}`.
+
+---
+
+
+## 🔀 HANDOFF (2026-08-20, THIRTIETH session end)
+
+**Scope**: picked up the twenty-ninth session's one open item (RSS panels never load) and resolved it,
+then followed the consequences through **three more independent bugs that were masking each other**.
+Dashboard now renders news across all regional panels and the console's 429 flood is gone
+(operator-confirmed). Handing off **4 panels with no data + 2 console errors**, all triaged to a root
+cause below — none of them started.
+
+**Git state**: 0 commits (operator's standing manual-commit discipline held). Working tree:
+`M .env.example`, `M TASKS.md`, `M scripts/_proxy-utils.cjs`, `M scripts/ais-relay.cjs`,
+`M scripts/fetch-gpsjam.mjs`, `M scripts/lib/supabase-admin.cjs`, `M server/_shared/direct-llm-quota.ts`,
+`M server/_shared/rate-limit.ts`, `M server/_shared/supabase-admin.ts`, `M server/gateway.ts`,
+`M server/worldmonitor/news/v1/list-feed-digest.ts`, `M vscode-extension/sidecar/local-sync.mjs`,
+`?? docker-compose.dev.yml`, `?? docker/`. `.env` also changed (gitignored). `npx tsc --noEmit` clean on
+all three tsconfigs.
+
+### THE BIG LESSON OF THIS SESSION — one symptom, four independent causes
+
+The news panels being empty was NOT one bug. Fixing each one exposed the next, and **each fix made the
+next symptom louder**, which repeatedly looked like regression:
+
+1. **RSS routing** — feed hosts split-tunneled outside the VPN, ECONNRESET. Fixed with a
+   `PROXY_URL` fallback in the relay's RSS path.
+2. **Batch deadline** — the digest could only fetch ~20 of 190 feeds. Fixed with env-tunable timeouts.
+   *Fixing #1 did not help until #2 was also fixed.*
+3. **Rate limiter** — all local traffic shares one `ip:unknown` bucket. Fixed with `RATE_LIMIT_LOCAL_DEV`.
+   *Only became visible once #2 made the app actually fetch things.*
+4. **Daily LLM quota (50/user/day)** — the real source of the surviving 429s. Fixed via
+   `DIRECT_LLM_DAILY_QUOTA_LIMIT=unlimited`. *Bypassing #3 changed nothing because #4 was never involved.*
+
+**Generalizable**: `429` is a status code, not a diagnosis — this app has three independent throttles
+that all return it. And **a fix that increases throughput can push a different subsystem past a limit
+it was never near before**; when errors get louder right after a fix, check that first.
+
+---
+
+## OPEN ITEMS HANDED OFF (all triaged, none started)
+
+### A. [RESOLVED 2026-08-20, thirty-first session] `classify-event` 500s on any headline containing a literal `%`
+
+**resolved**: patched `@nitric/sdk@1.4.2` via `patch-package` — `patches/@nitric+sdk+1.4.2.patch`,
+applied by a new `"postinstall": "patch-package"` script. Not committed (manual-commit discipline).
+Full rationale + evidence in `patches/README.md`.
+
+**The triage below was right about the mechanism but understated the damage.** The redundant
+`decodeURIComponent` was not only crashing on `%` — it was **silently corrupting every well-formed
+percent-escape too**. Measured on the wire, pre-patch: `?title=a%2520b` reached the handler as
+`a b` (two decodes). So a query param carrying a URL, or any text containing `%20`/`%26`, arrived
+mangled with no error at all. That is why the fix is to **remove** the decode rather than wrap it in
+`try/catch` — a catch stops the crash but leaves the corruption.
+
+**Proof the membrane already decodes** (so removing it is safe, not a guess):
+- Structural: in the same SDK function, **headers and path params are not decoded** — only query
+  params were. If values arrived raw, all three would need decoding.
+- Empirical, post-patch: `?title=a%2520b` → `a%20b` (correct, single decode) while an ordinary
+  `?title=x%20y` → `x y` (still decoded correctly, by the membrane).
+
+**Verified**: `%25` titles now return `401` exactly like plain ones (was `500`); a URL-valued param
+round-trips intact; `npx tsc --noEmit` clean on all three tsconfigs; `npx patch-package` re-applies
+idempotently; `URIError` count in the nitric log went 6 → 0.
+
+**Fix options closed out**: "check whether a newer `@nitric/sdk` fixes it" is a dead end — **1.4.2 IS
+the latest published version**. The POST-with-body option was rejected: it would fix one endpoint
+while leaving the silent corruption on the other 86 routes.
+
+**Left deliberately unpatched**: the identical pattern in `WebsocketNotificationContext`
+(`lib/index.js` ~15565). Same bug class, but this repo doesn't use Nitric websockets so the membrane's
+behaviour there was never verified. Verify before patching.
+
+**Correction to the triage below**: the note that a repo-side guard "is not possible" is right about
+the handler layer, but `adapt-vercel-handler.ts` is a viable instrumentation point — logging
+`ctx.req.query` there for one request is what settled the double-decode question in seconds. Worth
+remembering as a probe point, not a fix point.
+
+---
+
+<details>
+<summary>Original triage (kept for the trail)</summary>
+
+
+**The browser reports CORS; the truth is a 500.** The error response carries no
+`Access-Control-Allow-Origin` because the request dies **before any repo code runs**, so the gateway
+never attaches CORS headers. Do not go looking for a CORS misconfiguration — preflight is fine
+(verified: `OPTIONS` with a short title returns `204` with correct headers).
+
+**Root cause — a double-decode inside the Nitric SDK, not this repo.**
+`node_modules/@nitric/sdk/lib/index.js:13720` (`@nitric/sdk@1.4.2`), in `HttpContext.fromHttpRequest`:
+
+```js
+const query = http2.getQueryParamsMap().getEntryList().reduce(
+  (acc, [key, [val]]) => ({ ...acc,
+    [key]: val.length === 1 ? decodeURIComponent(val[0]) : val.map(v => decodeURIComponent(v)) }), {});
+```
+
+The gRPC membrane already hands over **decoded** values; the SDK decodes them a **second** time. So
+`?title=...4%25+past...` → first decode yields a bare `%` → `decodeURIComponent` throws
+`URIError: URI malformed` → 500, no CORS headers. Confirmed in the nitric log with a full stack trace
+ending at that SDK line.
+
+**Bisected precisely** (every row an `Origin: http://localhost:3000` GET):
+
+| title contains | status |
+|---|---|
+| plain words | 401 (expected — unauthenticated) |
+| `%24` ($) only | 401 |
+| `%2C` (,) only | 401 |
+| full-length title, no encoded chars | 401 |
+| **`%25` (literal `%`) — alone or in context** | **500** |
+
+**Why it matters more than it looks**: financial headlines are full of percent signs ("Gold price jumps
+4%"), so this fires constantly and silently drops those events from classification.
+
+**Fix options for the next agent** (none attempted): `patch-package` on the SDK; check whether a newer
+`@nitric/sdk` fixes it; or move `classify-event` to POST-with-body so the value never rides the query
+string. A repo-side guard is not possible at the handler level — the throw precedes all repo code.
+
+</details>
+
+### B. [RESOLVED 2026-08-20, thirty-first session] Umami analytics removed entirely
+
+**resolved**: operator chose full deletion over a local-domain guard. Umami is gone from the repo —
+21 files touched, 4 deleted. Not committed (manual-commit discipline).
+
+**Why deletion rather than a one-line guard**: the obvious minimal fix (`if (IS_LOCAL_DOMAIN) return`
+in `initAnalytics()`) is NOT zero-churn. Under `node:test` `import.meta.env` is undefined, so
+`IS_LOCAL_DOMAIN` is `true` in the test environment too, and `tests/secondary-startup.test.mts`
+asserted `appendedScripts.length === 1`. A guard silently turns ~5 passing tests into failures, so
+either path rewrites test semantics — which made it worth choosing the destination deliberately.
+
+**The footprint was much larger than "one module"** — worth recording, because a grep for `umami`
+only in `src/` would have missed most of it:
+- `src/services/analytics.ts` — Umami transport removed (script loader, queue, retry ladder,
+  `window.umami` beacon, the hardcoded production `data-website-id`). **The facade is kept**: ~40
+  modules import it, and the file already used "keep the function, empty the body" for a dozen
+  exports from an earlier de-SaaS pass. Every export survives, so no call site was touched. `EVENTS`
+  is retained so event names stay a closed, compile-checked set. 534 → 415 lines.
+- `server/_shared/brief-render.js` — a **second, independent** surface: it injected an Umami loader
+  `<script>` into rendered magazine HTML plus an inline `brief-thread-open` click tracker. Found only
+  via `tests/brief-thread-open-telemetry.test.mjs`, not from the client-side trail.
+- `shared/domain-config.js` + `.d.ts` — `resolveAbacusOrigin()` (the `abacus.` collector subdomain)
+  removed, then the **five** generated copies regenerated with `node scripts/sync-domain-config.mjs`
+  (`api/`, `scripts/` x2, `vscode-extension/sidecar/`). `scripts/sync-domain-literals.mjs` lost its
+  abacus substitution pair; `src/config/domain.ts` lost `ABACUS_ORIGIN`.
+- `src/bootstrap/sentry-init.ts` — the collector host was in `THIRD_PARTY_FETCH_HOST_ALLOWLIST`
+  (dropped beacons were being suppressed from Sentry). Removed.
+- `src/vite-env.d.ts` (`window.umami` global), `index.html` (stale explainer comment),
+  `Dockerfile.digest-notifications` + `ARCHITECTURE.md` (doc references).
+- **Deleted**: `.github/workflows/analytics-collector-monitor.yml` (15-min cron probing the
+  collector), `scripts/check-analytics-collector.mjs`, `tests/analytics-collector-monitor.test.mjs`,
+  `tests/analytics-beacon-rejection.test.mts`.
+- Trimmed: `tests/secondary-startup.test.mts` (466 → 150), `tests/brief-thread-open-telemetry.test.mjs`
+  (487 → 208), `tests/sentry-beforesend.test.mjs`, `e2e/secondary-startup.spec.ts`.
+
+**Verified**: `npx tsc --noEmit` clean on all three tsconfigs; `node scripts/sync-domain-config.mjs
+--check` reports the 5 copies in sync; the Vite-served `src/services/analytics.ts` and `index.html`
+both contain **zero** `umami`/`script.js` references, so the 404 cannot recur. Test deltas are
+removals only, no regressions: secondary-startup 13→8 pass/0 fail, sentry-beforesend 225→222 pass/0
+fail, brief-thread-open-telemetry 21 pass+1 fail → 9 pass/0 fail (**that pre-existing failure was
+inside a removed block — it went away by deletion, it was not fixed**), signup-analytics-gate 13/13
+unchanged. 33 test files touching the changed modules were run; the only failures
+(`brief-magazine-render`, `brief-edge-route-smoke`, `china-coverage-health`, `mcp-resources`) were
+confirmed **pre-existing** by a full `git stash` A/B against clean HEAD.
+
+**Deliberately left in place** (flagged, not decided):
+- The `data-thread-open` / `data-country` / `data-severity` / `data-followed` attributes still
+  stamped on magazine source-links. They now have no consumer, but removing them cascades into the
+  recipient-watchlist "followed" computation, which is real product logic with its own tests.
+- `e2e/secondary-startup.spec.ts` **lost its positive control**: the deferred Umami request was the
+  one request that environment reliably produced after idle, so the spec is now negative-only. A
+  NOTE in the file says so. This is exactly the session-30 trap — a test that cannot produce a
+  positive proves nothing — so do not read a green run there as proof the deferred loader fired.
+
+**Separately discovered, NOT caused by this work**: `npx vite build` fails at HEAD with
+`[wm-variant-dashboard-html] anchor "hreflang alternates" matched 0 time(s)`. Confirmed pre-existing
+via `git stash` A/B — **the production build is currently broken on a clean tree.** Not triaged.
+
+---
+
+<details>
+<summary>Original triage (kept for the trail)</summary>
+
+
+Cosmetic, self-inflicted by de-branding. `src/services/analytics.ts:13` builds
+``UMAMI_SCRIPT_SRC = `${ABACUS_ORIGIN}/script.js` ``, and `ABACUS_ORIGIN` derives from
+`VITE_APP_DOMAIN`, which is **unset** in this fork — so it resolves to the local dev origin and Vite
+answers `/script.js` with `index.html` (hence the MIME complaint). It self-limits:
+`UMAMI_LOAD_ATTEMPT_LIMIT = 2`, then stops.
+
+Umami is SaaS analytics with a hardcoded production `UMAMI_WEBSITE_ID`
+(`e8800335-…`) — almost certainly **dead weight in an internal fork**, and a candidate for deletion
+rather than configuration (consistent with the SaaS-cruft removal already done in earlier sessions).
+Minimal alternative: early-return from `initAnalytics()` when the domain is local
+(`IS_LOCAL_DOMAIN` already exists in `src/config/domain.ts`).
+
+### C. [PARTLY RESOLVED 2026-08-20, thirty-first session] Panels with no data
+
+**Two of them resolved, and the triage below was wrong about both.** Root cause for each was an
+**orphaned seeder** — a working script that nothing ever invoked — not a render/RPC bug.
+
+**预测 (Predictions)** reads `prediction:markets-bootstrap:v1` via `list-prediction-markets`. Redis
+had **0** `prediction:*` keys. `scripts/seed-prediction-markets.mjs` existed but was referenced
+**nowhere** — not in `railway-services.json`, not in any bundle, not in any npm script; the only
+mentions anywhere were code comments. **The triage below looked at the wrong dataset**: it counted
+`forecast:*` keys (36) and concluded "data exists → render bug", but this panel renders
+`PredictionMarket[]` from the **`prediction`** domain, not `forecast:predictions:v2`.
+Compounding it, `PredictionPanel.renderPredictions()` calls `showError(failedPredictions)` when
+`data.length === 0` — **an empty list is displayed as a load failure**, which disguised a
+never-seeded key as a fetch error.
+
+**经济指标 (Economic Indicators)** — the client asks for FRED series `DGS2`, `DGS10`, `DGS30`
+(`data-loader.ts:2210`). Redis held only **5** `economic:fred:*` keys, all European (ESTR,
+EURIBOR3M/6M/1Y, GSCPI) written by the scheduled `seed-bundle-ecb-eu`. The US series come from
+`scripts/seed-economy.mjs` — **also orphaned**. So `fredData.length === 0` → "上游API不可用".
+
+**Why the triage said "29 keys present, so it's a render bug"**: running the orphaned seeder by hand
+restores **exactly 29** `economic:fred:*` keys. Whoever observed 29 had run it manually; the keys
+carry a TTL (26h) and nothing re-seeds them, so they decayed to 5. **A key count is a snapshot, not
+proof of a working pipeline** — "data is in Redis" and "something keeps putting data in Redis" are
+different claims, and only the second keeps a panel alive.
+
+**Fixed durably** (not just re-seeded):
+- Both seeders added to `scripts/railway-services.json` (`nixpacks-root-repo`, with `requiredEnv`).
+- Cadences added in `gcp/scheduler/main.ts`, each following the repo's TTL = 6x-interval rule:
+  `seed-economy` **hourly** (`STRESS_INDEX_TTL` 21600 = 6h, same TTL/cadence as `seed-forecasts`),
+  `seed-prediction-markets` **every 30 min** (`CACHE_TTL` 10800 = 3h, a figure the constant's own
+  comment already documents as "6x the 30 min cron interval").
+- Ran both once: `seed-economy` 15.8s (FRED 5 → **29** keys, plus macro-signals, crude-inventories,
+  stress-index), `seed-prediction-markets` 34.5s (272 raw markets → **75** stored, 25 each across
+  geopolitical/tech/finance). `prediction:markets-bootstrap:v1` now exists.
+
+**The guard that should have caught this was nearly inert.** `tests/railway-services-registry-coverage.test.mts`
+checks "every script header-documented Railway service is registered" — but it only inspects scripts
+that opt in by carrying a `//   - Service name: <x>` line, and **only 3 of 318 scripts did**. A script
+that was never registered also never documented itself, so the one failure mode the test exists to
+catch is the one it structurally cannot see. Both seeders now carry that header (3 → 5 covered), so
+removing either from the registry fails the test loudly. **Widening that guard to all
+`scripts/seed-*.mjs` would likely surface more orphans — not attempted, worth doing.**
+
+**Verified**: `npx tsc --noEmit` clean on all three tsconfigs; the scheduler reloaded without
+throwing its "no cadence registered" build-time error; registry-coverage test unchanged at 8 pass /
+1 fail (that failure is the pre-existing Dockerfile-CMD one).
+
+**Still open from this item**: 供应链 (supply chain, 181 keys — untouched this session) and 贸易政策
+(WTO, 0 keys, never seeded — check whether it too is an orphaned seeder rather than a missing one).
+
+**Not a bug**: PREMIUM STOCK ANALYSIS / PREMIUM BACKTESTING showing "waiting for eligible watchlist
+symbols" is correct behaviour for an empty watchlist, not missing data.
+
+---
+
+<details>
+<summary>Original triage (kept for the trail — note it misidentified both datasets)</summary>
+
+
+Verified what is actually in Redis for each — this is the part that saves the next agent an hour:
+
+| Panel | Redis | Diagnosis |
+|---|---|---|
+| 经济指标 (FRED) | **29 keys** present (`economic:fred:v1:*`) | data exists, panel shows "尚无指标数据 – FRED可能正在加载" → **render/RPC path bug** |
+| 预测 (forecast) | **36 keys** present (`forecast:predictions:v2` etc.) | data exists, panel shows "加载预测失败" → **render/RPC path bug** |
+| 供应链 (supply chain) | **181 keys** present (`supply_chain:portwatch-ports:v1:*`) | data exists, panel shows "No data" → **render/RPC path bug** |
+| 贸易政策 (WTO) | **0 keys** | genuinely never seeded — panel is telling the truth; needs a seeder, not a fix |
+
+The first three are one class: the data is present and the rendering path is not reaching it. Worth
+checking whether they share an RPC or a common client cache. **Note the `classify-event` bug in (A) may
+be implicated** — several panels classify their items before display.
+
+**Useful for testing any of these**: `X-WorldMonitor-Key: $WORLDMONITOR_RELAY_KEY` authenticates against
+the API (returns 200 on `list-feed-digest`); the same value in `X-Api-Key` returns 401. Not every
+endpoint accepts it — `classify-event` does not, which invalidated two of my own test runs.
+
+</details>
+
+### D. [RESOLVED 2026-08-20, thirty-first session] Two dead RSS feeds (news24 403, eia.gov 404)
+
+Reported as console errors from `/api/rss-proxy`. **Neither was a code bug** — the proxy was
+faithfully passing upstream status through, and both hosts are correctly allowlisted.
+
+- **`feeds.news24.com`** → 403 with a `<title>Just a moment` body: a **Cloudflare bot challenge**.
+  Confirmed not IP-based — it 403s from the residential IP *and* through `PROXY_URL` (Decodo), so no
+  proxy fallback recovers it. Same failure mode as the `blockworks.co` case already locked out by
+  `tests/feeds-client-server-parity.test.mjs`.
+- **`www.eia.gov/rss/press_room.xml`** → plain 404; that feed path no longer exists.
+
+**Fixed by replacing the URLs (names left untouched — feed names are keys in
+`shared/source-provenance-declarations.ts` and the parity test)**:
+- News24 → `news.google.com/rss/search?q=site:news24.com+when:1d&hl=en-ZA&gl=ZA&ceid=ZA:en`, in
+  **both** `src/config/feeds.ts` and `server/worldmonitor/news/v1/_feeds.ts` (via `gnLocale`). Both
+  sides were required: `News24` is not in the parity test's `KNOWN_DRIFTS`, so changing only the
+  client would have failed the build on new routing drift. The test is designed to force exactly this.
+- EIA → `www.eia.gov/rss/todayinenergy.xml`, in the two client entries (`EIA Reports`,
+  `EIA Press Room`). The server side already used a `gn('site:eia.gov …')` workaround — **the two
+  feed lists had silently drifted**, and `EIA Reports` is a grandfathered `KNOWN_DRIFTS` entry, so it
+  stays a drift and the test still passes.
+
+**Verified live** through the app's own relay (`X-Cache: MISS`, i.e. real fetches, not cached
+artifacts): EIA 18 items, News24-via-Google-News 99 items. Parity test still 5/5; tsc clean.
+
+**Related but NOT the same class — `www.atlanticcouncil.org` 403s intermittently.** Worth recording
+because the obvious inference is wrong: the feed is healthy (200 + 174 KB of valid RSS direct, via
+`PROXY_URL`, and from a bare Node `https.get` using the relay's exact headers). The relay's own log
+shows it succeeding (`relay_status=200`) and only *then* 403ing — a Fastly/Varnish edge response
+(`Error 54113`), i.e. **rate limiting of a burst, not a block**. Atlantic Council appears in **two**
+categories in each feed list, so a dashboard load requests the same URL twice in quick succession;
+repeated probing during debugging makes it worse. The relay handles it correctly — exponential
+backoff (60s → 120s → 240s) and `X-Cache: BACKOFF-STALE` from cache — so no data is lost. Left alone.
+A possible improvement, not attempted: in-flight request coalescing in the relay, so N simultaneous
+requests for the same feed URL produce one upstream fetch.
+
+Note: `feeds.news24.com` deliberately remains in the three `rss-allowed-domains` files — an allowlist
+entry for a host we no longer request is harmless, and removing it risks the relay-only/allowlist
+parity invariant asserted in `api/rss-proxy.test.mjs`.
+
+
+</details>
+
+---
+
+### E. [RESOLVED 2026-08-21, thirty-first session] Premium Stock Analysis / Backtesting empty — TWO independent Yahoo blockers
+
+Panels showed "Stock analysis is waiting for eligible watchlist symbols" **even with NVDA saved to the
+watchlist**. The watchlist was never the problem: `STOCK_ANALYSIS_FREE_LIMIT` is 4 and the list is
+topped up from defaults, so targets always resolve. The real condition at `data-loader.ts:1649` is
+`results.length === 0`, and `runThrottledTargetRequests` only keeps results where `result.available`
+is true **and silently swallows every error** (`catch {}`) — so any upstream failure surfaces as a
+message naming the one cause already ruled out. Third panel this session whose empty state asserts a
+cause it never checked (see items C and D).
+
+`available:false` came from `fetchFreshAnalysis()` returning null. Two *independent* upstream failures,
+each needing its own fix:
+
+**1. `quoteSummary` → 401 `{"code":"Unauthorized","description":"Invalid Crumb"}`.** Yahoo requires a
+CSRF crumb plus the cookie the crumb is bound to. **Not IP-related** — identical 401 from a residential
+IP and through `PROXY_URL`, so the existing proxy fallback could never fix it, and the code comment in
+`ais-relay.cjs` blaming "Railway container IPs" was wrong (corrected in place). Session 26 diagnosed
+this and left it unfixed; now implemented in **both** places that call the endpoint:
+- `server/worldmonitor/market/v1/analyze-stock.ts` — a cached crumb session (30 min TTL, concurrent
+  misses coalesced, one refresh-and-retry on a 401).
+- `scripts/ais-relay.cjs` — same flow in the relay's CJS style; the cookie is now also threaded into
+  the Decodo curl fallback, since the URL carries a cookie-bound crumb.
+
+**2. `chart` (v8) → 429, keyed to the User-Agent's PLATFORM TOKEN.** The bigger surprise. Yahoo 429s
+the `Macintosh` token and serves 200 to `Windows NT` **from the same IP seconds apart, regardless of
+Chrome version**:
+
+| UA | result |
+|---|---|
+| `Macintosh …Chrome/131` (the shared constant) | 429 |
+| `Macintosh …Chrome/139` / `…/141` | 429 |
+| `Windows NT …Chrome/120` / `…/141` | 200 |
+
+Alternating A/B, 5/5 reproducible. `server/_shared/constants.ts` held the **only Macintosh UA
+definition in the repo** — every other `CHROME_UA` is already Windows/Linux. That asymmetry explains
+the whole split symptom: the relay (Windows UA) reached `chart` fine and only ever hit the crumb 401,
+while everything importing the shared constant was 429'd before it got anywhere. Operator chose to
+update the shared constant globally; it now carries a Windows token plus the evidence in a comment.
+**Recorded honestly: a per-UA throttle is a rate limit, not an auth wall — if Yahoo request volume is
+the real driver this will decay again, and the durable fix is fewer/better-cached Yahoo calls.**
+
+**A regression the test suite caught, worth remembering.** The first crumb implementation returned
+`null` when the handshake failed, so a transient failure to *obtain* a crumb meant sending **no request
+at all** — strictly worse than before. `tests/stock-analysis.test.mts` went 9 pass/0 fail → 4/5, and a
+`git stash` A/B confirmed it was mine, not pre-existing. Fixed by degrading to an un-crumbed request
+(exactly the pre-crumb baseline). **When adding an auth handshake in front of an existing call, make
+handshake failure fall back to the old path rather than becoming a new hard failure.**
+
+**Verified**: `analyzeStock('NVDA')` returns `available=true price=216.85 signal="Hold"(51)
+analysts=61 target=304.12` — the analyst count and price target come *only* from the crumb path, so
+they prove both fixes. Relay log: `[Market] Seeded 12/12 sectors, 12 valuations (redis: OK)`, and
+Yahoo `quoteSummary` 401s went **2705 → 0** across a full restart cycle, with zero Yahoo errors of any
+kind. `npx tsc --noEmit` clean on all three tsconfigs; `stock-analysis.test.mts` back to 9/0; relay
+suites green (`ais-relay-rss` 7/7, health-recon 6/6, opensky-tls 2/2, dockerfile-imports 4/4).
+Pre-existing failures confirmed unchanged by A/B: `premium-fetch` 18/4, `gateway-rpc-no-store-contract`
+1/3, `gateway-cdn-origin-policy` 4/13.
+
+**Also noted, not fixed**: `eia.gov/rss/todayinenergy.xml` (the replacement feed from item D) takes
+**~9.2s** upstream against `api/rss-proxy.js`'s **12s** budget, so a cold fetch can 504 before the
+cache warms. It succeeds and then serves from cache in 0.001s. Marginal, not broken — but if it
+becomes noisy, either raise that budget for this host or pre-warm the feed.
+
+---
+
+
+### F. [RESOLVED 2026-08-21] 贸易政策 (Trade Policy / WTO) — two more orphaned seeders
+
+`trade:*` and `comtrade:*` held **zero** keys, so the panel's "WTO data temporarily unavailable /
+no tariff overview data" was honest. Same root cause as item C: two working seeders that **nothing
+ever invoked** (registry=0, bundles=0, no npm script).
+
+- `scripts/seed-supply-chain-trade.mjs` → `trade:restrictions:v1:tariff-overview:50` (the 概览 tab),
+  `trade:barriers:v1:tariff-gap:50`, `trade:tariffs:v1:*`, `trade:customs-revenue:v1`.
+  Needs `WTO_API_KEY` + `FRED_API_KEY` — **both already in `.env`**, so nothing was missing but the
+  invocation. Ran it: 8.6 min, `trade:*` went **0 → 418 keys**.
+- `scripts/seed-trade-flows.mjs` → `trade:flows:v1:{reporter}:{partner}:{years}` and
+  `comtrade:flows:{reporter}:{cmd}`. Needs no API key (`COMTRADE_API_KEY` is unset and is not
+  required). Ran it: 8.6 min, 102 records — `comtrade:flows*` 55 keys, `trade:flows*` 256 keys.
+
+**Registered durably** at the cadence each script's own TTL comments already assume — read them, don't
+invent one: `seed-supply-chain-trade` **every 6h** (its TTLs say "8h — 2h buffer over 6h cron
+cadence"), `seed-trade-flows` **daily 04:00 UTC** (`CACHE_TTL = 259200 // 72h = 3x daily interval`,
+placed off the 6h ticks since each run takes ~8.5 min). Both now carry the `// - Service name:` header,
+so the registry-coverage guard covers them — **3 → 7 scripts covered** across this session.
+**Do not retune those TTLs to fit a different cadence**: issue #4864's note in
+`seed-supply-chain-trade.mjs` explains each data-key TTL is paired with a `maxStaleMin` and they must
+move in lockstep or you open a silent EMPTY / false-STALE window.
+
+**A false negative I nearly published**: `EXISTS trade:flows:v1` and `EXISTS comtrade:flows` both
+returned 0 *after* a successful seed, which read as "the seeder didn't work". They are **key prefixes,
+not keys** — the handlers build `trade:flows:v1:{reporter}:{partner}:{years}` and
+`comtrade:flows:{reporter}:{cmd}`. Same shape of mistake as reading a partial `SCAN` batch as "0 keys".
+**Check how the handler composes the key before testing for it.**
+
+### G. [OPEN — needs an operator action, not a code fix] LATEST BRIEF stuck on "Your brief is composing"
+
+Not a bug and not a seeder. The digest cron said it plainly:
+
+```
+[digest] Cron run start: 2026-08-21T03:33:36.608Z
+[digest] watchlist scan: hashes=1274 candidates=21 events=0 enqueued=0
+[digest] No digest rules found — nothing to do
+```
+
+The brief is **user-scoped and subscription-driven**. `api/latest-brief` returns `status:'composing'`
+whenever the `brief:latest:{userId}` pointer is missing — **for any reason** — so "your brief is
+composing" is the fallback for "no brief exists", not evidence anything is in flight. (Fourth panel
+this session whose empty state asserts a cause it never checked.)
+
+**Ruled out, in order** — worth recording so nobody re-walks it:
+- `BRIEF_URL_SIGNING_SECRET` — **set**. (It gates compose entirely; a missing secret logs a loud
+  error and returns `composeFailed: 1`.)
+- `BRIEF_COMPOSE_ENABLED` — absent from `.env`, which **means enabled**: the code is
+  `BRIEF_COMPOSE_DISABLED_BY_OPERATOR = process.env.BRIEF_COMPOSE_ENABLED === '0'`, so only the
+  literal `'0'` disables it. (I initially misread this as a false default — check the comparison, not
+  just the presence of the var.)
+- `VITE_DIGEST_CRON_ENABLED` — also absent, also means enabled (`!== '0'`), so the settings UI does
+  render the digest options.
+- Supabase access — fine. `fetchDigestRules()` returned **0** cleanly, no error, so the
+  `worldmonitor.alert_rules` table is simply empty (consistent with the memory note that all 8 tables
+  had 0 rows — these features have never been exercised in this fork).
+
+**What actually unblocks it** (operator action):
+1. Settings → Notifications → digest mode → **Daily digest** (writes the `alert_rules` row via
+   `setDigestSettings`).
+2. Then run `node --env-file=.env scripts/seed-digest-notifications.mjs`, or restart nitric.
+   **Locally the digest is NOT on a timer**: `nitric.yaml` starts it with `node $SERVICE_PATH`, so it
+   performs one run at startup and exits (`pgrep` confirms it is not resident). It is neither in
+   `CADENCES` nor in `ALWAYS_ON_NOT_SCHEDULED` — it is a `dockerfile`-mode entry, so the scheduler
+   never touches it.
+
+**The step that actually trips people up — `isDue()` is an EXACT hour match**, not a "has enough time
+passed" check:
+
+```js
+const primaryHour = rule.digestHour ?? 8;          // default 08:00
+const localHour   = toLocalHour(nowMs, rule.digestTimezone ?? 'UTC');
+if (localHour !== primaryHour) return false;        // ← bails immediately
+```
+
+So choosing "Daily digest" alone composes nothing unless the current hour in the rule's timezone happens to
+equal its digest hour. Set the hour select (`#usDigestHour`, revealed once Delivery Mode leaves
+real-time) to the **current** hour and confirm the TIMEZONE field matches, then run the digest — or
+the run will correctly report "not due" and you will think the fix failed.
+
+**UI-vs-code naming, worth writing down**: the panel section is labelled **"Delivery Mode"**, the
+client/server field is `digestMode`, and the Postgres column is `digest_mode`. Three names, one
+control (`<select id="usDigestMode">`). Telling an operator to "set digest mode" sends them looking
+for a label that does not exist.
+
+---
+
+
+### H. [RESOLVED 2026-08-21] Settings → Notifications discarded changes on reopen — read/write variant mismatch
+
+**Real code bug, found while trying to enable a digest for item G.** Operator reported the modal "does
+not save at all" — Delivery Mode reverted to "Real-time (immediate)" every reopen. It *was* saving;
+the modal was rendering a **different row than it wrote**.
+
+`GET /api/notification-channels` → `getAlertRules(userId)` returns **every variant's row** for the
+user, in no guaranteed order (it filters on `user_id` only). The modal then did
+`data.alertRules?.[0]`. But all writes are variant-scoped — `setAlertRules` / `setDigestSettings` /
+`setQuietHours` each send `variant: SITE_VARIANT` and the server upserts on `(user_id, variant)`.
+
+Observed rows for this user, straight from `getAlertRules()`:
+
+```
+[0] variant="full"     enabled=false  countries:["CN"]     ← NO digestMode  ← rendered
+[1] variant="finance"  enabled=true   digestMode:"daily"   ← written
+```
+
+So the modal rendered `full`, hit `digestMode ?? 'realtime'`, and showed Real-time — while Postgres
+correctly held `daily` on `finance`. Every symptom follows, including the confusing one: Country Scope
+showed **CN** (row [0] has it) at the same time Delivery Mode looked unsaved (row [0] lacks it).
+On localhost `SITE_VARIANT` comes from `localStorage['worldmonitor-variant']`, so this reproduces for
+anyone who has ever switched variants — the modal silently splits across rows.
+
+**Fix**: new `selectRuleForVariant()` in `src/services/notification-channels.ts` — match
+`rule.variant === SITE_VARIANT`, falling back to the first row so a user whose only row predates
+variant scoping still sees their settings. Applied at all **three** variant-agnostic reads
+(`notifications-settings.ts` ×2, `notification-channels.ts` ×1 for watchlist ticker sync — that one
+was silently syncing tickers onto the wrong variant's row too).
+
+**Verified against the live rows**: old `[0]` → `variant=full, digestMode=undefined` → dropdown
+"realtime"; new → `variant=finance, digestMode=daily` → dropdown "daily". `npx tsc --noEmit` clean on
+all three tsconfigs. `notification-channels-watchlist-sync` 4/0 and
+`notifications-settings-country-picker` 44/0 unchanged; the three failures nearby
+(`dashboard-critical-css` 7/2, `no-non-timing-safe-secret-compare` 4/1,
+`notification-channels-relay-timeout` 3/1) confirmed **pre-existing** by `git stash` A/B.
+
+**Generalizable**: when a write is scoped by a key the matching read does not filter on, the UI
+appears to discard input — and it will look like a save bug while the data is sitting in the database.
+**Diff the read's selector against the write's scope before touching either.** Also note the
+fire-and-forget auto-save (no Save button, 800 ms debounce) means a successful write shows no
+confirmation, so the screen looks identical whether the save worked or not — the DB is the only
+honest witness.
+
+---
+
+
+## TRAPS CONFIRMED THIS SESSION — read before touching anything
+
+1. **`api/*/v1/[rpc].js` are stale 1.5 MB bundles, but they are NOT what runs.**
+   `gcp/api/routes.generated.ts` imports them **extensionless**, and a 445-byte `[rpc].ts` sits beside
+   each one — **tsx resolves `.ts` first**, and that file imports `server/gateway` + the real handlers.
+   Source edits ARE live. The `.js` files are from 2026-08-08 and contain none of this session's work.
+   **Do not "fix" a working source edit by rebuilding or editing those bundles.** I nearly did.
+2. **`nitric start` wedges under concurrent load.** A 700-request burst at 25-way parallelism produced
+   427 connection failures and left the API answering nothing (HTTP 000 after 30s) while every process
+   stayed alive. `pgrep` showed a healthy stack that was not serving; only a restart cleared it.
+   **Do not load-test this stack**, and never treat "the process is running" as proof it is serving.
+3. **Upstash = production, local Redis = dev, switched by environment — never by codebase logic.**
+   Operator's words: *"they should be switch based on environment, not codebase logics."*
+   `UPSTASH_REDIS_REST_URL` IS the switch. Do not raise it as a design decision, do not branch on it,
+   and do not describe dev-points-at-local as a gap (in dev there are no other operators to share with).
+4. **A negative result from a test that cannot produce a positive is not evidence.** Two of my HTTP
+   tests "proved" a fix worked when they could not have detected failure (`classify-event` 401s before
+   reaching the limiter; 700 requests over >120s never exceed 600 in any 60s window). Testing the module
+   directly settled it in seconds.
+5. **`EVAL` is NOT blocked on the local Redis proxy** (returns `{"result":1}`) — corrects a stale
+   session-29 note. `Ratelimit.slidingWindow` works; any 429 from it is genuine exhaustion.
+6. `node --env-file` does not expand `${VAR}`; `.env.bak*` is NOT gitignored — never write one into the repo.
+
+---
+
+## Environment left running
+
+`nitric start --ci` (:9001), Vite (:3000), `scripts/ais-relay.cjs` (:3004),
+`docker compose -f docker-compose.dev.yml` (redis + redis-rest on 127.0.0.1:8079), and
+**`node scripts/clean-nitric-history.mjs &`** — that last one must be run alongside `nitric start`
+EVERY session (5-minute `setInterval`, does not survive a reboot, nothing auto-starts it). It is
+path-based (`readdirSync` + `truncateSync` each tick), so it survives a nitric restart fine.
+Restart nitric after any `.env` change; Vite only needs a restart for `VITE_`-prefixed vars.
+
+---
+
+## 🔀 HANDOFF (2026-08-20, twenty-ninth session end) — read this first, supersedes every block below
+
+**Git state**: 0 commits (operator's standing "commit manually" discipline held). Working tree carries
+everything from sessions 26-28 plus this session's: `M .env.example`, `M TASKS.md`,
+`M scripts/fetch-gpsjam.mjs`, `M scripts/lib/supabase-admin.cjs`, `M server/_shared/supabase-admin.ts`,
+`?? docker-compose.dev.yml`, `?? docker/`, plus the thirtieth session's `M scripts/ais-relay.cjs` and
+`M scripts/_proxy-utils.cjs`. `.env` also changed (gitignored). `npx tsc --noEmit` clean on all three
+tsconfigs (`tsconfig.json`, `tsconfig.api.json`, `tsconfig.gcp.json`). Backups of `.env` are in the session scratchpad, **never** in the repo (`.env.bak*` is NOT
+gitignored — re-verified this session).
+
+### [RESOLVED 2026-08-20, thirtieth session] The REAL remaining 429s — a daily LLM spend quota
+
+The rate-limit bypass below did not stop the 429s because a **third, independent** throttle was doing it:
+`DIRECT_LLM_DAILY_QUOTA_LIMIT = 50` in `server/_shared/direct-llm-quota.ts` — **50 LLM calls per user
+per day**, gating exactly five paths (`classify-event`, `deduct-situation`, `get-country-intel-brief`,
+`analyze-stock`, `summarize-article`). Those are precisely the endpoints that were 429ing, and no others.
+
+Live counters proved it: `llm:direct-usage:<uid>:2026-08-20 = 50` (pinned AT the cap) and
+`:2026-08-19 = 53`. **It is keyed by UTC date, so no restart could ever clear it** — which is why three
+nitric restarts appeared to change nothing. Same root driver as the other two: the digest went from 0 to
+267 articles.
+
+**Lesson: "429" is a status code, not a diagnosis.** This app has three independent throttles that all
+return 429 — global per-IP sliding window, per-endpoint policy table, and this daily LLM spend quota.
+Bypassing the first two changed nothing because the third was never involved.
+
+**Fix (operator: "this is our own fork for internal tools, no longer SaaS open for public users, so no
+more limit")**: `DIRECT_LLM_DAILY_QUOTA_LIMIT` is now read from env —
+unset → 50 (original default, unchanged); a positive int → that budget; `0`/`off`/`unlimited` → disabled
+via a new exported `DIRECT_LLM_QUOTA_DISABLED`, checked at the top of
+`shouldReserveGatewayDirectLlmQuota` so the counter is never even incremented. **A malformed value falls
+back to 50, not to unlimited**, so a typo can never silently uncap LLM spend. Set to `unlimited` in
+`.env` under `# [internal-fork-no-llm-quota]`; documented in `.env.example`. Both exhausted counters
+deleted. Verified: unset→50/false, `unlimited`→0/true, `abc`→50/false.
+
+### IMPORTANT correction — `api/*/v1/[rpc].js` are stale, but they are NOT what runs
+
+Earlier notes say these are gitignored build artifacts; here is the part that matters and was nearly a
+false alarm. `gcp/api/routes.generated.ts` imports them **extensionless** (`from '../../api/news/v1/[rpc]'`)
+and nothing imports `server/gateway.ts` directly — which looks like "the stale bundle is what serves".
+It isn't: **a 445-byte `[rpc].ts` sits beside each 1.5 MB `[rpc].js`, and tsx resolves `.ts` first.**
+That `.ts` imports `server/gateway` + the real handlers, so source edits ARE live. The `.js` bundles are
+from 2026-08-08 and contain none of this session's work, but they are dead weight, not the served path.
+**Do not "fix" a source edit that appears not to apply by rebuilding or editing these bundles.**
+
+### [RESOLVED 2026-08-20, thirtieth session] LLM output was never mirrored to operators
+
+Operator's question: *"why not cached so it can share to all our operators on their own local sqlite db?
+so no repeat same things for every single operator?"* — correct instinct; the machinery existed but one
+list was wrong.
+
+**What already existed (no change needed):**
+1. **LLM output is cached, content-keyed.** `summarize-article` wraps its model call in
+   `cachedFetchJsonWithMeta(cacheKey, CACHE_TTL_SECONDS=86400)`; the key comes from
+   `src/utils/summary-cache-key.ts`, self-described as *"the canonical cache-key builder shared by both
+   client and server"* — a content hash over headlines/bodies/geo/mode/variant/lang. Two operators
+   reading the same article therefore derive the SAME key, which is the whole precondition for sharing.
+   `classify-event` is the same (`CLASSIFY_CACHE_TTL = 86400`).
+2. **The share pipeline exists**: `vscode-extension/sidecar/local-sync.mjs` — *"One-way, periodic pull:
+   shared Upstash Redis → local SQLite cache"* — with `server/_shared/sidecar-cache.ts` reading
+   `LOCAL_SQLITE_PATH`. Exactly the architecture the operator described.
+
+**The actual bug**: `SYNC_PREFIXES` omitted `summary:` entirely, and listed `classify:*` as a deliberate
+exclusion labelled *"ML/log metadata"* — a misclassification. Live values confirm it:
+`classify:sebuf:v6:<hash>` holds `{"level":"info","category":"economic","timestamp":…}`, i.e. the cached
+LLM verdict that drives panel alert levels, and `/api/intelligence/v1/classify-event` is itself one of
+the LLM-spend-quota'd paths, so a miss costs a real model call. So the two most expensive key families
+in the store were the two that never mirrored down, and **every operator silently re-paid for identical
+summaries and classifications, in every environment**.
+
+Same failure mode the file already documents for `theater-posture:` (*"read empty theaters forever… no
+error, because the key it needs was never mirrored down"*) — but costing money instead of a blank panel.
+
+**Fix**: added `'summary:'` and `'classify:'` to `SYNC_PREFIXES`, and removed the now-contradictory
+`classify:*` entry from the exclusion note above it. 48 keys newly in scope locally (18 summary,
+30 classify). No test guards that list. `node --check` clean.
+
+**CORRECTION to an earlier draft of this entry** — operator guidance, worth not repeating:
+> *"upstash redis is for production, local redis is for dev, they should be switch based on environment,
+> not codebase logics"*
+
+An earlier version of this section framed *".env points at local Redis, so nothing is shared between
+operators"* as a blocker and asked where the canonical store should live. That was wrong on both counts:
+`UPSTASH_REDIS_REST_URL` **is** the switch (local in dev, hosted in prod), it is settled configuration
+rather than an architecture decision, and in dev there are no other operators to share with — correct
+behaviour, not a gap. Never branch on which Redis is in play; never escalate it as a design question.
+
+---
+
+### [RESOLVED 2026-08-20, thirtieth session] 429 flood — local dev shares ONE rate-limit bucket
+
+Surfaced right after the news fix landed, and **the news fix is what made it visible**:
+`/api/news/v1/summarize-article` is capped at **30 req/60s**, and the digest went from 0 articles to
+**267**. The panels summarize what they render, so the cap is ~9x oversubscribed. The console got
+louder *because* the fix worked.
+
+**Second, deeper mechanism**: `getClientIp()` (`server/_shared/client-ip.ts`) deliberately refuses to
+trust `cf-connecting-ip` / `x-forwarded-for` (GHSA-c267, #3531) and falls back to `x-real-ip` — a header
+only a reverse proxy sets. **There is no proxy in front of `nitric start`**, so every request collapses
+onto the `UNKNOWN_CLIENT_IP` sentinel and the entire dashboard (~20 panels on first paint) shares ONE
+per-IP bucket against the global 600/60s. Observed on a real key:
+`rl:ep:/api/intelligence/v1/classify-event:ip:unknown:29786843`.
+
+**Not a limiter malfunction** — verified `EVAL` is NOT blocked on the local Redis proxy (returns
+`{"result":1}`), so `Ratelimit.slidingWindow` works and `limitWithFallback` never engages its non-Lua
+path. These were genuine exhaustions. (This corrects a stale session-29 note claiming EVAL was blocked.)
+
+**Fix**: new `RATE_LIMIT_LOCAL_DEV=1` env flag gating the same three early-returns the existing
+`isLocalSidecarMode()` bypass already used (`rate-limit.ts` lines ~207/417/510, now via a shared
+`rateLimitBypassed()`). Same rationale the repo's own author wrote for the sidecar bypass: *a single
+operator hitting their own machine has no abuse surface to defend*.
+
+**TRAP — do NOT just set `LOCAL_API_MODE=tauri-sidecar` to get this.** That value is also read in
+**five places in `server/_shared/redis.ts`**, where it means "no live Upstash at all" — setting it
+would disable the local Redis data layer session 29 built. That is exactly why this is a separate var.
+
+**Verified by direct A/B on the module** (an HTTP burst test could not prove it — 700 requests spread
+over >120s never exceed 600 inside any single 60s window, and `classify-event` rejects the relay key
+with 401 *before* reaching the limiter, so both HTTP attempts were inconclusive):
+
+| `RATE_LIMIT_LOCAL_DEV` | 45 calls against the 30/60s cap |
+|---|---|
+| `"1"` | allowed **45**, limited **0** — bypass active |
+| unset | allowed **30**, limited **15** — cap enforced exactly as documented |
+| `"0"` | allowed 0, limited 45 (window already spent by the prior run) |
+
+The unset row landing on exactly 30 independently confirms the 30/60s policy. **Production behaviour is
+unchanged when the var is unset.** Documented in `.env.example`; set in `.env` under
+`# [local-dev-rate-limit]`.
+
+Tests: `api/_rate-limit.test.mjs` 15/15. The 3 `.mts` rate-limit suites fail with
+`ERR_UNKNOWN_FILE_EXTENSION` — pre-existing, `git stash` A/B confirmed. `tsc` clean on all 3 configs.
+
+**Incidental finding (not caused by any change here)**: `nitric start` **wedges under concurrent load**.
+A 700-request burst at 25-way parallelism produced 427 connection failures and left the API answering
+nothing (HTTP 000 after 30s) while all processes stayed alive — `pgrep` showed a healthy stack that was
+not serving. Only a restart cleared it. **Do not load-test the local nitric stack**; and note that
+"processes are up" is not evidence it is serving.
+
+---
+
+### [RESOLVED 2026-08-20, thirtieth session] News panels empty — TWO independent causes
+
+The RSS routing fix (below) was **necessary but not sufficient**. After it landed, the panels still
+rendered `无可用新闻`. The second cause was arithmetic, not networking, and would have kept the panels
+empty even on a full-tunnel VPN.
+
+**Cause 2 — the digest could only ever fetch ~20 of 190 feeds.** `list-feed-digest.ts` walks the feed
+list in `ceil(190 / BATCH_CONCURRENCY=20)` = **10 SEQUENTIAL batches**, all sharing one
+`OVERALL_DEADLINE_MS`, which was derived from `VERCEL_INITIAL_RESPONSE_LIMIT_MS` (25s) minus
+`POST_FETCH_HEADROOM_MS` (15s) = **10,000 ms — i.e. 1 second per batch.** Measured per-feed cost on
+this machine is **3.5-4.0s direct** (VPN-throttled) and **2.8-8.9s proxied**. Batch 1 alone consumed
+the entire budget; the loop then hit `if (deadlineController.signal.aborted) break` and **batches 2-10
+(170 feeds) never executed**. The regional categories live in those later batches — which is exactly
+why those specific panels were empty while the top row had content.
+
+Corroborating evidence: a Redis SCAN found only **37** `rss:feed:v8:*` keys had EVER been written, out
+of 190 feeds. 153 feeds had never run once.
+
+**Cause 2b — aborted feeds poisoned the cache, so it could never recover.** A deadline-aborted feed
+fell into the same `if (!text)` branch as a genuinely-dead one and was written as empty for
+`CACHE_TTL_EMPTY_S` (300s), with no distinction between the two. The relay's own RSS cache is also
+300s, so both expired together and each run restarted from the same truncated state.
+
+**Fixes applied** (operator chose "env-tunable timeouts + stop caching aborts"):
+1. `FEED_TIMEOUT_MS`, `OVERALL_DEADLINE_MS`, `DIGEST_RESPONSE_TIMEOUT_MS` are now read via a new
+   `envPositiveInt()` helper from `NEWS_FEED_TIMEOUT_MS` / `NEWS_DIGEST_DEADLINE_MS` /
+   `NEWS_DIGEST_RESPONSE_TIMEOUT_MS`. **Production defaults are unchanged** — unset means today's
+   values. `envPositiveInt` ignores zero/negative/NaN so an `.env` typo degrades to the safe default
+   rather than to an instant deadline. Local values are set in `.env` under a
+   `# [local-dev-news-timeouts]` marker, and documented (blank) in `.env.example`.
+   **Ordering constraint: RESPONSE_TIMEOUT > DEADLINE > FEED_TIMEOUT** — otherwise `cachedFetchJson`'s
+   `timeoutMs` abandons the builder before the deadline can apply. Current local: 110s / 100s / 20s.
+2. `list-feed-digest.ts` now returns early **without** the empty-cache write when `signal.aborted`,
+   so a deadline abort no longer writes off the tail of the feed list.
+
+**Third poisoning layer worth knowing about** (not changed): `handler` wraps the build in
+`cachedFetchJson(key, 900, fn, 120, ...)` and the builder returns `null` when `totalItems === 0`,
+which caches a **negative sentinel for 120s**. So an empty digest stays empty for 2 minutes even after
+the underlying cause is fixed — budget for that when testing.
+
+**Result, measured**: `GET /api/news/v1/list-feed-digest?variant=full&lang=zh` returns **267 items
+across 16 categories**. Previously-empty panels: `middleeast` 20, `africa` 15, `latam` 10, `asia` 20,
+`gov` 20, `thinktanks` 20, `energy` 15. Only `crisis` is still 0. Feed outcomes: **8 via relay-proxy,
+2 still failing** (`www.pbs.org` returns a non-RSS body; `feeds.news24.com` fetch-error), rest direct.
+
+**Auth note for future testing**: this endpoint is gated. `X-WorldMonitor-Key: $WORLDMONITOR_RELAY_KEY`
+returns 200; `X-Api-Key` with the same value returns 401. Useful for driving the digest from curl
+instead of a browser.
+
+Tests: 293/295 across the 17 digest test files. The 2 failures
+(`tests/news-feed-digest-*.test.mts`) are `ERR_UNKNOWN_FILE_EXTENSION: ".mts"` — a runner/loader
+problem, **pre-existing**, confirmed byte-identical via `git stash` A/B. `npx tsc --noEmit` clean on
+all three tsconfigs.
+
+**STILL OPEN — separate bug, not investigated**: the browser console shows a flood of **429s** from
+`:9001` (`/api/market/v1/...include_news=true` repeated ~14x, `summarize-article`, `classify-event`).
+These are **genuine** exhaustions of the global 600-req/60s-per-IP ceiling, not a limiter malfunction —
+I verified `EVAL` is NOT blocked on the local Redis proxy (returns `{"result":1}`), so
+`Ratelimit.slidingWindow` works correctly and `limitWithFallback` never engages its non-Lua path.
+**This also corrects a stale note in memory** claiming EVAL was blocked. Something client-side is
+hammering `market/v1`; that request storm is the thing to find.
+
+---
+
+### [RESOLVED 2026-08-20, thirtieth session] RSS-backed panels never load
+
+**Resolved in code, NOT by the VPN switch.** The diagnosis below is accurate and the routing problem
+is still present on this machine — but the conclusion that "it is not a code change and not something
+an agent can do" was **wrong**. `scripts/ais-relay.cjs` fetches from many upstreams and 8 of them
+(Yahoo, Weather, Spending, CoinPaprika, OpenSky) already use a **direct-first / `PROXY_URL`-fallback**
+pattern. The RSS handler was the **only** one that didn't — it was a bare `https.get` whose
+`request.on('error')` just armed a backoff and served stale.
+
+Fix: added `rssTryProxy()` to the RSS handler, wired into BOTH network-failure paths
+(`request.on('error')` and `request.on('timeout')`). Plus one additive line in
+`scripts/_proxy-utils.cjs` so `proxyFetch` surfaces `location` (it does not follow redirects; the RSS
+path follows them itself under the same per-hop allowlist the direct path enforces).
+
+**Non-obvious correctness point, do not "simplify" this away**: on proxy SUCCESS the code deliberately
+does NOT call `rssRecordFailure()`. The backoff guard runs *before* the fetch code on the next request,
+so recording a failure there would 503 the feed for up to 15 minutes and the proxy would never get
+another chance to serve it. It calls `rssResetFailure()` instead.
+
+Verified live against the running relay on `:3004` (not just unit tests):
+
+| Feed | Result | `X-Cache` |
+|---|---|---|
+| `theguardian.com/world/rss` | **200**, 150,649 B, 5.7s | `MISS-PROXY` |
+| `lemonde.fr/rss/une.xml` | **200**, 22,160 B, 6.3s | `MISS-PROXY` |
+| `de.euronews.com/rss` | **200**, 31,753 B, 8.9s | `MISS-PROXY` |
+| `feeds.bbci.co.uk/...` (control, on utun8) | **200**, 32,843 B, 4.0s | `MISS` (never touched proxy) |
+| `theguardian.com` 2nd request | **200** in **0.001s** | `HIT` |
+
+So: blocked hosts are rescued, direct-reachable hosts pay nothing, and the proxy cost is paid once per
+5-minute cache TTL per feed — not per request.
+
+Tests: `scripts/ais-relay-rss.test.cjs` **7/7 pass** (includes a stale-on-error test that exercises the
+rewired error path, with no `PROXY_URL` set — proving the no-proxy path is behaviourally unchanged).
+`api/rss-proxy.test.mjs` shows 34/35 failing, but that is **pre-existing** — confirmed identical with
+and without these changes via `git stash` A/B. `npx tsc --noEmit` clean on all three tsconfigs.
+
+**The VPN switch below is now OPTIONAL** — it would make these feeds faster (direct instead of a ~3-9s
+proxy hop) but is no longer required for them to work. Original diagnosis retained below for reference.
+
+---
+
+### [ORIGINAL DIAGNOSIS — retained for reference] RSS-backed panels never load
+
+**Symptom**: the dashboard panels 中东 / 非洲 / 拉丁美洲 / 亚太地区 / 政府 / 智库 sit on `加载中...`
+forever. They are **not slow — their upstream feeds are unreachable**, so they wait out timeouts and
+never resolve. This is NOT the same failure class as the (now-fixed) latency problem below; do not
+conflate them.
+
+**Root cause, measured not inferred — it is a ROUTING problem, not code**:
+a subset of feed hosts is **split-tunneled outside the VPN** (`route get` → `en0`) and the direct path
+resets the connection immediately. Correlation was 100% across every host tested:
+
+| Host | `route get` iface | Result |
+|---|---|---|
+| `www.theguardian.com` | **en0** (direct) | **HTTP 000, 0.33s — reset** |
+| `www.lemonde.fr` | **en0** | **HTTP 000, 0.30s** |
+| `www.euronews.com` | **en0** | **HTTP 000, 0.31s** |
+| `www.pbs.org` | utun8 (VPN) | **200** |
+| `apnews.com` | utun8 | **200** |
+| `feeds.bbci.co.uk` | utun8 | 404 (wrong path, but REACHABLE) |
+
+Every `en0` host fails; every `utun8` host works. The tunnel itself is healthy (Cloudflare control
+**183-327 KB/s** through the same `utun8`). Matching relay log lines:
+`[Relay] RSS error: read ECONNRESET (backoff 60s)` and
+`[feed-fetch] ... source=both-failed relay_status=502`.
+
+**Scope**: feed hosts are defined in `src/config/feeds.ts` and `server/worldmonitor/news/v1/_feeds.ts`
+— **1,135 unique hosts**. A random 50-host sample routed 6 via `en0`, 38 via `utun8`, 6 unresolved →
+**~136 hosts (~12%) on the blocked path**. A minority, but it includes major outlets (Guardian, Le Monde,
+Euronews), which is why whole regional panels look empty.
+
+**Agreed fix (operator's choice, NOT yet applied): switch the VPN from split-tunnel to FULL-tunnel.**
+Rationale: the blocked hosts are CDN-fronted with rotating IPs, so static `route add` entries would
+silently break later; and the VPN path already works for every feed host that happens to be inside it.
+This is a **VPN client setting the operator must change** — it is not a code change and not something an
+agent can do. **Note the direction**: these hosts need to go INTO the tunnel. This is the inverse of the
+`local-network-optimizer` skill's default bypass-the-VPN fix, which applies to a *different* set of hosts
+here (see below). Do not apply a `route add ... <physical-gateway>` bypass to news hosts — they are
+already direct, which is exactly the problem.
+
+**Verify after the switch** with: `route get www.theguardian.com` (expect `utun8`, not `en0`), then
+`curl -sI https://www.theguardian.com/world/rss` (expect 200), then reload the dashboard.
+`scripts/rss-feeds-report.csv` exists if a fuller per-feed audit is wanted.
+
+**Do NOT re-investigate these — already measured and ruled out**: it is not the relay's rate limiter
+(`RELAY_RSS_RATE_LIMIT_MAX` default 300), not the relay's per-feed backoff map
+(`rssBackoffUntil`, `scripts/ais-relay.cjs:8097` — that's a *consequence*), not bandwidth (these fail in
+0.3s, they don't crawl), and not the app's cache.
+
+### Resolved this session (details in the sections further below)
+
+1. **`/api/gpsjam` 503 → 200.** Orphaned seeder (`scripts/fetch-gpsjam.mjs`, scheduled nowhere) plus 3
+   bugs inside it. Route code untouched.
+2. **Local Redis dev stack restored** (`docker-compose.dev.yml` + `docker/`), recovered from deleted
+   commit `87787be`. Hosted Upstash read ~60s vs local **0.011s**.
+3. **Hosted Upstash mirrored into local Redis**: 11,336/11,398 keys (99.5%) in 41 min, 11,128 TTLs
+   preserved. The 229 that looked missing were 210 **expired** (verified: 0 of 40 sampled still exist on
+   hosted) + 19 refilled. Effective coverage **100% of live keys**. Local is now ~14,700 keys.
+   Median TTL of panel-relevant keys is **~32 days**, so this stays valid for weeks.
+4. **Supabase: legacy `service_role` → modern secret key**, plus THREE stacked access blockers fixed
+   (secret key / exposed schema / `service_role` GRANTs). `/api/followed-countries` and
+   `/api/latest-brief` now return **200** (operator confirmed in browser).
+5. **THE BIG LATENCY FIX — `.nitric/history-apis.json` had grown to 149.3 MB.** Nitric rewrites it in
+   FULL, synchronously, before flushing every response (~15 ms/MB). `149.3 MB x 15 ms = 2,240 ms` vs a
+   measured floor of 2,270 ms. Truncating took a no-work `405` from **2.38s → 0.0026s** and `nitric start`
+   CPU from **135% → 3%**. Fix is `scripts/clean-nitric-history.mjs` (already tracked) — **it must be run
+   ALONGSIDE `nitric start` EVERY session**: `node scripts/clean-nitric-history.mjs &`. It is a 5-minute
+   `setInterval`, not a one-shot, and does not survive a reboot.
+   **Diagnostic tell: a route that does NO work (a 405, an auth reject) costing the same as a
+   fully-cached response.** I misread that fact three times before finding this — do not repeat it.
+   **Corollary: do NOT trim services from `nitric.yaml` for performance.** The 10 non-API services were
+   never the cause; they only generate the requests that grow the file. With the cleaner they cost ~3% CPU.
+
+### Environment left running
+
+`nitric start --ci` on `:9001`, Vite on `:3000`, `docker compose -f docker-compose.dev.yml` (redis +
+redis-rest on `127.0.0.1:8079`), and `node scripts/clean-nitric-history.mjs &`. **Restart nitric AND vite
+after any `.env` change** — but note only `VITE_`-prefixed vars affect the browser bundle, so a
+server-only `.env` edit does not require a Vite restart.
+
+---
+
 ## 🔀 HANDOFF (2026-08-19, twenty-eighth session end) — read this first, supersedes every block below
 
 **Scope**: picked up the twenty-seventh session's unresolved browser-login bug and **RESOLVED it**, then
@@ -140,10 +1239,81 @@ stage independently verifiable in the browser. Get sign-off on the server stage 
 ladder removal above is NOT covered by any passing test** — it was verified live in the browser instead.
 Do not read those files' green/red status as signal; they need a runner with alias support (vitest or a loader).
 
+### Local dev data layer + Supabase key migration (2026-08-19/20, twenty-ninth session, UNCOMMITTED)
+
+- **Local Redis dev stack restored** — `docker-compose.dev.yml` + `docker/redis-rest-proxy.mjs` +
+  `docker/Dockerfile.redis-rest`, recovered from commit **`87787be`** ("remove Docker/nginx + npm+Upstash
+  self-hosting entirely"), which deleted them as a *product surface*; the dev-loop value was collateral.
+  What is restored is a **dev-only slice (redis + redis-rest only)** — no app/nginx/relay services, so the
+  retired self-hosting surface stays retired. **Do not let it grow back into that.**
+  Why it is needed: this repo speaks **Upstash HTTP REST, not RESP**, in ~184 tracked files, so a plain
+  `redis-server` cannot be dropped in — the swap point is the protocol shim, which is why pointing
+  `UPSTASH_REDIS_REST_URL` at it needs **zero application code changes**. Measured: hosted Upstash read
+  **~60s** vs local **0.011s**. That fits inside the existing production 3s timeout, so `/api/gpsjam` went
+  503 -> 200 with **no production code edited**.
+  Gotchas fixed while restoring: `EVAL` was **blocked** by the proxy allowlist but is used by the seed lock
+  (`scripts/_seed-utils.mjs:372`), the forecast CAS and `api/health.js`; the 1 MB body cap is now
+  `SRH_MAX_BODY_BYTES` (16 MB default); **`node --env-file` does NOT expand `${VAR}`**, so
+  `UPSTASH_REDIS_REST_TOKEN` must repeat `REDIS_TOKEN`'s literal value. Both docker images were already in
+  the local cache, and the compose file bind-mounts the proxy source rather than using `build:`, so no pull
+  is needed. Revert marker in `.env` is `# [switched-to-local-redis]`. **Local Redis starts EMPTY** — it is
+  not a mirror; seeders repopulate it but still pay throttled upstream fetches.
+
+- **This machine's VPN throttles specific destinations, not the tunnel** — Cloudflare control **176 KB/s**
+  through the same `utun8` while Upstash gets **11 KB/s** and gpsjam.org **4.7 KB/s** (github.com times out).
+  Physical gateway `192.168.123.1` on `en0`; VPN gateway `172.27.232.1`. This is shape A in the
+  `local-network-optimizer` skill, so a `sudo route add` bypass applies; **not applied** — operator approved
+  it, then local Redis removed the need for the Upstash half. **Rule: measure the actual transfer before
+  changing any timeout constant.** A prior session raised an Upstash timeout to 45s and recorded the problem
+  as "not fixable locally" — that was wrong. Never raise a *production* timeout to accommodate this link.
+
+- **Supabase legacy `service_role` -> modern secret key** — operator's call, correct: Supabase replaced the
+  JWT-derived `anon`/`service_role` keys with `sb_publishable_...`/`sb_secret_...` (legacy supported until
+  end of 2026). The **browser half was already migrated** (`VITE_SUPABASE_PUBLISHABLE_KEY` holds a real
+  `sb_publishable_...`). `server/_shared/supabase-admin.ts` and `scripts/lib/supabase-admin.cjs` now read
+  `SUPABASE_SECRET_KEY || SUPABASE_SERVICE_ROLE_KEY`; `.env.example` documents both. A secret key authorizes
+  through the same `service_role` Postgres role and keeps `BYPASSRLS`, so the cross-user lookups are
+  unaffected. Compatibility checked against this codebase, not assumed: nothing decodes these as JWTs,
+  nothing sends them as `Authorization: Bearer` (the one documented incompatibility), and both live Edge
+  Functions (`github-identity-bridge`, `worldmonitor-org-gate`) already have `verify_jwt: false`.
+  **Secret keys are deliberately NOT exposed via the Supabase MCP** — only publishable ones; the operator
+  must copy it from Dashboard -> Settings -> API Keys.
+
 ### Also unresolved, lower priority (unchanged by this session)
 
 - **`503` on `/api/gpsjam`, `/api/followed-countries`, `/api/latest-brief`, some `summarize-article`** — a
   DIFFERENT failure class from the 401s (upstream/Redis data availability), never investigated.
+  **resolved (2026-08-19/20, twenty-ninth session, uncommitted): these were THREE unrelated causes, not one
+  class.** Grouping them cost time — investigate such lists per-endpoint, not as a bucket. Also note
+  `/api/followed-countries` + `/api/latest-brief` return **401, not 503, to an unauthenticated caller**: the
+  JWT gate precedes the 503 branch, so curl cannot see the real bug and only the browser shows the 503.
+  1. **`/api/gpsjam` — FIXED, now 200.** `intelligence:gpsjam:v2`/`:v1` did not exist; `scripts/fetch-gpsjam.mjs`
+     is an **orphaned seeder scheduled nowhere** (no cron, no npm script, nothing in `gcp/scheduler`) — same
+     class as session 26's four orphans. Running it exposed 3 further bugs in that script, all fixed:
+     (a) `fetchText` timeout was 30s but the download takes **35.3s** on this link, so it had literally never
+     succeeded — and the failure path is `catch -> extendExistingTtl -> exit 0`, i.e. a silent no-op once the
+     keys had expired; (b) `seed-meta` was written AFTER a read-back verify that pulls the whole ~325 KB value
+     back down, so a slow verify aborted the run and left `seed-meta` unwritten — data present in Redis while
+     `api/health.js` (`maxStaleMin=1440`) reported the seed stale; `seed-meta` now goes first and the verify is
+     non-fatal; (c) `main().catch()` labelled EVERY error `"Fetch failed"`, including `seedRedis()` failures
+     that happen after a fully successful fetch — now labelled by phase. The route itself was NOT changed.
+  2. **`/api/latest-brief` — cause found, `BRIEF_URL_SIGNING_SECRET` was absent from `.env`** (empty
+     placeholder in `.env.example`); `api/latest-brief.ts:198` 503s without it. Generated. **NOT verified
+     end-to-end** — the 401 gate hides it from curl; needs a browser check with a real session.
+  3. **`/api/followed-countries` — FIXED, but it was THREE stacked blockers, not one.** Each fix only revealed
+     the next, and each presented as a different error: (a) no secret key -> `getSupabaseAdmin()` returned
+     `null` -> `CONFIG` -> **503**; (b) the `worldmonitor` schema was not in Supabase's **exposed schemas** ->
+     `406 PGRST106`; (c) the `service_role` Postgres role had **USAGE on the schema but zero table privileges**
+     -> `403 42501`. (c) is the subtle one: a schema created outside `public` does NOT inherit Supabase's
+     default grants, and **Postgres checks GRANT before RLS**, so the `select own` policies on these tables had
+     never once been evaluated. Fixed by granting `service_role` (only — NOT `authenticated`; the browser never
+     queries these tables directly, it goes through `/api/*`) plus `alter default privileges` so a future table
+     cannot silently reintroduce it. Verified: 6/6 tables reachable, `listFollowed`/`countFollowers`/
+     `getUserPreferences` all succeed through the app's own modules, and an INSERT returns `23503`
+     (foreign-key) rather than `42501` — proving write permission. **Blast radius was much wider than this one
+     route**: the same `getSupabaseAdmin()` guard gates `alert-rules`, `notification-channels`,
+     `user-preferences` and `telegram-pairing`. All 8 tables have 0 rows — these features have never worked in
+     this fork.
 - **`429 Too Many Requests`** still appears on `classify-event` / `analyze-stock` / `summarize-article`.
   Much of the pressure that caused it is gone with the tester-key ladder, but the underlying rate limit was
   never examined; residual 429s may just be genuine burst load from first paint.

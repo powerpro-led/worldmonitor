@@ -270,6 +270,41 @@ selector (`LOCAL_SYNC_REDIS_*`) was considered and **rejected by the operator**:
 answers this, and code must never branch on which Redis is in use. See
 `redis_env_not_codebase_switch.md`.
 
+### ✅ FIXED — panels with data in the browser but empty in the VS Code sidecar
+
+**Cause: the mirror is prefix-filtered and 27 data prefixes were missing.** The browser reads live
+Redis; the sidecar reads only `local-cache.db`. Any prefix absent from `SYNC_PREFIXES` is invisible
+there, silently. Audited all 59 top-level prefixes in Redis (23,351 keys) against every
+`server/worldmonitor/*/v1` handler — **19 domains** were reading at least one unmirrored prefix.
+15 prefixes → 42; mirror 3,357 → 4,042 rows.
+
+- **trade policies**: `trade:` (418 keys) + `comtrade:` (55) entirely unmirrored.
+- **supply-chain**: partial rather than blank — its `supply_chain:` keys were mirrored, only its
+  `comtrade:` half was missing.
+
+**Classify prefixes by READING their keys, never by name.** `acled:` looks exactly like a data prefix
+and is deliberately EXCLUDED: its only key is **`acled:oauth:token`, a credential** — mirroring it
+would copy an OAuth token onto the operator's laptop and defeat the read-only-token rationale in
+`assertEnv()`. `wm:` is notification dedup / events queue / locks. Verified post-sync that `acled:`,
+`wm:`, `story:`, `cache:`, `digest:`, `baseline:` and `seed-*` all hold **0 rows**.
+
+`brief:` IS mirrored so the Latest Brief panel populates, but its rows are keyed by **user UUID** —
+on a multi-operator deployment that mirrors other people's briefs onto one laptop. One line to drop.
+
+**Two categories that a prefix will never fix** (both verified, do not chase as mirror bugs):
+
+1. **Premium-gated RPCs.** `get-tariff-trends` and `list-comtrade-flows` return
+   `{..., fetchedAt: '', upstreamUnavailable: true}` for a non-premium caller. The empty `fetchedAt`
+   is the tell — the cache-miss path stamps a real timestamp. Their keys ARE mirrored (159 tariff
+   rows), so they populate for a signed-in operator.
+2. **Fetch-through caches with PREFIXLESS keys.** `get-cable-health` uses
+   `cachedFetchJson('cable-health-v1', …)`; no `*cable*` key has ever existed in Redis. Every entry in
+   `SYNC_PREFIXES` ends in `:`, so a prefixless key can never be mirrored — and a fetch-through path
+   cannot work offline regardless. If more panels turn out to depend on such keys, that is a design
+   question about the mirror, not a list to extend.
+
+`conflict/v1/list-acled-events` returning `[]` is the known ACLED account-tier block, not this.
+
 ### ✅ TRIAGED — `npm run build` failing on a clean tree (was "pre-existing, untriaged")
 
 **It is not a code bug, and `dist/` was unusable because of it.** `dist/` held only prerendered SEO

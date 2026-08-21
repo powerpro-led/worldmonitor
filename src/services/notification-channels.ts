@@ -81,6 +81,26 @@ async function authFetch(
   });
 }
 
+/**
+ * Pick the alert rule the settings UI should read for the ACTIVE variant.
+ *
+ * Writes are variant-scoped — `setAlertRules` / `setDigestSettings` /
+ * `setQuietHours` all send `variant: SITE_VARIANT`, and the server upserts on
+ * (user_id, variant). But the GET returns EVERY variant's row for the user, in
+ * no guaranteed order. Reading `alertRules[0]` therefore rendered one variant's
+ * row while saving into another's, so the settings modal looked like it
+ * discarded changes on reopen: with rows [full (no digestMode), finance
+ * (digestMode: 'daily')], the modal rendered `full` and fell back to
+ * `?? 'realtime'` while Postgres correctly held `daily` on `finance`.
+ *
+ * Fall back to the first row so a user whose only row predates variant scoping
+ * still sees their settings rather than a blank form.
+ */
+export function selectRuleForVariant(rules: AlertRule[] | undefined | null): AlertRule | null {
+  if (!rules || rules.length === 0) return null;
+  return rules.find((rule) => rule.variant === SITE_VARIANT) ?? rules[0] ?? null;
+}
+
 export async function getChannelsData(
   expectedUserId?: string,
   signal?: AbortSignal,
@@ -248,7 +268,7 @@ export function buildWatchlistTickerSyncPayload(rule: AlertRule | undefined, sym
 
 export async function syncWatchlistTickersToAlertRule(symbols: string[]): Promise<void> {
   const data = await getChannelsData();
-  const payload = buildWatchlistTickerSyncPayload(data.alertRules?.[0], symbols);
+  const payload = buildWatchlistTickerSyncPayload(selectRuleForVariant(data.alertRules) ?? undefined, symbols);
   if (!payload) return;
   await saveAlertRules(payload);
 }

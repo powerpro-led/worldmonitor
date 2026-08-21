@@ -18,6 +18,7 @@ import {
   type ChannelType,
   type QuietHoursOverride,
   type DigestMode,
+  selectRuleForVariant,
 } from '@/services/notification-channels';
 import { getCurrentAuthUser } from '@/services/auth-provider';
 import { hasTier } from '@/services/entitlements';
@@ -281,7 +282,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
 
       function renderNotifContent(data: Awaited<ReturnType<typeof getChannelsData>>): string {
         const channelTypes: ChannelType[] = ['telegram', 'email', 'slack', 'discord', 'webhook', 'web_push'];
-        const alertRule = data.alertRules?.[0] ?? null;
+        const alertRule = selectRuleForVariant(data.alertRules);
         const sensitivity = alertRule?.sensitivity ?? 'all';
 
         let html = '<div class="ai-flow-section-label">Channels</div>';
@@ -490,7 +491,7 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
           const pickerRoot = contentEl.querySelector<HTMLElement>('#usNotifCountryPicker');
           if (!pickerRoot) return;
 
-          const existingRule = data.alertRules?.[0] ?? null;
+          const existingRule = selectRuleForVariant(data.alertRules);
           const existingCountries = Array.isArray(existingRule?.countries) ? existingRule!.countries! : [];
           // Smart-default ONLY on NEW-rule create — when there's no existing
           // alertRules row at all. If the user already has a row (even with

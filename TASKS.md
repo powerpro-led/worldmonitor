@@ -180,6 +180,71 @@ so UI shows a spinner rather than an error. Symptom to recognise, not a bug to c
 
 ## 🔭 NEXT INITIATIVE — data-pipeline review: Redis → operator's local SQLite
 
+### ▶ STARTED 2026-08-21 (thirty-third session) — sync restored, questions 1 & 2 ANSWERED
+
+**Result: the mirror went from 548 rows (frozen since Aug 17) to 3358, and `npm run local-sync` now
+works with no manual overrides.** The baseline table further down is superseded but kept as the
+historical record.
+
+**Four independent blockers, each hiding the next.** The sync had not run since Aug 17 because it
+*could not* run — and nothing automates it, so nothing ever reported the failure:
+
+| # | Blocker | Fix |
+|---|---|---|
+| 1 | `npm run local-sync` never loaded `.env` (plain `node`, and the script does no env loading), so the documented invocation died instantly on `UPSTASH_REDIS_REST_URL not set` | `package.json` → `node --env-file-if-exists=.env …` |
+| 2 | `local-sync` requires `UPSTASH_REDIS_REST_READONLY_TOKEN` and deliberately refuses the write token. Under the local-Redis switch that variable still held the **hosted Upstash** credential, which the shim rejects → bare `Unauthorized` | `.env` (gitignored): hosted value commented with the `[switched-to-local-redis]` marker, local value added to the local block with the rationale |
+| 3 | `SCAN … WITHTYPE` is an **Upstash extension, not a Redis command** — real redis-server answers `ERR syntax error` | `local-sync.mjs`: probe the capability once per run, fall back to a pipelined `TYPE` pass |
+| 4 | The shim ignored `Upstash-Encoding: base64` while `@upstash/redis` **sends that header by default and decodes unconditionally** | `docker/redis-rest-proxy.mjs`: implement the encoding (bind-mounted — `docker restart worldmonitor-redis-rest`, no rebuild) |
+
+**Blocker 4 is the one that matters beyond this initiative.** It silently corrupted any value that
+happened to be *valid base64*, and left everything else untouched — the SDK's `base64decode()` returns
+non-base64 input unchanged, and every Redis key here contains `:`, so keys always survived and the shim
+looked correct. SCAN cursors exposed it because roughly a quarter of them have a length divisible by 4:
+cursor `32208` (5 chars) passed through, the next page's `3432` decoded to 3 junk bytes, and the
+following SCAN died on `ERR invalid cursor` — which is why it failed on page 2 rather than page 0.
+**Eight source files use the SDK**, including `server/_shared/rate-limit.ts` and the OAuth token/code
+paths, where values are base64url *by construction*. Raw-REST callers (seeders, `server/_shared/redis.ts`)
+never sent the header and were never affected. Verified with a round-trip test over plain strings,
+valid-base64 strings, base64url tokens, JSON, unicode and numeric `INCR` — 6/6, against a known-failing
+before-state.
+
+**Re-measured baseline, 2026-08-21** (local Redis; SCAN iterated to cursor 0):
+
+| prefix | Redis | mirrored | | prefix | Redis | mirrored |
+|---|---|---|---|---|---|---|
+| `intelligence:` | 1566 | 1566 | | `classify:` | 47 | 47 |
+| `energy:` | 590 | 590 | | `forecast:` | 23 | 23 |
+| `resilience:` | 407 | 407 | | `summary:` | 22 | 22 |
+| `market:` | 310 | 310 | | `climate:` | 5 | 5 |
+| `supply_chain:` | 196 | 196 | | `portwatch:` | 2 | 2 |
+| `rss:` | 102 | 102 | | `theater-posture:` | 2 | 2 |
+| `economic:` | 79 | 79 | | `theater_posture:` | 1 | 1 |
+| | | | | **`risk:`** | **0** | **0** |
+
+**Question 1 answered**: not a scan/pagination limit and not a TTL rule — the six "zero-row" prefixes
+were empty because the sync had been broken since Aug 17. All now mirror 1:1. `supply_chain:` at 3 rows
+was not truncation either; it is 196 now.
+
+**Question 2 answered**: `summary:` and `classify:` land correctly and hold real content
+(`{"level":"high","category":"infrastructure",…}`). Their counts grew between two runs minutes apart,
+which is independent evidence the LLM pipeline is live.
+
+### Still open here
+
+- **Questions 3, 4 and 5 are untouched**: nothing automates the sync (still a manual
+  `npm run local-sync`); no freshness/TTL story is verified (`synced_at` is written but nothing observed
+  reads it, so a mirrored row can outlive its Redis TTL); and the dev-vs-prod source has not been
+  confirmed end to end from the sidecar's side.
+- **`risk:` has 0 keys in Redis.** Real prefix — `risk:scores:sebuf:v8` in `server/_shared/cache-keys.ts`.
+  Everything found so far only *reads* it; the writer was not identified. Determine whether it is
+  seeded, computed on demand, or genuinely dead. **Not a sync bug** — the mirror is faithful.
+- **No regression test covers the shim's base64 encoding.** Testing it needs the container up, which is
+  why it was flagged rather than half-built. `test:sidecar` is the suite it would belong to.
+- Re-check: `seed-cross-source-signals` is **absent from `scripts/railway-services.json`** but is NOT an
+  orphan — `seed-bundle-derived-signals.mjs:6` invokes it. Recording it so the next registry sweep does
+  not "fix" it. (Same name-match trap as session 32.)
+
+
 **The chain**: Upstash Redis (production) / local Redis (dev) → `vscode-extension/sidecar/local-sync.mjs`
 → `vscode-extension/sidecar/local-cache.db` (`node:sqlite`, table `kv_cache`) → the sidecar's
 `local-api-server.mjs` → the VS Code dashboard. Read side also touches

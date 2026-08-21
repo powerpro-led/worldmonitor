@@ -33,7 +33,7 @@
  * below was hand-checked to hold real, structured, display-worthy JSON.
  * Deliberately excluded (confirmed internal bookkeeping, zero display
  * value): `story:*` (alias/peak/sources/track — pure news-dedup tracking,
- * no article content, ~69% of all keys), `classify:*` (ML/log metadata),
+ * no article content, ~69% of all keys),
  * `seed-meta:*`/`seed-routes:*`/`seed-activated:*` (sync-job bookkeeping),
  * `baseline:*` (internal statistical accumulator state), `digest:*`
  * (internal notification accumulator), `cache:*`/`health:*`/`temporal:*`/
@@ -165,6 +165,21 @@ const SYNC_PREFIXES = [
   // not a bug in the panel or the RPC handler, just an absent prefix here.
   'theater-posture:',
   'theater_posture:',
+  // LLM OUTPUT — the most expensive rows in the store to regenerate, and the
+  // whole point of a shared cache: both are keyed by a CONTENT hash (see
+  // src/utils/summary-cache-key.ts, "the canonical cache-key builder shared by
+  // both client and server"), so two operators reading the same article derive
+  // the same key and ONE model call can serve everyone. Omitted until
+  // 2026-08-20, which meant every operator silently re-paid for identical
+  // summaries and classifications — same failure mode as the theater-posture:
+  // note above, but costing money rather than showing a blank panel.
+  'summary:',
+  // Was listed as an exclusion above ("ML/log metadata"). That was wrong:
+  // classify:sebuf:v6:<hash> holds the cached LLM verdict itself
+  // ({level, category, timestamp}, CLASSIFY_CACHE_TTL = 86400), which drives
+  // panel alert levels — and /api/intelligence/v1/classify-event is one of the
+  // LLM-spend-quota'd paths, so a miss costs a real model call.
+  'classify:',
 ];
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */

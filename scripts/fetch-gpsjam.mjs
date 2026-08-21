@@ -44,10 +44,16 @@ function maskToken(token) {
   return token.slice(0, 4) + '***' + token.slice(-4);
 }
 
+// The daily h3_4 CSV is ~190 KB gzipped (~1 MB raw, ~48k rows). 30s was enough
+// on a fast link but aborts deterministically on a throttled one -- measured 35.3s
+// at 5.4 KB/s, i.e. it never once completed rather than failing intermittently.
+// The failure is silent: the caller falls back to extendExistingTtl(), which is a
+// no-op once the keys have expired, so the seed reports exit 0 having written
+// nothing. Generous ceiling: this is a daily batch job, not a request path.
 async function fetchText(url) {
   const resp = await fetch(url, {
     headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' },
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(180_000),
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
   return resp.text();
@@ -82,7 +88,7 @@ async function seedRedis(output) {
     method: 'POST',
     headers: { Authorization: `Bearer ${redisToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(['SET', REDIS_KEY_V2, payload, 'EX', REDIS_TTL]),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!v2Resp.ok) {
     const text = await v2Resp.text().catch(() => '');
@@ -111,7 +117,7 @@ async function seedRedis(output) {
     method: 'POST',
     headers: { Authorization: `Bearer ${redisToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(['SET', REDIS_KEY_V1, JSON.stringify(v1Output), 'EX', REDIS_TTL]),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!v1Resp.ok) {
     const text = await v1Resp.text().catch(() => '');
@@ -120,27 +126,39 @@ async function seedRedis(output) {
     console.error(`[gpsjam] Redis SET v1 result:`, await v1Resp.json());
   }
 
-  const getResp = await fetch(`${redisUrl}/get/${encodeURIComponent(REDIS_KEY_V2)}`, {
-    headers: { Authorization: `Bearer ${redisToken}` },
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (getResp.ok) {
-    const getData = await getResp.json();
-    if (getData.result) {
-      const parsed = JSON.parse(getData.result);
-      console.error(`[gpsjam] Verified: ${parsed.hexes?.length} hexes in Redis (date: ${parsed.date})`);
-    }
-  }
-
+  // seed-meta is written BEFORE the read-back verify, deliberately. It drives the
+  // age-based STALE_SEED alarm (api/health.js gpsjam maxStaleMin=1440), so it is
+  // functionally load-bearing, whereas the verify below is a log line. Ordering it
+  // last meant a slow verify aborted the run and left seed-meta unwritten -- the
+  // data was in Redis but health reported the seed stale.
   const metaKey = 'seed-meta:intelligence:gpsjam';
   const meta = { fetchedAt: Date.now(), recordCount: output.hexes?.length || 0 };
   await fetch(redisUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${redisToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(['SET', metaKey, JSON.stringify(meta), 'EX', 604800]),
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(30_000),
   }).catch(() => console.error('[gpsjam] seed-meta write failed'));
   console.error(`[gpsjam] Wrote seed-meta: ${metaKey}`);
+
+  // Read-back verify: confirms what actually landed, but pulls the whole ~325 KB
+  // value back down, so on a throttled link it costs ~40s. Best-effort only --
+  // never let a diagnostic abort a run whose writes all succeeded.
+  try {
+    const getResp = await fetch(`${redisUrl}/get/${encodeURIComponent(REDIS_KEY_V2)}`, {
+      headers: { Authorization: `Bearer ${redisToken}` },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (getResp.ok) {
+      const getData = await getResp.json();
+      if (getData.result) {
+        const parsed = JSON.parse(getData.result);
+        console.error(`[gpsjam] Verified: ${parsed.hexes?.length} hexes in Redis (date: ${parsed.date})`);
+      }
+    }
+  } catch (err) {
+    console.error(`[gpsjam] Read-back verify skipped (non-fatal): ${err.message}`);
+  }
 }
 
 async function main() {
@@ -179,7 +197,12 @@ async function main() {
     process.stdout.write(JSON.stringify(output));
   }
 
-  await seedRedis(output);
+  await seedRedis(output).catch(err => {
+    // Marker consumed by main().catch below purely for accurate labelling; the
+    // error still propagates so preserve-last-good TTL extension still runs.
+    if (err && typeof err === 'object') err.wmPhase = 'seed';
+    throw err;
+  });
 }
 
 main().catch(async err => {
@@ -188,7 +211,11 @@ main().catch(async err => {
   // exit 0 (graceful), matching the seeder convention. seed-meta.fetchedAt is
   // intentionally NOT refreshed, so a persistent outage still surfaces via the
   // age-based STALE_SEED alarm (api/health.js gpsjam maxStaleMin=1440).
-  console.error(`[gpsjam] Fetch failed: ${err.message} — extending TTL on stale data`);
+  // Label by phase: this handler also catches seedRedis() failures, which happen
+  // AFTER a fully successful fetch+parse. Calling those "Fetch failed" sent a past
+  // session hunting a non-existent upstream problem.
+  const phase = err?.wmPhase === 'seed' ? 'Redis seed failed' : 'Fetch failed';
+  console.error(`[gpsjam] ${phase}: ${err.message} — extending TTL on stale data`);
   await extendExistingTtl([REDIS_KEY_V2, REDIS_KEY_V1, 'seed-meta:intelligence:gpsjam'], REDIS_TTL)
     .catch(e => console.error(`[gpsjam] TTL extend failed: ${e.message}`));
   process.exit(0);

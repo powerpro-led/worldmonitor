@@ -5,6 +5,7 @@ import {
   CHROME_UA,
   extendExistingTtl,
   getRedisCredentials,
+  httpsProxyFetchRaw,
   loadEnvFile,
   logSeedResult,
   releaseLock,
@@ -22,6 +23,65 @@ export const EMBER_TTL_SECONDS = 259200; // 72h = 3× daily cron interval
 
 const EMBER_CSV_URL =
   'https://storage.googleapis.com/emb-prod-bkt-publicdata/public-downloads/monthly_full_release_long_format.csv';
+
+// Env-tunable so a constrained link can raise it without a code change, same
+// pattern as the news-digest timeout knobs. Clamped to a sane floor so a typo
+// cannot make the fetch unwinnable.
+const EMBER_CSV_TIMEOUT_MS = Math.max(
+  60_000,
+  Number(process.env.EMBER_CSV_TIMEOUT_MS) || 15 * 60 * 1000,
+);
+
+// The DIRECT attempt gets its own, much smaller budget. Giving it the full
+// EMBER_CSV_TIMEOUT_MS is actively harmful: on a throttled link the direct
+// path can never finish (see fetchEmberCsv), so the seeder would burn the
+// whole budget, burn it AGAIN on withRetry's second attempt, and only then
+// reach the proxy — 30+ minutes to do a 155-second job. A healthy link
+// downloads the file in seconds, so 3 minutes is generous there and this
+// costs it nothing. Separate knob so either half can be tuned alone.
+const EMBER_DIRECT_TIMEOUT_MS = Math.min(
+  EMBER_CSV_TIMEOUT_MS,
+  Math.max(30_000, Number(process.env.EMBER_DIRECT_TIMEOUT_MS) || 3 * 60 * 1000),
+);
+
+/**
+ * Fetch the ~70 MB CSV, direct first and via PROXY_URL on failure — the same
+ * direct-first/proxy-fallback shape ais-relay.cjs already uses for 8 upstreams
+ * and that rssTryProxy uses for feeds.
+ *
+ * Why this seeder needs it (measured 2026-08-21): on a throttled link the
+ * direct connection does not merely start slow, it DECAYS — 83 KB/s over the
+ * first 3 MB, but only 21.8 KB/s averaged over 300s (6.5 MB transferred). At
+ * that rate the file needs ~54 minutes, so no sane cron timeout can rescue it
+ * and raising EMBER_CSV_TIMEOUT_MS alone does not work. The same file through
+ * PROXY_URL ran at 454 KB/s (~155s for the whole CSV) — 21x faster.
+ *
+ * A route-level bypass is NOT an option here the way it is for a single-/24
+ * host: storage.googleapis.com rotates across many addresses spanning both
+ * 142.250.0.0/16 and 142.251.0.0/16.
+ *
+ * Direct stays first so unthrottled deployments never pay the proxy hop.
+ */
+async function fetchEmberCsv() {
+  try {
+    const resp = await fetch(EMBER_CSV_URL, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(EMBER_DIRECT_TIMEOUT_MS),
+    });
+    if (!resp.ok) throw new Error(`Ember HTTP ${resp.status}`);
+    return await resp.text();
+  } catch (err) {
+    const proxyAuth = process.env.PROXY_URL;
+    if (!proxyAuth) throw err;
+    console.warn(`[EmberElectricity] direct fetch failed (${err.message}) — retrying via PROXY_URL`);
+    const { buffer } = await httpsProxyFetchRaw(EMBER_CSV_URL, proxyAuth, {
+      accept: 'text/csv',
+      timeoutMs: EMBER_CSV_TIMEOUT_MS,
+    });
+    console.log(`[EmberElectricity] proxy fetch OK (${buffer.length} bytes)`);
+    return buffer.toString('utf8');
+  }
+}
 const LOCK_DOMAIN = 'energy:ember';
 const LOCK_TTL_MS = 20 * 60 * 1000; // 20 min
 const MIN_COUNTRIES = 60;
@@ -308,18 +368,7 @@ export async function main() {
   let dataWritten = false;
 
   try {
-    const csvText = await withRetry(
-      () =>
-        fetch(EMBER_CSV_URL, {
-          headers: { 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(5 * 60 * 1000), // 5 min — large CSV
-        }).then((r) => {
-          if (!r.ok) throw new Error(`Ember HTTP ${r.status}`);
-          return r.text();
-        }),
-      2,
-      2000,
-    );
+    const csvText = await withRetry(() => fetchEmberCsv(), 2, 2000);
 
     const countries = parseEmberCsv(csvText);
     console.log(`[EmberElectricity] Parsed ${countries.size} countries`);

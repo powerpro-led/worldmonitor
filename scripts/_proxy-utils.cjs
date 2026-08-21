@@ -234,6 +234,10 @@ function proxyFetch(url, proxyConfig, {
             status: resp.statusCode,
             buffer: Buffer.concat(chunks),
             contentType: resp.headers['content-type'] || '',
+            // Surfaced so callers can follow redirects themselves — proxyFetch
+            // deliberately does not follow them (each hop needs a fresh tunnel,
+            // and some callers enforce a per-hop domain allowlist).
+            location: resp.headers.location || '',
           });
         });
         stream.on('error', rejectOnce);

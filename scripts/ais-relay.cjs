@@ -3790,7 +3790,8 @@ const CLASSIFY_LLM_PROVIDERS = [
     name: 'openrouter',
     envKey: 'OPENROUTER_API_KEY',
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-    model: 'deepseek/deepseek-v4-flash',
+    // OPENROUTER_MODEL env var overrides, mirrors GROQ_MODEL below.
+    model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
     headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN), 'X-Title': 'World Monitor', 'User-Agent': CHROME_UA }),
     extraBody: { reasoning: { enabled: false } },
     timeout: 30000,

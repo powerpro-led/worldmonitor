@@ -42,16 +42,42 @@ const LLM_PROVIDERS = [
     name: 'groq',
     envKey: 'GROQ_API_KEY',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.1-8b-instant',
+    // llama-3.1-8b-instant retired from Groq's catalog (live 404, reconfirmed
+    // against /v1/models 2026-08-21 — no llama-* chat model in this account's
+    // catalog). gpt-oss-20b is a reasoning model (unlike the retired llama
+    // models) — reasoning_effort: 'low' avoids it spending maxTokens entirely
+    // on hidden reasoning and returning empty content, which this chain would
+    // surface as `[llm-chain] groq: empty response`. Groq's own param name and
+    // floor, since it has no hard "off". GROQ_MODEL env var overrides, mirrors
+    // OLLAMA_MODEL above. This file was the last call site still on a retired
+    // llama id — the 2026-08-18 sweep covered server/_shared/llm.ts,
+    // seed-forecasts, seed-insights, ais-relay, and both regional-snapshot
+    // modules but missed this one.
+    model: () => process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
     headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': SERVICE_UA }),
+    extraBody: { reasoning_effort: 'low' },
     timeout: 15_000,
   },
   {
     name: 'openrouter',
     envKey: 'OPENROUTER_API_KEY',
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-    model: 'google/gemini-2.5-flash',
+    // OPENROUTER_MODEL env var overrides, mirrors GROQ_MODEL/OLLAMA_MODEL
+    // above. The DEFAULT stays gemini-2.5-flash deliberately: the NOTE
+    // (#4944) above gates the DeepSeek move on the U3 shadow evaluation +
+    // brief cache-version bumps, so switching the brief's editorial voice
+    // must be an explicit operator opt-in, not a silent default change.
+    model: () => process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
     headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': resolveAppOrigin(process.env.APP_DOMAIN), 'X-Title': 'World Monitor', 'User-Agent': SERVICE_UA }),
+    // Required for the env knob to be USABLE, not cosmetic: every model
+    // worth pointing OPENROUTER_MODEL at here (DeepSeek V4 included) is a
+    // hybrid-reasoning model that reasons by default via OpenRouter's
+    // normalized param. Without this it spends maxTokens on hidden
+    // reasoning and returns finish_reason='length' with null content,
+    // which callLLM below treats as a provider failure. Same flag every
+    // sibling chain sends (ais-relay.cjs, seed-insights, narrative,
+    // weekly-brief). No-op for non-reasoning models like the gemini default.
+    extraBody: { reasoning: { enabled: false } },
     timeout: 20_000,
   },
 ];

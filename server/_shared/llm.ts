@@ -117,7 +117,10 @@ export function getProviderCredentials(
     if (!apiKey) return null;
     return {
       apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-      model: overrides.model || 'deepseek/deepseek-v4-flash',
+      // OPENROUTER_MODEL env var overrides, mirrors GROQ_MODEL/OLLAMA_MODEL
+      // above. Per-call `overrides.model` still wins (that is how the
+      // FORECAST_LLM_*_MODEL_OPENROUTER stage vars reach this).
+      model: overrides.model || process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',

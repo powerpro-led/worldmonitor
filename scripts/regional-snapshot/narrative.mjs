@@ -58,7 +58,8 @@ const DEFAULT_PROVIDERS = [
     name: 'openrouter',
     envKey: 'OPENROUTER_API_KEY',
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-    model: 'deepseek/deepseek-v4-flash',
+    // OPENROUTER_MODEL env var overrides, mirrors GROQ_MODEL below.
+    model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
     timeout: 30_000,
     headers: (key) => ({
       Authorization: `Bearer ${key}`,

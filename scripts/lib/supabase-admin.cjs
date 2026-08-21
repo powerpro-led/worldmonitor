@@ -19,12 +19,17 @@ let client = null;
 /**
  * @returns {import('@supabase/supabase-js').SupabaseClient | null} the
  *   shared service-role client scoped to the `worldmonitor` schema, or null
- *   when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not configured.
+ *   when SUPABASE_URL / the secret key are not configured.
+ *
+ *   Mirrors server/_shared/supabase-admin.ts: prefers the modern
+ *   SUPABASE_SECRET_KEY (`sb_secret_...`) and falls back to the legacy
+ *   SUPABASE_SERVICE_ROLE_KEY. Both authorize through the same `service_role`
+ *   Postgres role, so BYPASSRLS behaviour is identical.
  */
 function getSupabaseAdmin() {
   if (client) return client;
   const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) return null;
   client = createClient(url, serviceRoleKey, {
     db: { schema: 'worldmonitor' },

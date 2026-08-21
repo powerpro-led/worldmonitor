@@ -12,8 +12,18 @@
  * APIs), so this is safe to import from Vercel edge functions the same way
  * the rest of server/_shared is.
  *
- * Requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY. Both are server-only
- * secrets -- never prefix with VITE_ / expose to the browser.
+ * Requires SUPABASE_URL + a secret key. Both are server-only secrets --
+ * never prefix with VITE_ / expose to the browser.
+ *
+ * Key naming: Supabase replaced the legacy JWT-based `anon`/`service_role`
+ * keys with `sb_publishable_...` / `sb_secret_...`, which rotate independently
+ * instead of being derived from the project JWT secret. A secret key
+ * authorizes through the same built-in `service_role` Postgres role and keeps
+ * its `BYPASSRLS` attribute, so the cross-user lookups described above still
+ * work unchanged. It is a drop-in for createClient's second argument.
+ * SUPABASE_SECRET_KEY is preferred; SUPABASE_SERVICE_ROLE_KEY is still read as
+ * a fallback so an unmigrated environment keeps working (the legacy keys are
+ * supported until the end of 2026).
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -29,8 +39,8 @@ let _didWarnMissingConfig = false;
 
 /**
  * Returns the shared service-role Supabase client scoped to the
- * `worldmonitor` schema, or null when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
- * are not configured. Callers must treat null as "backend unconfigured" and
+ * `worldmonitor` schema, or null when SUPABASE_URL / the secret key are not
+ * configured. Callers must treat null as "backend unconfigured" and
  * fail closed/soft per their own contract -- this module does not decide
  * that policy.
  */
@@ -38,12 +48,13 @@ export function getSupabaseAdmin(): WorldMonitorSupabaseClient | null {
   if (_client) return _client;
 
   const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Prefer the modern secret key; fall back to the legacy service_role key.
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) {
     if (!_didWarnMissingConfig) {
       _didWarnMissingConfig = true;
       console.warn(
-        '[supabase-admin] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set; Postgres-backed lookups disabled',
+        '[supabase-admin] SUPABASE_URL or SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) not set; Postgres-backed lookups disabled',
       );
     }
     return null;

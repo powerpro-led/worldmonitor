@@ -1,7 +1,30 @@
 import { getKeyPrefix } from './redis';
 import { DAILY_COUNTER_TTL_SECONDS, secondsUntilUtcMidnight } from './utc-midnight';
 
-export const DIRECT_LLM_DAILY_QUOTA_LIMIT = 50;
+/**
+ * Daily per-user LLM call budget. Exists to cap real LLM spend on a public
+ * SaaS deployment; this fork is an internal-tools fork with no public users,
+ * so it is configurable here rather than hardcoded.
+ *
+ * `DIRECT_LLM_DAILY_QUOTA_LIMIT` env values:
+ *   unset            -> 50 (the original SaaS default, unchanged)
+ *   a positive int   -> that budget
+ *   0 / off / unlimited -> quota disabled entirely (see DIRECT_LLM_QUOTA_DISABLED)
+ * A malformed value falls back to 50 rather than to "unlimited", so a typo can
+ * never silently uncap spend.
+ */
+function resolveDirectLlmDailyQuotaLimit(): number {
+  const raw = (process.env.DIRECT_LLM_DAILY_QUOTA_LIMIT ?? '').trim().toLowerCase();
+  if (!raw) return 50;
+  if (raw === '0' || raw === 'off' || raw === 'unlimited') return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 50;
+}
+
+export const DIRECT_LLM_DAILY_QUOTA_LIMIT = resolveDirectLlmDailyQuotaLimit();
+
+/** True when the daily LLM quota is switched off entirely. */
+export const DIRECT_LLM_QUOTA_DISABLED = DIRECT_LLM_DAILY_QUOTA_LIMIT === 0;
 export const DIRECT_LLM_REDIS_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 
 export const DIRECT_LLM_GATEWAY_QUOTA_PATHS = new Set<string>([

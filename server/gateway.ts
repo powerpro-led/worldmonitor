@@ -57,6 +57,7 @@ import {
 import {
   DIRECT_LLM_DAILY_QUOTA_LIMIT,
   DIRECT_LLM_GATEWAY_QUOTA_PATHS,
+  DIRECT_LLM_QUOTA_DISABLED,
   reserveDirectLlmQuota,
 } from './_shared/direct-llm-quota';
 import {
@@ -533,6 +534,9 @@ const GATEWAY_DIRECT_LLM_QUOTA_METHODS: Record<string, string> = {
 };
 
 async function shouldReserveGatewayDirectLlmQuota(request: Request, pathname: string): Promise<boolean> {
+  // Quota switched off (internal fork, no public users) — never reserve, so the
+  // daily counter is neither read nor incremented and no path can 429 on it.
+  if (DIRECT_LLM_QUOTA_DISABLED) return false;
   if (!DIRECT_LLM_GATEWAY_QUOTA_PATHS.has(pathname)) return false;
   if (GATEWAY_DIRECT_LLM_QUOTA_METHODS[pathname] !== request.method) return false;
   if (pathname !== '/api/news/v1/summarize-article') return true;

@@ -29,7 +29,7 @@ import type { GetRouteExplorerLaneResponse, GetRouteImpactResponse, BypassCorrid
 import { fetchRouteExplorerLane, fetchRouteImpact } from '@/services/supply-chain';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { getAuthState } from '@/services/auth-state';
-import { trackGateHit, track, type UmamiEvent } from '@/services/analytics';
+import { trackGateHit, track, type AnalyticsEvent } from '@/services/analytics';
 
 import { TRADE_ROUTES } from '@/config/trade-routes';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
@@ -696,7 +696,7 @@ export class RouteExplorer {
     return hasPremiumAccess(getAuthState()) ? 'pro' : 'free';
   }
 
-  private trackEvent(event: UmamiEvent, props?: Record<string, unknown>): void {
+  private trackEvent(event: AnalyticsEvent, props?: Record<string, unknown>): void {
     track(event, { tier: this.tier, ...props });
   }
 

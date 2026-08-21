@@ -98,7 +98,7 @@ COPY shared/stocks.json ./shared/
 COPY scripts/shared/notification-dedup.cjs ./scripts/shared/
 COPY shared/brief-llm-core.js shared/brief-llm-core.d.ts ./shared/
 # brief-render.js resolves APP_DOMAIN-driven origins (public brief links,
-# Umami loader, unsubscribe hrefs) via shared/domain-config.js. Without this
+# unsubscribe hrefs) via shared/domain-config.js. Without this
 # COPY, the cron crashes at startup with ERR_MODULE_NOT_FOUND on
 # /app/shared/domain-config.js. Guarded by
 # tests/dockerfile-digest-notifications-imports.test.mjs.

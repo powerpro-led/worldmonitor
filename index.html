@@ -174,13 +174,6 @@
     }
     </script>
 
-    <!--
-      Umami Analytics loads from the SPA after first paint/idle (not the document
-      head) so a slow/down abacus origin cannot contend with the initial dashboard
-      shell. Script src, website id, and the #4183 data-domains workaround now live
-      in src/services/analytics.ts (UMAMI_DOMAINS) — the single source of truth.
-    -->
-
     <!-- Favicons -->
     <link rel="icon" type="image/x-icon" href="/favico/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favico/favicon-32x32.png" />

@@ -7,7 +7,7 @@
  */
 
 import { isDebugBearRumScriptFrame } from './debugbear-rum';
-import { APP_DOMAIN, ABACUS_ORIGIN } from '@/config/domain';
+import { APP_DOMAIN } from '@/config/domain';
 
 type SentryNs = typeof import('@sentry/browser');
 
@@ -34,22 +34,6 @@ const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set([
   // regressions surface). WORLDMONITOR-RP.
   'data.debugbear.com',
 ]);
-// Self-hosted Umami analytics collector (`src/services/analytics.ts` loads
-// `<ABACUS_ORIGIN>/script.js`, whose tracker POSTs events to `/api/send`).
-// Same disposition as the DebugBear beacon above: a dropped analytics beacon
-// is invisible to the user and unactionable — typically an ad-blocker or a
-// fetch-wrapping extension killing the POST. It reaches Sentry despite the
-// extension gate because the leaked rejection carries our Vite
-// `window.fetch` trampolines, which make hasFirstParty true. Serves no
-// product data, so an abacus outage belongs to uptime monitoring, not a
-// per-user Sentry error. NOT the api. subdomain (stays off so real API
-// regressions surface). WORLDMONITOR-WH/WJ.
-// Added via .add() (not inline in the array above) so
-// tests/sentry-beforesend.test.mjs's regex-based array extraction — which
-// re-embeds the array literal verbatim to test beforeSend without importing
-// the whole Sentry/App bootstrap — doesn't need to resolve the ABACUS_ORIGIN
-// import; the test adds its own domain-configured value the same way.
-THIRD_PARTY_FETCH_HOST_ALLOWLIST.add(new URL(ABACUS_ORIGIN).hostname);
 
 function buildSentryInitOptions(): Parameters<SentryNs['init']>[0] {
   const sentryDsn = import.meta.env.VITE_SENTRY_DSN?.trim();

@@ -17,7 +17,6 @@ import {
   resolveWwwOrigin,
   resolveApiOrigin,
   resolveCookieDomain,
-  resolveAbacusOrigin,
   resolveVariantOrigin,
   resolveVariantOrigins,
   resolveSubdomainOrigin,
@@ -44,7 +43,6 @@ export const APP_ORIGIN = resolveAppOrigin(RAW_APP_DOMAIN);
 export const WWW_ORIGIN = resolveWwwOrigin(RAW_APP_DOMAIN);
 export const API_ORIGIN = resolveApiOrigin(RAW_APP_DOMAIN);
 export const COOKIE_DOMAIN = resolveCookieDomain(RAW_APP_DOMAIN);
-export const ABACUS_ORIGIN = resolveAbacusOrigin(RAW_APP_DOMAIN);
 export const VARIANT_ORIGINS = resolveVariantOrigins(RAW_APP_DOMAIN);
 
 export function getVariantOrigin(slug: string): string {

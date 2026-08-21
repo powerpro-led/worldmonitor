@@ -165,18 +165,6 @@ function resolveVariantOrigins(rawDomain) {
 }
 
 /**
- * The `abacus.` origin — this fork's self-hosted Umami analytics collector
- * subdomain. Same local-dev collapse-to-apex behavior as api/www; whether
- * analytics is disabled entirely in dev is a separate concern for the
- * caller, not something this module decides.
- */
-function resolveAbacusOrigin(rawDomain) {
-  const domain = normalizeDomain(rawDomain);
-  if (isLocalDomain(domain)) return resolveAppOrigin(domain);
-  return `${resolveProtocol(domain)}://abacus.${domain}`;
-}
-
-/**
  * The `proxy.` origin — the Railway-hosted widget-agent SSE relay subdomain
  * (api/widget-agent.ts, vite.config.ts's dev-server proxy). Same local-dev
  * collapse-to-apex behavior as the other named-subdomain resolvers.
@@ -189,7 +177,7 @@ function resolveProxyOrigin(rawDomain) {
 
 /**
  * Generic named-subdomain origin resolver (e.g. `status.`, `maps.`) — the
- * primitive resolveAbacusOrigin/resolveProxyOrigin/resolveApiOrigin/
+ * primitive resolveProxyOrigin/resolveApiOrigin/
  * resolveWwwOrigin are all thin wrappers over. Same local-dev
  * collapse-to-apex convention.
  */
@@ -231,4 +219,4 @@ function buildCspFormActionOrigins(rawDomain) {
   return [resolveApiOrigin(rawDomain)];
 }
 
-module.exports = { DEFAULT_APP_DOMAIN, normalizeDomain, isLocalDomain, resolveProtocol, resolveAppOrigin, resolveWwwOrigin, resolveApiOrigin, resolveCookieDomain, buildDomainOriginPattern, TAURI_ORIGIN_PATTERNS, DEV_LOCALHOST_ORIGIN_PATTERNS, buildAllowedOriginPatterns, VARIANT_SLUGS, resolveVariantDomain, resolveVariantOrigin, resolveVariantOrigins, resolveAbacusOrigin, resolveProxyOrigin, resolveSubdomainOrigin, buildCspFrameSrcOrigins, buildCspFrameAncestorsOrigins, buildCspFormActionOrigins };
+module.exports = { DEFAULT_APP_DOMAIN, normalizeDomain, isLocalDomain, resolveProtocol, resolveAppOrigin, resolveWwwOrigin, resolveApiOrigin, resolveCookieDomain, buildDomainOriginPattern, TAURI_ORIGIN_PATTERNS, DEV_LOCALHOST_ORIGIN_PATTERNS, buildAllowedOriginPatterns, VARIANT_SLUGS, resolveVariantDomain, resolveVariantOrigin, resolveVariantOrigins, resolveProxyOrigin, resolveSubdomainOrigin, buildCspFrameSrcOrigins, buildCspFrameAncestorsOrigins, buildCspFormActionOrigins };

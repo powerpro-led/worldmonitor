@@ -41,7 +41,6 @@ import {
   resolveAppOrigin,
   resolveWwwOrigin,
   resolveApiOrigin,
-  resolveAbacusOrigin,
   resolveVariantOrigin,
   VARIANT_SLUGS,
 } from '../shared/domain-config.js';
@@ -85,7 +84,6 @@ function buildSubstitutions(rawDomain) {
   // last — once a longer match is replaced, the bare-domain suffix no
   // longer appears in that spot for the final rule to (correctly) skip.
   const pairs = [
-    [`https://abacus.${LEGACY_DOMAIN}`, resolveAbacusOrigin(rawDomain)],
     [`https://api.${LEGACY_DOMAIN}`, resolveApiOrigin(rawDomain)],
     [`https://www.${LEGACY_DOMAIN}`, resolveWwwOrigin(rawDomain)],
     ...VARIANT_SLUGS.map((slug) => [`https://${slug}.${LEGACY_DOMAIN}`, resolveVariantOrigin(rawDomain, slug)]),

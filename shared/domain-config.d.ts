@@ -22,7 +22,6 @@ export const VARIANT_SLUGS: readonly ['tech', 'finance', 'commodity', 'happy', '
 export function resolveVariantDomain(rawDomain: string | undefined | null, slug: string): string;
 export function resolveVariantOrigin(rawDomain: string | undefined | null, slug: string): string;
 export function resolveVariantOrigins(rawDomain: string | undefined | null): Record<string, string>;
-export function resolveAbacusOrigin(rawDomain: string | undefined | null): string;
 export function resolveProxyOrigin(rawDomain: string | undefined | null): string;
 export function resolveSubdomainOrigin(rawDomain: string | undefined | null, subdomain: string): string;
 

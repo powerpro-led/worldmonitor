@@ -1,10 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// abacus.example.test matches tests/helpers/domain-config.mjs's TEST_APP_DOMAIN
-// and playwright.config.ts's webServer APP_DOMAIN — the dev server this spec
-// runs against resolves its Umami analytics origin to abacus.example.test.
 const SECONDARY_STARTUP_REQUEST =
-  /(?:abacus\.example\.test\/script\.js|fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
+  /(?:fonts\.googleapis\.com\/css2|fonts\.gstatic\.com\/s\/(?:nunito|tajawal)|ingest\.us\.sentry\.io|static\.cloudflareinsights\.com|\/_vercel\/insights\/script\.js|www\.youtube\.com\/iframe_api)/;
 
 test.describe('secondary startup work', () => {
   test.beforeEach(async ({ page }) => {
@@ -47,7 +44,7 @@ test.describe('secondary startup work', () => {
     );
 
     // The pre-idle assertion validates the FULL deferral contract:
-    // SECONDARY_STARTUP_REQUEST matches Umami, Google Fonts, Sentry ingest,
+    // SECONDARY_STARTUP_REQUEST matches Google Fonts, Sentry ingest,
     // Cloudflare/Vercel analytics, and the YouTube iframe API — none may
     // fire before idle startup runs.
     expect(secondaryRequests).toEqual([]);
@@ -55,7 +52,12 @@ test.describe('secondary startup work', () => {
     await page.evaluate(() => {
       (window as unknown as { __wmRunDeferredIdle?: () => void }).__wmRunDeferredIdle?.();
     });
-    await expect.poll(() => secondaryRequests.some((url) => url.includes('abacus.example.test/script.js'))).toBe(true);
+    // NOTE: this spec lost its positive control when the Umami analytics
+    // integration was removed — that deferred script request was the one
+    // request this environment reliably produced after idle. Nothing here
+    // now asserts that __wmRunDeferredIdle() actually did work; the checks
+    // are negative-only. Restore a positive control before treating a green
+    // run as proof the deferred loader fired.
     expect(secondaryRequests.some((url) => url.includes('www.youtube.com/iframe_api'))).toBe(false);
   });
 });

@@ -1,43 +1,21 @@
 /**
- * Analytics facade — wired to Umami.
+ * Analytics facade — intentionally inert.
  *
- * Dashboard analytics load after first paint; calls made before the script
- * arrives are kept in a small bounded queue and replayed on script load.
+ * This fork is an internal tool, not a public SaaS product, so the Umami
+ * integration that used to back these calls (a self-hosted collector on the
+ * `abacus.` subdomain, plus a hardcoded production website id) was removed.
+ *
+ * The facade itself is kept because ~40 modules call into it. Every function
+ * below is a no-op, and `EVENTS` is retained so event names stay a closed,
+ * compile-checked set: a typo at a call site is still a type error, and the
+ * catalog documents what the UI considers a meaningful user action. Wire a
+ * new backend by giving `track()` / `identifyUser()` a body — nothing else
+ * needs to change.
  */
 
-import { scheduleAfterFirstPaint } from '@/utils/after-paint';
 import { subscribeAuthState, type AuthSession } from './auth-state';
 import { getAuthUserCreatedAt } from './auth-provider';
-import { APP_DOMAIN, ABACUS_ORIGIN } from '@/config/domain';
 
-const UMAMI_SCRIPT_SRC = `${ABACUS_ORIGIN}/script.js`;
-const UMAMI_WEBSITE_ID = 'e8800335-c853-46a8-8497-c993ed2f58bc';
-// data-domains is temporarily reduced to the apex/www hosts + happy while
-// upstream Umami issue #4183 (https://github.com/umami-software/umami/issues/4183)
-// is open — v3.1.0 has a race in prisma.sessionData.updateMany() that returns HTTP 500
-// from /api/send for 4-8% of requests across all listed hosts. Self-hosted Umami has no
-// fix tag yet (master since 2026-04-17 has 22 commits but none touch sessionData). The
-// tracker self-disables when the current hostname isn't in data-domains — the same
-// mechanism that keeps the energy variant silent. Restore tech, finance, and
-// commodity once #4183 ships in a tagged release.
-//
-// The www host MUST be listed alongside the apex (#4931): the apex 301s to
-// www in production, and the tracker's data-domains check is an EXACT
-// hostname match (`!domains.includes(hostname)` → disabled) — with only the
-// apex listed, every event from the canonical host was silently dropped.
-const UMAMI_DOMAINS = `${APP_DOMAIN},www.${APP_DOMAIN},happy.${APP_DOMAIN}`;
-const UMAMI_QUEUE_LIMIT = 50;
-const UMAMI_LOAD_ATTEMPT_LIMIT = 2;
-const UMAMI_LOAD_RETRY_DELAY_MS = 5_000;
-
-type QueuedUmamiCall =
-  | { kind: 'track'; event: UmamiEvent; data?: Record<string, unknown> }
-  | { kind: 'identify'; data: Record<string, unknown> };
-
-const pendingUmamiCalls: QueuedUmamiCall[] = [];
-let umamiLoadScheduled = false;
-let umamiLoadStarted = false;
-let umamiLoadAttempts = 0;
 
 // ---------------------------------------------------------------------------
 // Type-safe event catalog — every event name lives here.
@@ -102,114 +80,22 @@ const EVENTS = {
   'brief-thread-open': true,
 } as const;
 
-export type UmamiEvent = keyof typeof EVENTS;
+export type AnalyticsEvent = keyof typeof EVENTS;
 
-function queueUmamiCall(call: QueuedUmamiCall): void {
-  if (pendingUmamiCalls.length >= UMAMI_QUEUE_LIMIT) {
-    pendingUmamiCalls.shift();
-  }
-  pendingUmamiCalls.push(call);
-}
 
-function sendUmamiCall(call: QueuedUmamiCall): boolean {
-  if (typeof window === 'undefined') return false;
-  const umami = window.umami;
-  if (!umami) return false;
-  try {
-    const result: unknown = call.kind === 'track'
-      ? umami.track(call.event, call.data)
-      : umami.identify(call.data);
-    // Umami's track()/identify() return the beacon `fetch()` promise, which
-    // rejects ASYNCHRONOUSLY on a transient network failure — offline, an
-    // ad-blocker extension that wraps window.fetch, or the self-hosted
-    // collector being briefly unreachable. This try/catch only guards a
-    // SYNCHRONOUS throw, so an unhandled rejection would otherwise escape to
-    // onunhandledrejection and surface in Sentry as a bare
-    // `TypeError: Failed to fetch` rooted in whatever first-party code fired
-    // the event (WORLDMONITOR-WW/WX/WY). A dropped analytics beacon is
-    // unactionable — swallow the rejection.
-    if (result && typeof (result as { catch?: unknown }).catch === 'function') {
-      (result as Promise<unknown>).catch(() => {});
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
+/** No-op sink. Event names are still type-checked against EVENTS. */
+export function track(_event: AnalyticsEvent, _data?: Record<string, unknown>): void {}
 
-function flushPendingUmamiCalls(): void {
-  if (pendingUmamiCalls.length === 0) return;
-  if (typeof window === 'undefined' || !window.umami) return;
-  const calls = pendingUmamiCalls.splice(0, pendingUmamiCalls.length);
-  for (const call of calls) sendUmamiCall(call);
-}
-
-function loadUmamiScript(): void {
-  if (umamiLoadStarted || typeof document === 'undefined') return;
-  const existing = document.querySelector<HTMLScriptElement>(`script[src="${UMAMI_SCRIPT_SRC}"]`);
-  if (existing) {
-    // A script tag already exists (e.g. re-entry after a soft navigation).
-    // Mark load as started so the guard above short-circuits future calls.
-    // If Umami already initialised, flush now; otherwise wait for its load
-    // event. Flushing unconditionally before window.umami is set is a no-op
-    // and a dead {once:true} listener if load already fired.
-    umamiLoadStarted = true;
-    if (typeof window !== 'undefined' && window.umami) {
-      flushPendingUmamiCalls();
-    } else {
-      existing.addEventListener('load', flushPendingUmamiCalls, { once: true });
-    }
-    return;
-  }
-
-  umamiLoadStarted = true;
-  umamiLoadAttempts += 1;
-  const script = document.createElement('script');
-  script.async = true;
-  script.src = UMAMI_SCRIPT_SRC;
-  script.dataset.websiteId = UMAMI_WEBSITE_ID;
-  script.dataset.domains = UMAMI_DOMAINS;
-  script.addEventListener('load', flushPendingUmamiCalls, { once: true });
-  script.addEventListener('error', () => {
-    umamiLoadStarted = false;
-    script.remove();
-    if (umamiLoadAttempts < UMAMI_LOAD_ATTEMPT_LIMIT) {
-      setTimeout(loadUmamiScript, UMAMI_LOAD_RETRY_DELAY_MS);
-    }
-  }, { once: true });
-  document.head.appendChild(script);
-}
-
-/** Type-safe Umami wrapper. Safe to call even if the script hasn't loaded. */
-export function track(event: UmamiEvent, data?: Record<string, unknown>): void {
-  if (!sendUmamiCall({ kind: 'track', event, data })) {
-    queueUmamiCall({ kind: 'track', event, data });
-  }
-}
-
-export function initAnalytics(): void {
-  if (umamiLoadScheduled || typeof window === 'undefined' || typeof document === 'undefined') return;
-  umamiLoadScheduled = true;
-  scheduleAfterFirstPaint(loadUmamiScript, 3000);
-}
+export function initAnalytics(): void {}
 
 // ---------------------------------------------------------------------------
-// User identity — call after auth state resolves so Umami can segment events
-// by user/plan. Safe to call before Umami script loads.
+// User identity — retained so the auth wiring below keeps a single place to
+// re-attach a backend. Inert while there is no analytics sink.
 // ---------------------------------------------------------------------------
 
-export function identifyUser(userId: string, plan: string): void {
-  const data = { userId, plan };
-  if (!sendUmamiCall({ kind: 'identify', data })) {
-    queueUmamiCall({ kind: 'identify', data });
-  }
-}
+export function identifyUser(_userId: string, _plan: string): void {}
 
-export function clearIdentity(): void {
-  if (!sendUmamiCall({ kind: 'identify', data: {} })) {
-    queueUmamiCall({ kind: 'identify', data: {} });
-  }
-}
+export function clearIdentity(): void {}
 
 let _unsubAuth: (() => void) | null = null;
 
@@ -226,7 +112,7 @@ function _syncIdentity(): void {
 }
 
 /**
- * Call once after initAuthState() to keep Umami identity in sync with
+ * Call once after initAuthState() to keep analytics identity in sync with
  * the authenticated user and their subscription status.
  * Re-entrant safe: subsequent calls are no-ops.
  */
@@ -381,19 +267,14 @@ export function trackSignOut(): void {
  * a clean slate. The queue and load guards are module singletons that persist
  * across the shared module import in tests/secondary-startup.test.mts.
  */
-export function resetAnalyticsForTesting(): void {
-  pendingUmamiCalls.length = 0;
-  umamiLoadScheduled = false;
-  umamiLoadStarted = false;
-  umamiLoadAttempts = 0;
-}
+export function resetAnalyticsForTesting(): void {}
 
 export function trackGateHit(feature: string): void {
   track('gate-hit', { feature });
 }
 
 // ---------------------------------------------------------------------------
-// Generic (kept as no-ops — too noisy / not useful in Umami)
+// Generic (were already no-ops before the backend was removed — too noisy)
 // ---------------------------------------------------------------------------
 
 export function trackEvent(_name: string, _props?: Record<string, unknown>): void {}
@@ -451,9 +332,8 @@ export interface BriefThreadOpenProps {
 }
 
 /**
- * Fire-and-forget: `track` short-circuits when Umami hasn't loaded.
- * Wrap call sites in try/catch anyway so a future regression in
- * `track` (e.g. throwing identify) cannot break navigation UX.
+ * Fire-and-forget. Wrap call sites in try/catch anyway so a future
+ * regression in `track` cannot break navigation UX.
  */
 export function trackBriefThreadOpen(props: BriefThreadOpenProps): void {
   track('brief-thread-open', {

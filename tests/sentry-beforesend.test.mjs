@@ -5,10 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDebugBearRumScriptFrame } from '../src/bootstrap/debugbear-rum.ts';
 import { TEST_APP_DOMAIN, setTestAppDomain } from './helpers/domain-config.mjs';
-import { resolveAbacusOrigin } from '../shared/domain-config.js';
 
 setTestAppDomain();
-const TEST_ABACUS_HOSTNAME = new URL(resolveAbacusOrigin(TEST_APP_DOMAIN)).hostname;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,27 +37,23 @@ const fnBody = mainSrc.slice(bsStart + 'beforeSend(event) '.length, bsEnd)
   .replace(/<[A-Z]\w*>/g, '');            // generic type params
 
 // Extract the THIRD_PARTY_FETCH_HOST_ALLOWLIST Set so the test harness can evaluate
-// beforeSend with the same allowlist the real module has. The real source adds
-// the domain-configured abacus hostname via a separate `.add()` call (not
-// inline in the array literal) specifically so this regex-based extraction
-// doesn't need to resolve the ABACUS_ORIGIN import — the test adds its own
-// domain-configured value below instead (abacusHostname param).
+// beforeSend with the same allowlist the real module has.
 const tpMatch = mainSrc.match(/const THIRD_PARTY_FETCH_HOST_ALLOWLIST = new Set\(\[[^\]]*\]\);/);
 assert.ok(tpMatch, 'THIRD_PARTY_FETCH_HOST_ALLOWLIST must be defined in src/bootstrap/sentry-init.ts');
-const allowlistSetup = `${tpMatch[0]}\nTHIRD_PARTY_FETCH_HOST_ALLOWLIST.add(abacusHostname);`;
+const allowlistSetup = tpMatch[0];
 
 // Build a callable version. Input: a Sentry-shaped event object. Returns event or null.
-// APP_DOMAIN/abacusHostname mirror the real module's @/config/domain imports —
+// APP_DOMAIN mirrors the real module's @/config/domain import —
 // this reconstructed function has no module system, so they're passed in
 // explicitly instead of resolved via import. Parameter case must match the
 // identifier the extracted body actually references (APP_DOMAIN, uppercase).
 // eslint-disable-next-line no-new-func
 const rawBeforeSend = new Function(
-  'event', 'isDebugBearRumScriptFrame', 'APP_DOMAIN', 'abacusHostname',
+  'event', 'isDebugBearRumScriptFrame', 'APP_DOMAIN',
   `${allowlistSetup}\n${fnBody}`,
 );
 function beforeSend(event) {
-  return rawBeforeSend(event, isDebugBearRumScriptFrame, TEST_APP_DOMAIN, TEST_ABACUS_HOSTNAME);
+  return rawBeforeSend(event, isDebugBearRumScriptFrame, TEST_APP_DOMAIN);
 }
 
 // Extract the `ignoreErrors` array literal so tests can assert which messages
@@ -648,7 +642,7 @@ describe('existing beforeSend filters', () => {
     // replacement can fail unrelated to our backend. The generic extension rule
     // (`!hasFirstParty && extension frame`) already drops this; the test locks
     // that property in for the `Failed to fetch (<host>)` message shape.
-    const event = makeEvent('Failed to fetch (abacus.worldmonitor.app)', 'TypeError', [
+    const event = makeEvent('Failed to fetch (collector.example.invalid)', 'TypeError', [
       { filename: 'chrome-extension://hoklmmgfnpapgjgcpechhaamimifchmp/frame_ant/frame_ant.js', lineno: 2, function: 'window.fetch' },
     ]);
     assert.equal(beforeSend(event), null, 'Extension-only fetch failure should be suppressed');
@@ -1270,40 +1264,3 @@ describe('bare "Failed to fetch" via DebugBear RUM fetch wrapper (WORLDMONITOR-V
   });
 });
 
-// ─── WORLDMONITOR-WH/WJ: `Failed to fetch (abacus.worldmonitor.app)` ──────────
-//
-// abacus.worldmonitor.app is our SELF-HOSTED Umami analytics collector
-// (src/services/analytics.ts → `https://abacus.worldmonitor.app/script.js`, which
-// POSTs events to `/api/send`). A dropped analytics beacon is invisible to the
-// user and unactionable — the same disposition as the `data.debugbear.com` RUM
-// collector above. It reaches Sentry because the leaked rejection carries our
-// Vite `window.fetch` trampolines (widget-store / panel-storage), which make
-// hasFirstParty true and so defeat the extension-only gate.
-describe('`Failed to fetch (abacus.worldmonitor.app)` — Umami beacon (WORLDMONITOR-WH/WJ)', () => {
-  // Verbatim production stack from WORLDMONITOR-WH.
-  const whStack = [
-    { filename: '/script.js', lineno: 1, function: 'C' },
-    { filename: '/assets/sentry-DMxp_zBn.js', lineno: 1, function: null },
-    { filename: 'chrome-extension://hoklmmgfnpapgjgcpechhaamimifchmp/frame_ant/frame_ant.js', lineno: 2, function: 'window.fetch' },
-    { filename: 'chrome-extension://hoklmmgfnpapgjgcpechhaamimifchmp/frame_ant/frame_ant.js', lineno: 2, function: 'o' },
-    { filename: '/assets/widget-store-dMTCHpAl.js', lineno: 38, function: 'window.fetch' },
-    { filename: '/assets/panel-storage-BWxNKlQM.js', lineno: 2, function: 'window.fetch' },
-  ];
-
-  it('suppresses the exact WH stack (Umami beacon through an extension fetch wrapper)', () => {
-    assert.equal(beforeSend(makeEvent(`Failed to fetch (${TEST_ABACUS_HOSTNAME})`, 'TypeError', whStack)), null,
-      'a dropped Umami analytics beacon is unactionable');
-  });
-
-  it('suppresses the Firefox host-suffixed phrasing for the same host', () => {
-    const event = makeEvent(`NetworkError when attempting to fetch resource. (${TEST_ABACUS_HOSTNAME})`, 'TypeError', []);
-    assert.equal(beforeSend(event), null, 'host allowlist decides regardless of engine phrasing');
-  });
-
-  it('still surfaces `Failed to fetch (api.worldmonitor.app)` with the same stack shape', () => {
-    // The allowlist is host-scoped, so adding the beacon host must not widen the
-    // gate for our data-serving API — a real outage still has to reach Sentry.
-    const event = makeEvent('Failed to fetch (api.worldmonitor.app)', 'TypeError', whStack);
-    assert.ok(beforeSend(event) !== null, 'API-outage canary must never be masked by the beacon allowlist');
-  });
-});

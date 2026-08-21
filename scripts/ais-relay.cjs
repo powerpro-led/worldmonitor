@@ -2002,25 +2002,78 @@ function fetchYahooChartDirect(symbol, query = '') {
   });
 }
 
-// Yahoo's /v10 quoteSummary 401s on Railway container IPs (seen 2026-04-16
-// logs — all 12 sector ETFs failing). Direct first, then curl via Decodo
-// us.decodo.com. Must be curl (NOT CONNECT): Yahoo's edge blocks Decodo's
-// CONNECT egress (gate.decodo.com) but accepts the curl egress — probed
-// 2026-04-16, see scripts/_yahoo-fetch.mjs header.
-function fetchYahooQuoteSummary(symbol) {
+// Yahoo CSRF crumb session, shared by every quoteSummary call below.
+//
+// CORRECTION (2026-08-20): the old note here blamed "Railway container IPs" for
+// the /v10 401s. That was wrong. Yahoo returns
+// `{"code":"Unauthorized","description":"Invalid Crumb"}` — it requires a crumb
+// plus the cookie the crumb is bound to. Verified it is NOT IP-related: it 401s
+// identically from a residential IP and through PROXY_URL, and adding the crumb
+// makes the very same request return 200. The Decodo curl fallback below is kept
+// (it still helps on transport failures) but it was never the cure for the 401.
+const _YAHOO_CRUMB_TTL_MS = 30 * 60 * 1000;
+let _yahooCrumbSession = null;
+let _yahooCrumbInFlight = null;
+
+async function _loadYahooCrumbSession() {
+  try {
+    // fc.yahoo.com answers 404 by design; the Set-Cookie header is the payload.
+    const seed = await fetch('https://fc.yahoo.com/', { headers: { 'User-Agent': CHROME_UA } });
+    const cookie = seed.headers.getSetCookie().map((c) => c.split(';')[0]).filter(Boolean).join('; ');
+    if (!cookie) return null;
+    const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': CHROME_UA, Cookie: cookie },
+    });
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    // A crumb is a short opaque token; an HTML body means we got an error page.
+    if (!crumb || crumb.length > 64 || crumb.includes('<')) return null;
+    return { cookie, crumb, fetchedAt: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+function _getYahooCrumbSession(forceRefresh) {
+  if (forceRefresh) { _yahooCrumbSession = null; _yahooCrumbInFlight = null; }
+  const cached = _yahooCrumbSession;
+  if (cached && Date.now() - cached.fetchedAt < _YAHOO_CRUMB_TTL_MS) return Promise.resolve(cached);
+  // Coalesce concurrent misses — all 12 sector ETFs miss together on a cold tick.
+  if (!_yahooCrumbInFlight) {
+    _yahooCrumbInFlight = _loadYahooCrumbSession().then((session) => {
+      _yahooCrumbSession = session;
+      _yahooCrumbInFlight = null;
+      return session;
+    });
+  }
+  return _yahooCrumbInFlight;
+}
+
+// Direct first, then curl via Decodo us.decodo.com. Must be curl (NOT CONNECT):
+// Yahoo's edge blocks Decodo's CONNECT egress (gate.decodo.com) but accepts the
+// curl egress — probed 2026-04-16, see scripts/_yahoo-fetch.mjs header.
+async function fetchYahooQuoteSummary(symbol, _isCrumbRetry) {
+  const session = await _getYahooCrumbSession(false);
+  const cookie = session ? session.cookie : '';
   return new Promise((resolve) => {
     const modules = 'summaryDetail,defaultKeyStatistics';
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`
+      + (session ? `&crumb=${encodeURIComponent(session.crumb)}` : '');
     let settled = false;
     const settle = (value) => { if (settled) return; settled = true; resolve(value); };
     const req = https.get(url, {
-      headers: { 'User-Agent': CHROME_UA, Accept: 'application/json' },
+      headers: Object.assign({ 'User-Agent': CHROME_UA, Accept: 'application/json' }, cookie ? { Cookie: cookie } : {}),
       timeout: 12000,
     }, (resp) => {
+      // A crumb can expire server-side without warning — refresh once, then retry.
+      if (resp.statusCode === 401 && !_isCrumbRetry) {
+        resp.resume();
+        return settle(_getYahooCrumbSession(true).then(() => fetchYahooQuoteSummary(symbol, true)));
+      }
       if (resp.statusCode !== 200) {
         resp.resume();
         logThrottled('warn', `yahoo-summary-${resp.statusCode}:${symbol}`, `[Sector] Yahoo quoteSummary ${symbol} HTTP ${resp.statusCode}`);
-        return settle(_yahooQuoteSummaryProxyFallback(symbol, url));
+        return settle(_yahooQuoteSummaryProxyFallback(symbol, url, cookie));
       }
       let body = '';
       resp.on('data', (chunk) => { body += chunk; });
@@ -2040,11 +2093,11 @@ function fetchYahooQuoteSummary(symbol) {
             threeYearReturn: raw(ks.threeYearAverageReturn),
             fiveYearReturn: raw(ks.fiveYearAverageReturn),
           });
-        } catch { settle(_yahooQuoteSummaryProxyFallback(symbol, url)); }
+        } catch { settle(_yahooQuoteSummaryProxyFallback(symbol, url, cookie)); }
       });
     });
-    req.on('error', (err) => { if (settled) return; logThrottled('warn', `yahoo-summary-err:${symbol}`, `[Sector] Yahoo quoteSummary ${symbol} error: ${err.message}`); settle(_yahooQuoteSummaryProxyFallback(symbol, url)); });
-    req.on('timeout', () => { if (settled) return; req.destroy(); logThrottled('warn', `yahoo-summary-timeout:${symbol}`, `[Sector] Yahoo quoteSummary ${symbol} timeout`); settle(_yahooQuoteSummaryProxyFallback(symbol, url)); });
+    req.on('error', (err) => { if (settled) return; logThrottled('warn', `yahoo-summary-err:${symbol}`, `[Sector] Yahoo quoteSummary ${symbol} error: ${err.message}`); settle(_yahooQuoteSummaryProxyFallback(symbol, url, cookie)); });
+    req.on('timeout', () => { if (settled) return; req.destroy(); logThrottled('warn', `yahoo-summary-timeout:${symbol}`, `[Sector] Yahoo quoteSummary ${symbol} timeout`); settle(_yahooQuoteSummaryProxyFallback(symbol, url, cookie)); });
   });
 }
 
@@ -2052,7 +2105,7 @@ function fetchYahooQuoteSummary(symbol) {
 // Promise; resolve(promise) in the caller chains the Promise state through
 // to fetchYahooQuoteSummary's outer Promise, so awaiting fetchYahoo* in
 // seedSectorSummary yields the event loop during the curl round-trip.
-async function _yahooQuoteSummaryProxyFallback(symbol, url) {
+async function _yahooQuoteSummaryProxyFallback(symbol, url, cookie) {
   const proxyAuth = resolveProxyString();
   if (!proxyAuth) return null;
   if (Date.now() < _yahooCurlProxyCooldownUntil) return null;
@@ -2073,6 +2126,7 @@ async function _yahooQuoteSummaryProxyFallback(symbol, url) {
       '-x', `http://${proxyAuth}`,
       '-H', `User-Agent: ${CHROME_UA}`,
       '-H', 'Accept: application/json',
+      ...(cookie ? ['-H', `Cookie: ${cookie}`] : []),
       '-w', '\n%{http_code}',
       url,
     ];

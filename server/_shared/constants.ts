@@ -1,4 +1,17 @@
-export const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+// Windows platform token, deliberately — NOT cosmetic. Yahoo Finance throttles
+// `query1.finance.yahoo.com` per User-Agent, and it 429s the `Macintosh` token
+// regardless of Chrome version while serving 200 to the `Windows NT` token from
+// the same IP seconds apart (verified 2026-08-20: Mac/131, Mac/139, Mac/141 all
+// 429; Win/120, Win/141 all 200; alternating A/B, 5/5 reproducible). This was the
+// only Macintosh UA definition in the repo — every other CHROME_UA is already a
+// Windows/Linux token, which is why the relay's Yahoo calls got through while
+// everything importing THIS constant (analyze-stock, and so the Premium Stock
+// Analysis / Backtesting panels) silently returned no data.
+//
+// NOTE: a per-UA throttle is a rate limit, not an auth wall. If Yahoo request
+// volume is the real driver this will decay again — the durable fix is fewer/
+// better-cached Yahoo calls, not another UA. See TASKS.md.
+export const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 
 export function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return fallback;

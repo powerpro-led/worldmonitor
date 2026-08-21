@@ -215,15 +215,104 @@ type YahooSummaryDetailResponse = {
   };
 };
 
-async function fetchPayoutRatio(symbol: string): Promise<number | undefined> {
+// ─── Yahoo CSRF crumb ────────────────────────────────────────────────────────
+// The v10 `quoteSummary` endpoint requires a crumb plus the matching cookie.
+// Without it EVERY call returns 401 `{"description":"Invalid Crumb"}`. Verified
+// 2026-08-20 that this is NOT IP-based: it 401s from a residential IP and
+// through PROXY_URL alike, so the proxy fallback used elsewhere cannot help.
+// (The v8 `/chart` endpoint is unaffected and still needs no crumb — which is
+// why price history kept working while analyst/fundamentals data went blank and
+// the Premium Stock Analysis / Backtesting panels rendered as "waiting for
+// eligible watchlist symbols".)
+//
+// Flow: hit fc.yahoo.com for a session cookie, exchange it for a crumb at
+// /v1/test/getcrumb, then send both on every quoteSummary call. The crumb is
+// bound to the cookie, so they must always travel together.
+const YAHOO_CRUMB_TTL_MS = 30 * 60_000;
+
+type YahooCrumbSession = { cookie: string; crumb: string; fetchedAt: number };
+
+let yahooCrumbSession: YahooCrumbSession | null = null;
+let yahooCrumbInFlight: Promise<YahooCrumbSession | null> | null = null;
+
+async function loadYahooCrumbSession(): Promise<YahooCrumbSession | null> {
   try {
-    await yahooGate();
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryDetail`;
-    const response = await fetch(url, {
+    const seed = await fetch('https://fc.yahoo.com/', {
       headers: { 'User-Agent': CHROME_UA },
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-    if (!response.ok) return undefined;
+    // fc.yahoo.com answers 404 by design — the Set-Cookie header is the payload.
+    const cookie = seed.headers.getSetCookie()
+      .map((c) => c.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
+    if (!cookie) return null;
+
+    const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': CHROME_UA, Cookie: cookie },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    // A crumb is a short opaque token; an HTML body means we got an error page.
+    if (!crumb || crumb.length > 64 || crumb.includes('<')) return null;
+
+    return { cookie, crumb, fetchedAt: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+async function getYahooCrumbSession(forceRefresh = false): Promise<YahooCrumbSession | null> {
+  if (forceRefresh) {
+    yahooCrumbSession = null;
+    yahooCrumbInFlight = null;
+  }
+  const cached = yahooCrumbSession;
+  if (cached && Date.now() - cached.fetchedAt < YAHOO_CRUMB_TTL_MS) return cached;
+  // Coalesce concurrent misses so a batch of symbols triggers one handshake.
+  if (!yahooCrumbInFlight) {
+    yahooCrumbInFlight = loadYahooCrumbSession().then((session) => {
+      yahooCrumbSession = session;
+      yahooCrumbInFlight = null;
+      return session;
+    });
+  }
+  return yahooCrumbInFlight;
+}
+
+/**
+ * GET a quoteSummary module set with crumb auth. Retries once against a fresh
+ * crumb on 401, since a cached crumb expires server-side without warning.
+ */
+async function fetchYahooQuoteSummary(symbol: string, modules: string): Promise<Response | null> {
+  let response: Response | null = null;
+  for (const attempt of [0, 1]) {
+    // A failed handshake must NOT stop us from asking — degrade to an
+    // un-crumbed request, which is exactly the pre-crumb behaviour rather than
+    // a new failure mode. (It also keeps this working against any deployment
+    // or fixture where the crumb isn't required at all.)
+    const session = await getYahooCrumbSession(attempt === 1);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
+      + `?modules=${modules}${session ? `&crumb=${encodeURIComponent(session.crumb)}` : ''}`;
+    response = await fetch(url, {
+      headers: session
+        ? { 'User-Agent': CHROME_UA, Cookie: session.cookie }
+        : { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    // A crumb expires server-side without warning — refresh once and retry.
+    if (response.status === 401 && attempt === 0 && session) continue;
+    return response;
+  }
+  return response;
+}
+
+async function fetchPayoutRatio(symbol: string): Promise<number | undefined> {
+  try {
+    await yahooGate();
+    const response = await fetchYahooQuoteSummary(symbol, 'summaryDetail');
+    if (!response || !response.ok) return undefined;
     const data = await response.json() as YahooSummaryDetailResponse;
     const raw = data.quoteSummary?.result?.[0]?.summaryDetail?.payoutRatio?.raw;
     if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return undefined;
@@ -802,12 +891,8 @@ export async function fetchYahooAnalystData(symbol: string): Promise<AnalystData
   try {
     await yahooGate();
     const modules = 'recommendationTrend,financialData,upgradeDowngradeHistory';
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}`;
-    const response = await fetch(url, {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-    if (!response.ok) return EMPTY_ANALYST_DATA;
+    const response = await fetchYahooQuoteSummary(symbol, modules);
+    if (!response || !response.ok) return EMPTY_ANALYST_DATA;
 
     const data = await response.json() as YahooQuoteSummaryResponse;
     const result = data.quoteSummary?.result?.[0];

@@ -270,20 +270,89 @@ async function withTimeoutRetry(fn, label) {
   throw new Error(`${label}: exhausted ${RETRY_ATTEMPTS + 1} attempts: ${lastErr.message}`);
 }
 
-/** SCAN with withType:true returns [{key, type}, ...] directly — no separate TYPE pass needed. */
+/**
+ * `WITHTYPE` is an Upstash EXTENSION to SCAN, not part of the Redis command
+ * set — a real redis-server answers `ERR syntax error` and this script dies
+ * on its very first prefix. That is exactly what happens against the local
+ * dev stack (docker-compose.dev.yml: redis:7 behind an Upstash-REST shim),
+ * so the backend this script talks to may or may not implement it.
+ *
+ * Probed once per run rather than branched on an env var. The operator
+ * principle is that Upstash-vs-local-Redis is selected by
+ * UPSTASH_REDIS_REST_URL alone and no code may read that URL to decide how
+ * to behave — and this genuinely is a server capability question, not a
+ * deployment question: a self-hosted Upstash-compatible endpoint would
+ * support it while a plain redis-server does not, regardless of which one
+ * the URL happens to name.
+ *
+ * The probe uses a pattern that cannot match anything, so it costs one O(1)
+ * round trip and can never return keys. Deliberately NOT wrapped in
+ * withTimeoutRetry(): a syntax error is permanent, so retrying it would add
+ * ~7s of pure backoff to each of the 15 prefixes while changing nothing.
+ */
+let supportsWithType = null;
+
+async function probeWithTypeSupport(redis) {
+  try {
+    await redis.scan('0', { match: '__local_sync_withtype_probe__:*', count: 1, withType: true });
+    return true;
+  } catch (err) {
+    // Only a syntax error means "command not supported". Auth failures,
+    // connection resets and timeouts must surface as the real errors they
+    // are rather than being silently downgraded to a slower code path.
+    if (/syntax error/i.test(err?.message ?? '')) return false;
+    throw err;
+  }
+}
+
+/**
+ * The portable equivalent of WITHTYPE: a pipelined TYPE pass over keys a
+ * plain SCAN returned. Same chunk size as readValues(), so the two passes
+ * cost a comparable number of round trips.
+ */
+async function attachTypes(redis, keys) {
+  const entries = [];
+  for (let i = 0; i < keys.length; i += PIPELINE_CHUNK) {
+    const chunk = keys.slice(i, i + PIPELINE_CHUNK);
+    // Fresh pipeline inside the retried closure, for the same reason
+    // readValues() builds its own — a Pipeline is not re-execable.
+    const types = await withTimeoutRetry(() => {
+      const pipeline = redis.pipeline();
+      for (const key of chunk) pipeline.type(key);
+      return pipeline.exec({ keepErrors: true });
+    }, `TYPE chunk ${i}-${i + chunk.length}`);
+
+    for (let j = 0; j < chunk.length; j++) {
+      const { result: type, error } = types[j] ?? {};
+      // 'none' is what TYPE returns for a key that expired between the SCAN
+      // and this call — the same vanished-key case readValues() drops.
+      if (error || !type || type === 'none') continue;
+      entries.push({ key: chunk[j], type });
+    }
+  }
+  return entries;
+}
+
+/** Returns [{key, type}, ...] whether or not the server implements WITHTYPE. */
 async function scanAllKeysWithType(redis, prefix) {
   const entries = [];
+  const untyped = [];
   let cursor = '0';
   let page = 0;
   do {
     const [nextCursor, batch] = await withTimeoutRetry(
-      () => redis.scan(cursor, { match: `${prefix}*`, count: SCAN_COUNT, withType: true }),
+      () => (supportsWithType
+        ? redis.scan(cursor, { match: `${prefix}*`, count: SCAN_COUNT, withType: true })
+        : redis.scan(cursor, { match: `${prefix}*`, count: SCAN_COUNT })),
       `SCAN ${prefix}* page ${page}`,
     );
     cursor = nextCursor;
-    entries.push(...batch);
+    if (supportsWithType) entries.push(...batch);
+    else untyped.push(...batch);
     page++;
   } while (cursor !== '0');
+
+  if (!supportsWithType) entries.push(...(await attachTypes(redis, untyped)));
   return entries;
 }
 
@@ -347,6 +416,12 @@ function openDatabase() {
 async function main() {
   assertEnv();
   const redis = createClient();
+
+  supportsWithType = await probeWithTypeSupport(redis);
+  if (!supportsWithType) {
+    console.log('[local-sync] server does not implement SCAN ... WITHTYPE — using a pipelined TYPE pass.');
+  }
+
   console.log(`[local-sync] pulling prefixes: ${SYNC_PREFIXES.join(', ')}`);
 
   const db = openDatabase();

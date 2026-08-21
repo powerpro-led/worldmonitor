@@ -139,7 +139,9 @@
     "entry": "scripts/seed-bundle-static-ref.mjs",
     "deployMode": "nixpacks-root-scripts",
     "service": "seed-bundle-static-ref",
-    "requiredEnv": ["USPTO_API_KEY"],
+    "requiredEnv": [
+      "USPTO_API_KEY"
+    ],
     "documentedAt": "docs/railway-seed-consolidation-runbook.md#bundle-3-seed-bundle-static-ref"
   },
   {
@@ -229,8 +231,312 @@
       "R2_BOOTSTRAP_ACCESS_KEY_ID",
       "R2_BOOTSTRAP_SECRET_ACCESS_KEY"
     ],
-    "watchPatterns": ["scripts/**", "shared/**"],
+    "watchPatterns": [
+      "scripts/**",
+      "shared/**"
+    ],
     "cronSchedule": null,
     "documentedAt": "issue #5300 U3 Railway provisioning contract"
+  },
+  {
+    "entry": "scripts/seed-economy.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-economy",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "FRED_API_KEY",
+      "EIA_API_KEY",
+      "FINNHUB_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-first session: orphaned seeder, Economic Indicators panel had no FRED data"
+  },
+  {
+    "entry": "scripts/seed-prediction-markets.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-prediction-markets",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-first session: orphaned seeder, Predictions panel had no data"
+  },
+  {
+    "entry": "scripts/seed-supply-chain-trade.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-supply-chain-trade",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "WTO_API_KEY",
+      "FRED_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-first session: orphaned seeder, Trade Policy panel had zero trade:* keys"
+  },
+  {
+    "entry": "scripts/seed-trade-flows.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-trade-flows",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-first session: orphaned seeder, Trade Policy flows tab had no data"
+  },
+  {
+    "entry": "scripts/seed-aviation.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-aviation",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "AVIATIONSTACK_API",
+      "ICAO_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 flightDelays EMPTY"
+  },
+  {
+    "entry": "scripts/seed-bigmac.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-bigmac",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "EXA_API_KEYS"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 bigmac prices unseeded"
+  },
+  {
+    "entry": "scripts/seed-bundle-imf-extended.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-bundle-imf-extended",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 wraps 4 IMF WEO seeders, none of which were registered either"
+  },
+  {
+    "entry": "scripts/seed-conflict-intel.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-conflict-intel",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "ACLED_EMAIL",
+      "ACLED_PASSWORD"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 gdeltIntel/unrest adjacent; ACLED feed unseeded"
+  },
+  {
+    "entry": "scripts/seed-cot.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-cot",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 CFTC COT positioning unseeded"
+  },
+  {
+    "entry": "scripts/seed-cyber-threats.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-cyber-threats",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "URLHAUS_AUTH_KEY",
+      "OTX_API_KEY",
+      "ABUSEIPDB_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 cyberThreats EMPTY"
+  },
+  {
+    "entry": "scripts/seed-earnings-calendar.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-earnings-calendar",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "FINNHUB_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 earningsCalendar STALE_SEED"
+  },
+  {
+    "entry": "scripts/seed-earthquakes.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-earthquakes",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 earthquakes EMPTY"
+  },
+  {
+    "entry": "scripts/seed-economic-calendar.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-economic-calendar",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "FRED_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 econCalendar STALE_SEED"
+  },
+  {
+    "entry": "scripts/seed-electricity-prices.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-electricity-prices",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "EIA_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 electricityPrices EMPTY"
+  },
+  {
+    "entry": "scripts/seed-ember-electricity.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-ember-electricity",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 Ember electricity dataset unseeded"
+  },
+  {
+    "entry": "scripts/seed-energy-intelligence.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-energy-intelligence",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 energy intelligence rollup unseeded"
+  },
+  {
+    "entry": "scripts/seed-energy-spine.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-energy-spine",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 energy spine unseeded"
+  },
+  {
+    "entry": "scripts/seed-fear-greed.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-fear-greed",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 fearGreedIndex EMPTY"
+  },
+  {
+    "entry": "scripts/seed-fire-detections.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-fire-detections",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "NASA_FIRMS_API_KEY",
+      "FIRMS_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 wildfires EMPTY + wildfiresBootstrap STALE_SEED"
+  },
+  {
+    "entry": "scripts/seed-forecast-bets.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-forecast-bets",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "FORECAST_BETS_ENSEMBLE"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 shadow bet stream unseeded"
+  },
+  {
+    "entry": "scripts/seed-fuel-prices.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-fuel-prices",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "EIA_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 fuel prices unseeded"
+  },
+  {
+    "entry": "scripts/seed-fx-rates.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-fx-rates",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 fx rates unseeded"
+  },
+  {
+    "entry": "scripts/seed-gdelt-intel.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-gdelt-intel",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 gdeltIntel EMPTY"
+  },
+  {
+    "entry": "scripts/seed-grocery-basket.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-grocery-basket",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "EXA_API_KEYS",
+      "FIRECRAWL_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 grocery basket unseeded"
+  },
+  {
+    "entry": "scripts/seed-hormuz.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-hormuz",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 Hormuz chokepoint unseeded"
+  },
+  {
+    "entry": "scripts/seed-military-flights.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-military-flights",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "OPENSKY_CLIENT_ID",
+      "OPENSKY_CLIENT_SECRET",
+      "OPENSKY_PROXY_AUTH",
+      "PROXY_URL",
+      "WINGBITS_API_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 militaryFlights EMPTY"
+  },
+  {
+    "entry": "scripts/seed-military-maritime-news.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-military-maritime-news",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "APP_DOMAIN",
+      "WORLDMONITOR_RELAY_KEY"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 USNI fleet + NGA nav warnings unseeded"
+  },
+  {
+    "entry": "scripts/seed-radiation-watch.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-radiation-watch",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 radiationWatch EMPTY"
+  },
+  {
+    "entry": "scripts/seed-research.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-research",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 research trending/arxiv/HN unseeded"
+  },
+  {
+    "entry": "scripts/seed-sanctions-pressure.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-sanctions-pressure",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 sanctionsPressure + sanctionsEntities EMPTY"
+  },
+  {
+    "entry": "scripts/seed-security-advisories.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-security-advisories",
+    "requiredEnv": [
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "RELAY_URL",
+      "APP_DOMAIN"
+    ],
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 securityAdvisories EMPTY"
+  },
+  {
+    "entry": "scripts/seed-thermal-escalation.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-thermal-escalation",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 thermal escalation signals unseeded"
+  },
+  {
+    "entry": "scripts/seed-unrest-events.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-unrest-events",
+    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 unrestEvents EMPTY"
   }
 ]

@@ -1,4 +1,22 @@
 #!/usr/bin/env node
+//
+// SCHEDULING: registered in scripts/railway-services.json with a cadence in
+// gcp/scheduler/main.ts. ORPHANED until 2026-08-21 — nothing invoked it, so the
+// Trade Policy panel's trade-flows tab had no `trade:flows:v1:*` /
+// `comtrade:flows:*` keys at all. Header block below is load-bearing:
+// tests/railway-services-registry-coverage.test.mts only checks scripts that
+// document a service name here.
+//
+// Railway service config:
+//   - Service name: seed-trade-flows
+//   - Builder: NIXPACKS (root Dockerfile not used for this seed)
+//   - rootDirectory: scripts
+//   - startCommand: node seed-trade-flows.mjs
+//   - Cron schedule: "0 4 * * *" (daily 04:00 UTC) — CACHE_TTL below is 259200s
+//     and its own comment documents that as "72h = 3x daily interval". 04:00
+//     keeps it off the 6h seed-supply-chain-trade ticks (0/6/12/18); each run
+//     takes ~8.5 min against UN Comtrade.
+//   - Required env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 // Seed UN Comtrade strategic commodity trade flows (issue #2045).
 // Uses the public preview endpoint — no auth required.
 

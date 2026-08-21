@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+//
+// SCHEDULING: registered in scripts/railway-services.json with a cadence in
+// gcp/scheduler/main.ts. This was ORPHANED until 2026-08-20 — the script worked
+// fine but nothing ever invoked it, so economic:fred:v1:* quietly expired and the
+// Economic Indicators panel rendered "upstream unavailable". It looked like a
+// render bug because the keys were present right after someone ran this by hand.
+// Header block below is load-bearing: tests/railway-services-registry-coverage.test.mts
+// only checks scripts that document a service name here.
+//
+// Railway service config:
+//   - Service name: seed-economy
+//   - Builder: NIXPACKS (root Dockerfile not used for this seed)
+//   - rootDirectory: scripts
+//   - startCommand: node seed-economy.mjs
+//   - Cron schedule: "0 * * * *" (hourly). STRESS_INDEX_TTL is 6h = 6x the interval,
+//     the repo's gold standard (survive 5 missed runs); seed-forecasts carries the
+//     same 6h TTL on the same hourly cadence. FRED_TTL's 26h is deliberately looser.
+//   - Required env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, FRED_API_KEY,
+//     EIA_API_KEY, FINNHUB_API_KEY
 
 import { loadEnvFile, CHROME_UA, runSeed, writeExtraKeyWithMeta, sleep, resolveProxy, resolveProxyForConnect, fredFetchJson, curlFetch, getRedisCredentials, allSettledWithConcurrency } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';

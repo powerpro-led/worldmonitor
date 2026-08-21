@@ -22,7 +22,7 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -218,6 +218,88 @@ describe('Railway service registry coverage', () => {
     const m = RUNBOOK_SERVICE_ROW_RE.exec(sample);
     assert.ok(m, 'RUNBOOK_SERVICE_ROW_RE failed to match canonical standalone-service shape');
     assert.equal(m![1], 'scripts/seed-fake.mjs');
+  });
+
+  // ── Session-32 widening ────────────────────────────────────────────────
+  // The checks above only catch a script that a DEPLOYMENT ARTIFACT already
+  // references (a Dockerfile CMD, a runbook row, a `Service name:` header).
+  // That is backwards for the failure mode that actually bit: a seeder that
+  // no artifact mentions at all is invisible to every one of them. Only 7 of
+  // 155 seed scripts carried the header shape, so 30 orphans sat unrun until
+  // the 2026-08-21 sweep and /api/health showed 43 EMPTY checks whose names
+  // mapped one-to-one onto them.
+  //
+  // This test inverts the direction: enumerate scripts/seed-*.mjs from DISK
+  // and require each one to be reachable by something that can actually run
+  // it, or to be listed below with a reason. Adding a seeder now forces a
+  // conscious choice rather than silent non-execution.
+  const DELIBERATELY_UNSCHEDULED = new Map<string, string>([
+    ['seed-recall-benchmark', 'runs in .github/workflows/feed-validation.yml — its header says "no Railway slot"'],
+    ['seed-consumer-prices', 'header: "MANUAL FALLBACK script only. Do NOT configure as a Railway cron" — consumer-prices-core publish.ts is the authoritative writer'],
+    ['seed-iran-events', 'header: "Iran-events domain sunset (war ended 2026-07). Default OFF" — manually re-seeded'],
+    ['seed-webcams', 'health alarm removed by operator decision (session 26); also needs WINDY_API_KEY'],
+  ]);
+
+  it('every scripts/seed-*.mjs is scheduled somewhere or explicitly excused', () => {
+    const seeders = readdirSync(resolve(repoRoot, 'scripts'))
+      .filter((f) => /^seed-.*\.mjs$/.test(f))
+      .map((f) => f.replace(/\.mjs$/, ''))
+      .sort();
+
+    // Everything that can actually cause a seeder to run.
+    const reachable = new Set<string>();
+    const harvest = (text: string) => {
+      for (const m of text.match(/seed-[a-z0-9-]+/g) ?? []) reachable.add(m);
+    };
+    for (const entry of registry) harvest(entry.entry);
+    harvest(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+    harvest(readFileSync(resolve(repoRoot, 'gcp/scheduler/main.ts'), 'utf8'));
+    for (const f of readdirSync(resolve(repoRoot, 'scripts'))) {
+      if (/^seed-bundle-.*\.mjs$/.test(f)) harvest(readFileSync(resolve(repoRoot, 'scripts', f), 'utf8'));
+    }
+    for (const f of readdirSync(resolve(repoRoot, '.github/workflows'))) {
+      harvest(readFileSync(resolve(repoRoot, '.github/workflows', f), 'utf8'));
+    }
+    // Long-running services spawn seeders too: scripts/ais-relay.cjs runs
+    // seed-chokepoint-flows.mjs via execFile. Omitting registry entry scripts
+    // from this sweep is what made the first pass of the session-32 audit
+    // report seed-chokepoint-flows as an orphan and briefly register it a
+    // second time. Dockerfiles are included for the same reason.
+    for (const entry of registry) {
+      const abs = resolve(repoRoot, entry.entry);
+      if (existsSync(abs)) harvest(readFileSync(abs, 'utf8'));
+    }
+    for (const f of readdirSync(repoRoot)) {
+      if (f.startsWith('Dockerfile.')) harvest(readFileSync(resolve(repoRoot, f), 'utf8'));
+    }
+
+    const orphans = seeders.filter((s) => !reachable.has(s) && !DELIBERATELY_UNSCHEDULED.has(s));
+    assert.deepEqual(
+      orphans,
+      [],
+      `orphaned seeder(s) — nothing in the repo can run these. Either register them in ` +
+        `scripts/railway-services.json (plus a cadence in gcp/scheduler/main.ts), or add them to ` +
+        `DELIBERATELY_UNSCHEDULED in this test with the reason from the script's own header:\n  ` +
+        orphans.join('\n  '),
+    );
+  });
+
+  it('DELIBERATELY_UNSCHEDULED only lists scripts that exist and are genuinely unscheduled', () => {
+    // Guards the allowlist itself: a stale entry would silently re-open the
+    // hole it was created to document.
+    const onDisk = new Set(
+      readdirSync(resolve(repoRoot, 'scripts'))
+        .filter((f) => /^seed-.*\.mjs$/.test(f))
+        .map((f) => f.replace(/\.mjs$/, '')),
+    );
+    for (const [name, reason] of DELIBERATELY_UNSCHEDULED) {
+      assert.ok(onDisk.has(name), `DELIBERATELY_UNSCHEDULED lists ${name}, which no longer exists in scripts/`);
+      assert.ok(reason.length > 20, `DELIBERATELY_UNSCHEDULED[${name}] needs a real reason, not a placeholder`);
+      assert.ok(
+        !registry.some((e) => e.service === name),
+        `${name} is in DELIBERATELY_UNSCHEDULED but IS registered in railway-services.json — pick one`,
+      );
+    }
   });
 
   it('SCRIPT_HEADER_SERVICE_RE matches the documented script service header shape', () => {

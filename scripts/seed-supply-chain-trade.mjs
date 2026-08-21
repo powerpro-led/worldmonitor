@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+//
+// SCHEDULING: registered in scripts/railway-services.json with a cadence in
+// gcp/scheduler/main.ts. ORPHANED until 2026-08-21 — the script worked but
+// nothing invoked it, so `trade:*` held ZERO keys and the Trade Policy panel
+// showed "WTO data temporarily unavailable / no tariff overview data". Header
+// block below is load-bearing: tests/railway-services-registry-coverage.test.mts
+// only checks scripts that document a service name here.
+//
+// Railway service config:
+//   - Service name: seed-supply-chain-trade
+//   - Builder: NIXPACKS (root Dockerfile not used for this seed)
+//   - rootDirectory: scripts
+//   - startCommand: node seed-supply-chain-trade.mjs
+//   - Cron schedule: "0 */6 * * *" (every 6h) — the cadence the TTL constants
+//     below are already written against ("8h — 2h buffer over 6h cron cadence").
+//     Do NOT retune those TTLs to fit a different cadence without moving the
+//     paired maxStaleMin values in lockstep; see the issue #4864 note below.
+//   - Required env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+//     WTO_API_KEY, FRED_API_KEY
 
 import { loadEnvFile, CHROME_UA, runSeed, writeExtraKeyWithMeta, sleep, verifySeedKey, resolveProxyForConnect, fredFetchJson } from './_seed-utils.mjs';
 import { tokensToContentMeta, DAY_MIN } from './_content-age-helpers.mjs';

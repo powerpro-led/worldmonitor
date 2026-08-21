@@ -109,7 +109,17 @@ const CADENCES: Record<string, Cadence> = {
   'seed-bundle-regional': { kind: 'cron', expr: '0 */6 * * *' }, // every 6h
 
   // ---- Confirmed via each script's own "Nx the cron interval" TTL comment ----
-  'seed-forecasts': { kind: 'every', rate: '1 hours' }, // TTL_SECONDS=21600 "6h — 6x the 1h cron interval"
+  'seed-forecasts': { kind: 'every', rate: '1 hours' },
+  // Both of these were ORPHANED until 2026-08-20 (session 31): present in scripts/ but
+  // absent from railway-services.json, so nothing ever ran them. Their Redis keys expired
+  // and two dashboard panels rendered as broken. See TASKS.md item C.
+  'seed-economy': { kind: 'every', rate: '1 hours' }, // STRESS_INDEX_TTL=21600 "6h — 6x the 1h cron interval"
+  'seed-prediction-markets': { kind: 'every', rate: '30 minutes' }, // CACHE_TTL=10800 "3h — 6x the 30 min cron interval"
+  // Same story, found 2026-08-21 while chasing the Trade Policy panel: both were
+  // orphaned, so `trade:*` had ZERO keys. Cadences here are the ones each script's
+  // own TTL comments are already written against — don't retune one without the other.
+  'seed-supply-chain-trade': { kind: 'cron', expr: '0 */6 * * *' }, // TTLs are "8h — 2h buffer over 6h cron cadence"
+  'seed-trade-flows': { kind: 'cron', expr: '0 4 * * *' }, // CACHE_TTL=259200 "72h = 3x daily interval"; off the 6h ticks // TTL_SECONDS=21600 "6h — 6x the 1h cron interval"
   'seed-insights': { kind: 'every', rate: '30 minutes' }, // CACHE_TTL=10800 "3h — 6x the 30 min cron interval"
   'seed-hs2-chokepoint-exposure': { kind: 'every', rate: '1 days' }, // TTL_SECONDS=172800 "48h — 2x daily cron interval"
   'seed-comtrade-bilateral-hs4': { kind: 'every', rate: '30 days' }, // own code comment: "new monthly Railway cron"
@@ -136,7 +146,92 @@ const CADENCES: Record<string, Cadence> = {
   // runbook only says "frequent (relay-fallback)"; the script itself
   // (scripts/seed-service-statuses.mjs) carries no TTL/interval constant.
   'seed-service-statuses': { kind: 'every', rate: '15 minutes' },
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-08-21 (session 32) — ORPHANED-SEEDER SWEEP.
+  //
+  // 30 scripts existed in scripts/ but appeared in NO registry, bundle, npm
+  // script, scheduler entry, or GitHub workflow, so nothing had ever run
+  // them. /api/health was reporting 43 EMPTY + 13 STALE_SEED checks and the
+  // two lists corresponded almost one-to-one (earthquakes ↔ seed-earthquakes,
+  // cyberThreats ↔ seed-cyber-threats, and so on). This is the same failure
+  // class as session 31's four orphans, found by widening the search from
+  // "scripts carrying a `Service name:` header" to ALL scripts/seed-*.mjs —
+  // the follow-up TASKS.md had already flagged as highest-value.
+  //
+  // Cadence sources, in the priority order this file's header mandates:
+  //   1. the script's own "Nx the cron interval" TTL comment (most entries)
+  //   2. the health check's declared maxStaleMin, where no TTL comment exists
+  //   3. explicitly flagged UNCONFIRMED below where neither exists
+  //
+  // THREE orphans were deliberately NOT registered — see ORPHANS_NOT_SCHEDULED.
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-aviation': { kind: 'every', rate: '30 minutes' }, // TTL=10800 "3h — survives ~5 consecutive missed 30min cron ticks"
+  'seed-bigmac': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
+  'seed-bundle-imf-extended': { kind: 'every', rate: '30 days' }, // header: "same monthly cadence as seed-imf-macro"; each sub-seeder intervalMs=30*DAY
+  'seed-conflict-intel': { kind: 'every', rate: '30 minutes' }, // own comment: "this seeder's 30min cron cadence"
+  'seed-cot': { kind: 'every', rate: '7 days' }, // COT_TTL=604800 (7d); "CFTC releases COT every Friday"
+  'seed-cyber-threats': { kind: 'cron', expr: '0 */2 * * *' }, // TTL=10800 "3h — survives 1 missed 2h cron cycle"
+  'seed-earnings-calendar': { kind: 'cron', expr: '0 */12 * * *' }, // TTL=129600 "36h — 3× a 12h cron interval"
+  'seed-earthquakes': { kind: 'every', rate: '1 hours' }, // TTL=21600 "6h — 6x the 1h cron interval"
+  'seed-economic-calendar': { kind: 'cron', expr: '0 */12 * * *' }, // TTL=129600 "36h — 3× a 12h cron interval"
+  'seed-electricity-prices': { kind: 'every', rate: '1 days' }, // ELECTRICITY_TTL_SECONDS=3d = 3× daily; health maxStaleMin=2880 (48h)
+  'seed-ember-electricity': { kind: 'every', rate: '1 days' }, // TTL_SECONDS=259200 "72h = 3× daily cron interval"
+  'seed-energy-intelligence': { kind: 'cron', expr: '0 */6 * * *' }, // TTL_SECONDS=86400 "24h = 4× 6h interval"
+  // ais-relay.cjs:11659 documents this one's cron exactly — a better source than
+  // the TTL inference: "Energy spine seed — standalone Railway cron (0 6 * * *)".
+  'seed-energy-spine': { kind: 'cron', expr: '0 6 * * *' },
+  'seed-fear-greed': { kind: 'cron', expr: '0 */6 * * *' }, // TTL=64800 "18h = 3x 6h interval"
+  // No TTL comment in the script. Cadence from health's own maxStaleMin=360
+  // (6h) for `wildfires`/`wildfiresBootstrap`, with the 3× buffer this file
+  // treats as the gold standard.
+  'seed-fire-detections': { kind: 'cron', expr: '0 */2 * * *' },
+  'seed-forecast-bets': { kind: 'every', rate: '1 days' }, // header: "mirrors the seed-forecast-resolutions service" (registered daily above)
+  'seed-fuel-prices': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
+  'seed-fx-rates': { kind: 'every', rate: '1 days' }, // TTL=25*3600 "25 hours — covers daily cron with 1h drift buffer"
+  'seed-gdelt-intel': { kind: 'cron', expr: '0 */2 * * *' }, // TTL=86400 "24h — intentionally much longer than the 2h cron"
+  'seed-grocery-basket': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
+  'seed-hormuz': { kind: 'cron', expr: '0 6 * * *' }, // header: "Cron: every 24 hours (0 6 * * *)"
+  'seed-military-flights': { kind: 'every', rate: '10 minutes' }, // LIVE_TTL=600 (10min); health maxStaleMin=30
+  // UNCONFIRMED — warm-ping seeder with no TTL constant and no health entry
+  // naming a staleness bound. 6h is a deliberate conservative placeholder for
+  // a USNI-fleet/NGA-warnings scrape, flagged rather than presented as sourced.
+  'seed-military-maritime-news': { kind: 'cron', expr: '0 */6 * * *' },
+  // CACHE_TTL=7200 is the READ cache, not the write cadence. Health declares
+  // maxStaleMin=30 for `radiationWatch`, so the seeder must run inside 30min.
+  'seed-radiation-watch': { kind: 'every', rate: '15 minutes' },
+  'seed-research': { kind: 'every', rate: '1 hours' }, // own comment: "the ~hourly cron"
+  'seed-sanctions-pressure': { kind: 'cron', expr: '0 */12 * * *' }, // TTL=15h "3h buffer over 12h cron cadence"
+  'seed-security-advisories': { kind: 'every', rate: '1 hours' }, // TTL=10800 "180min — 2h buffer over 1h cron cadence"
+  'seed-thermal-escalation': { kind: 'cron', expr: '0 */3 * * *' }, // own comment: "cron is `0 */3 * * *` — every THREE hours, not two"
+  'seed-unrest-events': { kind: 'every', rate: '45 minutes' }, // TTL=16200 "4.5h — 6x the 45 min cron interval"
 };
+
+/**
+ * Orphaned scripts found by the session-32 sweep that are deliberately NOT
+ * scheduled. Recorded here so the next sweep does not "rediscover" them and
+ * register them by mistake — the reason is in each script's own header.
+ *
+ *   seed-recall-benchmark  — runs in .github/workflows/feed-validation.yml;
+ *                            its header says so: "no Railway slot".
+ *   seed-consumer-prices   — header: "IMPORTANT: This is a MANUAL FALLBACK
+ *                            script only. Do NOT configure as a Railway cron."
+ *                            consumer-prices-core's publish.ts is the writer.
+ *   seed-iran-events       — header: "Iran-events domain sunset (war ended
+ *                            2026-07). Default OFF" + manually re-seeded.
+ *   seed-webcams           — health alarm removed by operator decision
+ *                            (session 26); also needs WINDY_API_KEY, unset.
+ *   seed-chokepoint-flows  — NOT an orphan: scripts/ais-relay.cjs:6566 spawns it
+ *                            via execFile. Caught only after registering it — a
+ *                            name match in a long-running service's source is
+ *                            ambiguous between a comment and a real invocation,
+ *                            and ais-relay.cjs contains BOTH shapes (its :11656
+ *                            block names seed-aviation / seed-energy-spine /
+ *                            seed-cyber-threats only to say a standalone cron
+ *                            owns them, which is why those three ARE registered).
+ */
+const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events', 'seed-webcams', 'seed-chokepoint-flows'] as const;
+void ORPHANS_NOT_SCHEDULED;
 
 function runScriptOnce(entryRelativePath: string): () => Promise<void> {
   return () =>

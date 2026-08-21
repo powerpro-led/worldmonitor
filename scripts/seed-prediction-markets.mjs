@@ -1,4 +1,21 @@
 #!/usr/bin/env node
+//
+// SCHEDULING: registered in scripts/railway-services.json with a cadence in
+// gcp/scheduler/main.ts. This was ORPHANED until 2026-08-20 — nothing invoked it, so
+// prediction:markets-bootstrap:v1 never existed at all and the Predictions panel
+// showed "failed to load" (it renders an EMPTY list as an error, which disguised a
+// never-seeded key as a fetch failure). Header block below is load-bearing:
+// tests/railway-services-registry-coverage.test.mts only checks scripts that
+// document a service name here.
+//
+// Railway service config:
+//   - Service name: seed-prediction-markets
+//   - Builder: NIXPACKS (root Dockerfile not used for this seed)
+//   - rootDirectory: scripts
+//   - startCommand: node seed-prediction-markets.mjs
+//   - Cron schedule: "*/30 * * * *" (every 30min) — CACHE_TTL below is 10800s (3h),
+//     which the constant's own comment documents as 6x a 30 min cron interval.
+//   - Required env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
 import { loadEnvFile, CHROME_UA, sleep, runSeed } from './_seed-utils.mjs';
 import {

@@ -8098,6 +8098,10 @@ const rssBackoffUntil = new Map(); // key: feed URL → timestamp when backoff e
 const RSS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — RSS feeds rarely update faster
 const RSS_NEGATIVE_CACHE_TTL_MS = 60 * 1000; // 1 min base — scaled by 2^failures via backoff
 const RSS_MAX_NEGATIVE_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min cap — stop hammering broken feeds
+// Proxy-fallback timeout. Kept at/below the 15s direct timeout so a feed that
+// fails by TIMING OUT (rather than by instant reset) still resolves inside a
+// client's patience budget: 15s direct + 15s proxy worst case.
+const RSS_PROXY_TIMEOUT_MS = 15000;
 const RSS_CACHE_MAX_ENTRIES = 200; // hard cap — ~20 allowed domains × ~5 paths max, with headroom
 
 function rssRecordFailure(feedUrl) {
@@ -9888,6 +9892,86 @@ const server = http.createServer(async (req, res) => {
         rejectInFlight(new Error(message));
       };
 
+      // ---- Proxy fallback ---------------------------------------------------
+      // Some feed hosts are unreachable on the DIRECT path from certain networks:
+      // a split-tunnel VPN routes them off the tunnel and the direct route resets
+      // the connection in ~0.3s (ECONNRESET), so whole regional panels never load
+      // even though the feeds themselves are healthy. Every other upstream in this
+      // file (Yahoo, Weather, Spending, CoinPaprika, OpenSky) already retries
+      // through PROXY_URL on failure — RSS was the only one that did not.
+      //
+      // Direct is always attempted first, so hosts that resolve normally never
+      // touch the proxy and pay nothing.
+      //
+      // On proxy SUCCESS we deliberately do not call rssRecordFailure(): the
+      // backoff guard runs BEFORE this fetch code on the next request, so
+      // recording a failure here would 503 the feed for up to 15 minutes and the
+      // proxy would never get another chance to serve it.
+      //
+      // Returns true if it took over the response (the caller must not also
+      // handle the failure); false if no proxy is configured or one was already
+      // tried, in which case the caller runs its original failure path.
+      let rssProxyTried = false;
+      const rssTryProxy = (giveUp) => {
+        if (rssProxyTried || responseHandled || res.headersSent) return false;
+        if (!PROXY_URL) return false;
+        const proxyConfig = parseProxyUrl(PROXY_URL);
+        if (!proxyConfig) return false;
+        proxyConfig.tls = true; // Decodo always requires TLS (mirrors _openskyProxyConnect)
+        rssProxyTried = true;
+
+        const { proxyFetch } = require('./_proxy-utils.cjs');
+        const attempt = (url, redirectCount) => proxyFetch(url, proxyConfig, {
+          accept: 'application/rss+xml, application/xml, text/xml, */*',
+          headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+          timeoutMs: RSS_PROXY_TIMEOUT_MS,
+        }).then((r) => {
+          // proxyFetch does not follow redirects; honor them here under the same
+          // allowlist rule the direct path enforces.
+          if (r.status >= 300 && r.status < 400 && r.location) {
+            if (redirectCount >= 3) throw new Error('too many redirects via proxy');
+            const next = r.location.startsWith('http')
+              ? r.location
+              : new URL(r.location, url).href;
+            if (!RSS_ALLOWED_DOMAINS.has(new URL(next).hostname)) {
+              throw new Error('redirect to disallowed domain');
+            }
+            return attempt(next, redirectCount + 1);
+          }
+          return r;
+        });
+
+        attempt(feedUrl, 0).then((r) => {
+          if (!r.ok) throw new Error(`upstream ${r.status}`);
+          if (responseHandled || res.headersSent) { resolveInFlight(); return; }
+          responseHandled = true;
+          rssResetFailure(feedUrl);
+          if (rssResponseCache.size >= RSS_CACHE_MAX_ENTRIES && !rssResponseCache.has(feedUrl)) {
+            const oldest = rssResponseCache.keys().next().value;
+            if (oldest) rssResponseCache.delete(oldest);
+          }
+          // No etag/lastModified stored: those came from the direct response and
+          // replaying them as conditional headers on a different egress path can
+          // yield a 304 we have no body for.
+          rssResponseCache.set(feedUrl, {
+            data: r.buffer, contentType: 'application/xml', statusCode: r.status,
+            timestamp: Date.now(), etag: null, lastModified: null,
+          });
+          logThrottled('log', `rss-proxy-ok:${feedUrl}`, `[Relay] RSS served via proxy: ${feedUrl}`);
+          resolveInFlight();
+          sendCompressed(req, res, 200, {
+            'Content-Type': 'application/xml',
+            'Cache-Control': 'public, max-age=300',
+            'CDN-Cache-Control': 'public, max-age=600, stale-while-revalidate=300',
+            'X-Cache': 'MISS-PROXY',
+          }, r.buffer);
+        }).catch((perr) => {
+          logThrottled('warn', `rss-proxy-fail:${feedUrl}`, `[Relay] RSS proxy fallback failed for ${feedUrl}: ${perr.message}`);
+          giveUp();
+        });
+        return true;
+      };
+
       const fetchWithRedirects = (url, redirectCount = 0) => {
         if (redirectCount > 3) {
           return sendError(502, 'Too many redirects');
@@ -9988,31 +10072,39 @@ const server = http.createServer(async (req, res) => {
         });
 
         request.on('error', (err) => {
-          const { failures, backoffSec } = rssRecordFailure(feedUrl);
-          logThrottled('error', `rss-error:${feedUrl}:${err.code || err.message}`, `[Relay] RSS error: ${err.message} (backoff ${backoffSec}s, failures=${failures})`);
-          // Serve stale on error (only if we have previous successful data)
-          if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300) {
-            if (!responseHandled && !res.headersSent) {
-              responseHandled = true;
-              sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
+          const giveUp = () => {
+            const { failures, backoffSec } = rssRecordFailure(feedUrl);
+            logThrottled('error', `rss-error:${feedUrl}:${err.code || err.message}`, `[Relay] RSS error: ${err.message} (backoff ${backoffSec}s, failures=${failures})`);
+            // Serve stale on error (only if we have previous successful data)
+            if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300) {
+              if (!responseHandled && !res.headersSent) {
+                responseHandled = true;
+                sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
+              }
+              resolveInFlight();
+              return;
             }
-            resolveInFlight();
-            return;
-          }
-          sendError(502, err.message);
+            sendError(502, err.message);
+          };
+          // ECONNRESET here is the exact signature of an off-tunnel host; retry
+          // through the proxy before writing this feed off into backoff.
+          if (!rssTryProxy(giveUp)) giveUp();
         });
 
         request.on('timeout', () => {
           request.destroy();
-          const { failures, backoffSec } = rssRecordFailure(feedUrl);
-          logThrottled('warn', `rss-timeout:${feedUrl}`, `[Relay] RSS timeout for ${feedUrl} (backoff ${backoffSec}s, failures=${failures})`);
-          if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300 && !responseHandled && !res.headersSent) {
-            responseHandled = true;
-            sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
-            resolveInFlight();
-            return;
-          }
-          sendError(504, 'Request timeout');
+          const giveUp = () => {
+            const { failures, backoffSec } = rssRecordFailure(feedUrl);
+            logThrottled('warn', `rss-timeout:${feedUrl}`, `[Relay] RSS timeout for ${feedUrl} (backoff ${backoffSec}s, failures=${failures})`);
+            if (rssCached && rssCached.statusCode >= 200 && rssCached.statusCode < 300 && !responseHandled && !res.headersSent) {
+              responseHandled = true;
+              sendCompressed(req, res, 200, { 'Content-Type': 'application/xml', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, rssCached.data);
+              resolveInFlight();
+              return;
+            }
+            sendError(504, 'Request timeout');
+          };
+          if (!rssTryProxy(giveUp)) giveUp();
         });
       };
 

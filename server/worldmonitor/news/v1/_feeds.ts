@@ -120,7 +120,10 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
     ],
     africa: [
       { name: 'BBC Africa', url: 'https://feeds.bbci.co.uk/news/world/africa/rss.xml' },
-      { name: 'News24', url: 'https://feeds.news24.com/articles/news24/TopStories/rss' },
+      // Cloudflare bot challenge on the direct feed — see the matching note in
+      // src/config/feeds.ts. Both sides must move together or the client/server
+      // parity test flags new routing drift.
+      { name: 'News24', url: gnLocale('site:news24.com when:1d', 'en-ZA', 'ZA', 'ZA:en') },
       { name: 'Africanews', url: 'https://www.africanews.com/feed/' },
       { name: 'Jeune Afrique', url: 'https://www.jeuneafrique.com/feed/', lang: 'fr' },
       { name: 'Premium Times', url: 'https://www.premiumtimesng.com/feed' },

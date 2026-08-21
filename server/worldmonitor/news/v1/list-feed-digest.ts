@@ -40,14 +40,41 @@ const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy', 'commodity']
 const fallbackDigestCache = new Map<string, { data: ListFeedDigestResponse; ts: number }>();
 const ITEMS_PER_FEED = 5;
 const MAX_ITEMS_PER_CATEGORY = 20;
-const FEED_TIMEOUT_MS = 8_000;
+/**
+ * Read a positive-integer override from the environment, falling back to the
+ * platform-tuned default. Deliberately ignores zero/negative/NaN so a typo in
+ * `.env` degrades to the safe default rather than to an instant deadline.
+ */
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+// Per-feed fetch ceiling. Overridable because the defaults below assume the
+// sub-second feed fetches you get on a datacenter network. On a developer
+// machine behind a VPN — or wherever the relay's PROXY_URL fallback is doing
+// the work — a single feed legitimately takes 3-9s, and the default silently
+// truncates most of the feed list. See NEWS_DIGEST_DEADLINE_MS.
+const FEED_TIMEOUT_MS = envPositiveInt('NEWS_FEED_TIMEOUT_MS', 8_000);
 // Vercel Edge functions have a 25s initial-response ceiling. The digest
 // must fail closed to the warmed in-isolate fallback before the platform does.
 const VERCEL_INITIAL_RESPONSE_LIMIT_MS = 25_000;
-const DIGEST_RESPONSE_TIMEOUT_MS = 14_000;
+const DIGEST_RESPONSE_TIMEOUT_MS = envPositiveInt('NEWS_DIGEST_RESPONSE_TIMEOUT_MS', 14_000);
 const POST_FETCH_HEADROOM_MS = 15_000;
 const RESPONSE_GUARD_BAND_MS = 3_000;
-const OVERALL_DEADLINE_MS = VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADROOM_MS;
+// Whole-run budget shared by EVERY feed. Note the arithmetic that makes this
+// the binding constraint: the feed list is walked in ceil(N / BATCH_CONCURRENCY)
+// SEQUENTIAL batches, so the per-batch budget is this value divided by that
+// count — with 190 feeds at concurrency 20 the default leaves 1s per batch.
+// Any environment where a feed takes longer than that fetches only the first
+// batch and abandons the rest, which looks exactly like "those panels have no
+// data" rather than like a timeout.
+const OVERALL_DEADLINE_MS = envPositiveInt(
+  'NEWS_DIGEST_DEADLINE_MS',
+  VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADROOM_MS,
+);
 const BATCH_CONCURRENCY = 20;
 
 // U3 — hard freshness floor (default 96h, env override NEWS_MAX_AGE_HOURS).
@@ -494,9 +521,17 @@ async function fetchAndParseRss(
     }
 
     if (!text) {
-      // Both direct and relay failed. Cache empty short so we retry sooner
-      // than the healthy-result TTL.
       const empty: ParseResult = { items: [], parsedTotal: 0, droppedUndated: 0 };
+      // Distinguish "this feed is broken" from "this feed never got a fair
+      // chance". When the shared deadline fires, every feed still queued or
+      // in flight lands here too — but its failure says nothing about the
+      // feed. Caching those as empty is actively harmful: it writes off the
+      // whole tail of the feed list for CACHE_TTL_EMPTY_S, so the next run
+      // starts from the same truncated state and the digest can never
+      // incrementally recover. Skip the write and let the next run retry.
+      if (signal.aborted) return empty;
+      // Both direct and relay genuinely failed. Cache empty short so we retry
+      // sooner than the healthy-result TTL.
       await setCachedJson(cacheKey, empty, CACHE_TTL_EMPTY_S);
       return empty;
     }

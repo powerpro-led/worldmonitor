@@ -256,7 +256,12 @@ const FULL_FEEDS: Record<string, Feed[]> = {
   africa: [
     { name: 'Africa News', url: rss('https://news.google.com/rss/search?q=(Africa+OR+Nigeria+OR+Kenya+OR+"South+Africa"+OR+Ethiopia)+when:2d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Sahel Crisis', url: rss('https://news.google.com/rss/search?q=(Sahel+OR+Mali+OR+Niger+OR+"Burkina+Faso"+OR+Wagner)+when:3d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'News24', url: rss('https://feeds.news24.com/articles/news24/TopStories/rss') },
+    // Direct feed sits behind a Cloudflare bot challenge (403 with a "Just a moment"
+    // interstitial) — confirmed 2026-08-20 to fail from a residential IP AND via
+    // PROXY_URL, so it is not IP-based and no proxy fallback recovers it. Same
+    // failure mode as blockworks.co (see tests/feeds-client-server-parity.test.mjs).
+    // Keep in sync with server/worldmonitor/news/v1/_feeds.ts.
+    { name: 'News24', url: rss('https://news.google.com/rss/search?q=site:news24.com+when:1d&hl=en-ZA&gl=ZA&ceid=ZA:en') },
     { name: 'BBC Africa', url: rss('https://feeds.bbci.co.uk/news/world/africa/rss.xml') },
     { name: 'Jeune Afrique', url: rss('https://www.jeuneafrique.com/feed/'), lang: 'fr' },
     { name: 'Africanews', url: { en: rss('https://www.africanews.com/feed/rss'), fr: rss('https://fr.africanews.com/feed/rss') } },
@@ -750,7 +755,7 @@ const COMMODITY_FEEDS: Record<string, Feed[]> = {
   energy: [
     { name: 'OilPrice.com', url: rss('https://oilprice.com/rss/main') },
     { name: 'Rigzone', url: rss('https://www.rigzone.com/news/rss/rigzone_latest.aspx') },
-    { name: 'EIA Reports', url: rss('https://www.eia.gov/rss/press_room.xml') },
+    { name: 'EIA Reports', url: rss('https://www.eia.gov/rss/todayinenergy.xml') },
     { name: 'OPEC News', url: rss('https://news.google.com/rss/search?q=(OPEC+OR+"oil+price"+OR+"crude+oil"+OR+WTI+OR+Brent+OR+"oil+production")+when:1d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Natural Gas News', url: rss('https://news.google.com/rss/search?q=("natural+gas"+OR+LNG+OR+"gas+price"+OR+"Henry+Hub")+when:1d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Energy Intel', url: rss('https://news.google.com/rss/search?q=(energy+commodities+OR+"energy+market"+OR+"energy+prices")+when:2d&hl=en-US&gl=US&ceid=US:en') },
@@ -833,7 +838,7 @@ const ENERGY_FEEDS: Record<string, Feed[]> = {
   energy: [
     { name: 'OilPrice.com',          url: rss('https://oilprice.com/rss/main') },
     { name: 'Rigzone',               url: rss('https://www.rigzone.com/news/rss/rigzone_latest.aspx') },
-    { name: 'EIA Press Room',        url: rss('https://www.eia.gov/rss/press_room.xml') },
+    { name: 'EIA Press Room',        url: rss('https://www.eia.gov/rss/todayinenergy.xml') },
     { name: 'OPEC & Crude',          url: rss('https://news.google.com/rss/search?q=(OPEC+OR+"oil+price"+OR+"crude+oil"+OR+WTI+OR+Brent+OR+"oil+production"+OR+"oil+inventory")+when:1d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Natural Gas & LNG',     url: rss('https://news.google.com/rss/search?q=("natural+gas"+OR+LNG+OR+"gas+price"+OR+"Henry+Hub"+OR+TTF+OR+JKM+OR+"LNG+cargo")+when:1d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Pipelines & Chokepoints', url: rss('https://news.google.com/rss/search?q=(pipeline+OR+Druzhba+OR+"Nord+Stream"+OR+TurkStream+OR+"Strait+of+Hormuz"+OR+"Bab+el-Mandeb"+OR+"Suez+Canal"+OR+"Power+of+Siberia")+when:2d&hl=en-US&gl=US&ceid=US:en') },

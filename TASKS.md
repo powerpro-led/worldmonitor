@@ -220,8 +220,54 @@ were left untouched — nitric's own internal `ais-relay` attempt failed with th
 
 1. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
    not this repo's concern to chase, but flagging in case it's relevant context later.
-2. **Nothing else open from this session as of this handoff** — all four VS-Code-embed bugs (SW,
-   click-handling, AbortSignal, and the secret-rotation regression it surfaced) are verified live.
+2. **Nothing else open from this session's bug-fix thread as of this handoff** — all four VS-Code-
+   embed bugs (SW, click-handling, AbortSignal, and the secret-rotation regression it surfaced) are
+   verified live.
+
+### 🔭 NEXT INITIATIVE — seed/sync reliability sweep (operator's choice for the next session)
+
+Scoped cold-start, same shape as sessions 31–33's orphan sweeps: audit seeders and the
+Redis→local-SQLite mirror sync for staleness, orphaned crons, or silent failures.
+
+**Baseline, measured this session's close (2026-08-22, ~21:15)**: `/api/health?compact=1` — 232
+total, 181 ok, 15 warn, 12 onDemandWarn, 0 staleContent, **24 crit**. Full crit/warn key list below;
+don't re-fetch as step one, start from this.
+
+**Already explained by prior sessions — don't re-diagnose these, they're expected**:
+- `acledIntel` EMPTY — ACLED blocked on account tier (Open, needs Research), not code. Don't re-test
+  credentials (`session32_orphan_seeder_sweep.md`).
+- `gdeltIntel` EMPTY — GDELT self-rate-limits (429), expected to self-resolve on its own cron cycle
+  (`session32_orphan_seeder_sweep.md`).
+- `jodiGas`/`jodiOil` EMPTY — China coverage gate can never pass as currently designed; decoupling it
+  is an unanswered **operator policy call**, don't implement unprompted (`jodi_seed_source_contracts.md`).
+
+**Not yet explained — genuinely open, good starting candidates**:
+- `consumerPrices{Overview,Categories,Movers,Spread,Freshness}` — all 5 EMPTY simultaneously, smells
+  like one shared upstream/seeder problem rather than 5 independent ones.
+- `globalTendersCanadaBuys`, `globalTendersContractsFinder` — both `SEED_ERROR`.
+- `resilienceStaticFao`, `resilienceStaticIndex` — both `SEED_ERROR` (long `maxStaleMin`, ~576000 —
+  near-static reference data, so a persistent error here has likely been silently broken for a while).
+- `socialVelocity` — `SEED_ERROR`.
+- `sanctionsPressure`, `sanctionsEntities` — both EMPTY; check whether these are ACLED-adjacent
+  (same account-tier block) or a genuinely separate cause before assuming the former.
+- `comtradeBilateralHs4`, `submarineCables`, `climateAnomalies`, `climateZoneNormals`, `riskScores`,
+  `telegramFeed`, `wsbTickers`, `wildfires`, `wildfiresBootstrap`, `webcams` — EMPTY, uninvestigated
+  this session. `webcams` in particular: cross-check against `vscode_live_news_debugging_session.md`
+  before assuming it's the same already-accepted removal — that note says `api/webcam` itself is
+  NOT dead (still serves `PinnedWebcamsPanel`), so this EMPTY key may be tracking something distinct.
+- Several `STALE_SEED`/`EMPTY_ON_DEMAND` entries not listed above — full raw list was captured via
+  `/api/health?compact=1`'s `problems` object at session close; re-fetch if this list feels stale by
+  the time it's picked up (health state drifts hour to hour).
+
+**Environment left running** (all confirmed stable at session close): `nitric start --ci` (restarted
+this session at ~21:10, PID reassigned — don't assume any PID number above is still current, re-`ps`),
+`node scripts/clean-nitric-history.mjs` (running since this morning's boot — **note: TWO copies
+running, one from today, one orphaned since Thursday**, harmless duplicate, not worth killing but
+don't be alarmed if `ps aux` shows two), `node --env-file=.env scripts/ais-relay.cjs` (since this
+morning's boot, untouched all session), the VS Code extension's own sidecar (respawned by the
+extension itself during this session's testing, fresh token each spawn — read it live via
+`ps eww $(pgrep -f local-api-server.mjs) | tr ' ' '\n' | grep LOCAL_API_TOKEN`, don't reuse any token
+value written earlier in this file).
 
 ---
 

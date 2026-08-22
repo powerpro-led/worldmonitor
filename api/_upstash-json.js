@@ -183,16 +183,28 @@ export async function redisPipeline(commands, timeoutMs = 5_000) {
   // fine. This function was simply the one read path in this module that
   // never got the branch its siblings have.
   //
-  // WRITES are deliberately left alone: the mirror is read-only, so a pipeline
-  // containing anything other than GET keeps returning null (the existing
-  // "unavailable" signal) rather than reporting a write that did not happen.
+  // WRITES: the mirror is read-only, so it can never serve one. Previously
+  // any non-GET pipeline returned null unconditionally here, which is right
+  // for a packaged Tauri desktop with no local Redis at all (there truly is
+  // nothing to fall through to) but wrong for every local-dev sidecar, where
+  // UPSTASH_REDIS_REST_URL/TOKEN point at a real, writable local Redis and
+  // commit 4746487 already allowlisted that origin for the SSRF guard. That
+  // over-broad null was health.js's snapshot lock failure: its SET...NX
+  // pipeline hit this branch, got null back, and the endpoint answered 503
+  // "Redis snapshot lock failed" even though a live, writable Redis was one
+  // fetch away. Fixed by falling through to the real pipeline call below
+  // whenever live creds are configured, and only returning the old
+  // "unavailable" null when they are genuinely absent.
   if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
     const isAllReads = Array.isArray(commands)
       && commands.length > 0
       && commands.every((c) => Array.isArray(c) && String(c[0]).toUpperCase() === 'GET');
-    if (!isAllReads) return null;
-    const rows = readMirrorValues(commands.map(([, key]) => String(key)));
-    return rows === null ? null : rows.map((value) => ({ result: value }));
+    if (isAllReads) {
+      const rows = readMirrorValues(commands.map(([, key]) => String(key)));
+      return rows === null ? null : rows.map((value) => ({ result: value }));
+    }
+    if (!getRedisCredentials()) return null;
+    // else: live creds exist — fall through to the real pipeline call below.
   }
 
   const creds = getRedisCredentials();

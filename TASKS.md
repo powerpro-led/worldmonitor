@@ -63,7 +63,16 @@ works elsewhere may sit in the wrong kind of file. Full write-up: `local_pipelin
 
 ### 🔭 STILL OPEN — pick this up first
 
-**1. `/api/health?compact=1` 503 "Redis snapshot lock failed" — diagnosed, NOT fixed.**
+**1. `/api/health?compact=1` 503 "Redis snapshot lock failed" — RESOLVED (2026-08-22, thirty-fourth session).**
+
+Fix applied exactly as recommended below: the `tauri-sidecar` branch of `redisPipeline()` now falls
+through to a live pipeline call for non-GET commands whenever `getRedisCredentials()` finds live creds,
+and only returns the old "unavailable" `null` when they're genuinely absent (packaged-desktop-without-
+local-Redis case). GET-only pipelines are untouched — still served from the mirror unconditionally.
+Verified live against the running extension sidecar (killed by captured PID, relaunched with the same
+env/token so the already-open webview kept working): `/api/health` **503 → 200** (now correctly reports
+real subsystem health — 25 crit/19 warn/232 total, a separate pre-existing signal, not an infra failure);
+`/api/bootstrap` and `/api/gpsjam` both stayed 200. `tsc --noEmit` clean.
 
 Root cause: `api/health.js`'s snapshot lock does `SET … NX EX` via `redisPipeline()`. Commit `0510ed5`'s
 sidecar branch in that function only serves **all-GET** pipelines from the SQLite mirror — anything else
@@ -75,7 +84,7 @@ local Docker Redis, `UPSTASH_REDIS_REST_URL`/`TOKEN` point at a **real, writable
 `4746487` already allowlisted that origin for SSRF — so `redisPipeline()` *could* fall through to a live
 call instead of returning `null`, and the lock would just work.
 
-**Recommended fix, NOT yet attempted**: in the `tauri-sidecar` branch, only serve from the mirror when
+**Recommended fix (applied above)**: in the `tauri-sidecar` branch, only serve from the mirror when
 live Redis creds are absent (the packaged-Tauri-desktop-without-local-Redis case, where the mirror is
 the only option). When `UPSTASH_REDIS_REST_URL`/`TOKEN` are set — true for every local-dev sidecar
 today — fall through to the real pipeline call below instead of intercepting. Needs deciding whether

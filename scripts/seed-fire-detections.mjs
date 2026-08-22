@@ -3,6 +3,16 @@
 import { loadEnvFile, runSeed, CHROME_UA, sleep } from './_seed-utils.mjs';
 import { compactWildfireDashboardPayload } from './_wildfire-dashboard.mjs';
 
+// 2026-08-22 (session 35): during active Siberian/Russian wildfire season the raw combined
+// VIIRS feed for MONITORED_REGIONS (Russia's bbox alone spans nearly the whole country) grew
+// past 100k detections — 13MB serialized, blowing _seed-utils.mjs's 5MB per-key write guard
+// and failing BOTH the canonical key and the bootstrap extraKey (which never even runs, since
+// the canonical write throws first). Health showed wildfires + wildfiresBootstrap EMPTY as a
+// result. Fix: cap the CANONICAL write the same way the bootstrap key was already capped —
+// compactWildfireDashboardPayload's existing priority sort (explosion > confidence > brightness
+// > FRP > recency) picks the 500 most significant detections, which the RPC reader
+// (list-fire-detections.ts) already expects and reports via `pagination.totalCount` when capped.
+
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'wildfire:fires:v1';
@@ -146,6 +156,9 @@ async function main() {
     ttlSeconds: 7200,
     lockTtlMs: 2_400_000, // 40 min — 27 slots × ~72s worst case (30s timeout + 6s backoff + 30s retry + 6s pace) ≈ 32.4 min; pad headroom. Next cron tick sees lock held and safely skips.
     sourceVersion: FIRMS_SOURCES.join('+'),
+    // Caps the CANONICAL write to the same 500-record priority-sorted set the bootstrap
+    // extraKey already uses — see the module-header comment above for why this is needed now.
+    publishTransform: compactWildfireDashboardPayload,
     extraKeys: [{
       key: BOOTSTRAP_KEY,
       transform: compactWildfireDashboardPayload,

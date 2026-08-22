@@ -205,6 +205,15 @@ const CADENCES: Record<string, Cadence> = {
   'seed-security-advisories': { kind: 'every', rate: '1 hours' }, // TTL=10800 "180min — 2h buffer over 1h cron cadence"
   'seed-thermal-escalation': { kind: 'cron', expr: '0 */3 * * *' }, // own comment: "cron is `0 */3 * * *` — every THREE hours, not two"
   'seed-unrest-events': { kind: 'every', rate: '45 minutes' }, // TTL=16200 "4.5h — 6x the 45 min cron interval"
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-08-22 (session 35) — found never registered by session 32's own
+  // sweep: globalTendersCanadaBuys/globalTendersContractsFinder showed
+  // SEED_ERROR because seed-global-tenders.mjs was absent from BOTH the old
+  // Railway registry and this file — nothing had ever invoked it. TTL source:
+  // own comment "CACHE_TTL_SECONDS = 10_800; // 3h, safely beyond the hourly
+  // Railway cadence" — confirms the intended cadence was hourly.
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-global-tenders': { kind: 'every', rate: '1 hours' },
 };
 
 /**

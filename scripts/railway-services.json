@@ -538,5 +538,11 @@
     "deployMode": "nixpacks-root-scripts",
     "service": "seed-unrest-events",
     "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 unrestEvents EMPTY"
+  },
+  {
+    "entry": "scripts/seed-global-tenders.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-global-tenders",
+    "documentedAt": "TASKS.md \u2014 thirty-fifth session: orphaned seeder sweep \u2014 globalTendersCanadaBuys/globalTendersContractsFinder SEED_ERROR, never registered by session 32's sweep"
   }
 ]

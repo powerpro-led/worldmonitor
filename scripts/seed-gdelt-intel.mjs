@@ -73,7 +73,19 @@ async function fetchTopicArticles(topic) {
   // fetchGdeltJson does direct retry + curl proxy multi-retry internally.
   // Throws on exhaustion with HTTP 429 in message — outer fetchWithRetry's
   // is429 substring match still works against the new error format.
-  const data = await fetchGdeltJson(url.toString(), { label: topic.id });
+  //
+  // 2026-08-22: maxRetries trimmed from the helper's default (3, i.e. 4 direct
+  // attempts) to 1 (2 attempts). Direct's worst case alone (4×15s request +
+  // 60s backoff = 120s) was leaving too little of the 150s soft budget for the
+  // proxy leg — where the actual chance of success lives (proxy defaults to 5
+  // attempts; the whole point of the multi-attempt design is Decodo's
+  // session-rotating egress eventually drawing an unthrottled IP). GDELT's
+  // throttle window is documented as wide, so a 2nd/3rd/4th direct attempt
+  // within ~30-60s of the first is unlikely to land in a cleared window
+  // anyway — it mostly just burns budget the proxy leg could use instead.
+  // New worst case: direct 2×15s+10s=40s, proxy 5×15s+20s=95s = 135s, now
+  // comfortably inside the 150s soft budget with room for a 2nd topic.
+  const data = await fetchGdeltJson(url.toString(), { label: topic.id, maxRetries: 1 });
   const articles = (data.articles || [])
     .map(normalizeArticle)
     .filter(Boolean);

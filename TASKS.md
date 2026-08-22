@@ -15,7 +15,109 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-21, THIRTY-SECOND session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-22, THIRTY-THIRD session end) — read this first, supersedes every block below
+
+**Scope**: two threads. (1) Closed the thirty-second session's "🔭 NEXT INITIATIVE" — Redis→local-SQLite
+data pipeline for the VS Code extension — end to end: restored a dead sync, audited every Redis prefix
+against every handler, scoped user data correctly, and automated it with a launchd agent. (2) That work
+put a *working* mirror in front of the sidecar for the first time, which exposed **six** VS-Code-only
+bugs nothing had ever exercised before. All six fixed and verified. Console errors: **122 → 5**
+(operator-confirmed, live). **0 commits pushed** (standing manual-commit discipline); 34 commits sit
+ahead of `origin/main` on `main`, tree clean.
+
+### Part 1 — Redis → local SQLite mirror (the prior NEXT INITIATIVE, now CLOSED)
+
+| # | Problem | Fix |
+|---|---|---|
+| 1 | `npm run local-sync` dead 4 days, nothing reported it | 4 stacked blockers: no `.env` loading in the npm script, wrong Redis token under the local-Redis switch, `SCAN…WITHTYPE` (an Upstash extension a real Redis rejects), and the shim silently mangling any value that happened to *be* valid base64 (it ignored `Upstash-Encoding: base64`, which `@upstash/redis` sends by default and decodes unconditionally) |
+| 2 | Rebuild not crash-safe | `DELETE FROM kv_cache` auto-committed immediately; a killed run left an empty/partial mirror **stamped with a fresh `synced_at`**, so the new staleness warning would call the wreckage healthy. Fixed: stage into `.tmp`, rename only on full success |
+| 3 | Mirror age was invisible | `synced_at` written since the mirror existed, read by nothing. Sidecar now logs age on load and warns past 24h |
+| 4 | Sync had no cadence | `scripts/install-local-sync-agent.sh` installs `com.worldmonitor.local-sync`, a **LaunchAgent** (not a root Daemon — it writes into the repo). `RunAtLoad` + 900s. **Deliberately not tied to VS Code lifecycle** — the mirror is a machine property. Source stays 100% env-driven (`UPSTASH_REDIS_REST_URL`); no second selector was added, per explicit operator correction — see `redis_env_not_codebase_switch.md` |
+| 5 | 19 domains had data in the browser, empty in the extension | Audited all 59 Redis prefixes (23,351 keys) against every handler. `SYNC_PREFIXES` 15 → 42. Classified by **reading keys, not names** — `acled:` looks like a data prefix, its only key is `acled:oauth:token`, a **credential**, deliberately excluded |
+| 6 | `brief:` mirrored everyone's briefs | Now filtered to the signed-in operator only. Sidecar records the Supabase user id (from the VS Code GitHub-session bearer) to `operator-identity.json` beside the mirror; fail-closed cold start (no identity → no user-scoped brief mirrored at all) |
+
+Two classes of empty panel a bigger `SYNC_PREFIXES` can **never** fix, both diagnosed and left alone:
+premium-gated RPCs (tell: `fetchedAt: ''`, not a stamped timestamp) and fetch-through caches under
+**prefixless** keys (`cable-health-v1`, `chokepoint-status`) — every `SYNC_PREFIXES` entry ends in `:`.
+
+### Part 2 — six VS-Code-only bugs, all the same shape
+
+**Every one of these is "the browser has Vite in front of it, the extension has the sidecar."** Vite
+proxies `/api` same-origin; the extension's `<iframe>` hits the sidecar directly, so anything that
+depends on same-origin cookies, a specific origin string, or a resolvable `.ts` import breaks silently
+in the extension while the identical bundle works in a tab.
+
+| # | Symptom | Root cause | Commit |
+|---|---|---|---|
+| 1 | almost every RPC 401 | `getConfiguredWebApiBaseUrl()` returned `VITE_WS_API_URL` (`:9001`=nitric) as its FIRST statement, before any runtime check → every call went cross-origin, where the embed shim can't attach `x-worldmonitor-local-token` | `85fe9d5` |
+| 2 | Latest Brief 404 | `build:sidecar-handlers` only compiled `api/{domain}/v1/[rpc].ts`, never top-level `api/*.ts` — 18 routes (`latest-brief`, `chat-analyst`, `user-prefs`, …) simply didn't exist. Route table 53→70 | `2c40250` |
+| 3 | telegram/oref 502 "SSRF blocked" | `RELAY_URL=http://localhost:3004` is a private origin the sidecar's SSRF guard rejects | `a77215a` |
+| 4 | bootstrap/gpsjam 503 | `api/_upstash-json.js`'s two sidecar branches did `await import('.../sidecar-cache')` — a **`.ts` path**. This module is hand-written plain JS the sidecar loads directly with node → `ERR_MODULE_NOT_FOUND`, always. Domain RPCs worked because esbuild **inlines** the TS into those bundles; this file is not one of them | `0510ed5` |
+| 5 | wm-session 503 "Rate-limit service temporarily unavailable" | Same SSRF guard blocked the rate limiter's own Redis pipeline call. The existing docker-only allowance's comment ("desktop UPSTASH_REDIS_REST_URL is a public https origin") is stale the moment local Redis dev exists — extended the gate to `tauri-sidecar` | `4746487` |
+| 6 | latest-brief 503 "service_unavailable" | Same root cause as #5, different symptom: `readRawJsonFromUpstash` has no sidecar branch, always calls `UPSTASH_REDIS_REST_URL` directly, was SSRF-blocked, and `latest-brief.ts`'s outer catch deliberately turns any Upstash-read throw into 503 rather than a false "composing" state | fixed by same commit as #5 |
+
+**The trap worth carrying forward**: the sidecar loads two kinds of route with *opposite* module
+resolution — esbuild bundles (`api/{domain}/v1/[rpc].js`, can `import` `.ts`) vs. hand-written plain JS
+(`api/bootstrap.js`, `api/_upstash-json.js`, cannot). Code that "obviously" works because the same line
+works elsewhere may sit in the wrong kind of file. Full write-up: `local_pipeline_and_vscode_dagu_plan.md`.
+
+### 🔭 STILL OPEN — pick this up first
+
+**1. `/api/health?compact=1` 503 "Redis snapshot lock failed" — diagnosed, NOT fixed.**
+
+Root cause: `api/health.js`'s snapshot lock does `SET … NX EX` via `redisPipeline()`. Commit `0510ed5`'s
+sidecar branch in that function only serves **all-GET** pipelines from the SQLite mirror — anything else
+(this SET) returns `null` by design ("the mirror is read-only, a write should never report success").
+`health.js` sees `null`, throws `'Redis snapshot lock failed'`, answers 503.
+
+That guard was right for a **read-only** mirror, but it's now too blunt: in `tauri-sidecar` mode with
+local Docker Redis, `UPSTASH_REDIS_REST_URL`/`TOKEN` point at a **real, writable** store, and commit
+`4746487` already allowlisted that origin for SSRF — so `redisPipeline()` *could* fall through to a live
+call instead of returning `null`, and the lock would just work.
+
+**Recommended fix, NOT yet attempted**: in the `tauri-sidecar` branch, only serve from the mirror when
+live Redis creds are absent (the packaged-Tauri-desktop-without-local-Redis case, where the mirror is
+the only option). When `UPSTASH_REDIS_REST_URL`/`TOKEN` are set — true for every local-dev sidecar
+today — fall through to the real pipeline call below instead of intercepting. Needs deciding whether
+that changes behavior for GET-only calls too (currently served from the mirror even when live creds
+exist) — probably keep GET-from-mirror as is (mirror is deliberately the *fast*, offline-safe path) and
+only widen the non-GET branch. Verify against `bootstrap`/`gpsjam` (must stay 200) AND `health`
+(must go 503→200) in the same test pass.
+
+**2. Two remaining console entries are external/environmental, not local bugs — do not chase them:**
+- `GET /_vercel/insights/script.js` 404 — Vercel Web Analytics isn't present locally. Harmless.
+- `maps.worldmonitor.app` CORS block on `country-boundary-overrides.geojson` — that remote host replies
+  `Access-Control-Allow-Origin: http://localhost:3000`, rejecting the `:46123` embed origin. It's the
+  external service's own CORS config; nothing in this repo can fix it. Map falls back without overrides.
+
+**3. Rotate `BRIEF_URL_SIGNING_SECRET`.** Its real value was pasted into this session's chat transcript
+in plaintext (operator opened `.env` in the IDE and copy-pasted while debugging). Same treatment as the
+six keys flagged for rotation in the thirty-second session's block below — add this one to that list.
+
+**4. `readMirrorValues()` in `api/_upstash-json.js` opens `node:sqlite` once per process and never
+closes it.** Fine for a long-lived sidecar process; would leak a handle in a short-lived script that
+imported this module repeatedly. Not observed as a problem, just noted.
+
+### Traps specific to this session
+
+- **`pkill -f local-api-server` kills the operator's OWN running extension sidecar**, not just test
+  probes — they share the exact script path. Symptom is deceptive: the ServiceWorker keeps serving
+  cached HTML/JS so the dashboard still renders, and only the Network tab shows every fetch as
+  `net::ERR_CONNECTION_REFUSED`. Kill test sidecars by captured PID or by port, never by name.
+- **The sidecar runs PREBUILT bundles**, not live TS. `server/_shared/` edits need
+  `npm run build:sidecar-handlers` before they're visible in the extension — the opposite of nitric,
+  where tsx resolves the sibling `.ts` first and edits are live.
+- **`npx vite build` needs `APP_DOMAIN=worldmonitor.app`** (the apex, not `www.` — that double-prefixes)
+  or the `wm-variant-dashboard-html` plugin's hreflang-rewrite anchor matches zero times and the build
+  fails at the very last step, leaving `dist/` with prerendered SEO pages but **no `dashboard.html`, no
+  `assets/`** — which 404s the extension's dashboard entirely.
+- Every finding in this session was verified live (curl probes with forged-but-correctly-rejected
+  bearers, crash-mid-run tests, A/B against a clean tree for the one pre-existing test failure) rather
+  than inferred from source reading alone — see the individual commit messages for the actual numbers.
+
+---
+
+## 🔀 HANDOFF (2026-08-21, THIRTY-SECOND session end) — superseded by the thirty-third block above
 
 **Scope**: closed item G (Latest Brief) from the thirty-first session, then followed the consequences
 into the orphaned-seeder sweep that block had already flagged as "the single highest-value follow-up".

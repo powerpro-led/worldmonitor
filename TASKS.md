@@ -366,6 +366,43 @@ reachable from the built bundle. The alternative — running `scripts/sync-domai
 does cover `index.html` — would rewrite tracked files and reopens the de-branding cleanup the operator
 explicitly closed, so it was **not** done.
 
+### ✅ FIXED — the VS Code extension's 401/502/503 wall (four distinct causes)
+
+All four are VS-Code-only, and each is the same shape: **code that behaves differently purely because
+the browser has Vite in front of it and the extension has the sidecar.**
+
+1. **Every RPC 401'd** — `getConfiguredWebApiBaseUrl()` returned `VITE_WS_API_URL`
+   (`http://localhost:9001`, i.e. nitric) as its FIRST statement, ahead of every runtime check. The
+   embed shim attaches `x-worldmonitor-local-token` only to relative/same-origin `/api/` URLs, so a
+   cross-origin call to :9001 arrived with no credentials. A browser tab is immune: served from :3000
+   where Vite proxies `/api` same-origin. Fixed by returning `''` under `isVsCodeEmbedRuntime()`.
+
+2. **Latest Brief 404** — `build:sidecar-handlers` compiled only `api/{domain}/v1/[rpc].ts`, never
+   top-level `api/*.ts`. `buildRouteTable()` collects only `.js`, so 18 routes did not exist. Route
+   table 53 → 70.
+
+3. **Relay routes 502 "SSRF blocked"** — `RELAY_URL` is `http://localhost:3004`, a private origin the
+   sidecar's SSRF guard rejects. Vite proxies it in the browser, so the guard is never in the path.
+   Fixed narrowly: mode-gated to `tauri-sidecar`, trusting exactly ONE configured origin, mirroring
+   the existing docker/Redis allowance rather than opening a general env-driven allowlist.
+
+4. **bootstrap / gpsjam 503** — `api/_upstash-json.js`'s two sidecar branches did
+   `await import('../server/_shared/sidecar-cache')`, a **TypeScript** path. This module is
+   hand-written plain JS loaded directly by node → `ERR_MODULE_NOT_FOUND` → neither branch ever
+   served a value. Now reads the mirror directly via `node:sqlite`.
+   `/api/bootstrap` 503 → 200 (628 KB fast / 1.47 MB slow), `/api/gpsjam` 503 → 200 (245 KB).
+
+**The trap worth carrying forward (cause 4).** The sidecar loads TWO kinds of route and they have
+OPPOSITE module-resolution behaviour:
+
+| route kind | example | can import `.ts`? |
+|---|---|---|
+| esbuild bundle | `api/{domain}/v1/[rpc].js` | **yes** — esbuild inlines it |
+| hand-written plain JS | `api/bootstrap.js`, `api/_upstash-json.js` | **no** — plain node, ERR_MODULE_NOT_FOUND |
+
+So identical-looking sidecar code works in one and silently fails in the other. **Never assume a
+`sidecar-cache` import works because the same line works elsewhere** — check which kind of file it is.
+
 ### ⚠ The sidecar runs PREBUILT bundles, not your source
 
 `local-api-server.mjs` imports `api/{domain}/v1/[rpc].js` — gitignored esbuild bundles that embed a

@@ -15,7 +15,111 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-22, THIRTY-FOURTH session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-22, THIRTY-FIFTH session end) — read this first, supersedes every block below
+
+**Scope**: picked up the thirty-fourth session's scoped "seed/sync reliability sweep" NEXT
+INITIATIVE. Verified the handoff was actually clean first (git tree matched exactly, dev-stack
+processes all alive, health baseline unchanged) before starting — no leftover cleanup needed.
+
+### Fixed and committed (`83e86a0`, not pushed)
+
+1. **`globalTendersCanadaBuys`/`ContractsFinder`** — `scripts/seed-global-tenders.mjs` was a
+   genuine orphan: never in `scripts/railway-services.json` OR `gcp/scheduler/main.ts`'s CADENCES
+   map, missed entirely by the thirty-second session's own orphan sweep. Registered it (hourly,
+   matching its own `CACHE_TTL_SECONDS` comment) in both files.
+2. **`wildfires`/`wildfiresBootstrap`** — real bug, not a registration gap. During active
+   Siberian/Russian wildfire season the raw combined VIIRS feed (Russia's monitored bbox spans
+   nearly the whole country) grew past 100k detections → 13MB serialized, blowing
+   `_seed-utils.mjs`'s 5MB per-key write guard every single run. The bootstrap extraKey already
+   used `compactWildfireDashboardPayload` (500-record priority sort: explosion > confidence >
+   brightness > FRP > recency) but the canonical key's write never did. Applied the same transform
+   via `publishTransform`. Verified live: 500 records, 130KB, `state: OK`.
+
+### Fixed via one-time manual backfill (data only, no code change needed)
+
+- **`resilienceStaticFao`/`resilienceStaticIndex`** — correctly registered (90-day interval in
+  `gcp/scheduler/main.ts`), just never backfilled locally — "registration ≠ backfill," the exact
+  trap the thirty-second session's memory already named (a 90-day local-nitric-uptime interval
+  essentially never elapses given how often this dev environment restarts). Hand-ran
+  `seed-bundle-resilience.mjs`; verified `status: ok`, 196 countries, FAO aggregate 43 countries.
+- **`military:bases`** (not on the original crit list, found as a bonus while backfilling the
+  static-ref bundle) — same story, backfilled successfully, 1,058 entries.
+
+### Root-caused, six upstream hosts confirmed VPN-throttled — needs the OPERATOR'S own terminal
+
+Diagnosed via the `local-network-optimizer` skill (Shape A: VPN is the slow path, same class as
+session 32's FIRMS fix). **`contractsfinder.service.gov.uk`, `canadabuys.canada.ca`,
+`sanctionslistservice.ofac.treas.gov` (OFAC), `archive-api.open-meteo.com`, `comtrade.un.org`, and
+`submarinecablemap.com`** all route through `utun8` and get throttled to ~6KB/s on response-BODY
+transfer specifically (headers/connect are fine, the body stream stalls) — confirmed empirically
+with paired Node `fetch()` timing tests, not guessed. Cloudflare through the *same* tunnel gets
+~300KB/s, ruling out a VPN-wide problem. This explains, in one shared root cause:
+`globalTendersCanadaBuys`/`ContractsFinder` (per-source, registration fix above doesn't help until
+this is fixed too), `sanctionsPressure`/`sanctionsEntities` (OFAC — **not** ACLED-related, verified
+by reading the script; the original handoff's caution to double-check rather than assume was
+correct), `climateZoneNormals`/`climateAnomalies` (Open-Meteo; Anomalies cascades from
+Zone-Normals' baseline dependency), `comtradeBilateralHs4`, `submarineCables`.
+
+I can't run `sudo route add` myself (no passwordless sudo in this environment — confirmed, not
+assumed). **Ready-to-run script**: `/private/tmp/claude-502/-Users-john-Documents-CODE-worldmonitor/69766dc5-50f8-448b-923f-67e4357dfde6/scratchpad/vpn-bypass-seed-sources.sh`
+(session-scratchpad path — copy out if it needs to survive past this session) — resolves current
+IPs for all six hosts, tests a live bypass via the physical gateway, re-checks speed, and lists the
+seeders to re-run afterward. Ask for the persistent-LaunchDaemon variant (matching
+`com.worldmonitor.firms-vpn-bypass`) once the live test is confirmed working.
+
+**`seed-comtrade-bilateral-hs4.mjs` specifically**: doesn't use the shared `runSeed()` wrapper (no
+lock/deadline machinery), so a VPN-throttled run has no bounded ceiling — it was killed after
+~13min rather than left to retry indefinitely. Root cause (same VPN throttle) confirmed via routing
+check before killing, not guessed.
+
+### Explained, not bugs — credential/infra/policy gaps (flagged, not implemented unprompted)
+
+- **`consumerPrices{Overview,Categories,Movers,Spread,Freshness}`** — the entire
+  `consumer-prices-core` microservice was never provisioned in this environment: no Postgres
+  (`DATABASE_URL` unset, 9 pending migrations), no `CONSUMER_PRICES_CORE_BASE_URL`, no running
+  process, absent from `nitric.yaml`. The manual fallback seeder
+  (`scripts/seed-consumer-prices.mjs`) even prints "writing empty placeholders" by design when
+  unconfigured. Standing it up needs a new Postgres instance + Playwright-based scraping + a second
+  Redis client (raw RESP, not the HTTP-REST shim the rest of the fork uses) — new infra, not a
+  sweep-scope fix.
+- **`socialVelocity`/`wsbTickers`** — Reddit's 2026 policy blocks the unauthenticated public
+  endpoint (already proven false-safe against proxy/UA changes, per the code's own comment); the
+  one working fallback (ScrapeCreators) needs `SCRAPECREATORS_API_KEY`, absent from `.env`
+  entirely, not even as an empty placeholder.
+- **`telegramFeed`** — needs a real Telegram MTProto login session
+  (`TELEGRAM_API_ID`/`_API_HASH`/`_SESSION`, via `node scripts/telegram/session-auth.mjs`), never
+  set up.
+
+### Found, deliberately NOT patched — needs a deliberate next-session fix
+
+- **`riskScores`** — subtle bug, confirmed empirically: `ais-relay.cjs`'s CII warm-ping runs every
+  8 minutes, but the RPC's own cache TTL (`get-risk-scores.ts`) is 10 minutes. Since 8 < 10, the
+  warm-ping's own frequent hits keep the cache perpetually warm, so the "genuine fresh compute,
+  leader" branch that writes `seed-meta:intelligence:risk-scores` essentially never fires — the
+  warm-ping's *success* at keeping the cache warm is exactly what starves the health heartbeat.
+  Verified live: a fresh manual RPC call returned valid current CII data but did NOT update the
+  seed-meta timestamp (stuck 5+ days old). Not patched this session — touches shared caching code
+  (`cachedFetchJsonWithMeta`) a prior PR (#3562) already carefully tuned; a rushed fix risks
+  re-breaking that tuning. Fix direction: either have the warm-ping periodically force a real
+  cache-bypass call, or decouple `riskScores`' staleness classification from the fresh-vs-cache
+  distinction specifically.
+
+### 🔭 STILL OPEN — pick this up first
+
+1. Apply the VPN bypass script above (operator's terminal), then re-run the seven affected seeders
+   it lists.
+2. `riskScores`' warm-ping/cache-TTL mismatch — needs a deliberate fix to shared caching code, not
+   a quick patch.
+3. Full crit/warn list drifts hour to hour (matches every prior session's note on this) — re-fetch
+   `/api/health?compact=1` rather than trusting this handoff's numbers if picked up much later.
+   Baseline at this session's close: 232 total, 182 ok, 14 warn, 12 onDemandWarn, 0 staleContent,
+   24 crit (flat vs. session start's 24 despite 4 genuine fixes — offset by unrelated natural
+   drift: `energyPrices`/`temporalAnomalies` rotated in as new transient staleness during this
+   session, not caused by anything above).
+
+---
+
+## 🔀 HANDOFF (2026-08-22, THIRTY-FOURTH session end) — superseded by the thirty-fifth block above
 
 **Scope**: closed all three open items from the thirty-third session's handoff (below), then chased a
 live bug report ("several VS Code dashboard panels stuck loading forever") through **four** independent

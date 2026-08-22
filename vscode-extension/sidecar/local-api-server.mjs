@@ -2109,6 +2109,28 @@ export async function createLocalApiServer(options = {}) {
           );
         }
       }
+      // tauri-sidecar ONLY: relay-backed routes (telegram-feed, gpsjam,
+      // oref-alerts, the Yahoo/weather upstreams) call RELAY_URL, which on a
+      // developer machine is http://localhost:3004 — a private origin the SSRF
+      // guard rejects, so those routes 502 with "SSRF blocked: Requests to
+      // localhost are not allowed". A browser tab never hits this because Vite
+      // proxies /api itself and the sidecar is not in the path at all.
+      //
+      // Deliberately narrow, mirroring the docker/Redis allowance above rather
+      // than opening a general env-driven allowlist (which that block's comment
+      // explicitly rules out): gated on the local sidecar mode, and trusting
+      // exactly ONE configured origin — RELAY_URL's — not "localhost" broadly.
+      // A malformed value is logged and skipped rather than silently ignored,
+      // since the symptom otherwise looks like an upstream outage.
+      if (context.mode === 'tauri-sidecar' && process.env.RELAY_URL) {
+        try {
+          extraAllowedPrivateOrigins.push(new URL(process.env.RELAY_URL).origin);
+        } catch (err) {
+          context.logger.warn(
+            `[local-api] RELAY_URL is not a valid URL; not added to the private-fetch allowlist (relay-backed routes will be SSRF-blocked): ${err.message}`,
+          );
+        }
+      }
       if (context.allowPrivateRemoteBase) {
         try { extraAllowedPrivateOrigins.push(new URL(context.remoteBase).origin); } catch {}
       }

@@ -15,7 +15,111 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-22, THIRTY-THIRD session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-22, THIRTY-FOURTH session end) — read this first, supersedes every block below
+
+**Scope**: closed all three open items from the thirty-third session's handoff (below), then chased a
+live bug report ("several VS Code dashboard panels stuck loading forever") through two completely
+different root causes in two different repos. **Important standing correction**: earlier sessions'
+memory framed this fork as single-operator/dev-stage/low-stakes — operator corrected this explicitly:
+it is distributed as a **private GitHub release that multiple internal operators each install on their
+own machine** — not public SaaS, but not single-user either. Re-evaluate "low priority, only affects
+me" reasoning on any future finding against this corrected model.
+
+### Part 1 — thirty-third session's three open items, all closed
+
+| # | Item | Resolution |
+|---|---|---|
+| 1 | `/api/health` 503 | Fixed: `redisPipeline()`'s tauri-sidecar branch now falls through to live Redis for non-GET commands when creds exist. Verified live, 503→200. `4373bc0` |
+| 2 | `BRIEF_URL_SIGNING_SECRET` rotation | Rotated in `.env` (local-only, gitignored) per its own "Normal roll" runbook. `571cc0b` |
+| 3 | 6 third-party key rotations | Researched — no self-service API path exists for any of them (all dashboard-only). **Operator explicitly declined** rotating them: dev-stage credentials, not worth the manual cost right now. `bab5e5b`, `fd6aeaa` |
+
+### Part 2 — VS Code extension: unguarded service worker registration (repo-local, fixed)
+
+**Symptom**: six+ dashboard panels (commodities, energy-complex, markets, trade-policy, Premium Stock
+Analysis, Premium Backtesting) stuck on an infinite loading spinner, zero console output — not an
+error, an absence. Network tab showed every request duplicated (page fetch + a `workbox-*.js`
+service-worker-intercepted copy), several stuck at `(pending)` forever on both copies, one response
+served with `access-control-allow-origin: tauri://localhost` baked in from a completely different
+context.
+
+**Root cause**: `src/main.ts`'s service-worker registration guard only excluded the real Tauri desktop
+app (`__TAURI_INTERNALS__`/`__TAURI__` globals). The VS Code extension's embedded iframe has neither,
+so it fell through and registered a full production PWA service worker — designed for a real
+top-level browser tab — inside a nested webview iframe, where its fetch-interception/caching
+lifecycle visibly misbehaves.
+
+**Fix**: extended the guard with the already-existing `isVsCodeEmbedRuntime()` helper (was already
+used elsewhere for this exact kind of gating, just never wired into this one call site). Added a
+self-heal block for sessions that registered a SW before this fix existed: on next load, if the VS
+Code embed finds an existing registration, unregisters it + clears Cache Storage + reloads once.
+Rebuilt (`APP_DOMAIN=worldmonitor.app npm run build`, `dist/` is gitignored, nothing to commit there).
+Verified live: network log went from duplicate-fetch/pending-forever chaos to clean 200s/304s/disk-cache
+hits after a webview reload. **`src/main.ts` change still uncommitted** — pick this up.
+
+### Part 3 — github-identity-bridge duplicate-account bug (cross-repo: platform, NOT this repo)
+
+**Symptom**: after Part 2's fix, one thing stayed stuck: `/api/latest-brief` returned a genuine
+`{"status":"composing"}` — not an error, but wrong, since the operator's browser could open a real,
+already-composed brief for the same date.
+
+**Root cause, confirmed via direct Supabase SQL** (project `ixuezudybhjptisexgxx`, "BIOVITA_BOTANICS"):
+the VS Code extension signs in through a custom `custom:github-bridge` Supabase provider (reuses VS
+Code's own GitHub session, avoiding a manual OAuth click-through) instead of native `github` OAuth. Both
+resolve to the *same* GitHub account (verified: identical numeric GitHub id `64537609`,
+`@powerpro-led`), but Supabase's GoTrue links identities by exact `(provider, provider_id)` — different
+provider names never auto-link even for the same real person — so the bridge had minted a **second,
+permanently separate Supabase user** (`ffb0c1e8-...`, zero email, zero real data) instead of resolving
+to the operator's real account (`15ae70b6-...`). Every user-scoped read/write from the VS Code extension
+(briefs, and structurally anything else keyed by Supabase user id) was silently hitting the empty ghost
+account. Not fixable in this repo — the bridge function lives in the sibling `platform` repo.
+
+**Handoff**: wrote a full bug brief (root cause, evidence, why a naive if-check inside the OIDC flow
+doesn't work — GoTrue itself owns account-creation-vs-reuse by `(provider, provider_id)`, not the
+Edge Function — recommended fix: check for an existing identity under any *other* provider by
+provider_id at ticket-mint time and mint a session for that existing user instead of proceeding through
+the OIDC flow) and handed it to an agent working in `platform`.
+
+**Result, confirmed live in Supabase**: `platform` shipped a fix same-day —
+`public.link_bridge_identity_if_needed()` SQL function (`SECURITY DEFINER`, `service_role`-only
+EXECUTE, looks up any non-bridge identity by `provider_id` before a bridge sign-in would mint a new
+user), wired into `handleTickets` before ticket-mint, deployed as edge function v5, commit
+`bafbfb15916c1db973f96a60564f99196c4e4428` on `platform` branch `fix/github-bridge-duplicate-account`
+(pushed, not yet a PR). One-time backfill applied for this operator (bridge identity UPDATEd onto the
+real user — an INSERT wasn't possible, a row already occupied the identity). **Verified here**: real
+account now shows 1 bridge identity + 2 others; ghost account now has 0 identities (unloginable) and 0
+app data after cleanup below. Detection query for other affected operators (safe to re-run anytime,
+currently returns exactly the one now-fixed row) is in the bug brief, also saved at
+`/private/tmp/claude-502/-Users-john-Documents-CODE-worldmonitor/221b7d4a-e139-4d5f-afd9-f5c2bcb354e1/scratchpad/github-identity-bridge-bug-brief.md`
+(session-scratchpad path — copy it out if it needs to survive past this session).
+
+**Data cleanup, also confirmed via SQL**: the ghost account had exactly one piece of real app data —
+a duplicate `worldmonitor.alert_rules` digest-subscription row (`sensitivity: critical`, created
+2026-08-22, one day after the operator's REAL account's own subscription). **Correction worth noting**:
+initially planned to migrate this row to the real account, but a `(user_id, variant)` unique-constraint
+violation on the UPDATE caught that the real account already had a working `variant='full'` subscription
+(`sensitivity: high`, since 2026-08-21 — already the exact fix an earlier session applied). The ghost's
+row was genuinely redundant, not a hidden dependency — deleted rather than merged. **The digest-subscription-missing
+theory from an earlier session's "Latest Brief needs operator action" note was itself a red herring once
+this account-split was found** — the real account never lacked a subscription; the extension was just
+asking the wrong account.
+
+**Trap worth carrying forward**: a multi-statement `execute_sql` call to Supabase silently returned only
+the LAST statement's result set with no error — an early check that assumed "no output shown = empty
+result" was wrong and nearly caused a bad data merge. Run one statement per call when the emptiness of
+an early result actually matters to a decision.
+
+### 🔭 STILL OPEN — pick this up first
+
+1. **Commit `src/main.ts`** (Part 2's service-worker fix) — currently uncommitted.
+2. **Operator must sign out/back in via GitHub inside the VS Code extension** — the current webview
+   session's Supabase token is still the one issued under the ghost account; the identity-bridge fix
+   only takes effect on the next sign-in, not retroactively.
+3. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
+   not this repo's concern to chase, but flagging in case it's relevant context later.
+
+---
+
+## 🔀 HANDOFF (2026-08-22, THIRTY-THIRD session end) — superseded by the thirty-fourth block above
 
 **Scope**: two threads. (1) Closed the thirty-second session's "🔭 NEXT INITIATIVE" — Redis→local-SQLite
 data pipeline for the VS Code extension — end to end: restored a dead sync, audited every Redis prefix

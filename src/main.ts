@@ -371,7 +371,7 @@ window.addEventListener('securitypolicyviolation', (e) => {
 
 import { debugGetCells, getCellCount } from '@/services/geo-convergence';
 import { resetMetaTags } from '@/services/meta-tags';
-import { installRuntimeFetchPatch, installWebApiRedirect } from '@/services/runtime';
+import { installRuntimeFetchPatch, installWebApiRedirect, isVsCodeEmbedRuntime } from '@/services/runtime';
 import { loadDesktopSecrets } from '@/services/runtime-config';
 import { applyStoredTheme } from '@/utils/theme-manager';
 import { applyFont } from '@/services/font-settings';
@@ -484,7 +484,7 @@ if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) {
   });
 }
 
-if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window) && 'serviceWorker' in navigator) {
+if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window) && !isVsCodeEmbedRuntime() && 'serviceWorker' in navigator) {
   installSwUpdateHandler({ version: __APP_VERSION__ });
 
   const SW_UPDATE_SUCCESS_INTERVAL_MS = 60 * 60 * 1000;
@@ -560,6 +560,37 @@ if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window) && 'serviceWo
     .catch((err) => {
       console.warn('[PWA] Service worker registration failed:', err);
     });
+}
+
+if (isVsCodeEmbedRuntime() && 'serviceWorker' in navigator) {
+  // Self-heal for VS Code extension sessions that registered a service worker
+  // before the guard above existed. A PWA service worker's fetch-interception
+  // and Cache Storage lifecycle assumes a real top-level browsing context;
+  // inside VS Code's nested webview iframe it visibly misbehaves — found live:
+  // some requests (followed-countries, oref-alerts, analyze-stock) hung at
+  // "pending" forever on both the page's own fetch AND the SW's intercepted
+  // copy, and a cached analyze-stock 500 came back with
+  // access-control-allow-origin: tauri://localhost inside a
+  // localhost:46123 VS Code session. Adapted from the SW/Cache Nuke Template
+  // below: runs once per webview profile (localStorage-guarded so it doesn't
+  // reload every load), no-ops if nothing is registered, else unregisters +
+  // clears Cache Storage and reloads once for a clean, SW-free session.
+  const VSCODE_SW_NUKE_KEY = 'wm-vscode-sw-nuked-v1';
+  let alreadyNuked = false;
+  try { alreadyNuked = !!localStorage.getItem(VSCODE_SW_NUKE_KEY); } catch {}
+  if (!alreadyNuked) {
+    try { localStorage.setItem(VSCODE_SW_NUKE_KEY, '1'); } catch {}
+    void navigator.serviceWorker.getRegistrations().then(async (regs) => {
+      if (regs.length === 0) return;
+      await Promise.all(regs.map((r) => r.unregister()));
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch {}
+      console.log('[PWA] Unregistered stale service worker(s) from VS Code embed session');
+      window.location.reload();
+    }).catch(() => {});
+  }
 }
 
 // --- SW/Cache Nuke Template ---

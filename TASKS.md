@@ -217,8 +217,19 @@ While the standalone copy is alive nitric's is dead-on-arrival; the moment the s
    Optional small task: `seed-conflict-intel` logs a bare `ACLED API error: 403`, which reads like a
    broken credential; a one-line hint at the call site would stop the next session re-diagnosing it.
 
-3. **Rotate credentials.** OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, and OpenSky keys were
-   pasted into the session-32 transcript in plaintext.
+3. **Rotate credentials — still open, confirmed NO self-service API path exists (checked
+   2026-08-22, thirty-fourth session).** OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, and OpenSky
+   keys were pasted into the session-32 transcript in plaintext; all six require the operator to log
+   into each provider's own web dashboard by hand — do not spend a future session re-researching an
+   API shortcut, none exists for this account tier:
+   - **OpenRouter** has a real Management API (`/api/v1/keys`), but it's authenticated by a separate
+     "Provisioning API key" that itself can only be minted via the dashboard first — no bootstrap-free
+     path.
+   - **OTX**, **URLhaus** (`auth.abuse.ch`), and **AbuseIPDB** expose no key-rotation endpoint at all;
+     dashboard-only.
+   - **Firecrawl** has a `/partner/v1/api-keys/rotate` endpoint, but it's gated to approved partners
+     (an email application to `partnerships@firecrawl.dev`), not available on a standard account.
+   - **OpenSky** OAuth2 client_id/secret regeneration is account-page-only; no documented API route.
 
 4. **`gdeltIntel` EMPTY** — GDELT returns HTTP **429** (its own rate limiter), not a network fault.
    Expected to self-resolve on the `0 */2 * * *` cron. Verify before treating as a bug.

@@ -150,6 +150,26 @@ function isWorldMonitorWebHost(hostname: string): boolean {
 }
 
 export function getConfiguredWebApiBaseUrl(): string {
+  // The VS Code embed must resolve API calls RELATIVE to the page, so they
+  // reach the sidecar that served it. VITE_WS_API_URL is a browser-dev knob
+  // (http://localhost:9001, i.e. nitric) and pointing the embed there breaks
+  // every panel: buildVsCodeEmbedShim's fetch wrapper only attaches
+  // x-worldmonitor-local-token to relative or same-origin /api/ URLs, so a
+  // cross-origin call to :9001 arrives at nitric with no credentials at all
+  // and comes back 401. That is why the dashboard works in a browser tab —
+  // served from :3000, where Vite proxies /api to nitric same-origin — while
+  // the identical bundle 401s on nearly every panel inside the extension.
+  //
+  // Checked BEFORE the WS_API_URL branch because that branch returns
+  // unconditionally, ahead of every runtime check below it.
+  //
+  // Deliberately isVsCodeEmbedRuntime() and not isDesktopRuntime(): this
+  // narrows the change to the embed and leaves the browser and real Tauri
+  // desktop paths exactly as they were.
+  if (isVsCodeEmbedRuntime()) {
+    return '';
+  }
+
   if (WS_API_URL) {
     return normalizeBaseUrl(WS_API_URL);
   }

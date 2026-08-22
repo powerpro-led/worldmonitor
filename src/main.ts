@@ -593,6 +593,33 @@ if (isVsCodeEmbedRuntime() && 'serviceWorker' in navigator) {
   }
 }
 
+if (isVsCodeEmbedRuntime()) {
+  // VS Code's webview architecture blocks window.open()/target="_blank" navigation
+  // from webview content by design (a security boundary, not a bug) — an
+  // <a target="_blank"> click silently does nothing, no error, no console
+  // output, because the navigation attempt never leaves the sandboxed webview
+  // context. ~40 components across the dashboard use target="_blank" for
+  // external links (news sources, the Latest Brief magazine, etc.) — all of
+  // them, found live via the Latest Brief panel's cover-card link.
+  //
+  // Fix: intercept the click before the browser's own navigation handling
+  // (capture phase, so this runs before the target element's own onclick —
+  // e.g. LatestBriefPanel's telemetry handler still fires normally, this
+  // only cancels the doomed default navigation), and relay the URL up
+  // through window.__wmVsCodeApi.postMessage() — the same bridge
+  // auth-provider.ts already uses for GitHub sign-in — to panel.ts, which
+  // opens it via vscode.env.openExternal() into the user's real default
+  // browser. One listener covers every target="_blank" link in the app;
+  // no per-component changes needed.
+  document.addEventListener('click', (event) => {
+    const anchor = (event.target as HTMLElement | null)?.closest?.('a[target="_blank"]') as HTMLAnchorElement | null;
+    if (!anchor?.href) return;
+    event.preventDefault();
+    (window as unknown as { __wmVsCodeApi?: { postMessage: (msg: unknown) => void } }).__wmVsCodeApi
+      ?.postMessage({ type: 'wm-open-external', url: anchor.href });
+  }, true);
+}
+
 // --- SW/Cache Nuke Template ---
 // If stale service workers or caches cause issues after a major deploy, re-enable this block.
 // It runs once per user (guarded by a localStorage key), nukes all SWs and caches, then reloads.

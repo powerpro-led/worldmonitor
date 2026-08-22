@@ -18,8 +18,12 @@ Related Claude memory entries (fuller narrative/context per item):
 ## 🔀 HANDOFF (2026-08-22, THIRTY-FOURTH session end) — read this first, supersedes every block below
 
 **Scope**: closed all three open items from the thirty-third session's handoff (below), then chased a
-live bug report ("several VS Code dashboard panels stuck loading forever") through two completely
-different root causes in two different repos. **Important standing correction**: earlier sessions'
+live bug report ("several VS Code dashboard panels stuck loading forever") through **four** independent
+root causes across two repos: an unguarded service worker (Part 2), a cross-repo duplicate-Supabase-
+account bug (Part 3), external links doing nothing on click (Part 4), and — the highest-impact one —
+`AbortSignal.timeout()` being silently ineffective sidecar-wide, which had been quietly undermining
+every upstream call's own timeout bound, not just the one symptom that surfaced it (Part 5).
+**Important standing correction**: earlier sessions'
 memory framed this fork as single-operator/dev-stage/low-stakes — operator corrected this explicitly:
 it is distributed as a **private GitHub release that multiple internal operators each install on their
 own machine** — not public SaaS, but not single-user either. Re-evaluate "low priority, only affects
@@ -108,13 +112,66 @@ the LAST statement's result set with no error — an early check that assumed "n
 result" was wrong and nearly caused a bad data merge. Run one statement per call when the emptiness of
 an early result actually matters to a decision.
 
+### Part 4 — target="_blank" links do nothing inside the VS Code embed (repo-local, fixed)
+
+**Symptom**: Latest Brief panel's cover card (a plain `<a target="_blank">`) did nothing on click
+inside the extension; the identical link opened a new browser tab fine outside it. ~40 dashboard
+components use `target="_blank"` — all equally affected, not just this one panel.
+
+**Root cause**: VS Code's webview architecture blocks `window.open()`/`target="_blank"` navigation
+from webview content by design (a security boundary) — the click's default navigation silently goes
+nowhere, no error, no console output. Opening an external URL from a webview requires an explicit
+`vscode.env.openExternal()` call from the extension host, reached via `postMessage`.
+
+**Fix**: one global, capture-phase `click` listener in `src/main.ts` (gated by
+`isVsCodeEmbedRuntime()`) intercepts any `<a target="_blank">` click, cancels the default navigation,
+and relays the URL through `window.__wmVsCodeApi.postMessage()` — the same bridge already used for
+GitHub sign-in. `vscode-extension/src/panel.ts` relays it up one more hop (mirroring the existing
+`wm-github-signin` relay) to a new `handleOpenExternal()` that validates the URL is http(s) before
+calling `vscode.env.openExternal()`. One listener covers all ~40 components; no per-component changes.
+
+### Part 5 — AbortSignal.timeout() silently ineffective sidecar-wide (repo-local, fixed) — the big one
+
+**Symptom**: `/api/market/v1/analyze-stock` 500'd after a consistent, suspicious 60 seconds for every
+symbol (AAPL/MSFT/GOOGL/NVDA), and other panels were reported "still slowly loading."
+
+**Root cause, confirmed live** (spawned an isolated debug sidecar instance to get the real stack
+trace `console.error` output doesn't surface in the HTTP response): the sidecar's global `fetch`
+override (`ipv4Fetch` in `local-api-server.mjs`, needed for IPv4-pinned DNS resolution against
+broken-IPv6 upstreams) handled `AbortSignal` incorrectly —
+`init.signal.addEventListener('abort', () => req.destroy())` alone does **not** reliably settle the
+surrounding Promise: Node's `http.ClientRequest` doesn't guarantee an `'error'` event fires from a
+bare `destroy()` with no error argument when the request has no response yet. Every
+`AbortSignal.timeout(N)` throughout the ENTIRE codebase — Yahoo/Exa/every upstream call with its own
+short timeout bound — was silently defanged inside the sidecar specifically: the timer fired,
+`destroy()` ran, and the request just hung, with nothing settling the promise except whichever
+unrelated OUTER timeout happened to exist (here, `cachedFetchJson`'s own independent 60s
+`Promise.race` backstop — explains the suspiciously exact 60s figure, and the missing
+`[stock-news-search] exa failed` warning that should have logged at ~10s). Confirmed the Exa API
+itself was NOT slow — a bare `curl` to the same endpoint with the same key returned in 1.6s.
+
+**Fix**: the abort listener now explicitly `reject()`s with an `AbortError`/the signal's own reason,
+in addition to calling `req.destroy()`, so an abort actually aborts regardless of whether Node
+chooses to emit its own `'error'` event.
+
+**Verified live**: same debug-instance method, same symbol (AAPL) — went from a 60s hang → 500 to a
+real ~22s 200 with full analysis data (technical snapshot, Exa-sourced headlines, dividend profile).
+The 22s is genuine sequential/parallel upstream latency (Yahoo history + analyst data + dividends +
+news), not a hang.
+
+**Likely broader impact, not individually verified**: this bug affected every fetch in the sidecar
+process bounded by its own `AbortSignal.timeout()`, not just analyze-stock — plausibly the actual
+explanation for "some panels still slowly loading" reported alongside this symptom. Worth revisiting
+"slow panel" reports against this fix before assuming a new, separate cause.
+
 ### 🔭 STILL OPEN — pick this up first
 
-1. **Commit `src/main.ts`** (Part 2's service-worker fix) — currently uncommitted.
-2. **Operator must sign out/back in via GitHub inside the VS Code extension** — the current webview
-   session's Supabase token is still the one issued under the ghost account; the identity-bridge fix
-   only takes effect on the next sign-in, not retroactively.
-3. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
+1. **Operator must fully reload the VS Code window** (not just the webview) — `panel.ts` is
+   extension-host code, only picked up on window reload, not webview reload. That one action also
+   respawns the sidecar (picking up Part 5's fix) and serves the freshly built `dist/` (picking up
+   Part 4's fix) — all three land together. Not yet confirmed working post-reload as of this
+   handoff.
+2. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
    not this repo's concern to chase, but flagging in case it's relevant context later.
 
 ---

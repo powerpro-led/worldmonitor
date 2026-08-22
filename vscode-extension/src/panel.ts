@@ -109,6 +109,7 @@ export class DashboardPanel {
         // the URL — see local-api-server.mjs's buildVsCodeEmbedShim), via
         // this wrapper's own render()-injected relay script.
         if (msg?.type === 'wm-github-signin') void this.handleGithubSignIn();
+        if (msg?.type === 'wm-open-external' && typeof msg.url === 'string') void this.handleOpenExternal(msg.url);
       },
       null,
       this.disposables,
@@ -153,6 +154,35 @@ export class DashboardPanel {
     }
   }
 
+  /**
+   * VS Code's webview architecture blocks window.open()/target="_blank"
+   * navigation from webview content by design — an <a target="_blank">
+   * click inside the dashboard iframe silently does nothing (found live via
+   * the Latest Brief panel's cover-card link; ~40 dashboard components use
+   * target="_blank", all equally affected). src/main.ts's click interceptor
+   * (isVsCodeEmbedRuntime()-gated) relays the URL up through this same
+   * postMessage bridge as GitHub sign-in; this is the receiving end,
+   * opening it in the user's real default browser instead.
+   *
+   * Only http(s) is allowed through — vscode.env.openExternal() accepts
+   * arbitrary URI schemes, and this handler's input is a URL string chosen
+   * by whatever page loaded inside the iframe, not a value this extension
+   * controls end-to-end.
+   */
+  private async handleOpenExternal(url: string): Promise<void> {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        this.sidecar.log(`[panel] refused to open non-http(s) external URL: ${url}`);
+        return;
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.sidecar.log(`[panel] openExternal failed: ${message}`);
+    }
+  }
+
   /** Deliberately dependency-free and inline — it must render before the
    * sidecar exists. */
   loadingHtml(): string {
@@ -192,6 +222,10 @@ export class DashboardPanel {
             var msg = event.data;
             if (!msg || typeof msg !== 'object') return;
             if (msg.type === 'wm-github-signin' && event.source === frame.contentWindow) {
+              vscodeApi.postMessage(msg);
+              return;
+            }
+            if (msg.type === 'wm-open-external' && event.source === frame.contentWindow) {
               vscodeApi.postMessage(msg);
               return;
             }

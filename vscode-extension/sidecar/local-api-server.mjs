@@ -254,7 +254,23 @@ globalThis.fetch = async function ipv4Fetch(input, init) {
         });
       });
       req.on('error', reject);
-      if (init?.signal) { init.signal.addEventListener('abort', () => req.destroy()); }
+      if (init?.signal) {
+        // req.destroy() alone does not reliably settle this promise: Node's
+        // http.ClientRequest does not guarantee an 'error' event fires from a
+        // bare destroy() with no error argument when the request has no
+        // response yet. Found live: every AbortSignal.timeout() throughout
+        // the codebase (10s Yahoo/Exa/etc. upstream bounds) was silently
+        // ineffective inside the sidecar -- the timer fired, destroy() ran,
+        // and the request just hung, with only some unrelated OUTER timeout
+        // (if the caller happened to have one) ever actually killing it.
+        // Reject explicitly so an abort actually aborts.
+        init.signal.addEventListener('abort', () => {
+          req.destroy();
+          reject(init.signal.reason instanceof Error
+            ? init.signal.reason
+            : new DOMException('The operation was aborted.', 'AbortError'));
+        }, { once: true });
+      }
       if (body != null) req.write(body);
       req.end();
     });

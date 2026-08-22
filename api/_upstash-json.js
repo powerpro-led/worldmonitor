@@ -13,13 +13,26 @@ export async function readJsonFromUpstash(key, timeoutMs = 3_000) {
   // Mirrors readCachedJson's sidecar branch exactly, including the
   // envelope-unwrap-on-hit contract.
   if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
-    // No extension — matches server/_shared/redis.ts's own working dynamic
-    // import of this exact module (`await import('./sidecar-cache')`), the
-    // convention this repo's bundler (moduleResolution: "bundler") resolves
-    // against a .ts source file.
-    const { sidecarCacheGet } = await import('../server/_shared/sidecar-cache');
-    const value = sidecarCacheGet(key);
-    return value == null ? null : value;
+    // Reads the mirror directly rather than importing
+    // server/_shared/sidecar-cache. That import was a TypeScript path, and
+    // this module is hand-written plain JS that the sidecar loads with node —
+    // so it threw ERR_MODULE_NOT_FOUND and this branch never once served a
+    // value. It only looks correct because esbuild inlines the TS into the
+    // bundled api/{domain}/v1/[rpc].js handlers, where the same code works.
+    // /api/gpsjam answered 503 with 326 KB of gpsjam data sitting in the
+    // mirror. See readMirrorValues() below for the full note.
+    const rows = readMirrorValues([key]);
+    const raw = rows === null ? null : rows[0];
+    if (raw == null) return null;
+    // Parse + unwrap here (unlike redisPipeline, which owes callers the raw
+    // string) to keep this function's documented envelope-unwrap-on-hit
+    // contract. A value that will not parse is treated as a miss, matching
+    // how the Upstash path below handles malformed JSON.
+    try {
+      return unwrapEnvelope(JSON.parse(raw)).data;
+    } catch {
+      return null;
+    }
   }
 
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -106,7 +119,82 @@ export function getRedisCredentials() {
  * @param {number} [timeoutMs=5000]
  * @returns {Promise<Array<{ result: unknown }> | null>}
  */
+/**
+ * Reads raw values straight out of the sidecar's SQLite mirror.
+ *
+ * Deliberately does NOT import server/_shared/sidecar-cache: this module is
+ * hand-written plain JS that the sidecar loads directly with node, and that
+ * path is a TypeScript file — `await import('../server/_shared/sidecar-cache')`
+ * throws ERR_MODULE_NOT_FOUND here. It only appears to work elsewhere because
+ * esbuild INLINES the TS into the bundled api/{domain}/v1/[rpc].js handlers.
+ * So every top-level hand-written route (bootstrap, gpsjam, wm-session) had no
+ * mirror access at all, and /api/bootstrap answered 503 in the VS Code
+ * extension while a browser tab, which reaches real Redis, was fine.
+ *
+ * Returning the stored column verbatim is exactly right rather than a
+ * shortcut: local-sync.mjs writes `value` as the raw JSON string, and
+ * redisPipeline's contract is to hand callers raw Redis strings they parse
+ * themselves. No decoding belongs here.
+ *
+ * node:sqlite via getBuiltinModule (not a static import) for the same reason
+ * sidecar-cache does it: this module is transitively reachable from Edge
+ * handlers, where a static Node-builtin reference risks bundler resolution
+ * failures even though this branch only ever runs inside the local sidecar.
+ *
+ * @param {string[]} keys
+ * @returns {(string|null)[]|null} raw values, or null if the mirror is unusable
+ */
+let _mirrorDb;
+let _mirrorDbFailed = false;
+
+function readMirrorValues(keys) {
+  if (_mirrorDbFailed) return null;
+  try {
+    if (!_mirrorDb) {
+      const dbPath = process.env.LOCAL_SQLITE_PATH;
+      if (!dbPath) { _mirrorDbFailed = true; return null; }
+      const sqlite = process.getBuiltinModule?.('node:sqlite');
+      if (!sqlite) { _mirrorDbFailed = true; return null; }
+      _mirrorDb = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    }
+    const stmt = _mirrorDb.prepare('SELECT value FROM kv_cache WHERE key = ?');
+    return keys.map((key) => {
+      const row = stmt.get(key);
+      return row && typeof row.value === 'string' ? row.value : null;
+    });
+  } catch {
+    // One failure is enough — the file is opened once per process, so a bad
+    // path or a schema mismatch will not fix itself on retry.
+    _mirrorDbFailed = true;
+    _mirrorDb = undefined;
+    return null;
+  }
+}
+
 export async function redisPipeline(commands, timeoutMs = 5_000) {
+  // Sidecar: serve reads from the local SQLite mirror, exactly as
+  // readCachedJson's branch above already does. Without this, every batched
+  // read fails closed in the VS Code extension — there are no Redis creds in
+  // this process, so getRedisCredentials() returns null and callers see the
+  // pipeline as unavailable. /api/bootstrap was the visible casualty: its own
+  // getCachedJsonBatch throws "Bootstrap Redis pipeline unavailable" on a
+  // non-array result and answers 503, so the dashboard lost its whole
+  // bootstrap snapshot while a browser tab (which reaches real Redis) was
+  // fine. This function was simply the one read path in this module that
+  // never got the branch its siblings have.
+  //
+  // WRITES are deliberately left alone: the mirror is read-only, so a pipeline
+  // containing anything other than GET keeps returning null (the existing
+  // "unavailable" signal) rather than reporting a write that did not happen.
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    const isAllReads = Array.isArray(commands)
+      && commands.length > 0
+      && commands.every((c) => Array.isArray(c) && String(c[0]).toUpperCase() === 'GET');
+    if (!isAllReads) return null;
+    const rows = readMirrorValues(commands.map(([, key]) => String(key)));
+    return rows === null ? null : rows.map((value) => ({ result: value }));
+  }
+
   const creds = getRedisCredentials();
   if (!creds) return null;
   try {

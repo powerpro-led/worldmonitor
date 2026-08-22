@@ -104,18 +104,81 @@ check before killing, not guessed.
   cache-bypass call, or decouple `riskScores`' staleness classification from the fresh-vs-cache
   distinction specifically.
 
+### Continued later same session — 3 more fixes, VPN bypass live-tested with real (partial) results
+
+**`api/chat-analyst.ts` — DIRECT_LLM_DAILY_QUOTA_LIMIT=unlimited was silently blocking EVERY call**
+(commit `4153ff4`). Live bug report from the operator: `429` on `/api/chat-analyst`. Root cause:
+`.env`'s `DIRECT_LLM_DAILY_QUOTA_LIMIT=unlimited` resolves to `0` (the documented "disable the
+quota" sentinel per `direct-llm-quota.ts`'s own doc comment). `server/gateway.ts` correctly guards
+its own quota reservation with a `DIRECT_LLM_QUOTA_DISABLED` check for its 5 gateway-routed
+endpoints — but `chat-analyst.ts` is the one "self-metered" route (`DIRECT_LLM_SELF_METERED_QUOTA_PATHS`)
+that bypasses `gateway.ts` entirely and never got the same guard. `reserveDirectLlmQuota`'s check
+is `newCount > DIRECT_LLM_DAILY_QUOTA_LIMIT` i.e. `newCount > 0` — true on the very first call,
+forever, since Redis `INCR` always returns >= 1. Fixed by adding the missing guard, matching
+`gateway.ts`'s exact pattern. Restarted `nitric start --ci` (module caching means a running process
+wouldn't pick up the source edit) and ran `npm run build:sidecar-handlers` (the VS Code extension's
+sidecar serves a separate esbuild bundle of this same file) so the fix is live on both paths.
+**Confirmed fixed by the operator** ("good, it worked").
+
+**VPN bypass script live-tested by the operator** — real, partial results, not a clean win:
+
+| Host | Before | After | Verdict |
+|---|---|---|---|
+| contractsfinder | ~6KB/s | 27KB/s | fixed — `contracts-finder` source now `sourceState: ok` |
+| canadabuys | ~6KB/s | 14KB/s | still fails — needs ~6MB in 60s budget, not enough |
+| OFAC | ~6KB/s | 4KB/s | still fails, barely moved |
+| submarinecable | ~6KB/s | 7KB/s | still fails (confirmed via seed-meta, not just exit code) |
+| GDELT | 429 | still 429 | **bypass did NOT help — confirmed NOT an IP-sharing issue** |
+
+`globalTendersContractsFinder` is now genuinely fixed (verified via the actual per-source
+`seed-meta:economic:global-tenders:contracts-finder` key, not the seeder's misleading top-level
+"state: OK" — same trap as before). `globalTendersCanadaBuys`, `sanctionsPressure`/`Entities`, and
+`submarineCables` are now a **timeout-budget mismatch**, not a total-failure — the network is
+faster than before, just not fast enough for their existing per-attempt timeouts. Widening those
+timeouts (a real, scoped code change, not yet done) is the next lever, separate from the VPN fix
+itself. LaunchDaemon persistence for the routes was NOT set up yet — operator hasn't confirmed they
+want it yet, pending the timeout-widening discussion.
+
+**`scripts/seed-gdelt-intel.mjs` — direct retries were starving the proxy leg's budget** (commit
+`dec48a3`, the "实时情报" panel). `fetchTopicArticles` called `fetchGdeltJson` with all defaults
+(`maxRetries: 3` → 4 direct attempts). Direct's own worst case (4×15s + 60s backoff = 120s) was
+eating most of the 150s soft budget before the proxy leg — where the actual chance of success lives
+(Decodo's session-rotating egress) — got its full 5-attempt allowance. Observed live: only 3/5
+proxy attempts ran before the soft budget cut it off. Fixed: trimmed `maxRetries` to 1 for this
+call site only (GDELT's throttle window is documented as wide, so a 2nd-4th direct attempt within
+30-60s rarely lands in a cleared window anyway — mostly wasted budget). New worst case: 135s,
+inside the 150s budget with room for a 2nd topic. **Verified this genuinely works as designed**: a
+live re-run got the full 5/5 proxy attempts (vs 3/5 before) — but all 5 still failed (2 timeouts,
+3× 429), 0/5 vs the documented historical ~40%/attempt (~2/5 expected). All 17
+gdelt-intel/fetch-deadline-budget tests pass unchanged (they mock the fetch dependency, don't
+exercise this code path).
+
+**Real lead, not yet actioned — needs the operator's Decodo account**: the configured `PROXY_URL`
+in `.env` is Decodo's **datacenter** endpoint (`dc.decodo.com`). Datacenter IP ranges are exactly
+what scraping-sensitive public APIs like GDELT blocklist hardest — very plausibly why the proxy leg
+is now failing far worse than its own documented ~40%/attempt historical measurement (from
+2026-04-16, 4+ months stale). If Decodo's plan includes a **residential** endpoint, swapping to it
+would likely help far more than any retry-budget tuning can. Needs the operator to check their
+Decodo dashboard — not something checkable from this environment.
+
 ### 🔭 STILL OPEN — pick this up first
 
-1. Apply the VPN bypass script above (operator's terminal), then re-run the seven affected seeders
-   it lists.
-2. `riskScores`' warm-ping/cache-TTL mismatch — needs a deliberate fix to shared caching code, not
+1. Widen the per-attempt timeout for `canada-buys`/OFAC/`submarine-cables` to match the
+   now-measured (post-VPN-bypass) real throughput — a real, scoped code change, discussed but not
+   yet implemented. Operator hasn't confirmed they want this yet.
+2. Ask the operator to check their Decodo dashboard for a residential proxy endpoint — the one
+   concrete lead left on GDELT's persistent 429s.
+3. Confirm with the operator whether to persist the VPN bypass routes via a LaunchDaemon (matches
+   `com.worldmonitor.firms-vpn-bypass` from session 32) — not yet set up, the live-test routes will
+   NOT survive a reboot/VPN reconnect on their own.
+4. `riskScores`' warm-ping/cache-TTL mismatch — needs a deliberate fix to shared caching code, not
    a quick patch.
-3. Full crit/warn list drifts hour to hour (matches every prior session's note on this) — re-fetch
+5. Full crit/warn list drifts hour to hour (matches every prior session's note on this) — re-fetch
    `/api/health?compact=1` rather than trusting this handoff's numbers if picked up much later.
-   Baseline at this session's close: 232 total, 182 ok, 14 warn, 12 onDemandWarn, 0 staleContent,
-   24 crit (flat vs. session start's 24 despite 4 genuine fixes — offset by unrelated natural
-   drift: `energyPrices`/`temporalAnomalies` rotated in as new transient staleness during this
-   session, not caused by anything above).
+   Baseline at this session's close (before the later-session continuation above): 232 total, 182
+   ok, 14 warn, 12 onDemandWarn, 0 staleContent, 24 crit (flat vs. session start's 24 despite 4
+   genuine fixes — offset by unrelated natural drift: `energyPrices`/`temporalAnomalies` rotated in
+   as new transient staleness during this session, not caused by anything above).
 
 ---
 

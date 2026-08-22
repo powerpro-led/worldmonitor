@@ -217,19 +217,15 @@ While the standalone copy is alive nitric's is dead-on-arrival; the moment the s
    Optional small task: `seed-conflict-intel` logs a bare `ACLED API error: 403`, which reads like a
    broken credential; a one-line hint at the call site would stop the next session re-diagnosing it.
 
-3. **Rotate credentials — still open, confirmed NO self-service API path exists (checked
-   2026-08-22, thirty-fourth session).** OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, and OpenSky
-   keys were pasted into the session-32 transcript in plaintext; all six require the operator to log
-   into each provider's own web dashboard by hand — do not spend a future session re-researching an
-   API shortcut, none exists for this account tier:
-   - **OpenRouter** has a real Management API (`/api/v1/keys`), but it's authenticated by a separate
-     "Provisioning API key" that itself can only be minted via the dashboard first — no bootstrap-free
-     path.
-   - **OTX**, **URLhaus** (`auth.abuse.ch`), and **AbuseIPDB** expose no key-rotation endpoint at all;
-     dashboard-only.
-   - **Firecrawl** has a `/partner/v1/api-keys/rotate` endpoint, but it's gated to approved partners
-     (an email application to `partnerships@firecrawl.dev`), not available on a standard account.
-   - **OpenSky** OAuth2 client_id/secret regeneration is account-page-only; no documented API route.
+3. **Rotate credentials — CLOSED, operator's call (2026-08-22, thirty-fourth session): not worth doing.**
+   OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, and OpenSky keys were pasted into the session-32
+   transcript in plaintext. Confirmed no self-service API rotation path exists for any of them (all six
+   need the operator to log into each provider's own web dashboard by hand — see prior commit
+   `bab5e5b` for the per-provider detail, don't re-research it). **Operator explicitly declined**: this
+   fork is dev-stage only, these six keys are dev credentials, not production, so a transcript exposure
+   isn't worth the manual-rotation cost right now. Do not re-raise this as urgent in a future session —
+   `BRIEF_URL_SIGNING_SECRET` (self-issued, no dashboard needed) was still rotated same session, since
+   that one had zero cost either way.
 
 4. **`gdeltIntel` EMPTY** — GDELT returns HTTP **429** (its own rate limiter), not a network fault.
    Expected to self-resolve on the `0 */2 * * *` cron. Verify before treating as a bug.

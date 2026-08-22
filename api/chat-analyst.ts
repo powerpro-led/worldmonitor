@@ -21,7 +21,7 @@ import { captureSilentError } from './_sentry-edge.js';
 import { resolvePremiumCallerIdentity } from '../server/_shared/premium-check';
 import { checkRateLimit } from '../server/_shared/rate-limit';
 import { runRedisPipeline } from '../server/_shared/redis';
-import { DIRECT_LLM_DAILY_QUOTA_LIMIT, reserveDirectLlmQuota } from '../server/_shared/direct-llm-quota';
+import { DIRECT_LLM_DAILY_QUOTA_LIMIT, DIRECT_LLM_QUOTA_DISABLED, reserveDirectLlmQuota } from '../server/_shared/direct-llm-quota';
 import { assembleAnalystContext } from '../server/worldmonitor/intelligence/v1/chat-analyst-context';
 import { buildAnalystSystemPrompt } from '../server/worldmonitor/intelligence/v1/chat-analyst-prompt';
 import { buildActionEvents } from '../server/worldmonitor/intelligence/v1/chat-analyst-actions';
@@ -125,7 +125,14 @@ export default async function handler(req: Request): Promise<Response> {
     if (!premiumIdentity.isPremium) {
       return json({ error: 'Sign-in or API key required' }, 403, corsHeaders);
     }
-    if (!premiumIdentity.quotaExempt) {
+    // DIRECT_LLM_QUOTA_DISABLED mirrors server/gateway.ts's shouldReserveGatewayDirectLlmQuota:
+    // when DIRECT_LLM_DAILY_QUOTA_LIMIT resolves to 0 ("unlimited" is meant to disable the
+    // quota, per direct-llm-quota.ts's own doc comment), reserveDirectLlmQuota's own check is
+    // `newCount > DIRECT_LLM_DAILY_QUOTA_LIMIT` i.e. `newCount > 0` — since INCR always returns
+    // >= 1, that's cap-exceeded on the FIRST call, forever. This route is self-metered (not
+    // gateway-routed, see DIRECT_LLM_SELF_METERED_QUOTA_PATHS) so it never got gateway.ts's
+    // existing DIRECT_LLM_QUOTA_DISABLED short-circuit — "unlimited" silently meant "zero" here.
+    if (!DIRECT_LLM_QUOTA_DISABLED && !premiumIdentity.quotaExempt) {
       const reservation = await reserveDirectLlmQuota({
         userId: premiumIdentity.userId,
         pipeline: (cmds) => runRedisPipeline(cmds, true),

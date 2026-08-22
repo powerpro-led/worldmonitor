@@ -2091,16 +2091,27 @@ export async function createLocalApiServer(options = {}) {
       const boundPort = typeof address === 'object' && address?.port ? address.port : context.port;
       context.port = boundPort;
       const extraAllowedPrivateOrigins = [];
-      // Docker self-host ONLY: the Redis REST proxy (UPSTASH_REDIS_REST_URL)
-      // points at an internal private host (e.g. http://redis-rest:80 on a
-      // docker network). Without trusting it the SSRF guard blocks every Redis
-      // call and all /api/* return 503 REDIS_DOWN. Gated on mode === 'docker'
-      // so desktop/production startup never widens the SSRF boundary via env
-      // — the same containment as the cloudFallback=false docker policy above,
+      // LOCAL MODES ONLY: the Redis REST endpoint (UPSTASH_REDIS_REST_URL) can
+      // point at a private host — http://redis-rest:80 on a docker network, or
+      // http://127.0.0.1:8079 for the local Docker Redis a developer machine
+      // uses. Without trusting it the SSRF guard blocks every Redis call and
+      // all /api/* return 503.
+      //
+      // CORRECTION (2026-08-22): this was gated on mode === 'docker' alone,
+      // because "on desktop UPSTASH_REDIS_REST_URL is a public Upstash https
+      // origin that already passes the SSRF check". That is no longer true
+      // here: Upstash-vs-local-Redis is selected by this very env var, so in
+      // dev the sidecar's own Redis calls were SSRF-blocked. The visible
+      // symptom was POST /api/wm-session answering 503 "Rate-limit service
+      // temporarily unavailable" — the rate limiter is the first thing on the
+      // path to touch Redis — which then cascaded into /api/latest-brief,
+      // since a client that cannot get a session cannot authenticate.
+      //
+      // Containment is unchanged: still gated on modes that are by definition
+      // an operator's own machine, still exactly ONE origin from ONE env var,
       // and the programmatic allowPrivateFetchOrigins escape hatch stays
-      // env-free. On desktop UPSTASH_REDIS_REST_URL is a public Upstash https
-      // origin that already passes the SSRF check, so this path is docker-only.
-      if (context.mode === 'docker' && process.env.UPSTASH_REDIS_REST_URL) {
+      // env-free. Production/desktop startup still cannot widen the boundary.
+      if ((context.mode === 'docker' || context.mode === 'tauri-sidecar') && process.env.UPSTASH_REDIS_REST_URL) {
         try {
           extraAllowedPrivateOrigins.push(new URL(process.env.UPSTASH_REDIS_REST_URL).origin);
         } catch (err) {

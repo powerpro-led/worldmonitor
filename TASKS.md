@@ -99,9 +99,21 @@ only widen the non-GET branch. Verify against `bootstrap`/`gpsjam` (must stay 20
   `Access-Control-Allow-Origin: http://localhost:3000`, rejecting the `:46123` embed origin. It's the
   external service's own CORS config; nothing in this repo can fix it. Map falls back without overrides.
 
-**3. Rotate `BRIEF_URL_SIGNING_SECRET`.** Its real value was pasted into this session's chat transcript
-in plaintext (operator opened `.env` in the IDE and copy-pasted while debugging). Same treatment as the
-six keys flagged for rotation in the thirty-second session's block below — add this one to that list.
+**3. Rotate `BRIEF_URL_SIGNING_SECRET` — RESOLVED (2026-08-22, thirty-fourth session).** Its real value
+was pasted into this session's chat transcript in plaintext (operator opened `.env` in the IDE and
+copy-pasted while debugging). Unlike the six third-party keys below, this one is a purely local,
+self-issued HMAC secret (`server/_shared/brief-url.ts`'s own header: "No external counterpart — any
+high-entropy value works") with no deployment-config copy to update (`.env` only, confirmed via grep —
+nothing deployed anywhere yet). Rotated per that module's own documented "Normal roll" runbook: new
+`crypto.randomBytes(32)` value set as `BRIEF_URL_SIGNING_SECRET`, previous value moved to
+`BRIEF_URL_SIGNING_SECRET_PREV` so in-flight brief links (7-day envelope TTL + delivery window) keep
+validating. **`nitric start` needs a restart to pick up the new `.env` value** — not yet done this
+session; until then the already-running process keeps signing with the old value in memory, which is
+harmless since the new PREV mechanism accepts both either way.
+
+The six third-party keys below (OpenRouter, OTX, URLhaus, AbuseIPDB, Firecrawl, OpenSky) still need
+manual rotation via each provider's own dashboard — no local/API-only rotation path exists for those,
+unlike this one.
 
 **4. `readMirrorValues()` in `api/_upstash-json.js` opens `node:sqlite` once per process and never
 closes it.** Fine for a long-lived sidecar process; would leak a handle in a short-lived script that

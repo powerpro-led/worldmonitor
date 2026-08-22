@@ -192,14 +192,36 @@ is enough), but `vscode-extension/src/*.ts` (extension-host code) changes are NO
 `npm run package` + `code --install-extension --force`, and only THEN does a window reload matter.
 Assuming "I rebuilt and reloaded" covers all three is how this got missed the first time.
 
+### Part 4 fully confirmed working — surfaced a self-inflicted regression, now also fixed
+
+Operator confirmed Part 4 (external links) working after the `.vsix` reinstall + one more window
+reload. Clicking Latest Brief's cover card opened a new browser tab correctly — but the tab itself
+showed Supabase's genuine "This link is no longer valid" error, not a WorldMonitor bug: the token
+failed HMAC verification.
+
+**Root cause — this session's own earlier secret rotation, applied incompletely**: earlier in this
+same session (see "Part 1 — thirty-third session's three open items" above, item 2), rotating
+`BRIEF_URL_SIGNING_SECRET` in `.env` did not include restarting `nitric start`. Brief links point at
+`WORLDMONITOR_PUBLIC_BASE_URL=http://localhost:9001` (nitric) by deliberate design from an earlier
+session — but the sidecar (which *signs* the token, freshly respawned multiple times since the
+rotation) and nitric (which *verifies* it, running unbroken since 11:19 AM, well before the
+rotation) are two independent processes that each snapshot `.env` at their own startup. The sidecar
+signed with the new primary secret; nitric verified against its own stale-only-old-secret snapshot.
+Exactly the documented trap this repo already knows about (**"restart `nitric start` after any
+`.env` edit"**) — violated by not re-applying it after today's own rotation.
+
+**Fix**: restarted `nitric start --ci` (killed PID 10019, respawned). Verified live: the exact
+previously-failing URL now returns the real rendered brief page (`curl` for the "no longer valid"
+error text now returns 0 matches). `clean-nitric-history.mjs` and the standalone `ais-relay.cjs`
+were left untouched — nitric's own internal `ais-relay` attempt failed with the expected, harmless
+`EADDRINUSE` on `:3004` (the standalone copy already owns that port, matches prior sessions' notes).
+
 ### 🔭 STILL OPEN — pick this up first
 
-1. **Operator should reload the VS Code window one more time** to activate the freshly installed
-   extension package (not yet confirmed working post-install as of this handoff — the `.vsix`
-   install itself succeeded and was verified to contain the fix, but the running window hasn't
-   picked it up yet).
-2. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
+1. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
    not this repo's concern to chase, but flagging in case it's relevant context later.
+2. **Nothing else open from this session as of this handoff** — all four VS-Code-embed bugs (SW,
+   click-handling, AbortSignal, and the secret-rotation regression it surfaced) are verified live.
 
 ---
 

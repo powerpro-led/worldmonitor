@@ -164,13 +164,40 @@ process bounded by its own `AbortSignal.timeout()`, not just analyze-stock — p
 explanation for "some panels still slowly loading" reported alongside this symptom. Worth revisiting
 "slow panel" reports against this fix before assuming a new, separate cause.
 
+### Part 4 correction — a window reload alone did NOT pick up the panel.ts fix; RESOLVED
+
+Parts 4 and 5 were verified live (2026-08-22, same session): `analyze-stock` now returns 200s
+(Part 5), general panel loading is faster than before (Part 5's broader impact), **but** external
+links still did nothing after "Developer: Reload Window."
+
+**Root cause of the leftover gap**: this extension is a genuinely **installed** VS Code extension
+(`~/.vscode/extensions/worldmonitor-internal.worldmonitor-local-dashboard-0.1.0/`, a separate copy
+from the workspace repo — matches the "operators download+install a `.vsix`" deployment model), NOT
+loaded live from source. `sidecarProcess.ts`'s `resolveRepoRoot()` points the spawned sidecar
+(`.mjs`, hand-written, runs directly) and the served dashboard `dist/` at the **live workspace repo**
+— which is why Parts 4/5's fixes to `main.ts` and `local-api-server.mjs` worked immediately, no
+reinstall needed. But the extension HOST's own code (`panel.ts` → `dist/extension.js`) is loaded
+from whatever's **installed**, and a window reload only re-runs that already-installed code — it
+does not rebuild or reinstall it. The installed copy was 5 days stale (Aug 17) and had zero trace of
+the fix, confirmed via `grep` before touching anything.
+
+**Fix**: `npm run package` (in `vscode-extension/`) → fresh `.vsix` → `code --install-extension
+<path> --force`. Confirmed the freshly installed `dist/extension.js` now contains the fix before
+handing back.
+
+**Trap worth carrying forward**: for this extension specifically, "did my fix take effect" has
+**three different answers depending on which file changed** — `src/*.ts` (dashboard) and
+`vscode-extension/sidecar/*.mjs` changes are live from the workspace repo (rebuild + reload/respawn
+is enough), but `vscode-extension/src/*.ts` (extension-host code) changes are NOT live — they need
+`npm run package` + `code --install-extension --force`, and only THEN does a window reload matter.
+Assuming "I rebuilt and reloaded" covers all three is how this got missed the first time.
+
 ### 🔭 STILL OPEN — pick this up first
 
-1. **Operator must fully reload the VS Code window** (not just the webview) — `panel.ts` is
-   extension-host code, only picked up on window reload, not webview reload. That one action also
-   respawns the sidecar (picking up Part 5's fix) and serves the freshly built `dist/` (picking up
-   Part 4's fix) — all three land together. Not yet confirmed working post-reload as of this
-   handoff.
+1. **Operator should reload the VS Code window one more time** to activate the freshly installed
+   extension package (not yet confirmed working post-install as of this handoff — the `.vsix`
+   install itself succeeded and was verified to contain the fix, but the running window hasn't
+   picked it up yet).
 2. `platform`'s fix is a plain commit+push on `fix/github-bridge-duplicate-account`, not yet a PR —
    not this repo's concern to chase, but flagging in case it's relevant context later.
 

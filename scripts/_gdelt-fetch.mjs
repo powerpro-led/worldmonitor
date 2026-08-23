@@ -27,10 +27,70 @@
 // per-IP throttle window is wider, so quick retries usually re-hit the
 // same throttle.
 
-import { CHROME_UA, sleep, resolveProxy, curlFetch } from './_seed-utils.mjs';
+import { CHROME_UA, sleep, resolveProxy, curlFetch, acquireLock } from './_seed-utils.mjs';
 
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MAX_RETRY_AFTER_MS = 60_000;
+
+// ─── Cross-process rate gate (2026-08-23) ───
+// GDELT's own stated guidance is to stay at or below 1 request / 5s per IP
+// (blog.gdeltproject.org's rate-limiting posts). This codebase has AT LEAST
+// four independent processes hitting api.gdeltproject.org with zero
+// awareness of each other: seed-gdelt-intel.mjs, seed-conflict-intel.mjs,
+// and seed-recall-benchmark.mjs all via this file's fetchGdeltJson; plus
+// seed-unrest-events.mjs via its own separate v1 GKG fetch. On top of that,
+// seed-conflict-intel.mjs's own country loop fires 4 requests CONCURRENTLY
+// (Promise.all, CONCURRENCY=4) with only 500ms between batches — already
+// exceeding the stated limit on its own, every batch. A GDELT-wide 429 storm
+// was diagnosed 2026-07-13 (#5256) and mitigated with a circuit breaker
+// (stop grinding once a whole batch comes back throttled), but the
+// over-rate firing pattern that plausibly triggers these storms in the
+// first place was never fixed.
+//
+// Fix: a distributed rate gate reusing the existing acquireLock() SET-NX-PX
+// primitive (seed-lock:gdelt:rate-gate). Concurrent callers — even a
+// Promise.all burst — naturally serialize to one winner per window; no
+// caller needs to change its own concurrency, the lock does the serializing.
+// Fails OPEN on Redis errors (degrades to "no coordination" rather than
+// blocking every GDELT-dependent seeder on a Redis blip), matching
+// acquireLockSafely's established degrade-gracefully contract.
+const GDELT_RATE_GATE_DOMAIN = 'gdelt:rate-gate';
+export const GDELT_RATE_WINDOW_MS = 5_500; // >= GDELT's stated 5s minimum, small safety margin
+
+let _gdeltGateSeq = 0;
+
+/**
+ * Claim the next available cross-process GDELT request slot. Polls until a
+ * window is won, Redis degrades (fail-open), or maxWaitMs is exceeded (also
+ * proceeds — gate contention should never permanently starve a caller; the
+ * caller's own retry/429 handling remains the backstop).
+ */
+export async function acquireGdeltRateSlot(label = 'unknown', opts = {}) {
+  const {
+    windowMs = GDELT_RATE_WINDOW_MS,
+    maxWaitMs = 60_000,
+    pollMs = 300,
+    _acquireLock = acquireLock,
+    _sleep = sleep,
+    _now = Date.now,
+  } = opts;
+  const deadline = _now() + maxWaitMs;
+  while (_now() < deadline) {
+    _gdeltGateSeq += 1;
+    const holder = `${label}:${process.pid}:${_gdeltGateSeq}`;
+    let won;
+    try {
+      won = await _acquireLock(GDELT_RATE_GATE_DOMAIN, holder, windowMs);
+    } catch (err) {
+      console.warn(`  [GDELT] rate-gate degraded (${err?.message ?? err}) — proceeding without cross-process coordination`);
+      return true;
+    }
+    if (won) return true;
+    await _sleep(pollMs);
+  }
+  console.warn(`  [GDELT] rate-gate wait exceeded ${Math.round(maxWaitMs / 1000)}s for ${label} — proceeding anyway`);
+  return true;
+}
 
 /**
  * Production defaults. Exported so tests can lock the wiring at the
@@ -84,6 +144,9 @@ export async function fetchGdeltJson(url, opts = {}) {
     _curlProxyResolver = _PROXY_DEFAULTS.curlProxyResolver,
     _proxyCurlFetcher = _PROXY_DEFAULTS.curlFetcher,
     _sleep = sleep,
+    // Cross-process rate gate (see the module header comment). Every real
+    // network attempt below — direct AND proxy — claims a slot first.
+    _acquireGdeltRateSlot = acquireGdeltRateSlot,
   } = opts;
 
   let lastDirectError = null;
@@ -92,6 +155,7 @@ export async function fetchGdeltJson(url, opts = {}) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let resp;
     try {
+      await _acquireGdeltRateSlot(label);
       resp = await fetch(url, {
         headers: { 'User-Agent': CHROME_UA },
         signal: AbortSignal.timeout(timeoutMs),
@@ -154,6 +218,10 @@ export async function fetchGdeltJson(url, opts = {}) {
     for (let attempt = 1; attempt <= proxyMaxAttempts; attempt++) {
       proxyAttemptsRun = attempt;
       try {
+        // Same cross-process gate as the direct leg — a rotated Decodo IP
+        // doesn't exempt this request from GDELT's stated per-request pacing,
+        // and the 2026-07-13 storm (#5256) hit direct AND proxy together.
+        await _acquireGdeltRateSlot(`${label}:proxy`);
         // _proxyCurlFetcher (curlFetch / execFileSync) is sync today; wrap
         // with await Promise.resolve so a future async refactor silently
         // keeps working (Greptile P2 from PR #3119).

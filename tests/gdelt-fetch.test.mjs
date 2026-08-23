@@ -36,6 +36,12 @@ const COMMON_OPTS = {
   timeoutMs: 1000,
   proxyMaxAttempts: 3,   // proxy retries
   proxyRetryBaseMs: 10,
+  // 2026-08-23: the real acquireGdeltRateSlot calls acquireLock, which hits
+  // Redis via the SAME globalThis.fetch these tests mock to simulate GDELT
+  // responses — an unmocked gate call would consume a mock response meant
+  // for a real GDELT-simulating assertion. No-op it here; timing/coordination
+  // of the gate itself is this module's own concern, not fetchGdeltJson's.
+  _acquireGdeltRateSlot: async () => true,
 };
 
 const originalFetch = globalThis.fetch;
@@ -434,6 +440,7 @@ test('maxRetries:0 + proxyMaxAttempts:0 → single direct attempt, no proxy, thr
       _curlProxyResolver: () => 'user:pass@us.decodo.com:10001',
       _proxyCurlFetcher: () => { proxyCalls += 1; return JSON.stringify(VALID_PAYLOAD); },
       _sleep: async () => {},
+      _acquireGdeltRateSlot: async () => true,
     }),
     /GDELT retries exhausted/,
   );
@@ -458,6 +465,7 @@ test('proxyMaxAttempts:0 → no "trying proxy" log emitted (no misleading "up to
         _curlProxyResolver: () => 'user:pass@us.decodo.com:10001',
         _proxyCurlFetcher: () => JSON.stringify(VALID_PAYLOAD),
         _sleep: async () => {},
+        _acquireGdeltRateSlot: async () => true,
       }),
       /GDELT retries exhausted/,
     );
@@ -493,6 +501,7 @@ test('maxRetries:0 + proxyMaxAttempts:2 (timeline budget): 1 direct + up to 2 pr
       return JSON.stringify(VALID_PAYLOAD);
     },
     _sleep: async () => {},
+    _acquireGdeltRateSlot: async () => true,
   });
   assert.equal(directCalls, 1, '0 direct retries → 1 direct attempt only');
   assert.equal(proxyCalls, 2, '2 proxy attempts: 1st 429, 2nd succeeds');
@@ -517,6 +526,7 @@ test('maxRetries:0 + proxyMaxAttempts:2: both proxy attempts fail → exhausted 
       _curlProxyResolver: () => 'user:pass@us.decodo.com:10001',
       _proxyCurlFetcher: () => { proxyCalls += 1; throw new Error('HTTP 429'); },
       _sleep: async () => {},
+      _acquireGdeltRateSlot: async () => true,
     }),
     (err) => {
       assert.match(err.message, /GDELT retries exhausted/);

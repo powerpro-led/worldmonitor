@@ -2,6 +2,7 @@
 
 import { loadEnvFile, CHROME_UA, runSeed, httpsProxyFetchRaw, resolveProxyForConnect, describeErr, writeExtraKeyWithMeta, sleep } from './_seed-utils.mjs';
 import { getAcledToken } from './shared/acled-oauth.mjs';
+import { acquireGdeltRateSlot } from './_gdelt-fetch.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -291,10 +292,18 @@ export async function fetchGdeltViaProxy(url, proxyAuth, opts = {}) {
     _sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
     _maxAttempts = 3,
     _jitter = () => 1500 + Math.random() * 1500,
+    // 2026-08-23: this file's own retry jitter (1.5-3s) is below GDELT's
+    // stated 5s floor, and this fetch never coordinates with the OTHER
+    // GDELT-hitting seeders (seed-gdelt-intel/seed-conflict-intel/
+    // seed-recall-benchmark, all via _gdelt-fetch.mjs). Same cross-process
+    // gate as those — see that file's header comment for the full story.
+    _acquireGdeltRateSlot = acquireGdeltRateSlot,
+    _rateGateLabel = 'unrest',
   } = opts;
   let lastErr;
   for (let attempt = 1; attempt <= _maxAttempts; attempt++) {
     try {
+      await _acquireGdeltRateSlot(_rateGateLabel);
       const { buffer } = await _proxyFetcher(url, proxyAuth, {
         accept: 'application/json',
         timeoutMs: 45_000,

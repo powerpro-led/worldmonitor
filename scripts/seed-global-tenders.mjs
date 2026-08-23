@@ -28,11 +28,12 @@ const CANADA_BUYS_OPEN_CSV_URL = 'https://canadabuys.canada.ca/opendata/pub/open
 // source and raised a health warn that self-healed on the next tick — noise the
 // operator cannot act on.
 //
-// The retry budget is BOUNDED by the bundle section, not chosen for its own sake:
-// Global-Tenders has timeoutMs 180_000 and CanadaBuys uses a 60s per-attempt
-// timeout, so maxRetries 2 would cost 60+1+60+2+60 = 183s and BREACH the section.
-// Callers with a long per-attempt timeout must lower maxRetries accordingly.
-// Sources run in parallel, so the section pays the slowest source, not the sum.
+// The retry budget is BOUNDED by the bundle section, not chosen for its own sake.
+// Callers with a long per-attempt timeout must lower maxRetries accordingly, and
+// the Global-Tenders section's own timeoutMs (scripts/seed-bundle-relay-backup.mjs)
+// must in turn cover whichever source's own worst-case (timeoutMs * (maxRetries+1)
+// + backoff) is largest. Sources run in parallel, so the section pays the slowest
+// source, not the sum — see fetchCanadaBuys below for the current bottleneck.
 async function fetchResponse(url, options = {}) {
   const { timeoutMs = 20_000, maxRetries = 2, retry429 = true, ...fetchOptions } = options;
   return withRetry(async () => {
@@ -166,9 +167,20 @@ export async function fetchContractsFinder({ now = Date.now(), fetchJsonFn = fet
 
 export async function fetchCanadaBuys({ now = Date.now(), fetchTextFn = fetchText } = {}) {
   const csv = await fetchTextFn(CANADA_BUYS_OPEN_CSV_URL, {
-    timeoutMs: 60_000,
-    // 6 MB CSV on a 60s attempt timeout: one retry (60+1+60 = 121s) fits inside the
-    // 180s Global-Tenders section budget; two (183s) would breach it.
+    // The 6 MB CSV needs ~439s to complete at this environment's VPN-bypassed
+    // ~14 KB/s throughput to canadabuys.canada.ca (measured session 36) — the
+    // old 60s per-attempt timeout could never succeed regardless of retry
+    // count, since every individual attempt was capped far below the time one
+    // download actually needs. 500_000ms covers that with ~60s margin.
+    // maxRetries stays 1 (not 0): a fast-failing transient blip (socket reset,
+    // 408/503 — see tests/global-tenders-transient-retry.test.mjs) costs almost
+    // nothing to retry and should still get one, this per-attempt raise only
+    // targets the slow-throughput case. The true worst case is therefore TWO
+    // full 500s attempts + 1s backoff (~1001s) if the pipe is uniformly slow
+    // both times — the Global-Tenders section timeoutMs and this seed's own
+    // fetchPhaseTimeoutMs (below) are both sized to cover that, not just one
+    // attempt.
+    timeoutMs: 500_000,
     maxRetries: 1,
     headers: { Accept: 'text/csv, application/octet-stream;q=0.9, */*;q=0.1' },
   });
@@ -352,6 +364,16 @@ async function main() {
     zeroIsValid: true,
     contentMeta,
     maxContentAgeMin: 14 * 24 * 60,
+    // runSeed's own default fetch-phase deadline (lockTtlMs + FETCH_PHASE_DEADLINE_MARGIN_MS,
+    // ~240s) is a SEPARATE, inner ceiling from the outer bundle-runner's section
+    // timeoutMs (scripts/seed-bundle-relay-backup.mjs) — raising only the outer one
+    // would leave this inner deadline aborting the fetch phase before CanadaBuys
+    // could ever complete. fetchCanadaBuys' true worst case (one full-throughput
+    // timeout + a fast-fail retry that also happens to time out) is ~1001s
+    // (500_000 + 1_000 backoff + 500_000) — 1_020_000ms leaves ~19s headroom
+    // above that, and stays under the outer section's 1_050_000ms SIGTERM so a
+    // graceful "RETRY" completion is reached instead of a hard child-process kill.
+    fetchPhaseTimeoutMs: 1_020_000,
     afterPublish: async (snapshot) => {
       await Promise.all(snapshot.sourceStatuses.map(writeSourceStatus));
     },

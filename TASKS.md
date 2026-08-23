@@ -249,11 +249,44 @@ assume `localhost:3000` works).
    block further.
 3. **GDELT residential-proxy check** — still needs the operator's Decodo dashboard; unchanged from
    session 35, not re-investigated this session (re-confirmed still failing, root cause unchanged).
-4. **Widen timeouts for canada-buys/OFAC** — re-investigated this session, concluded NOT a simple
-   fix: the math doesn't close for either (CanadaBuys needs ~439s vs a hard 180s bundle ceiling;
-   OFAC's ~120MB feed needs ~8.5h at its VPN-bypassed speed). Submarine-cables (the third host on
-   this list) WAS fixed and verified this session — no longer open. See the dedicated item above for
-   the full numbers before re-raising this as "just widen a timeout."
+4. **Widen timeouts for canada-buys/OFAC — CanadaBuys FIXED session 37, verified live. OFAC
+   remains genuinely not fixable this way, unchanged.** Session 36's "not a simple fix" verdict for
+   CanadaBuys turned out to be about a constraint that doesn't actually apply here — worth re-reading
+   before assuming a prior session's "not fixable" verdict is final:
+   - The 180s figure session 36 cited as a "hard bundle ceiling" was actually just this ONE section's
+     own `timeoutMs` in `scripts/seed-bundle-relay-backup.mjs` — independently adjustable, not shared
+     with any other section, and the bundle itself has no `maxBundleMs` wall-clock budget opted in at
+     all. The doc-comment reason that budget mechanism exists — "Railway cron SIGKILLs the container
+     at 10min" — turned out to be moot for THIS bundle specifically: confirmed with the operator this
+     session that nothing is deployed to Railway yet (local dev stage only), so there's currently no
+     live 10-min ceiling to protect against.
+   - Root cause of the 60s-per-attempt cap (in `fetchCanadaBuys()`, `scripts/seed-global-tenders.mjs`):
+     it was sized to fit inside the old 180s section budget, not to the actual ~439s the 6MB CSV needs
+     at this environment's VPN-bypassed ~14KB/s (session 36's measurement). No `maxRetries` count could
+     ever have made 60s attempts succeed — every individual attempt was capped far below what one
+     download needs, regardless of retry budget.
+   - Fix: raised `fetchCanadaBuys()`'s per-attempt `timeoutMs` 60s→500s (covers the ~439s need with
+     margin), kept `maxRetries: 1` (preserves `tests/global-tenders-transient-retry.test.mjs`'s tested,
+     valuable fast-fail-transient-retry behavior — a socket reset or 408/503 fails and retries in
+     milliseconds, unrelated to the slow-throughput case this timeout raise targets). True worst case
+     is therefore two full 500s attempts + 1s backoff (~1001s), not one — raised the section's
+     `timeoutMs` 180s→1_050_000ms and `seed-global-tenders.mjs`'s own `runSeed` `fetchPhaseTimeoutMs`
+     (a SEPARATE inner ~240s-default deadline that would otherwise have silently undercut the outer
+     raise, same stacked-timeout class as session 36's climate-zone-normals fix) explicitly to
+     1_020_000ms, both sized with margin over that ~1001s true worst case.
+   - Verified: all 45 tests across `global-tenders`, `list-global-tenders`, `global-tenders-transient-
+     retry`, `global-tender-health`, `global-tender-sources`, `global-tenders-sam-rate-limit`,
+     `seed-ttl-outlives-staleness-fleet` pass (an unrelated pre-existing `nixpacks-seeder-import-graph`
+     failure about the `seed-research` bundle confirmed present on the unmodified baseline too).
+     **Live**: an isolated `fetchCanadaBuys()` call against the real endpoint succeeded in 62.9s with
+     100 real records parsed from the real CSV — notably, 62.9s is itself just over the OLD 60s cap,
+     confirming that cap was too tight even on a good network moment, not only in the documented
+     slow-throughput case.
+   - **OFAC unchanged, still not fixable this way**: `seed-sanctions-pressure.mjs`'s ~120MB XML feed
+     needs ~8.5h at this environment's VPN-bypassed ~4KB/s (session 36's measurement, essentially the
+     pre-bypass baseline — the bypass barely helped this specific host). No timeout value closes an
+     8.5-hour gap; this needs genuinely faster network access, which isn't available from this
+     environment. Not attempted this session.
 5. **Decide on LaunchDaemon persistence for the VPN bypass routes** — unchanged from session 35,
    still pending the operator's call, still blocked on the timeout-widening question above anyway.
 6. **`riskScores`' staleness — FIXED session 37, verified live. Session 35's "warm-ping/cache-TTL

@@ -417,10 +417,49 @@ assume `localhost:3000` works).
    live per this session's confirmation — would need either provisioning Railway specifically for
    this one service, wiring into the still-scaffold GCP/Nitric setup, or a local-dev-only loop
    wrapper (same pattern as the digest-cron fix, session 36) for local visibility only.
-   **Not attempted this session** — this is a genuine operator decision (real Postgres cost, a real
-   scraping-provider API key with its own cost, and a hosting decision), not something to provision
-   unprompted. Flagging the corrected, concrete scope so the next session (or the operator directly)
-   can make that call with accurate information instead of the vague "needs new infra" note.
+   **UPDATE, same session — operator had Postgres AND both API keys already: schema + migrations
+   DONE.** Operator confirmed Postgres is already available (the same Supabase project already
+   backing `worldmonitor`'s own schema, `ixuezudybhjptisexgxx`) and `FIRECRAWL_API_KEY`/`EXA_API_KEYS`
+   were already in `.env`. Two of the three "genuine gaps" above were already solved, not new work.
+   - Inspected the Supabase project first via MCP tools before touching anything: this project is
+     genuinely shared across multiple unrelated apps (an OKR/meta-aggregator/BPMN system's own
+     migration history sits alongside `worldmonitor`'s `_stage1/2/3` migrations) — confirmed a
+     dedicated new schema was the right call, not reusing `worldmonitor` (scoped to user auth/prefs)
+     or `public` (crowded with the unrelated app, 38 tables).
+   - Read all 9 migration files in full before running any of them (one is literally named
+     "drop_unused_schema" — checked it only touches this same schema's own table/column, not an
+     external reference). Created a new `consumer_prices` schema, applied all 9 migrations in order
+     via direct SQL (`SET search_path TO consumer_prices, public, extensions;` per migration, since
+     they create tables unqualified), and manually populated `consumer_prices.schema_migrations`
+     with each version as applied — replicates `src/db/migrate.ts`'s own bookkeeping exactly, so a
+     LATER real `npm run migrate` (once `DATABASE_URL` is wired up) correctly sees all 9 as already
+     applied and skips them, rather than re-running and erroring on already-existing tables.
+   - Verified via `list_tables`: all 12 expected tables present, `schema_migrations` = 9 rows,
+     `baskets` = 10 (all markets), `canonical_products` = 75 (deduped across markets),
+     `basket_items` = 119, everything else correctly empty (no scraping has happened).
+   - **RLS advisory surfaced twice this session, both times per the tool's own requirement, not
+     silently decided**: (1) 38 pre-existing tables in this project's `public` schema — an unrelated
+     app, not touched, operator said not their concern right now; (2) the 12 new `consumer_prices`
+     tables also have RLS disabled — lower practical risk since this schema isn't registered as
+     PostgREST-exposed (unlike `worldmonitor`), so the anon/authenticated API keys can't reach it via
+     Supabase's REST layer the way `public`'s tables can — operator confirmed not a concern for now,
+     revisit if this schema is ever exposed that way.
+   - Created `consumer-prices-core/.env` (gitignored, confirmed via `git check-ignore`): copied
+     `FIRECRAWL_API_KEY`/`EXA_API_KEYS` from the main `.env`, generated a fresh
+     `WORLDMONITOR_SNAPSHOT_API_KEY` (`node crypto.randomBytes(32)`), left `DATABASE_URL` and
+     `REDIS_URL` blank (the latter deliberately — see the correction above, nothing reads it).
+     Added the matching `CONSUMER_PRICES_CORE_API_KEY` to the main repo's `.env` too (same value).
+     Also caught a second stale-note issue while there: the main `.env.example`'s own top-level
+     `DATABASE_URL` entry is ALSO vestigial — grepped the whole repo outside `consumer-prices-core/`
+     for `process.env.DATABASE_URL`, zero hits; didn't add it to the main `.env`.
+   - **What's still genuinely missing, deliberately not done**: (1) `DATABASE_URL` itself — needs the
+     operator to pull it from the Supabase dashboard (Project Settings → Database → Connection
+     String, Session pooler or Direct connection mode, NOT Transaction pooler — `pg.Pool`'s
+     multi-statement transactions break under PgBouncer transaction mode) and add it to
+     `consumer-prices-core/.env`; (2) the hosting decision for the job pipeline (Railway
+     specifically, GCP/Nitric, or a local-dev loop wrapper) — genuinely unresolved, not attempted;
+     (3) no scraping has been run — real Firecrawl/Exa costs, deliberately out of this session's
+     agreed scope ("schema + migrations only, stop there").
 
 ---
 

@@ -287,8 +287,33 @@ assume `localhost:3000` works).
      pre-bypass baseline — the bypass barely helped this specific host). No timeout value closes an
      8.5-hour gap; this needs genuinely faster network access, which isn't available from this
      environment. Not attempted this session.
-5. **Decide on LaunchDaemon persistence for the VPN bypass routes** — unchanged from session 35,
-   still pending the operator's call, still blocked on the timeout-widening question above anyway.
+5. **LaunchDaemon persistence for the VPN bypass routes — DONE session 37, operator-installed and
+   live.** Checked current routing state before proposing anything: 4 of the 7 session-35 bypass
+   hosts (`www.contractsfinder.service.gov.uk`, `www.submarinecablemap.com`,
+   `archive-api.open-meteo.com`, `canadabuys.canada.ca`) were routing via `en0` (bypass active) but
+   with NO persistence — only FIRMS had a LaunchDaemon (`com.worldmonitor.firms-vpn-bypass`, session
+   32). Those 4 routes were almost certainly added by hand during live testing and would have
+   silently reverted to the slow `utun8` VPN path on the next reboot or VPN reconnect. OFAC
+   (`treasury.gov`) deliberately excluded — still on `utun8` (never bypassed), and even bypassed
+   only reaches 4KB/s, nowhere near its 8.5h need, so persisting it buys nothing. GDELT excluded —
+   session 35's bypass test was a clean negative, already ruled out.
+   - Found while building the plist: `www.contractsfinder.service.gov.uk` resolved to two
+     DIFFERENT IPs a few minutes apart (`3.9.218.171` then `18.175.36.151`, both already present as
+     separate routes in the live table) — genuinely multi-IP/rotating AWS ELB backend, not a fluke.
+     A naive single-IP-per-tick daemon would leave gaps as DNS round-robins. Designed the script to
+     resolve and route EVERY currently-returned A record per host on each 60s tick, not just one
+     (`for IP in $(dig +short "$HOST" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')`).
+   - Kept as a SEPARATE new daemon (`com.worldmonitor.seed-hosts-vpn-bypass`), not merged into the
+     existing FIRMS one — easier to audit/revert independently, same reasoning as the existing
+     `.env` revert-marker convention elsewhere in this project.
+   - Operator installed and confirmed live: `sudo launchctl list | grep seed-hosts` shows exit
+     status `0` (last run succeeded); all 5 known target IPs (both contracts-finder ELB addresses
+     included) confirmed present in `netstat -rn -f inet` after install.
+   - **Delete-and-observe verification — DONE, matches the FIRMS precedent.** Operator ran `sudo
+     route delete -host 40.82.191.205` (CanadaBuys), waited past one 60s tick, then `route get
+     canadabuys.canada.ca` showed `interface: en0` again (not `utun8`) — the daemon re-added the
+     deleted route on its own, unattended. Full parity with FIRMS's own "self-heal verified by
+     delete-and-observe" record now achieved for this daemon too.
 6. **`riskScores`' staleness — FIXED session 37, verified live. Session 35's "warm-ping/cache-TTL
    mismatch" diagnosis was a plausible theory but NOT the actual root cause** — corrected here so a
    future session doesn't re-chase the TTL-race explanation. Traced the real mechanism end-to-end

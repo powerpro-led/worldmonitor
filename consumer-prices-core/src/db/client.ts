@@ -13,8 +13,16 @@ export function getPool(): pg.Pool {
       connectionString: databaseUrl,
       max: 10,
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
+      connectionTimeoutMillis: 20_000,
       ssl: databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+      // Migrations and every query in this codebase use unqualified table names
+      // (e.g. `CREATE TABLE retailers`, not `consumer_prices.retailers`) and rely
+      // entirely on the connection's default search_path. Without this, a plain
+      // Supabase pooler connection defaults to `public` — which is a SHARED schema
+      // with an unrelated app's 38 tables in this project. Pin it explicitly so a
+      // stray migrate run can never recreate consumer-prices tables there again
+      // (see the session-38 incident: it did exactly that, cleaned up manually).
+      options: '-c search_path=consumer_prices',
     });
 
     _pool.on('error', (err) => {

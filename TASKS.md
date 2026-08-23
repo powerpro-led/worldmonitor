@@ -512,6 +512,36 @@ assume `localhost:3000` works).
      specifically, GCP/Nitric, or a local-dev loop wrapper) — genuinely unresolved, not attempted;
      (3) no scraping has been run — real Firecrawl/Exa costs, deliberately out of this session's
      agreed scope ("schema + migrations only, stop there").
+   - **UPDATE, session 38 — `DATABASE_URL` wired and the real pg connection verified live, but hit
+     and fixed a real incident along the way, not a clean pass.** Operator supplied both Supabase
+     pooler connection strings (Session pooler port 5432, Transaction pooler port 6543). Wired the
+     Session pooler one into `consumer-prices-core/.env` per this file's own pre-existing warning
+     above. Found `consumer-prices-core/` had **never had `npm install` run** — no `node_modules` at
+     all, unrelated to `DATABASE_URL` and not previously flagged; fixed (`npm install`, 208 packages).
+     First `npm run migrate` attempt failed with a 5s connection timeout — raw TCP to the pooler
+     host connects in ~0.4s (confirmed via `nc`), so this wasn't a reachability/VPN-throttle issue
+     like the other 7 hosts, just `client.ts`'s `connectionTimeoutMillis: 5_000` being too tight for
+     the full TLS+auth handshake through the pooler; raised to 20s, connected fine.
+     **Real incident**: `migrate.ts`'s SQL migrations use unqualified `CREATE TABLE retailers` (never
+     `consumer_prices.retailers`), relying entirely on the connection's default `search_path`.
+     Session 37's manual migration via the Supabase MCP tool explicitly set
+     `search_path=consumer_prices` per statement; `client.ts` never sets one and neither pooler URL
+     does either — so the first real `npm run migrate` run silently created a **complete duplicate
+     set of all 12 consumer-prices tables in the shared `public` schema** (same schema with the
+     unrelated 38-table app session 37 deliberately avoided), all with RLS disabled and, unlike
+     `consumer_prices`, actually PostgREST-exposed to the anon/authenticated Supabase API keys —
+     confirmed via `list_tables` immediately after. Caught before doing anything further; operator
+     approved cleanup. Fixed both the symptom and the cause: dropped all 12 stray `public.*` tables
+     (verified `public` back to its original 38-table baseline, `consumer_prices` untouched, same
+     9/9 migrations and 75/10/119 row counts as before), and added `options: '-c
+     search_path=consumer_prices'` to the `Pool` config in `client.ts` so this can't recur regardless
+     of which connection string is used later. Re-ran `npm run migrate` after the fix: clean `[skip]`
+     on all 9, confirming it now correctly resolves against `consumer_prices` — the connection itself
+     is genuinely proven working end-to-end, not just reasoned about. Lesson for next time: a
+     migration/query layer relying on implicit `search_path` needs that pinned at the connection
+     layer, not just gotten right once via a manual admin tool — the two paths (MCP admin query vs.
+     the app's own pool) don't share that state. Still genuinely open, unchanged: the hosting
+     decision for the job pipeline, and no scraping run yet (out of scope, real API costs).
 
 ---
 

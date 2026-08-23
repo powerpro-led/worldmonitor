@@ -15,7 +15,7 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-22, THIRTY-FIFTH session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-22→23, THIRTY-FIFTH session end) — read this first, supersedes every block below
 
 **Scope**: picked up the thirty-fourth session's scoped "seed/sync reliability sweep" NEXT
 INITIATIVE. Verified the handoff was actually clean first (git tree matched exactly, dev-stack
@@ -161,24 +161,74 @@ is now failing far worse than its own documented ~40%/attempt historical measure
 would likely help far more than any retry-budget tuning can. Needs the operator to check their
 Decodo dashboard — not something checkable from this environment.
 
-### 🔭 STILL OPEN — pick this up first
+### Final continuation (2026-08-23) — GDELT cross-process rate gate, then handed off
 
-1. Widen the per-attempt timeout for `canada-buys`/OFAC/`submarine-cables` to match the
-   now-measured (post-VPN-bypass) real throughput — a real, scoped code change, discussed but not
-   yet implemented. Operator hasn't confirmed they want this yet.
-2. Ask the operator to check their Decodo dashboard for a residential proxy endpoint — the one
-   concrete lead left on GDELT's persistent 429s.
-3. Confirm with the operator whether to persist the VPN bypass routes via a LaunchDaemon (matches
-   `com.worldmonitor.firms-vpn-bypass` from session 32) — not yet set up, the live-test routes will
-   NOT survive a reboot/VPN reconnect on their own.
-4. `riskScores`' warm-ping/cache-TTL mismatch — needs a deliberate fix to shared caching code, not
-   a quick patch.
-5. Full crit/warn list drifts hour to hour (matches every prior session's note on this) — re-fetch
-   `/api/health?compact=1` rather than trusting this handoff's numbers if picked up much later.
-   Baseline at this session's close (before the later-session continuation above): 232 total, 182
-   ok, 14 warn, 12 onDemandWarn, 0 staleContent, 24 crit (flat vs. session start's 24 despite 4
-   genuine fixes — offset by unrelated natural drift: `energyPrices`/`temporalAnomalies` rotated in
-   as new transient staleness during this session, not caused by anything above).
+**`scripts/_gdelt-fetch.mjs` + `scripts/seed-unrest-events.mjs` — distributed rate gate across
+every GDELT caller** (commit `e4b1326`). Root cause dug further than the earlier per-seeder budget
+fix: at least 4 independent processes hit `api.gdeltproject.org` with zero awareness of each other
+(`seed-gdelt-intel`/`seed-conflict-intel`/`seed-recall-benchmark` via `fetchGdeltJson`, plus
+`seed-unrest-events` via its own separate v1 GKG fetch) — and `seed-conflict-intel.mjs`'s own
+country loop fires **4 requests concurrently** (`Promise.all`, `CONCURRENCY=4`) with only 500ms
+between batches, already exceeding GDELT's stated ≤1-request/5s guidance on every batch, by itself.
+A real GDELT-wide storm was diagnosed 2026-07-13 (`#5256`) and mitigated with a circuit breaker
+after the fact, but the over-rate firing pattern that plausibly triggers these storms was never
+fixed. Added `acquireGdeltRateSlot()` reusing the existing `acquireLock()` SET-NX-PX primitive —
+every real network attempt across every GDELT-calling file now claims a slot from one shared
+Redis-backed gate (`seed-lock:gdelt:rate-gate`, 5.5s window) before firing. Concurrent callers,
+even a `Promise.all` burst, naturally serialize to one winner per window — no caller's own
+concurrency needed restructuring. Fails OPEN on Redis errors. All 111 tests across the GDELT test
+suite pass (7 needed a `_acquireGdeltRateSlot` test-seam fix — the real gate's Redis call was
+consuming `globalThis.fetch` mocks meant to simulate GDELT responses).
+
+**Verified live, not assumed**: ran `seed-gdelt-intel.mjs` and `seed-conflict-intel.mjs`
+concurrently. Mixed but real result — `gdelt-intel`'s own article-search still got fully blocked
+(GDELT/Decodo proxy pool is severely throttled today, 0/5 to 0/8 across everything tested this
+session), but `conflict-intel`'s GDELT-derived humanitarian data for 32 countries **succeeded**
+running at the same time — confirmed via a direct Redis read of fresh, real content (Ukraine: 6
+events, 13 fatalities, correctly timestamped), not just a clean exit code. The gate demonstrably
+works and lets real traffic through without crashing anything; it cannot force GDELT to stop
+blocking a request pattern that's structurally sound now but was never the sole cause of today's
+severity.
+
+### 🔭 STILL OPEN — handed off, pick this up first
+
+Health at hand-off (2026-08-23): 232 total, 183 ok, 15 warn, 10 onDemandWarn, 0 staleContent, 24
+crit — re-fetch `/api/health?compact=1` rather than trusting this number, it drifts hour to hour
+(every prior session's note on this still holds).
+
+1. **GDELT residential-proxy check** — the one concrete lead left on GDELT's persistent 429s.
+   Configured `PROXY_URL` in `.env` is Decodo's **datacenter** endpoint (`dc.decodo.com`);
+   datacenter IP ranges are exactly what scraping-sensitive APIs like GDELT blocklist hardest.
+   Needs the operator to check their Decodo dashboard for a residential option — not checkable from
+   this environment. If they have one, swapping `PROXY_URL` would likely help far more than any
+   further retry/pacing work (which is now about as tuned as this session could take it — see the
+   rate-gate above).
+2. **Widen the per-attempt timeout** for `canada-buys`/OFAC/`submarine-cables` — the operator's VPN
+   bypass script (session scratchpad, see the VPN-bypass section above) made these hosts genuinely
+   faster (contracts-finder went from ~6KB/s to 27KB/s and is now fully fixed) but not fast enough
+   to clear their existing per-attempt timeouts for the larger-payload sources. Discussed with the
+   operator, not yet implemented — needs picking concrete new timeout values, flagged rather than
+   silently decided last time it came up.
+3. **Decide on LaunchDaemon persistence for the VPN bypass routes** — live-tested and working
+   (partially — see above), but NOT persisted. The routes will not survive a reboot/VPN reconnect
+   on their own. Matches the existing `com.worldmonitor.firms-vpn-bypass` pattern from session 32
+   if the operator wants it.
+4. **`riskScores`' warm-ping/cache-TTL mismatch** — confirmed live (a fresh manual RPC call
+   returned valid data but did not update the seed-meta timestamp, stuck 5+ days old). Needs a
+   deliberate fix to shared caching code (`cachedFetchJsonWithMeta`, a prior PR already carefully
+   tuned this exact tradeoff) — not a quick patch, was deliberately left alone this session.
+5. **`consumerPrices*` (5 keys)** — needs new infra (Postgres + Playwright scraping + a second
+   Redis client), an operator decision, not a code fix. Not touched.
+6. Everything else from the original crit-candidate list not mentioned above was resolved this
+   session — see the full item-by-item record further up this block before re-diagnosing anything
+   that looks unexplained; check here first.
+
+**Session ends here — user explicitly requested handoff to the next session's agent.** Git tree is
+clean, 19 commits ahead of `origin/main`, 0 pushed (operator's standing manual-push discipline).
+Dev-stack processes confirmed alive at hand-off: `nitric start --ci` (pid 2095), two
+`clean-nitric-history.mjs` copies (harmless known duplicate), `ais-relay.cjs` (pid 9874), VS Code
+extension's own sidecar (pid 71417) — don't assume any of these PIDs are still current by the time
+this is picked up, re-`ps` first.
 
 ---
 

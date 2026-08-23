@@ -85,7 +85,17 @@ type MirrorEntry = { value: string; type: string };
  * one process.
  */
 const MIRROR_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirror');
-type GlobalWithMirror = typeof globalThis & { [MIRROR_GLOBAL_KEY]?: Map<string, MirrorEntry> };
+// mtime of local-cache.db at the moment it was last loaded into the mirror
+// above — same globalThis treatment as the mirror itself, for the same
+// reason (shared across ~34 separately-bundled copies of this module in one
+// process). Lets loadMirror() notice when vscode-extension/sidecar/
+// local-sync.mjs has rewritten the file (see its automated periodic runs in
+// local-api-server.mjs) without needing a process restart — see loadMirror().
+const MIRROR_MTIME_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirrorMtimeMs');
+type GlobalWithMirror = typeof globalThis & {
+  [MIRROR_GLOBAL_KEY]?: Map<string, MirrorEntry>;
+  [MIRROR_MTIME_GLOBAL_KEY]?: number;
+};
 
 /**
  * Age of the newest row in the mirror, measured when it was loaded. Null
@@ -119,23 +129,53 @@ export function sidecarMirrorAgeMs(): number | null {
   return mirrorAge;
 }
 
+function statMtimeMs(dbPath: string): number | null {
+  // node:fs loaded the same way node:sqlite is below (process.getBuiltinModule
+  // rather than a static import) — this file is transitively reachable from
+  // api/*.ts Vercel Edge handlers, and a static reference to a Node-only
+  // built-in would risk edge-bundler resolution failures.
+  const fs = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:fs') as
+    | { statSync: (path: string) => { mtimeMs: number } }
+    | undefined;
+  if (!fs) return null;
+  try {
+    return fs.statSync(dbPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Lazily loads the entire local-cache.db `kv_cache` table into memory on
- * first use. A full-table read-once (not a per-key SQLite query per miss)
- * because the mirror is small (low thousands of rows at most, per
- * local-sync.mjs's own domain scope) and static for the process's
- * lifetime — `npm run local-sync` always does a full rebuild, so there is
- * no "stale row" to invalidate mid-process, only a whole-file resync that
- * requires a process restart to pick up (matches how the packaged Tauri
- * sidecar already behaves — same tradeoff, not a new one).
+ * Loads the entire local-cache.db `kv_cache` table into memory, re-reading
+ * it whenever the file's mtime has changed since the last load (a stat() is
+ * far cheaper than the full-table read, so checking it on every call is
+ * fine). A full-table read (not a per-key SQLite query per miss) because the
+ * mirror is small (low thousands of rows at most, per local-sync.mjs's own
+ * domain scope).
+ *
+ * Was unconditionally cached for the process's lifetime until session 38 —
+ * that made sense when `npm run local-sync` was a manual, rarely-run
+ * command (a resync really did need a restart to matter). Now that
+ * local-api-server.mjs runs it on an automatic timer (see startLocalSync()
+ * there), a live process needs to actually notice the file changing under
+ * it, or the automation is invisible from inside an already-running sidecar.
  */
 function loadMirror(): Map<string, MirrorEntry> {
   const g = globalThis as GlobalWithMirror;
+  const dbPath = process.env.LOCAL_SQLITE_PATH;
   const existing = g[MIRROR_GLOBAL_KEY];
-  if (existing) return existing;
+
+  if (existing) {
+    if (!dbPath) return existing;
+    const currentMtimeMs = statMtimeMs(dbPath);
+    // Can't stat it (deleted, permissions, no node:fs) — keep serving what
+    // we have rather than discard a working mirror over a transient error.
+    if (currentMtimeMs === null || currentMtimeMs === g[MIRROR_MTIME_GLOBAL_KEY]) return existing;
+    console.warn('[sidecar-cache] local mirror file changed on disk — reloading');
+  }
+
   const mirror = new Map<string, MirrorEntry>();
   g[MIRROR_GLOBAL_KEY] = mirror;
-  const dbPath = process.env.LOCAL_SQLITE_PATH;
   if (!dbPath) return mirror;
   try {
     const sqlite = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
@@ -157,13 +197,14 @@ function loadMirror(): Map<string, MirrorEntry> {
     } finally {
       db.close();
     }
+    g[MIRROR_MTIME_GLOBAL_KEY] = statMtimeMs(dbPath) ?? undefined;
     const age = mirrorAge === null ? 'age unknown' : `synced ${formatAge(mirrorAge)} ago`;
     console.warn(`[sidecar-cache] loaded ${mirror.size} keys from local mirror at ${dbPath} (${age})`);
     if (mirrorAge !== null && mirrorAge > STALE_MIRROR_WARN_MS) {
       console.warn(
         `[sidecar-cache] WARNING: local mirror is ${formatAge(mirrorAge)} old — every panel is serving ` +
-          'data from that point in time. Refresh it with `npm run local-sync`, then restart the sidecar ' +
-          '(the mirror is read once per process).',
+          'data from that point in time. Refresh it with `npm run local-sync` (or wait for the automatic ' +
+          'sync in local-api-server.mjs; no restart needed either way, the mirror now reloads on change).',
       );
     }
   } catch (err) {
@@ -180,6 +221,7 @@ function loadMirror(): Map<string, MirrorEntry> {
  */
 export function __resetMirrorForTests(): void {
   delete (globalThis as GlobalWithMirror)[MIRROR_GLOBAL_KEY];
+  delete (globalThis as GlobalWithMirror)[MIRROR_MTIME_GLOBAL_KEY];
   mirrorAge = null;
 }
 

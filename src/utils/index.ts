@@ -190,7 +190,7 @@ export { proxyUrl, fetchWithProxy, rssProxyUrl } from './proxy';
 export { buildMapUrl, parseMapUrlState, withPreservedFragment } from './urlState';
 export { withTimeout, TimeoutError } from './with-timeout';
 export type { ParsedMapUrlState } from './urlState';
-export { CircuitBreaker, createCircuitBreaker, getCircuitBreakerStatus, getCircuitBreakerCooldownInfo } from './circuit-breaker';
+export { CircuitBreaker, createCircuitBreaker, getCircuitBreakerStatus, getCircuitBreakerCooldownInfo, isSidecarBackedRuntime } from './circuit-breaker';
 export type { CircuitBreakerOptions } from './circuit-breaker';
 export * from './analysis-constants';
 export { getCSSColor, invalidateColorCache } from './theme-colors';

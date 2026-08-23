@@ -56,6 +56,37 @@ function isDesktopOfflineMode(): boolean {
   return hasTauri && typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 
+/**
+ * True for both the real Tauri desktop app and the VS Code embed — every
+ * runtime backed by vscode-extension/sidecar/local-api-server.mjs in
+ * LOCAL_API_MODE=tauri-sidecar mode. Checked directly against window
+ * globals (not services/runtime.ts's isDesktopRuntime()/
+ * isVsCodeEmbedRuntime()) to keep this file dependency-free, matching
+ * isDesktopOfflineMode() above.
+ *
+ * In this mode, server/_shared/redis.ts reads exclusively from
+ * server/_shared/sidecar-cache.ts's local SQLite mirror (itself synced from
+ * the real Upstash Redis by vscode-extension/sidecar/local-sync.mjs) — that
+ * mirror IS the local persistent cache. This breaker's own persistCache
+ * (localStorage + IndexedDB) would be a second, redundant persistent layer
+ * on top of it, and a genuinely harmful one: recordSuccess() stamps
+ * rehydrated data with Date.now(), so reviving an old browser-side snapshot
+ * re-arms a fresh cacheTtlMs window from "now" regardless of how old the
+ * underlying data actually is — every reload can defer a real refetch
+ * indefinitely instead of ever showing what the sidecar is currently
+ * computing (found session 38: a VS Code panel showed a stale, pre-fix
+ * snapshot long after the backend was already correct, traced to exactly
+ * this). Disabling persistCache here forces every sidecar-backed session to
+ * always ask the sidecar fresh — cheap and instant over 127.0.0.1, unlike
+ * the real network hop this persistence exists to guard against in a
+ * browser tab.
+ */
+export function isSidecarBackedRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown; __wmVsCodeApi?: unknown };
+  return Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__wmVsCodeApi);
+}
+
 export class CircuitBreaker<T> {
   private state: CircuitState = { failures: 0, cooldownUntil: 0 };
   private cache = new Map<string, CacheEntry<T>>();
@@ -79,7 +110,7 @@ export class CircuitBreaker<T> {
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.persistEnabled = this.cacheTtlMs === 0
       ? false
-      : (options.persistCache ?? false);
+      : (options.persistCache ?? false) && !isSidecarBackedRuntime();
     this.revivePersistedData = options.revivePersistedData;
     this.maxCacheEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES;
     const rawCeiling = options.persistentStaleCeilingMs ?? PERSISTENT_STALE_CEILING_MS;

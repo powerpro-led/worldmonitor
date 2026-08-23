@@ -2,6 +2,7 @@ import type { TheaterPostureSummary } from './military-surge';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import type { GetTheaterPostureResponse, TheaterPosture } from '@/generated/client/worldmonitor/military/v1/service_client';
 import { createCircuitBreaker } from '@/utils';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 import { getHydratedData } from '@/services/bootstrap';
 import { MilitaryServiceClient } from '@/services/generated-rpc-clients';
 
@@ -172,6 +173,16 @@ function saveToStorage(data: CachedTheaterPosture): void {
   // (see recordSuccess guard below) and the panel gets stuck on "acquiring
   // data" indefinitely, even once the upstream starts returning real data.
   if (!data.postures.length) return;
+  // Sidecar-backed runtimes (VS Code embed, real Tauri desktop) already have
+  // server/_shared/sidecar-cache.ts's local SQLite mirror as their local
+  // persistent cache — this hand-rolled localStorage layer would be a
+  // second, redundant one, and specifically a harmful one: reviving it
+  // re-arms the breaker's freshness clock from Date.now() regardless of how
+  // old the underlying data actually is (see isSidecarBackedRuntime's own
+  // comment; found via the same bug in cached-risk-scores.ts, session 38).
+  // Skip writing it entirely in that mode rather than write data nothing
+  // should ever read back.
+  if (isSidecarBackedRuntime()) return;
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ data, savedAt: Date.now() }));
   } catch { /* quota exceeded - ignore */ }
@@ -183,8 +194,13 @@ function saveToStorage(data: CachedTheaterPosture): void {
 // (possible from before this guard existed, or from a future localStorage
 // write outside this module) would otherwise mark the breaker "fresh" with
 // zero theaters and skip every real fetch for a full cacheTtlMs window.
-const stored = loadFromStorage();
-if (stored?.postures.length) breaker.recordSuccess(stored);
+// Skipped entirely for sidecar-backed runtimes — nothing writes this key
+// there (see saveToStorage above), and priming from a stale cross-session
+// snapshot would only defer a real refetch.
+if (!isSidecarBackedRuntime()) {
+  const stored = loadFromStorage();
+  if (stored?.postures.length) breaker.recordSuccess(stored);
+}
 
 export async function fetchCachedTheaterPosture(signal?: AbortSignal): Promise<CachedTheaterPosture | null> {
   if (signal?.aborted) throw createAbortError();

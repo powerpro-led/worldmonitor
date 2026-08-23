@@ -4,6 +4,7 @@ import { setHasCachedScores } from './country-instability';
 import { TIER1_COUNTRIES } from '@/config/countries';
 import type { GetRiskScoresResponse, CiiScore, StrategicRisk } from '@/generated/client/worldmonitor/intelligence/v1/service_client';
 import { createCircuitBreaker } from '@/utils';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 import { getHydratedData } from '@/services/bootstrap';
 import { IntelligenceServiceClient } from '@/services/generated-rpc-clients';
 
@@ -256,6 +257,15 @@ function loadFromStorage(): CachedRiskScores | null {
 }
 
 function saveToStorage(data: CachedRiskScores): void {
+  // Sidecar-backed runtimes (VS Code embed, real Tauri desktop) already have
+  // server/_shared/sidecar-cache.ts's local SQLite mirror as their local
+  // persistent cache — this hand-rolled localStorage layer would be a
+  // second, redundant one, and specifically a harmful one: reviving it
+  // re-arms the breaker's freshness clock from Date.now() regardless of how
+  // old the underlying data actually is (see isSidecarBackedRuntime's own
+  // comment). Skip writing it entirely in that mode rather than write data
+  // nothing should ever read back.
+  if (isSidecarBackedRuntime()) return;
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ data, savedAt: Date.now() }));
   } catch { /* quota exceeded */ }
@@ -270,11 +280,17 @@ const breaker = createCircuitBreaker<CachedRiskScores>({
   persistentStaleCeilingMs: LS_MAX_STALENESS_MS,
 });
 
-// Sync prime from localStorage (before async IndexedDB hydration)
-const stored = loadFromStorage();
-if (stored && stored.cii.length > 0) {
-  breaker.recordSuccess(stored);
-  setHasCachedScores(true);
+// Sync prime from localStorage (before async IndexedDB hydration). Skipped
+// entirely for sidecar-backed runtimes — see saveToStorage's comment; there
+// is nothing to prime from since nothing writes this key in that mode, and
+// priming from an old cross-session snapshot would only defer a real
+// refetch by re-arming the breaker's freshness clock.
+if (!isSidecarBackedRuntime()) {
+  const stored = loadFromStorage();
+  if (stored && stored.cii.length > 0) {
+    breaker.recordSuccess(stored);
+    setHasCachedScores(true);
+  }
 }
 
 function emptyFallback(): CachedRiskScores {

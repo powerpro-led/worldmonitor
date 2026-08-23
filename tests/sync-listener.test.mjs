@@ -53,26 +53,35 @@ describe('extractFrames', () => {
 });
 
 describe('decodeFrame', () => {
-  it('decodes a bare JSON payload (unwrapped shape)', () => {
-    const payload = listener.decodeFrame('{"key":"resilience:x","type":"string","value":"{\\"a\\":1}"}');
+  // Wire format VERIFIED LIVE against a real Upstash endpoint (2026-08-23,
+  // via curl + a real PUBLISH) — plain comma-separated `type,channel,data`,
+  // not JSON. See this function's own comment in sync-listener.mjs.
+  it('decodes a real "message,channel,payload" frame', () => {
+    const message = JSON.stringify({ key: 'resilience:x', type: 'string', value: '{"a":1}' });
+    const payload = listener.decodeFrame(`message,sync:notify,${message}`);
     assert.deepEqual(payload, { key: 'resilience:x', type: 'string', value: '{"a":1}' });
   });
 
-  it('decodes a {channel, message} envelope shape (message as a JSON string)', () => {
-    const envelope = JSON.stringify({
-      channel: 'sync:notify',
-      message: JSON.stringify({ key: 'resilience:x', type: 'string', value: '1' }),
-    });
-    const payload = listener.decodeFrame(envelope);
-    assert.deepEqual(payload, { key: 'resilience:x', type: 'string', value: '1' });
+  it('does not truncate a message payload that itself contains commas', () => {
+    const message = JSON.stringify({ key: 'resilience:x', type: 'zset', value: 'a,b,c' });
+    const payload = listener.decodeFrame(`message,sync:notify,${message}`);
+    assert.equal(payload.value, 'a,b,c');
   });
 
-  it('returns null for non-JSON frames (e.g. keep-alive comments)', () => {
-    assert.equal(listener.decodeFrame(': keep-alive'), null);
+  it('ignores the one-time "subscribe,channel,count" ack frame', () => {
+    assert.equal(listener.decodeFrame('subscribe,sync:notify,1'), null);
   });
 
-  it('returns null when key/type are missing', () => {
-    assert.equal(listener.decodeFrame('{"foo":"bar"}'), null);
+  it('returns null for a message whose payload is not our JSON shape', () => {
+    assert.equal(listener.decodeFrame('message,sync:notify,plain text from a different publisher'), null);
+  });
+
+  it('returns null when key/type are missing from an otherwise-valid JSON payload', () => {
+    assert.equal(listener.decodeFrame('message,sync:notify,{"foo":"bar"}'), null);
+  });
+
+  it('returns null for a frame with no comma at all', () => {
+    assert.equal(listener.decodeFrame('malformed'), null);
   });
 });
 

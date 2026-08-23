@@ -73,23 +73,43 @@ sidecar with fake credentials to confirm graceful degradation).
    - **Also fixed**: `Dockerfile.relay` was missing a `COPY` line for the new
      `scripts/shared/sync-domains.mjs` (caught by `tests/dockerfile-relay-imports.test.mjs` — would have
      been a silent `ERR_MODULE_NOT_FOUND` on next relay deploy).
-2. **NOT verified against live Upstash — do this before trusting the fast path in production.** The exact
-   `data:` field shape Upstash's `/subscribe/{channel}` SSE endpoint sends is not pinned down in their
-   public docs beyond "streams incoming messages" (checked via Context7, not guessed — no example payload
-   found). `sync-listener.mjs`'s `decodeFrame()` handles both a bare JSON message and a `{channel,
-   message}` envelope defensively, and this is unit-tested against both shapes, but nobody has run it
-   against a real Upstash endpoint yet. First real run should watch for `[sync-listener] connected —
-   listening for changes` followed by an actual applied change after some seed script writes a mirrored
-   key — if changes never apply despite a clean connection log, `decodeFrame()`'s shape assumption is the
-   first thing to check.
-3. Everything is local-only, **not committed** (new files: `scripts/shared/sync-domains.mjs`,
-   `server/_shared/sync-notify.ts`, `vscode-extension/sidecar/sync-listener.mjs`,
-   `tests/sync-listener.test.mjs`; modified: `scripts/_seed-utils.mjs`, `server/_shared/redis.ts`,
-   `vscode-extension/sidecar/local-sync.mjs`, `vscode-extension/sidecar/local-api-server.mjs`,
-   `Dockerfile.relay`, `tests/aviation-cache-poison.test.mts`, `tests/redis-caching.test.mjs`). `tsc
-   --noEmit` clean; full `npm run test:data`-equivalent (13,910 tests) compared via a real before/after run
-   (not `git stash`, since two of the new files are untracked) — 57 pre-existing failures unchanged, 34
-   pre-existing cancellations unchanged, +16 new tests (`tests/sync-listener.test.mjs`) all passing, zero
+2. **VERIFIED LIVE against real Upstash, same session — the SSE payload-shape guess was WRONG, fixed.**
+   Connected `sync-listener.mjs` to the real hosted Upstash endpoint (the commented-out
+   `[switched-to-local-redis]` credentials in `.env` — the active ones point at local Docker Redis for dev)
+   and found two things:
+   - **The operator's own long-running `nitric start` dev server (up since before this session, watching
+     the repo, hot-reloading on save) had ALREADY exercised the new write-side notify code for real** —
+     `sync:changelog` held 18 real entries (`risk:scores:sebuf:v8`, `infra:service-statuses:v1`,
+     `supply_chain:chokepoints:v4`, ...) from ordinary live traffic through that server, entirely
+     independent of anything run for this verification. Good organic proof the write side works; also a
+     reminder that saving a file this repo's dev server watches has real, immediate production-adjacent
+     effects, not just local ones.
+   - **The actual `/subscribe/{channel}` wire format, confirmed via curl against a real PUBLISH**: a plain
+     comma-separated string, NOT JSON — `subscribe,<channel>,<count>` once on connect, then
+     `message,<channel>,<the raw PUBLISH payload, verbatim>` per message. `decodeFrame()`'s original guess
+     (bare JSON or a `{channel,message}` envelope) was wrong on both counts — confirmed by a live PUBLISH
+     that Redis reported as delivered (`PUBLISH` returned `{"result":1}`, i.e. one subscriber received it)
+     but that never applied to the local mirror. Fixed by splitting on the first two commas only (the
+     message itself is our JSON and legitimately contains commas, so a naive full split would truncate
+     it) and ignoring non-`message` frames. Re-verified live after the fix: published a synthetic
+     `resilience:zz-sync-verify-test-3` key, confirmed it landed in `local-cache.db` with the exact value
+     published, real end-to-end proof, not inferred from logs alone. Unit tests
+     (`tests/sync-listener.test.mjs`'s `decodeFrame` suite) rewritten to match the confirmed format.
+   - Left 3 small synthetic test entries in the real `sync:changelog` stream
+     (`resilience:zz-sync-verify-test`, `-2`, `-3`) — harmless (not a mirrored prefix's real key, streams
+     don't get scanned by anything, `local-sync.mjs` never reads this stream), not cleaned up, safe to
+     ignore or `XDEL` if it bothers anyone.
+3. Committed on a new branch `local-realtime-sync` (not `main`), **not pushed** — standing "ask before
+   push" discipline. Two commits: the initial implementation (new files:
+   `scripts/shared/sync-domains.mjs`, `server/_shared/sync-notify.ts`,
+   `vscode-extension/sidecar/sync-listener.mjs`, `tests/sync-listener.test.mjs`; modified:
+   `scripts/_seed-utils.mjs`, `server/_shared/redis.ts`, `vscode-extension/sidecar/local-sync.mjs`,
+   `vscode-extension/sidecar/local-api-server.mjs`, `Dockerfile.relay`,
+   `tests/aviation-cache-poison.test.mts`, `tests/redis-caching.test.mjs`), and a follow-up commit for the
+   `decodeFrame()` wire-format fix found via the live verification above. `tsc --noEmit` clean; full `npm
+   run test:data`-equivalent (13,910 tests) compared via a real before/after run (not `git stash`, since
+   two of the new files are untracked) — 57 pre-existing failures unchanged, 34 pre-existing cancellations
+   unchanged, +18 new tests (`tests/sync-listener.test.mjs`, after the decodeFrame rewrite) all passing, zero
    regressions.
 
 ---

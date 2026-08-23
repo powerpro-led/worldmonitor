@@ -238,23 +238,31 @@ function extractFrames(buffer) {
 }
 
 /**
- * Decodes one SSE `data:` payload into {key, type, value?}. Defensive about
- * shape because Upstash's exact /subscribe wire format for the data field
- * isn't pinned down in their public docs beyond "streams incoming messages"
- * — handles both "data: is the raw PUBLISH message string itself" and
- * "data: is a {channel, message} envelope" so this works either way. NOT
- * yet verified against a live Upstash endpoint — first real run should
- * confirm which shape actually arrives (see this file's own startup log).
+ * Decodes one SSE `data:` payload into {key, type, value?}.
+ *
+ * VERIFIED LIVE against a real Upstash endpoint (2026-08-23, via curl +
+ * a real PUBLISH — see TASKS.md for the transcript), not guessed: the wire
+ * format is a plain comma-separated string, NOT JSON —
+ *   `subscribe,<channel>,<subscriber count>`   (sent once, on subscribe)
+ *   `message,<channel>,<the raw PUBLISH message, verbatim>`
+ * Split on the first two commas only — the message itself is our own JSON
+ * payload and legitimately contains commas, so a naive full split would
+ * truncate it. Non-`message` frames (the initial `subscribe` ack) are
+ * intentionally ignored.
  */
 function decodeFrame(raw) {
-  let outer;
+  const firstComma = raw.indexOf(',');
+  const secondComma = raw.indexOf(',', firstComma + 1);
+  if (firstComma === -1 || secondComma === -1) return null;
+  const eventType = raw.slice(0, firstComma);
+  if (eventType !== 'message') return null; // e.g. the one-time 'subscribe' ack
+  const rawMessage = raw.slice(secondComma + 1);
+  let payload;
   try {
-    outer = JSON.parse(raw);
+    payload = JSON.parse(rawMessage);
   } catch {
-    return null; // not JSON at all — e.g. a keep-alive comment/ping frame
+    return null; // not our JSON shape — some other publisher on this channel
   }
-  const inner = typeof outer?.message === 'string' ? outer.message : outer;
-  const payload = typeof inner === 'string' ? JSON.parse(inner) : inner;
   if (!payload || typeof payload.key !== 'string' || typeof payload.type !== 'string') return null;
   return payload;
 }

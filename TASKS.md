@@ -15,11 +15,27 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-23, THIRTY-SIXTH session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-23, THIRTY-SEVENTH session end) — read this first, supersedes every block below
 
-Picked up cold from the thirty-fifth session's handoff (verified nitric pid 2095/ais-relay pid
-9874/sidecar pid 71417 still alive from that session; a separate `vite` dev process, pid 41694,
-has independently been running since 2026-08-19 — 4 days, unrelated to this handoff).
+**TL;DR for whoever picks this up**: everything actionable this session got fixed and verified live
+(not just "should work") — `riskScores` staleness, CanadaBuys timeout, VPN LaunchDaemon persistence
+(now 5 hosts), and — the big one — **Climate Anomalies is fully resolved end-to-end**, confirmed via
+direct Redis reads on both `climate:zone-normals:v1` and the cascading `climate:anomalies:v2`. GDELT
+was tried again with a residential proxy and conclusively did NOT work (0/4 clean across 2 rounds) —
+closed as a dead lever, not left ambiguous. `consumerPrices*` went from a vague "needs new infra"
+note to a concretely-scoped, partially-executed plan (Postgres schema + migrations done, `DATABASE_URL`
++ hosting decision still needed from the operator). All commits are local-only, NOT pushed — same
+"ask before push" discipline as every prior session, operator hasn't been asked this exact question
+at close (see STILL OPEN item 1). The rest of this block below (session 36's original items,
+inline-updated throughout this session as things got resolved) is kept as the full trail — read the
+STILL OPEN list at the bottom for the authoritative current state, not the item-by-item narrative
+above it if the two ever seem to disagree (the STILL OPEN list was updated last, closest to now).
+
+Picked up cold from the thirty-sixth session's handoff (verified nitric pid 68604/ais-relay pid
+68614 alive at session start; both later restarted by the OPERATOR THEMSELVES mid-session to pick up
+a `.env` change — new pids 50340/50420 as of session close, confirmed alive; a separate `vite` dev
+process, pid 41694, was still independently running since 2026-08-19 as of last check, unrelated to
+this handoff, not touched).
 
 1. **FIXED**: VS Code embed CORS error on `country-boundary-overrides.geojson`. Root cause:
    `dist/` (gitignored, what the sidecar serves) was last built with `APP_DOMAIN=worldmonitor.app`
@@ -216,15 +232,20 @@ Health not re-checked at this close (`/api/health?compact=1` needs the vite dev 
 running correctly to hit — see the `[::1]` note above; use whichever port actually answers, don't
 assume `localhost:3000` works).
 
-1. **Nothing committed or pushed this session.** 7 files modified on disk (`TASKS.md`, `nitric.yaml`,
-   `scripts/ais-relay.cjs`, `scripts/seed-climate-anomalies.mjs`, `scripts/seed-climate-zone-normals.mjs`,
-   `scripts/seed-submarine-cables.mjs`, `src/services/country-geometry.ts`) plus the 2 unpushed
-   commits already carried over from session 35 (`e4b1326`, `2ef4361`). Operator was asked directly
-   whether to commit before this handoff and the conversation moved to a session transfer instead of
-   answering — **do not assume "yes, commit"**; ask the operator explicitly before running `git
-   commit`/`git push`, same as every other session's discipline here.
-2. **气候异常 (Climate Anomalies) — RE-TESTED session 37, still 100% blocked. Do not retry again
-   without a much longer cooldown or a different egress path.** Ran `node scripts/seed-climate-zone-normals.mjs`
+1. **SUPERSEDED — session 37's own close.** Working tree is clean (nothing uncommitted); every
+   session-37 change is committed locally. 6 commits sit unpushed as of this close
+   (`750008e`..`b8b48c5`, all `docs:` — the VPN LaunchDaemon, residential-proxy/GDELT/Open-Meteo,
+   consumerPrices scope-correction and schema-setup, and PROXY_URL-swap write-ups; the actual CODE
+   fixes from earlier this session — riskScores, CanadaBuys timeout, VS Code CORS/digest-cron/
+   submarine-cables/ais-relay/R2 batch — were already pushed mid-session, `origin/main` is at
+   `386ea3a`). **Same discipline as every prior session: push only on explicit confirmation, never
+   assumed** — the operator has not been asked this exact question at THIS close (asked and answered
+   multiple times mid-session for earlier batches, always answered before proceeding). Ask before
+   pushing these 6.
+2. **气候异常 (Climate Anomalies) — FULLY FIXED session 37, verified end-to-end via the real
+   scheduled cron. This panel had never had a successful write, ever, across at least 3 sessions of
+   attempts — resolved by session 36's retry-storm fix AND this session's residential proxy BOTH
+   being needed together.** Ran `node scripts/seed-climate-zone-normals.mjs`
    once more per this handoff's own suggestion (cooldown had elapsed). Trap hit first: a bare `node
    scripts/seed-climate-zone-normals.mjs` fails immediately with `Missing UPSTASH_REDIS_REST_URL or
    UPSTASH_REDIS_REST_TOKEN` — `loadEnvFile()` in `scripts/_seed-utils.mjs` only ever looks for
@@ -256,6 +277,22 @@ assume `localhost:3000` works).
      session's caution about hammering an already-blocked target. Holding off on wiring this in and
      running a full seed until the GDELT retest (item 3) resolves, so `PROXY_URL` gets one considered
      decision covering both use cases instead of two separate partial migrations.
+   - **FINAL RESOLUTION, same session, confirmed via direct Redis read not just log lines**: after
+     `PROXY_URL` was swapped to the residential credentials (item 4 below) and `ais-relay.cjs`/the
+     dev stack restarted (operator's own terminal), the real scheduled `Bundle:climate` cron ran
+     `Zone-Normals` live: an honest mixed picture at first (~8/11 batches succeeding via the proxy
+     legs, matching real sustained-load conditions rather than my earlier 2-request manual sample),
+     then session 36's retry-pass logic converged the rest — "retry pass 2/4: 2 zone(s) still
+     missing" — down to a clean finish: `[Zone-Normals] Verified: data present in Redis`,
+     `=== Done (327106ms) ===`. Confirmed directly: `climate:zone-normals:v1` present, 16205 bytes,
+     `seed-meta` 23.5s fresh, `recordCount: 25`. **Then it cascaded automatically**: `Anomalies`
+     (`seed-climate-anomalies.mjs`) runs immediately after `Zone-Normals` in the SAME
+     `seed-bundle-climate.mjs` bundle — now that the baseline it hard-depends on existed, it
+     succeeded too in the same run (`section=Anomalies status=OK durationMs=48905 records=17`).
+     Confirmed directly: `climate:anomalies:v2` present, 3670 bytes, seed-meta 37.4s fresh. Whole
+     bundle finished `ran:4 skipped:2 deferred:0 failed:0 graceful:0` — zero failures. Both the
+     panel's own key and its hard upstream dependency are populated for the first time in this
+     environment. Nothing further needed — this item is closed, not just improved.
 3. **GDELT residential-proxy check — operator got a residential Decodo plan, tested live, result is
    MIXED — do not round up to "fixed."** `.env`'s existing `PROXY_URL` is a *datacenter* Decodo
    proxy (`dc.decodo.com`), documented as shared across 9 other seed scripts + `ais-relay.cjs` for

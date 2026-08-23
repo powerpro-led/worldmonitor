@@ -1,6 +1,7 @@
 import { unwrapEnvelope } from './seed-envelope';
 import { getRpcNoStoreReasonFromPayload } from './cache-contract';
 import { buildUpstreamEvent, getUsageScope, sendToAxiom } from './usage';
+import { notifyKeyChanged, notifyPipelineWrites } from './sync-notify';
 
 // Default Upstash REST timeouts are tuned for production (Vercel ↔ Upstash
 // same-datacenter latency is sub-50ms, 1.5s leaves >20× headroom). They
@@ -221,6 +222,11 @@ export async function setCachedJson(key: string, value: unknown, ttlSeconds: num
       console.warn(`[redis] setCachedJson failed:`, data?.error ?? `HTTP ${resp.status}`);
       return false;
     }
+    // Fast-path push nudge — fire-and-forget, see sync-notify.ts's own
+    // comment for why this is never awaited. `finalKey` (not `key`) so the
+    // notified key matches what was actually written (env-prefixed in
+    // preview/dev — see getKeyPrefix()).
+    notifyKeyChanged(url, token, finalKey, 'string', JSON.stringify(value));
     return true;
   } catch (err) {
     console.warn('[redis] setCachedJson failed:', errMsg(err));
@@ -407,20 +413,29 @@ export async function runRedisPipeline(commands: RedisPipelineCommand[], raw = f
   if (!url || !token) return [];
 
   try {
+    const normalizedCommands = commands.map((command) => normalizePipelineCommand(command, raw));
     const response = await fetch(`${url}/pipeline`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(commands.map((command) => normalizePipelineCommand(command, raw))),
+      body: JSON.stringify(normalizedCommands),
       signal: AbortSignal.timeout(REDIS_PIPELINE_TIMEOUT_MS),
     });
     if (!response.ok) {
       console.warn(`[redis] runRedisPipeline HTTP ${response.status}`);
       return [];
     }
-    return (await response.json()) as Array<{ result?: unknown }>;
+    const result = (await response.json()) as Array<{ result?: unknown }>;
+    // Fast-path push nudge for any write verb in this batch that touched a
+    // mirrored key (ZADD/HSET/... — plain SET here goes through the same
+    // path too, e.g. lock/queue writers that don't use setCachedJson).
+    // Fire-and-forget, see sync-notify.ts's own comment for why. Uses the
+    // NORMALIZED commands (post prefixKey()), matching what was actually
+    // written — same reasoning as setCachedJson's finalKey.
+    notifyPipelineWrites(url, token, normalizedCommands);
+    return result;
   } catch (err) {
     console.warn('[redis] runRedisPipeline failed:', errMsg(err));
     return [];

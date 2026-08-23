@@ -1835,7 +1835,12 @@ describe('setCachedJson wire shape and failure reporting', { concurrency: 1 }, (
       const ok = await redis.setCachedJson(key, value, ttl);
 
       assert.equal(ok, true, 'setCachedJson should return true on success');
-      assert.equal(captured.length, 1, 'exactly one Redis write should be issued');
+      // The SET is the first call; setCachedJson also fires two best-effort,
+      // un-awaited fast-path sync notify calls (PUBLISH sync:notify + XADD
+      // sync:changelog — see server/_shared/sync-notify.ts) for this key,
+      // since news:digest:v1 falls under the mirrored-domain allowlist. This
+      // test only pins the SET's own wire shape, not total call count.
+      assert.ok(captured.length >= 1, 'at least the SET write should be issued');
       const [req] = captured;
       assert.equal(req.init.method, 'POST');
       assert.equal(req.url, 'https://redis.test/', 'POST goes to base URL (not /set/...)');

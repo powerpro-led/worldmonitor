@@ -15,7 +15,86 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-23, THIRTY-EIGHTH session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-23, THIRTY-NINTH session) — read this first, supersedes every block below
+
+**TL;DR**: resolves session 38's STILL OPEN item 1 (real-time local-sync mechanism) — implemented, not just
+decided. NOT YET COMMITTED as of this writing (standing "ask before commit/push" discipline). One piece is
+explicitly **unverified against a live Upstash endpoint** — see item 2 below before assuming this works
+end-to-end; everything else is verified (unit tests, full regression suite, real smoke-test boot of the
+sidecar with fake credentials to confirm graceful degradation).
+
+1. **Local operator real-time sync — built.** Replaces the "loop the existing full-rescan every 10-15s"
+   idea (session 38's other option) entirely — that would have cost ~21M Upstash commands/day/operator
+   (measured: 2,500 commands/run × 8,640 runs/day), almost certainly the real explanation for a
+   multi-million-command spike the operator found on the Upstash dashboard from before local dev switched
+   to Docker Redis. New design, three parts:
+   - **Write side** (`scripts/_seed-utils.mjs`'s `notifyChange()`, `server/_shared/sync-notify.ts`'s
+     `notifyKeyChanged()`/`notifyPipelineWrites()`): after a write to a mirrored-domain key lands, fires a
+     best-effort, un-awaited `PUBLISH sync:notify` (small values inline, oversized ones signal-only) +
+     `XADD sync:changelog` (key + type, for catch-up). Hooked into exactly 2 real choke points — seed
+     scripts' `redisCommand()`-based `atomicPublish`/`writeExtraKey`, and the RPC-handler side's
+     `setCachedJson`/`runRedisPipeline` — NOT 184 files; every write path funnels through one of these two.
+     Never blocks or fails the actual data write (fire-and-forget, `.catch()`-swallowed).
+   - **Listener side** (new `vscode-extension/sidecar/sync-listener.mjs`): one persistent HTTPS/SSE
+     connection (`POST {UPSTASH_URL}/subscribe/sync:notify` — confirmed via Upstash's own docs to be plain
+     REST/SSE, NOT the raw RESP/TCP connection that was rejected as "unreliable over VPN" back on
+     2026-08-06) applies each change directly to `local-cache.db` (inline value, or one targeted read for
+     signal-only messages). Reconnects with backoff on any drop, and on every (re)connect — including the
+     process's first connect, which is what covers "operator's laptop just woke from sleep" with **no**
+     explicit sleep/wake detection needed (a suspended process's timers don't fire while asleep, but
+     wall-clock time still advances via the RTC, so the dropped connection just surfaces as an ordinary
+     stream error on resume) — first runs a changelog catch-up (`XRANGE sync:changelog` from a persisted
+     cursor) to backfill anything missed. Opens/closes the SQLite handle per write rather than holding one
+     open, specifically to avoid the "long-lived handle keeps writing to the old inode after
+     `local-sync.mjs`'s atomic rename swap" trap `sidecar-cache.ts` already documented.
+   - **`local-sync.mjs`'s full rescan** stays, demoted from "the mechanism" to a correctness backstop —
+     `local-api-server.mjs`'s new `startFullReconciliationLoop()` spawns it once at sidecar startup
+     (bootstraps a fresh machine) and then every 6h (not tight), catching whatever the push path missed
+     (a silently-failed notify, a gap wider than the changelog's retention). `startSyncListener()` starts
+     the listener in-process alongside it. Both gate on `tauri-sidecar` mode + a read-only token present,
+     matching every other Redis-touching code path in that file; neither can block or crash server startup
+     (verified live: booted the sidecar with a fake unreachable Upstash host, watched both paths fail
+     gracefully into their own retry/backoff instead of taking the HTTP server down).
+   - Shared mirrored-key allowlist extracted to `scripts/shared/sync-domains.mjs` (imported by
+     `local-sync.mjs` and the seed-side write hook) with a duplicate in `server/_shared/sync-notify.ts` for
+     the Edge-bundled RPC side (no existing cross-import path reaches there — same reasoning
+     `_domain-config.mjs`'s own "generated tracked copy" comment already documents for this exact class of
+     problem, just not applied here since this repo's sidecar currently runs against a full checkout on
+     disk, not a self-contained bundle — see that comment in `local-api-server.mjs` if a real Tauri
+     packaging step ever gets built, since that would change this tradeoff).
+   - **Real bug found and fixed along the way, not by design**: `forecast:simulation-task*` (a live worker
+     queue, `SIMULATION_TASK_QUEUE_KEY`) was accidentally sweeping into the mirrored allowlist via the
+     broad `forecast:` prefix — same mistake class as the already-excluded `seed-lock:`. Caught because the
+     new write-hook instrumentation broke `tests/simulation-queue-parity.test.mts` (the TS and `.mjs`
+     write paths would have started notifying asymmetrically for the same key). Fixed via a narrow
+     `MIRROR_EXCLUDED_PREFIXES` exclusion in both prefix files, not by touching the broader `forecast:`
+     prefix — confirmed the parity test passes again with ZERO test changes once the underlying scope bug
+     was fixed, the strongest signal it was the right fix rather than a test-shape patch.
+   - **Also fixed**: `Dockerfile.relay` was missing a `COPY` line for the new
+     `scripts/shared/sync-domains.mjs` (caught by `tests/dockerfile-relay-imports.test.mjs` — would have
+     been a silent `ERR_MODULE_NOT_FOUND` on next relay deploy).
+2. **NOT verified against live Upstash — do this before trusting the fast path in production.** The exact
+   `data:` field shape Upstash's `/subscribe/{channel}` SSE endpoint sends is not pinned down in their
+   public docs beyond "streams incoming messages" (checked via Context7, not guessed — no example payload
+   found). `sync-listener.mjs`'s `decodeFrame()` handles both a bare JSON message and a `{channel,
+   message}` envelope defensively, and this is unit-tested against both shapes, but nobody has run it
+   against a real Upstash endpoint yet. First real run should watch for `[sync-listener] connected —
+   listening for changes` followed by an actual applied change after some seed script writes a mirrored
+   key — if changes never apply despite a clean connection log, `decodeFrame()`'s shape assumption is the
+   first thing to check.
+3. Everything is local-only, **not committed** (new files: `scripts/shared/sync-domains.mjs`,
+   `server/_shared/sync-notify.ts`, `vscode-extension/sidecar/sync-listener.mjs`,
+   `tests/sync-listener.test.mjs`; modified: `scripts/_seed-utils.mjs`, `server/_shared/redis.ts`,
+   `vscode-extension/sidecar/local-sync.mjs`, `vscode-extension/sidecar/local-api-server.mjs`,
+   `Dockerfile.relay`, `tests/aviation-cache-poison.test.mts`, `tests/redis-caching.test.mjs`). `tsc
+   --noEmit` clean; full `npm run test:data`-equivalent (13,910 tests) compared via a real before/after run
+   (not `git stash`, since two of the new files are untracked) — 57 pre-existing failures unchanged, 34
+   pre-existing cancellations unchanged, +16 new tests (`tests/sync-listener.test.mjs`) all passing, zero
+   regressions.
+
+---
+
+## 🔀 HANDOFF (2026-08-23, THIRTY-EIGHTH session end) — superseded by the thirty-ninth block above
 
 **TL;DR for whoever picks this up**: everything this session got fixed IS committed locally (2 commits,
 `234416d` + `812e839`) — NOT pushed, same standing "ask before push" discipline. Two independent threads

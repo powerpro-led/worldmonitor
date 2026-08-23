@@ -53,6 +53,11 @@ COPY scripts/shared/market-quote-refresh.cjs ./scripts/shared/market-quote-refre
 # logic importable/testable for ais-relay.cjs. Missing it = startup crash.
 COPY scripts/shared/closed-market-equity-maintenance.cjs ./scripts/shared/closed-market-equity-maintenance.cjs
 COPY scripts/_seed-utils.mjs ./scripts/_seed-utils.mjs
+# sync-domains.mjs is transitively imported by _seed-utils.mjs (the mirrored-
+# key allowlist for the local operator real-time sync push nudge). Missing
+# it = silent ERR_MODULE_NOT_FOUND on every execFile invocation, same trap
+# as the _seed-envelope-source.mjs/_seed-contract.mjs note below.
+COPY scripts/shared/sync-domains.mjs ./scripts/shared/sync-domains.mjs
 # _seed-envelope-source.mjs and _seed-contract.mjs are transitively imported
 # by _seed-utils.mjs (lines 9-10) and by seed-chokepoint-flows.mjs /
 # seed-ember-electricity.mjs directly. Missing them here = silent

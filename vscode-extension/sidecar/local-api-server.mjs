@@ -9,7 +9,8 @@ import { isIP } from 'node:net';
 import { promisify } from 'node:util';
 import { brotliCompress, gzipSync } from 'node:zlib';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 // Sibling, not ../../shared/ — this file is bundled as a standalone Tauri
 // resource (see tauri.conf.json's bundle.resources) with no shared/ folder
 // alongside it in the packaged app. _domain-config.mjs is a generated,
@@ -1999,6 +2000,80 @@ async function dispatch(requestUrl, req, routes, context) {
   }
 }
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Local operator real-time sync — startup wiring for both halves (the fast
+ * push listener and the slow full-reconciliation backstop). Both gate on
+ * the same condition every other Redis-touching code path in this file
+ * already uses (tauri-sidecar mode + credentials present), and neither
+ * throws into its caller — a Redis/credentials problem degrades to "sync
+ * doesn't happen yet", not a blocked HTTP server startup.
+ */
+
+// Correctness backstop only, not the primary sync mechanism — see this
+// function's own comment below for why it's slow, not tight.
+const FULL_RECONCILIATION_INTERVAL_MS = 6 * 60 * 60_000; // 6h
+
+/**
+ * Spawns local-sync.mjs's full rescan as a child process — once immediately
+ * (bootstraps local-cache.db if this is the very first run on this machine)
+ * and then on a slow recurring interval as the correctness backstop for
+ * whatever startSyncListener()'s fast push path can still miss (a write
+ * whose own notify silently failed, a gap wider than the changelog stream's
+ * retention). Deliberately NOT tight: a prior attempt at running the same
+ * full rescan every 10-15s produced millions of Upstash commands in 2 days
+ * (see scripts/shared/sync-domains.mjs's own header comment) — the push
+ * path now carries near-real-time freshness, so this only needs to catch
+ * drift, not do the primary job.
+ *
+ * Spawned as a child process rather than imported and called in-process:
+ * local-sync.mjs's own main() runs unconditionally at module load (no
+ * isMainModule() guard like this file has), so importing it would trigger
+ * an immediate run as a side effect of the import itself, with no way to
+ * schedule a second run later without a second process. Spawning also
+ * means a hung/leaked run (VPN jitter, a wedged Upstash pipeline chunk)
+ * can't wedge the sidecar's own HTTP server, only the (recreated-on-next-
+ * interval) child.
+ */
+function startFullReconciliationLoop(context) {
+  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return;
+
+  const scriptPath = path.join(__dirname, 'local-sync.mjs');
+  const runOnce = () => {
+    const child = spawn(process.execPath, [scriptPath], { stdio: 'inherit', env: process.env });
+    child.on('error', (err) => {
+      context.logger.warn(`[local-api] local-sync.mjs failed to spawn (non-fatal — will retry next interval): ${err.message}`);
+    });
+  };
+
+  runOnce();
+  const timer = setInterval(runOnce, FULL_RECONCILIATION_INTERVAL_MS);
+  timer.unref(); // don't hold the process open for this alone
+}
+
+/**
+ * Starts the fast-path push listener (sync-listener.mjs) in-process — a
+ * long-lived reconnecting loop, not a one-shot call, so it's run via its
+ * exported runForever() rather than spawned as a child (no need for
+ * process-boundary isolation the way the full rescan benefits from above;
+ * this connection is deliberately supposed to live for the sidecar's whole
+ * lifetime). Fire-and-forget: runForever() never resolves under normal
+ * operation, and its own internal reconnect loop already handles every
+ * failure mode it knows how to recover from.
+ */
+async function startSyncListener(context) {
+  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return;
+  try {
+    const { runForever } = await import('./sync-listener.mjs');
+    runForever().catch((err) => {
+      context.logger.error('[local-api] sync-listener crashed unexpectedly (fast-path push disabled for this session — local-sync.mjs\'s periodic full rescan still covers freshness):', err);
+    });
+  } catch (err) {
+    context.logger.warn(`[local-api] sync-listener.mjs failed to load (non-fatal): ${err.message}`);
+  }
+}
+
 export async function createLocalApiServer(options = {}) {
   const context = resolveConfig(options);
   loadVerboseState(context.dataDir);
@@ -2186,6 +2261,14 @@ export async function createLocalApiServer(options = {}) {
         }
         if (urls.length) console.log(`[local-api] LLM health warmed for ${urls.length} provider(s)`);
       })();
+
+      // Local operator real-time sync — see startFullReconciliationLoop() /
+      // startSyncListener()'s own comments for what each does and why
+      // they're split this way. Both are no-ops outside tauri-sidecar mode
+      // or without a read-only Upstash credential, and neither can block or
+      // fail server startup.
+      startFullReconciliationLoop(context);
+      startSyncListener(context);
 
       return { port: boundPort };
     },

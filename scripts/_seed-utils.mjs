@@ -10,6 +10,7 @@ import { flushPendingLlmEvents } from './lib/llm-telemetry.cjs';
 
 import { buildEnvelope, unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { resolveRecordCount } from './_seed-contract.mjs';
+import { isMirroredKey } from './shared/sync-domains.mjs';
 
 // process.exit does not drain in-flight promises — drain any fire-and-forget
 // llm_call telemetry first (bounded by its 1.5s fetch timeout; a no-op when
@@ -332,6 +333,49 @@ async function redisDel(url, token, key) {
   return redisCommand(url, token, ['DEL', key]);
 }
 
+// Local operator real-time sync — fast-path push, WRITE side.
+//
+// After a real write to a mirrored key lands (see scripts/shared/sync-domains.mjs
+// for the allowlist), best-effort PUBLISH the new value to every operator's
+// sidecar listener (vscode-extension/sidecar's sync-listener.mjs) and XADD a
+// small pointer to a changelog stream so a sidecar that was offline/asleep can
+// cheaply catch up on exactly what it missed instead of re-scanning everything.
+//
+// This is NOT how data gets to Redis — atomicPublish/writeExtraKey's own SET
+// already did that, successfully, before this runs. It is purely a nudge so
+// local mirrors update in near-real-time instead of waiting on the periodic
+// full-rescan reconciliation pass. Deliberately best-effort:
+//   - NEVER thrown from here — a failed notify must never fail, retry, or
+//     even delay the seed run whose actual job (writing the canonical data)
+//     already succeeded.
+//   - NEVER awaited by the caller — see the two call sites below, both use
+//     `.catch()` fire-and-forget, not `await`, so a slow/hung Upstash PUBLISH
+//     can't add latency to the seed script's own critical path or its exit.
+//     (A dropped notify from a script that exits immediately after is an
+//     accepted gap — the changelog catch-up and periodic full reconciliation
+//     both still find it.)
+const SYNC_NOTIFY_CHANNEL = 'sync:notify';
+const SYNC_CHANGELOG_STREAM = 'sync:changelog';
+// Most mirrored rows are a few KB (local-sync.mjs's own header comment cites
+// ~3KB average for intelligence:*); anything bigger rides as a bare pointer
+// instead of inlining the value, so one oversized key can't blow up the
+// PUBLISH payload — the listener does one targeted GET for those instead.
+const SYNC_NOTIFY_MAX_INLINE_BYTES = 16 * 1024;
+
+async function notifyChange(url, token, key, serializedValue) {
+  if (!isMirroredKey(key)) return;
+  const message = Buffer.byteLength(serializedValue, 'utf8') <= SYNC_NOTIFY_MAX_INLINE_BYTES
+    ? JSON.stringify({ key, type: 'string', value: serializedValue })
+    : JSON.stringify({ key, type: 'string' });
+  await Promise.all([
+    redisCommand(url, token, ['PUBLISH', SYNC_NOTIFY_CHANNEL, message]),
+    // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
+    // its last cursor) knows which read command to issue for each key
+    // (GET vs ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
+    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, '*', 'key', key, 'type', 'string']),
+  ]);
+}
+
 // Upstash REST calls surface transient network issues through fetch/undici
 // errors rather than stable app-level error codes, so we normalize the common
 // timeout/reset/DNS variants here before deciding to skip a seed run.
@@ -426,6 +470,12 @@ export async function atomicPublish(canonicalKey, data, validateFn, ttlSeconds, 
       } else {
         await redisCommand(url, token, ['SET', canonicalKey, payload]);
       }
+
+      // Fast-path push nudge — fire-and-forget, see notifyChange()'s own
+      // comment for why this is never awaited/thrown into the retry above.
+      notifyChange(url, token, canonicalKey, payload).catch((err) => {
+        console.warn(`  [sync-notify] ${canonicalKey}: best-effort push failed (non-fatal): ${err.message}`);
+      });
 
       // Cleanup staging
       await redisDel(url, token, stagingKey).catch(() => {});
@@ -763,6 +813,12 @@ export async function writeExtraKey(key, data, ttl, envelopeMeta) {
     }
   }, 2, 1000);
   console.log(`  Extra key ${key}: written`);
+
+  // Fast-path push nudge — fire-and-forget, see notifyChange()'s own comment
+  // for why this is never awaited/thrown into the write above.
+  notifyChange(url, token, key, payload).catch((err) => {
+    console.warn(`  [sync-notify] ${key}: best-effort push failed (non-fatal): ${err.message}`);
+  });
 }
 
 /** Serialize an extra key exactly as it is persisted to Redis. */

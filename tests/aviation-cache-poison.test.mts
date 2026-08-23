@@ -87,8 +87,11 @@ function installFetchMock(options: FetchMockOptions = {}) {
     }
 
     if (url === 'https://redis.test/') {
-      const command = JSON.parse(String(init?.body ?? '[]')) as RedisSetCommand;
-      calls.redisSets.push(command);
+      const command = JSON.parse(String(init?.body ?? '[]')) as unknown[];
+      // setCachedJson's own fast-path sync notify (server/_shared/sync-notify.ts)
+      // fires best-effort PUBLISH/XADD calls to this same base URL for
+      // mirrored-domain keys — not a cache write, so don't count it as one.
+      if (command[0] === 'SET') calls.redisSets.push(command as RedisSetCommand);
       return new Response(JSON.stringify({ result: 'OK' }), { status: 200 });
     }
 

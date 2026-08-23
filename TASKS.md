@@ -274,12 +274,33 @@ assume `localhost:3000` works).
    blocked. Unknown: whether this specific proxy plan is a *shared* residential pool (other Decodo
    customers' GDELT traffic through the same IP could already eat into the quota) or a
    dedicated/exclusive IP — operator couldn't immediately find that on the dashboard, not chased
-   further. **Next step, scheduled**: one single, careful GDELT request after a real cooldown
-   (~25min from the test above) — not a batch, not more retries. If clean: propose swapping
-   `PROXY_URL` wholesale (residential, sticky, sourced same way, likely a strict upgrade for the
-   other 9 consumers too). If still 429/failing: this specific credential pair doesn't clear GDELT's
-   bar either, park the GDELT item again — but the residential proxy is still worth keeping/wiring
-   in for its own sake if it's a strict upgrade over the current datacenter one for everything else.
+   further. **Follow-up after a real cooldown (~30min elapsed, not immediate) — CONCLUSIVE, GDELT
+   stays open.** One single retest, not a batch: another connection-level failure (`000`, curl exit
+   28/timeout) — the exact same failure mode as attempt 1, not a 429 this time. Across the full
+   session: 4 GDELT attempts total (2 rounds, real cooldown between), **0/4 clean**. In the same
+   window, the identical residential proxy/IP got **2/2 clean HTTP 200** against
+   `archive-api.open-meteo.com` (see item 2 above) — same egress, wildly different outcome. That
+   asymmetry is the real signal: this isn't "needs more cooldown," GDELT specifically has a harder
+   or more persistent problem than a datacenter-vs-residential distinction fixes. Stopping here
+   rather than testing a target that's shown zero success across two separate rounds — matches the
+   standing "retrying more after a 429 makes it worse" lesson. **Decision: did NOT swap `PROXY_URL`**
+   (GDELT was the one motivating this) — but the residential credentials proved themselves
+   independently valuable for Open-Meteo, so they're worth keeping for that even with GDELT
+   unresolved. Next session: either accept GDELT stays blocked from this environment (defer to
+   UCDP-only conflict coverage, already the documented fallback), or investigate GDELT's specific
+   blocking mechanism directly (its own rate-limit documentation, contacting them, or a completely
+   different provider) rather than more proxy/IP experimentation — that lever appears exhausted.
+   **`PROXY_URL` SWAPPED to the residential credentials**, operator-approved, since GDELT was closed
+   out but Open-Meteo proved the swap genuinely valuable: datacenter → residential in `.env`, old
+   value kept commented directly above the new line for instant revert. Rationale in the `.env`
+   comment itself. **Only Open-Meteo individually re-verified working post-swap** — the other 8
+   `PROXY_URL` consumers (CanadaBuys, submarine-cables, Yahoo Finance, etc.) were reasoned to be
+   likely neutral-to-positive (residential is sticky like the old datacenter proxy, generally more
+   trusted by anti-bot systems) but NOT individually tested — watch for regressions. `ais-relay.cjs`
+   needs restarting to pick this up (module-load-time env read via `_proxy-utils.cjs`, same class of
+   trap as everything else this session) — operator said they'll handle that restart themselves, not
+   done as of this commit. Nitric's scheduled seed scripts spawn fresh `node` children per run
+   (`gcp/scheduler/main.ts`), so those pick up the new value automatically without a restart.
 4. **Widen timeouts for canada-buys/OFAC — CanadaBuys FIXED session 37, verified live. OFAC
    remains genuinely not fixable this way, unchanged.** Session 36's "not a simple fix" verdict for
    CanadaBuys turned out to be about a constraint that doesn't actually apply here — worth re-reading

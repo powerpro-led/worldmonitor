@@ -232,16 +232,10 @@ Health not re-checked at this close (`/api/health?compact=1` needs the vite dev 
 running correctly to hit — see the `[::1]` note above; use whichever port actually answers, don't
 assume `localhost:3000` works).
 
-1. **SUPERSEDED — session 37's own close.** Working tree is clean (nothing uncommitted); every
-   session-37 change is committed locally. 6 commits sit unpushed as of this close
-   (`750008e`..`b8b48c5`, all `docs:` — the VPN LaunchDaemon, residential-proxy/GDELT/Open-Meteo,
-   consumerPrices scope-correction and schema-setup, and PROXY_URL-swap write-ups; the actual CODE
-   fixes from earlier this session — riskScores, CanadaBuys timeout, VS Code CORS/digest-cron/
-   submarine-cables/ais-relay/R2 batch — were already pushed mid-session, `origin/main` is at
-   `386ea3a`). **Same discipline as every prior session: push only on explicit confirmation, never
-   assumed** — the operator has not been asked this exact question at THIS close (asked and answered
-   multiple times mid-session for earlier batches, always answered before proceeding). Ask before
-   pushing these 6.
+1. **RESOLVED — clean handoff, nothing owed.** Working tree is clean, every session-37 change
+   committed AND pushed — operator explicitly confirmed the push at session close.
+   `origin/main` == `HEAD` == `ba48a1b` as of this handoff. No uncommitted or unpushed work to pick
+   up; the next session starts with a fully synced remote, same as session 35's own clean close.
 2. **气候异常 (Climate Anomalies) — FULLY FIXED session 37, verified end-to-end via the real
    scheduled cron. This panel had never had a successful write, ever, across at least 3 sessions of
    attempts — resolved by session 36's retry-storm fix AND this session's residential proxy BOTH

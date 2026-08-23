@@ -158,7 +158,13 @@ export async function fetchClimateAnomalies() {
         endDate,
         daily: ['temperature_2m_mean', 'precipitation_sum'],
         timeoutMs: 20_000,
-        maxRetries: 4,
+        // Trimmed from 4 (2026-08-23) — same fix as seed-climate-zone-normals.mjs's
+        // matching change: a live run of that sibling script showed every batch
+        // 429'ing through the full direct-retry ladder before ever reaching the
+        // proxy fallback (different Decodo egress IP, not rate-limited). One
+        // retry still absorbs a transient blip; the rest of the budget goes to
+        // the leg that can actually succeed.
+        maxRetries: 1,
         retryBaseMs: 3_000,
         label: `anomalies batch (${batch.map((zone) => zone.name).join(', ')})`,
       });
@@ -214,6 +220,11 @@ if (isMain) {
     maxStaleMin: 240,
     contentMeta: climateAnomaliesContentMeta,
     maxContentAgeMin: CLIMATE_ANOMALIES_MAX_CONTENT_AGE_MIN,
+    // runSeed's default fetch-phase deadline (240s) was leaving unused headroom
+    // under seed-bundle-climate.mjs's real 300s SIGTERM ceiling for this
+    // section — same reasoning as seed-climate-zone-normals.mjs's matching
+    // change, 30s margin instead of the unrelated 240s default.
+    fetchPhaseTimeoutMs: 270_000,
   }).catch((err) => {
     const cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : '';
     console.error('FATAL:', (err.message || err) + cause);

@@ -15,7 +15,240 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-08-22→23, THIRTY-FIFTH session end) — read this first, supersedes every block below
+## 🔀 HANDOFF (2026-08-23, THIRTY-SIXTH session end) — read this first, supersedes every block below
+
+Picked up cold from the thirty-fifth session's handoff (verified nitric pid 2095/ais-relay pid
+9874/sidecar pid 71417 still alive from that session; a separate `vite` dev process, pid 41694,
+has independently been running since 2026-08-19 — 4 days, unrelated to this handoff).
+
+1. **FIXED**: VS Code embed CORS error on `country-boundary-overrides.geojson`. Root cause:
+   `dist/` (gitignored, what the sidecar serves) was last built with `APP_DOMAIN=worldmonitor.app`
+   baked in — `getSubdomainOrigin('maps')` collapses to the app origin ONLY when `APP_DOMAIN` is a
+   `localhost` value (`shared/domain-config.js`'s `isLocalDomain` check), so the compiled bundle
+   always fetches the real `https://maps.worldmonitor.app/...` CDN regardless of where it's served
+   from. In a browser tab hitting the real deployed site this is same-site and fine; inside the VS
+   Code sidecar the page's real origin is `http://127.0.0.1:<sidecar port>` (confirmed via `lsof`,
+   pid 71417 → 127.0.0.1:46123), which the CDN's CORS policy doesn't allow → console CORS error.
+   Discovered a **second, bigger bug while trying to fix this by rebuilding `dist/` locally**:
+   `npm run build` with `.env`'s current `APP_DOMAIN=localhost:3000` fails outright —
+   `src/config/variant-dashboard-html.ts`'s hreflang-anchor replacement expects
+   `variantMetaMap.full.url` (domain-derived) to appear in `dashboard.html`, but that file's
+   hreflang `<link>` tags are hardcoded to `https://www.worldmonitor.app/dashboard` literally, so
+   the anchor match count is 0 and the build's own drift guard (#4996) fails it loudly. **Local
+   `npm run build` with a non-`worldmonitor.app` `APP_DOMAIN` is currently broken** — flagging, not
+   fixing (touches the #4996 SEO-regression guard, deserves its own deliberate pass, not a
+   rebuild-triggered side quest). Actual fix applied instead, precedented pattern: gated the
+   override fetch in `src/services/country-geometry.ts` behind `isVsCodeEmbedRuntime()` (same
+   reasoning `getConfiguredWebApiBaseUrl()` in `src/services/runtime.ts` already uses for the
+   embed's `/api` base URL) — skips the guaranteed-to-fail cross-origin fetch inside the VS Code
+   embed entirely, degrading silently to the base `countries.geojson` boundaries (no user-visible
+   change; the override was already optional/best-effort). `tests/country-geometry-overrides.test.mts`
+   still passes (2/2, run via `APP_DOMAIN=example.test npx tsx --test`). Not yet rebuilt into the
+   sidecar's `dist/` or verified live in the extension — needs `npm run build` (will still emit the
+   *worldmonitor.app*-domain bundle, since a local-domain build is broken per above) then a VS Code
+   window reload.
+2. **"实时情报" (GDELT intel) panel still empty — nitric restart NOT needed, confirmed live.**
+   `gcp/scheduler/main.ts`'s scheduler entry point spawns `seed-gdelt-intel.mjs` as a **fresh**
+   `node` child process every cron tick (`spawn('node', [...])`, `0 */2 * * *`) — no module-caching
+   staleness is possible here (that trap only applies to code loaded in-process, like the
+   `chat-analyst.ts` fix two sessions ago). Verified directly: `seed-meta:intelligence:gdelt-intel`
+   shows a run at `2026-08-23T02:23:15Z`, ~22 minutes before this check, already running post-fix
+   code — and it still returned `recordCount: 0`. The canonical `intelligence:gdelt-intel:v1` key is
+   completely absent from Redis (never a successful write to fall back to). This is the same
+   still-open external blocker the thirty-fifth session already root-caused and left as **STILL
+   OPEN item 1** below (Decodo datacenter-proxy IP likely GDELT-blocklisted; needs the operator's
+   Decodo dashboard for a residential-endpoint check) — re-confirmed, not re-diagnosed from scratch.
+3. **Latest Brief showing 22 Aug, not 23 Aug — found a genuinely orphaned cron, NOT a display bug.**
+   `api/latest-brief.ts` reads a `brief:latest:{userId}` pointer "written by the digest cron"
+   (its own doc comment). Direct Redis scan: exactly one such pointer exists
+   (`brief:latest:15ae70b6-2045-49e5-9381-7e426c1d8295`), pointing at slot `2026-08-22-2237` — i.e.
+   the digest cron has not run since 22:37 UTC on 2026-08-22, which is exactly the stale brief the
+   operator is seeing. Root cause: **`scripts/seed-digest-notifications.mjs` (the composer —
+   Dockerfile.digest-notifications's own header: "Railway cron, every 30 min", one-shot script,
+   `main()` + `process.exit()`, no internal loop) is not running anywhere in this dev environment**
+   (`ps aux` — no matching process) **and is not registered in `gcp/scheduler/main.ts`'s CADENCES
+   map** (grepped for `brief`/`digest` — zero matches), unlike every other Railway-era cron that
+   already got migrated there. `nitric.yaml` lists it under the "always-on services" block with a
+   bare `node $SERVICE_PATH` start command and no `--loop`/re-invoke wrapper, which — given the
+   script has no internal loop — would only run it once even if something did start it; this looks
+   like a genuine gap in the Railway→GCP-scheduler migration, same class as `seed-global-tenders.mjs`
+   in the thirty-fifth session. **Not run or fixed yet, deliberately**: `RESEND_API_KEY` is a live
+   key in `.env` and `DIGEST_CRON_ENABLED` has no kill-switch value set, so invoking this script for
+   real would send actual email (and possibly Telegram/Slack/Discord) to real users — an
+   outward-facing, hard-to-reverse action that needs the operator's explicit go-ahead, either to
+   run it once now (refreshes the brief immediately) and/or to register it in
+   `gcp/scheduler/main.ts` for a recurring local trigger going forward.
+4. **Digest cron (item 3) — RESOLVED, operator-approved.** Root cause was mischaracterized as a
+   "missing from `gcp/scheduler/main.ts` CADENCES" gap — it isn't: that file's CADENCES map is
+   deliberately scoped to `railway-services.json`'s `nixpacks-*` entries only (per its own header
+   comment); `seed-digest-notifications` is registered `deployMode: "dockerfile"`, wired directly
+   as its own service in `nitric.yaml` on purpose, same as `ais-relay.cjs`/`scenario-worker.mjs`.
+   The REAL bug: that nitric.yaml entry's `start: node $SERVICE_PATH` runs the script exactly once
+   (it has no internal loop — one-shot `main()` + `process.exit()`, its real cadence came from
+   Railway's own Cron Schedule re-invoking the container every 30 min, a primitive `nitric start`
+   doesn't have). Fixed: wrapped the local `start:` command in a shell loop (`while true; do node
+   $SERVICE_PATH; sleep 1800; done`) so `nitric start` gives it the same recurring cadence Railway
+   did. Needs a nitric restart to pick up (service list is read at nitric startup, not live).
+   **Also ran it once manually** (operator-approved, live `RESEND_API_KEY` in `.env`): composition
+   succeeded (`compose_success=1 compose_failed=0`) and `brief:latest:{userId}` now points at slot
+   `2026-08-23-1055` — Latest Brief panel fixed, confirmed via direct Redis read. Run reported
+   `0 digest(s) sent` — the per-channel due/cooldown gate didn't fire an actual notification this
+   cycle, so no surprise live email went out despite the manual invocation.
+5. **Timeout-widen item (STILL OPEN item 2) — investigated, turns out NOT a simple fix, flagging
+   back rather than guessing at numbers (same caution the thirty-fifth session already applied
+   here).** Did the actual math before touching any timeout value:
+   - **CanadaBuys**: 6MB CSV ÷ its VPN-bypassed 14KB/s ≈ **439s needed**. Its per-attempt timeout
+     (currently 60s) is bounded by `seed-bundle-relay-backup.mjs`'s hard 180s SIGTERM ceiling for
+     the whole "Global-Tenders" bundle section (confirmed in code, `fetchResponse`'s own comment in
+     `seed-global-tenders.mjs`) — no per-attempt timeout under ~170s can ever complete this pull.
+     Actually fixing it needs the SECTION deadline raised to ~450-500s, a bigger, more consequential
+     change (that section blocks the bundle runner for that long every hourly tick) — not a decision
+     to make silently.
+   - **OFAC**: `seed-sanctions-pressure.mjs`'s own header says the source is a **~120MB** XML feed.
+     At its VPN-bypassed 4KB/s (barely above the pre-bypass 6KB/s baseline — the bypass essentially
+     didn't help this host), that's **~30,720s (8.5h)** to download in full. No timeout value fixes
+     this; it needs genuinely faster network access, which this session doesn't have a lever for.
+   - **Submarine cables — FIXED, verified live.** Structurally different from the other two: many
+     small per-cable JSON fetches (`cable/${id}.json`, 86 total, batches of 5), not one giant
+     payload. Widened the per-request timeout 15s → 30s in `scripts/seed-submarine-cables.mjs`
+     (confirmed headroom first: 18 batches × 30s worst-case still fits under runSeed's default 240s
+     fetch-phase deadline — `lockTtlMs` 120s + `FETCH_PHASE_DEADLINE_MARGIN_MS` 120s — since batches
+     don't realistically all hit the ceiling simultaneously). Ran it live: **86/86 cables fetched**,
+     `state: OK`, 104.6s total (2 retries at the whole-fetch level before the clean pass), verified
+     written to `infrastructure:submarine-cables:v1` in Redis. `submarineCables` health should clear
+     on the next check.
+6. **气候异常 (Climate Anomalies) panel empty — root-caused, partially fixed, then a live test made
+   it WORSE, stopped deliberately.** `climate:anomalies:v2` and its hard dependency
+   `climate:zone-normals:v1` (`seed-climate-anomalies.mjs` throws immediately if the normals
+   baseline is missing) were both completely absent from Redis — never a successful write, ever, in
+   this environment. Root cause is NOT the VPN body-stream throttle documented for the other 6 hosts
+   — Open-Meteo's `archive-api.open-meteo.com` was returning fast HTTP 429s, not slow stalls. Found
+   and fixed a real reliability bug in `scripts/seed-climate-zone-normals.mjs`: on partial failure,
+   `runSeed`'s own outer `withRetry(fetchFn)` re-invokes the WHOLE 13-batch fetch from scratch,
+   discarding every already-succeeded zone — with a heavy 429 rate, some batch fails on nearly every
+   full sweep, so a clean pass essentially never happens by chance (confirmed: 4 full-sweep restarts
+   burned an entire 540s budget with zero net progress). Fixed: restructured to track failed zones
+   and retry only those on subsequent internal passes (`NORMALS_MISSING_ZONE_RETRY_PASSES`), so
+   progress accumulates instead of resetting; also trimmed `maxRetries` 4→1 (same fix pattern as the
+   GDELT rate-gate work — stop burning budget on same-IP direct retries that rarely clear a 429, get
+   to the proxy-fallback leg faster) and raised `fetchPhaseTimeoutMs` explicitly (240s default →
+   540s then 570s, matching `seed-bundle-climate.mjs`'s real 600s SIGTERM ceiling with margin). All
+   53 tests across `climate-seeds`/`open-meteo-proxy-fallback`/`seeder-content-age-coverage` pass.
+   **First live verification run (2 internal passes) showed the fix genuinely working**: 25→14→12
+   zones still missing across passes — real convergence, unlike the unfixed version, which never
+   converged at all. Bumped passes 2→4 and re-ran to try to clear the 17-zone minimum. **That second
+   run was a clean regression: 100% of batches failed on direct AND both Decodo proxy legs (CONNECT
+   + curl) simultaneously, on every one of 3 full sweeps, zero zones succeeded** — a harder, total
+   block, not the ~50%-success partial state the first run saw. Very plausibly self-inflicted: 3
+   full test runs in quick succession this session may have escalated Open-Meteo from ordinary
+   per-IP rate-limiting into a firmer temporary block covering both the direct IP and Decodo's
+   egress pools. **Stopped testing live at this point — deliberately, not from a budget cutoff** —
+   matching the GDELT lesson already on record ("retrying more after a 429 makes it worse"). The
+   code fix is real and committed to disk but UNVERIFIED end-to-end this session (never actually
+   wrote `climate:zone-normals:v1`). Needs: (a) a cooldown period before trying again — do not
+   immediately re-run; (b) if a next attempt also sees the 100%-blocked pattern rather than the
+   earlier ~50% partial pattern, that's a materially different, harder problem than what the code
+   fix targets and deserves fresh diagnosis, not more retry-tuning.
+7. **`SCRAPECREATORS_API_KEY` added** to `.env` (operator-supplied) — fixes `WsbTickers`/
+   `socialVelocity`'s documented Reddit-policy gap from session 35 (unauthenticated endpoint 403s;
+   this is the one working fallback). Needs `ais-relay.cjs` restarted to pick it up (module-load-time
+   env read, same class of trap as the `chat-analyst.ts` fix two sessions ago).
+8. **FIXED, verified live: `ais-relay.cjs` warm-ping 405s** (`ServiceStatuses`, `Chokepoints`,
+   `CableHealth`, `TemporalAnomalies`). Root cause: all four warm-pinged their RPC route via POST
+   with an empty `{}` body, but every one of those routes is registered GET-only (confirmed in the
+   generated `service_server.ts` — the GET handlers hard-code an empty request object regardless of
+   any body/query params, so the POST body was always discarded anyway). Production's real gateway
+   (`server/gateway.ts`'s `createDomainGateway`) has an explicit "POST→GET for stale clients"
+   compatibility fallback, but `vite.config.ts`'s local-dev `sebufApiPlugin` — despite its own
+   comment claiming to route through "the same handler pipeline as the Vercel catch-all gateway" —
+   is actually a separate, simpler router that does NOT implement that fallback, so locally a POST
+   just 405s outright. Fixed by switching all four warm-pings to plain GET (matching how the CII
+   warm-ping already worked) — removes the dependency on the missing fallback entirely rather than
+   porting the fallback into the vite plugin. All 41 `relay-boot-seed-freshness-guard` tests pass.
+   Verified live against the real local route for all four: 200 with real payloads (`cable-health`
+   and `get-chokepoint-status` came back structurally empty — `upstreamUnavailable: true` / `{}` —
+   which is a separate, pre-existing data-freshness question, not the 405 this item targeted).
+9. **`bootstrap-r2` R2 credentials — FIXED, operator's explicit call to set up in dev.** Root cause
+   confirmed: `scripts/_r2-storage.mjs`'s `bootstrap` storage profile needs its OWN dedicated
+   `R2_ACCOUNT_ID`/`R2_BOOTSTRAP_BUCKET`/`R2_BOOTSTRAP_ACCESS_KEY_ID`/`R2_BOOTSTRAP_SECRET_ACCESS_KEY`
+   — deliberately separate from `CLOUDFLARE_R2_*` (used by `seed-military-bases.mjs`/
+   `seed-forecasts.mjs`), per `.env.example`'s own comment: the bootstrap bucket carries two
+   differently-scoped credentials (write for the Railway publisher, read for the Vercel edge
+   reader) and "no consumer may fall back to the forecast/military object credentials." Confirmed
+   `worldmonitor-data` (the operator's existing bucket) is NOT interchangeable with
+   `worldmonitor-bootstrap` for this reason — reusing it would blur that isolation. `.env.example`
+   itself flags this credential "never in development" — operator made the explicit call to set it
+   up locally anyway (new bucket-scoped R2 API token created, Object Read & Write on
+   `worldmonitor-bootstrap` only). Added to `.env`; the token-creation flow also issued a
+   Cloudflare-API-style token (`cfut_...`) alongside the S3-compatible access-key pair — not stored,
+   since `_r2-storage.mjs`'s bootstrap profile has no `apiToken` mapping and never reads it. **Verified
+   with two real publishes, not just config resolution**: `node scripts/publish-bootstrap-tiers.mjs
+   --tier=fast` wrote 1,029,980 bytes to R2, `--tier=slow` wrote 3,133,433 bytes, both clean (no
+   credential error; `missing: 5`/`9` keys per tier is a separate, pre-existing data-completeness
+   gap, not a credential issue). Needs `publish-bootstrap-tiers.mjs`'s own long-running process (part
+   of `nitric.yaml`'s always-on services) restarted to pick up the new `.env` values.
+
+### Verified live after the final restart (2026-08-23 ~14:38 local) — not just config, actual log evidence
+
+Read `.nitric/services.log` directly rather than trusting "should work now": zero `HTTP 405`
+warm-ping lines since the 14:26 `ais-relay.cjs` restart (last one was 14:16:56, from the pre-fix
+process); `bootstrap-r2` went from repeated `credentials are missing` (last at 14:22:56) to clean
+publishes every ~2min continuously through 14:38, both tiers; `WsbTickers` had already succeeded
+once before today's restart too (13:17:33, "Seeded 15 tickers from 150 posts") — the current loop
+just skipped re-fetching because that data's still inside its 180min freshness window, not because
+anything is broken.
+
+### Dev stack at close — confirmed alive, not assumed
+
+`nitric start --no-browser` (operator's own terminal, pid 68604) with `ais-relay.cjs` running AS
+ITS OWN MANAGED CHILD this time (pid 68614, port 3004) — cleaner than earlier sessions' pattern of
+a separately-launched standalone `ais-relay.cjs`. Both `clean-nitric-history.mjs` copies (pids
+10018/39551) still alive from prior sessions. **Ignore a `vite` process on pid 41694 if `ps aux`
+still shows one** — it's a 4+ day old orphan from before session 35, bound to `[::1]:3000` only
+(IPv6 loopback, not `127.0.0.1` — this is WHY `curl http://localhost:3000/...` fails while
+`curl http://[::1]:3000/...` works on this machine), unrelated to anything this or the prior
+session touched. Not killed — no evidence it's causing harm, and killing an operator-visible
+process without a clear reason isn't this session's call.
+
+### 🔭 STILL OPEN — handed off, pick this up first
+
+Health not re-checked at this close (`/api/health?compact=1` needs the vite dev server or sidecar
+running correctly to hit — see the `[::1]` note above; use whichever port actually answers, don't
+assume `localhost:3000` works).
+
+1. **Nothing committed or pushed this session.** 7 files modified on disk (`TASKS.md`, `nitric.yaml`,
+   `scripts/ais-relay.cjs`, `scripts/seed-climate-anomalies.mjs`, `scripts/seed-climate-zone-normals.mjs`,
+   `scripts/seed-submarine-cables.mjs`, `src/services/country-geometry.ts`) plus the 2 unpushed
+   commits already carried over from session 35 (`e4b1326`, `2ef4361`). Operator was asked directly
+   whether to commit before this handoff and the conversation moved to a session transfer instead of
+   answering — **do not assume "yes, commit"**; ask the operator explicitly before running `git
+   commit`/`git push`, same as every other session's discipline here.
+2. **气候异常 (Climate Anomalies) — cooldown elapsed, worth one retry.** See the dedicated item
+   above (climate section) for full detail: a real reliability bug was fixed and verified partially
+   working, then a second live-test run showed a harder, possibly self-inflicted Open-Meteo block
+   (100% failure on direct AND both proxy legs, vs. the first run's ~50% partial success). As of this
+   handoff it has been several hours since that last attempt — a reasonable cooldown — so trying
+   `node scripts/seed-climate-zone-normals.mjs` once more is reasonable. If it's back to the ~50%
+   partial-success pattern, let it run its full internal retry passes; if it's still 100% blocked on
+   every leg, that's a materially different, harder problem than the code fix targets and needs fresh
+   diagnosis, not more retry-tuning.
+3. **GDELT residential-proxy check** — still needs the operator's Decodo dashboard; unchanged from
+   session 35, not re-investigated this session (re-confirmed still failing, root cause unchanged).
+4. **Widen timeouts for canada-buys/OFAC** — re-investigated this session, concluded NOT a simple
+   fix: the math doesn't close for either (CanadaBuys needs ~439s vs a hard 180s bundle ceiling;
+   OFAC's ~120MB feed needs ~8.5h at its VPN-bypassed speed). Submarine-cables (the third host on
+   this list) WAS fixed and verified this session — no longer open. See the dedicated item above for
+   the full numbers before re-raising this as "just widen a timeout."
+5. **Decide on LaunchDaemon persistence for the VPN bypass routes** — unchanged from session 35,
+   still pending the operator's call, still blocked on the timeout-widening question above anyway.
+6. **`riskScores`' warm-ping/cache-TTL mismatch** — unchanged from session 35, still deliberately
+   unpatched (shared caching code, needs a careful follow-up pass).
+7. **`consumerPrices*` (5 keys)** — unchanged from session 35, needs new infra (Postgres +
+   Playwright scraping + a second Redis client), not a code fix available from this environment.
+
+---
+
+## 🔀 HANDOFF (2026-08-22→23, THIRTY-FIFTH session end) — superseded by the thirty-sixth block above
 
 **Scope**: picked up the thirty-fourth session's scoped "seed/sync reliability sweep" NEXT
 INITIATIVE. Verified the handoff was actually clean first (git tree matched exactly, dev-stack

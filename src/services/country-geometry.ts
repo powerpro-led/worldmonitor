@@ -1,6 +1,7 @@
 import type { FeatureCollection, Geometry, GeoJsonProperties, Position } from 'geojson';
 import { markLcpDebug } from '@/utils/lcp-debug';
 import { getSubdomainOrigin } from '@/config/domain';
+import { isVsCodeEmbedRuntime } from '@/services/runtime';
 
 interface IndexedCountryGeometry {
   code: string;
@@ -269,7 +270,15 @@ async function ensureLoaded(): Promise<void> {
       rebuildCountryIndex(data);
       markLcpDebug('wm:data:country-geometry-fetch-ready', { features: data.features.length });
 
-      // Apply optional higher-resolution boundary overrides (sourced from Natural Earth)
+      // Apply optional higher-resolution boundary overrides (sourced from Natural Earth).
+      // Skipped inside the VS Code embed: the sidecar serves the dashboard from its
+      // own local origin (http://127.0.0.1:<port>), not *.APP_DOMAIN, so this
+      // cross-origin fetch to the R2-backed maps.<APP_DOMAIN> CDN always fails CORS
+      // there (browser tabs hit the real subdomain and are unaffected) — same root
+      // cause class as getConfiguredWebApiBaseUrl()'s isVsCodeEmbedRuntime() gate in
+      // services/runtime.ts. Silently degrading to the base countries.geojson
+      // boundaries is preferable to a guaranteed-failing network request on every load.
+      if (isVsCodeEmbedRuntime()) return;
       try {
         const overrideResp = await fetch(COUNTRY_OVERRIDES_URL, {
           signal: makeTimeout(COUNTRY_OVERRIDE_TIMEOUT_MS),

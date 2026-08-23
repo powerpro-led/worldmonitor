@@ -4115,10 +4115,17 @@ const SERVICE_STATUSES_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/ap
 
 async function seedServiceStatuses() {
   try {
+    // GET, not POST (2026-08-23): the generated GET handler ignores any body
+    // and reads `status` from the query string (defaulting to UNSPECIFIED,
+    // which is exactly what an empty '{}' POST body produced anyway) — this
+    // route is GET-only, so a POST 405'd. Production's real gateway
+    // (server/gateway.ts) has a POST->GET compatibility fallback for exactly
+    // this "stale client" case, but vite.config.ts's local-dev sebufApiPlugin
+    // is a separate, simpler router that doesn't implement that fallback, so
+    // the 405 was local-dev-only. Using GET directly sidesteps needing the
+    // fallback in either environment.
     const resp = await fetch(SERVICE_STATUSES_RPC_URL, {
-      method: 'POST',
-      headers: warmPingHeaders({ 'Content-Type': 'application/json' }),
-      body: '{}',
+      headers: warmPingHeaders(),
       signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {
@@ -4766,10 +4773,12 @@ const CHOKEPOINT_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/supp
 
 async function seedChokepointWarmPing() {
   try {
+    // GET, not POST — see seedServiceStatuses' comment (2026-08-23): this
+    // route is GET-only and the handler ignores any body, and vite's local
+    // sebufApiPlugin (unlike production's real gateway) has no POST->GET
+    // compatibility fallback, so POST 405'd in local dev.
     const resp = await fetch(CHOKEPOINT_RPC_URL, {
-      method: 'POST',
-      headers: warmPingHeaders({ 'Content-Type': 'application/json' }),
-      body: '{}',
+      headers: warmPingHeaders(),
       signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {
@@ -4801,10 +4810,12 @@ const CABLE_HEALTH_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/in
 
 async function seedCableHealthWarmPing() {
   try {
+    // GET, not POST — see seedServiceStatuses' comment (2026-08-23): this
+    // route is GET-only and the handler ignores any body, and vite's local
+    // sebufApiPlugin (unlike production's real gateway) has no POST->GET
+    // compatibility fallback, so POST 405'd in local dev.
     const resp = await fetch(CABLE_HEALTH_RPC_URL, {
-      method: 'POST',
-      headers: warmPingHeaders({ 'Content-Type': 'application/json' }),
-      body: '{}',
+      headers: warmPingHeaders(),
       signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {
@@ -4842,10 +4853,12 @@ const TEMPORAL_ANOMALIES_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/
 
 async function seedTemporalAnomaliesWarmPing() {
   try {
+    // GET, not POST — see seedServiceStatuses' comment (2026-08-23): this
+    // route is GET-only and the handler ignores any body, and vite's local
+    // sebufApiPlugin (unlike production's real gateway) has no POST->GET
+    // compatibility fallback, so POST 405'd in local dev.
     const resp = await fetch(TEMPORAL_ANOMALIES_RPC_URL, {
-      method: 'POST',
-      headers: warmPingHeaders({ 'Content-Type': 'application/json' }),
-      body: '{}',
+      headers: warmPingHeaders(),
       signal: AbortSignal.timeout(60_000),
     });
     if (!resp.ok) {

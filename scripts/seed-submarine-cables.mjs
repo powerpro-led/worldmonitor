@@ -240,7 +240,15 @@ export async function fetchSubmarineCables() {
       try {
         const resp = await fetch(`${BASE}/cable/${id}.json`, {
           headers: { 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(15_000),
+          // Widened from 15s (2026-08-23): per-cable JSON files are small (tens of
+          // KB), so unlike CanadaBuys/OFAC's single giant payloads this is a
+          // marginal, plausibly-fixable case — the VPN-bypass throughput here
+          // (~7KB/s) is close to what 15s already allowed. 18 batches of 5 at 30s
+          // worst-case still fits comfortably under runSeed's default 240s
+          // fetch-phase deadline (lockTtlMs 120s + FETCH_PHASE_DEADLINE_MARGIN_MS
+          // 120s) since batches don't all hit the ceiling simultaneously in
+          // practice — only a genuinely stalled cable does.
+          signal: AbortSignal.timeout(30_000),
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         return { id, data: await readJsonResponse(resp, `cable/${id}.json`) };

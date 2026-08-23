@@ -24,7 +24,19 @@ services:
     start: node $SERVICE_PATH
     runtime: relay
   - match: scripts/seed-digest-notifications.mjs
-    start: node $SERVICE_PATH
+    # This script is one-shot (main() + process.exit(), no internal loop) — its real
+    # cadence came from Railway's own Cron Schedule feature re-invoking the container
+    # every 30 min (Dockerfile.digest-notifications's header + the script's own
+    # docblock), which is a re-invoke primitive this local `services:` block doesn't
+    # have. A bare `node $SERVICE_PATH` here runs it exactly once at `nitric start` and
+    # never again — found 2026-08-23 via a genuinely stale Latest Brief (stuck a day
+    # behind because nothing was re-composing it locally). Loop it to match Railway's
+    # real per-tick semantics instead of miscategorizing it as a genuine long-running
+    # service (it isn't) or folding it into gcp/scheduler/main.ts's CADENCES map (that
+    # file is deliberately scoped to railway-services.json's nixpacks-mode entries only
+    # — this one is dockerfile-mode, wired directly here on purpose, per that file's own
+    # header comment).
+    start: sh -c "while true; do node $SERVICE_PATH; sleep 1800; done"
     runtime: digest-notifications
   - match: scripts/seed-bundle-portwatch-port-activity.mjs
     start: node $SERVICE_PATH

@@ -247,8 +247,30 @@ assume `localhost:3000` works).
    hours) before the next attempt, or a genuinely different egress path — re-running the exact same
    script again on the same IPs is very unlikely to produce a different result and risks extending the
    block further.
-3. **GDELT residential-proxy check** — still needs the operator's Decodo dashboard; unchanged from
-   session 35, not re-investigated this session (re-confirmed still failing, root cause unchanged).
+3. **GDELT residential-proxy check — operator got a residential Decodo plan, tested live, result is
+   MIXED — do not round up to "fixed."** `.env`'s existing `PROXY_URL` is a *datacenter* Decodo
+   proxy (`dc.decodo.com`), documented as shared across 9 other seed scripts + `ais-relay.cjs` for
+   its fixed-egress-IP property — deliberately did NOT overwrite it based on one inconclusive test.
+   The new residential credentials (`us.decodo.com`, NOT yet written anywhere in this repo or
+   `.env` — operator pasted them in chat, keep it that way, don't commit them) were verified
+   directly: genuine residential ISP egress (confirmed via `https://ip.decodo.com/json` — a real
+   ISP, not a datacenter host), and **sticky** (same IP across 3 separate requests) — same
+   fixed-egress-IP behavioral contract as the current datacenter proxy, so a full `PROXY_URL` swap
+   would not obviously break the other 9 consumers' IP-consistency assumptions IF this residential
+   proxy turns out to actually help. Tested directly against `api.gdeltproject.org`: attempt 1 was a
+   connection-level failure (`000`, not even an HTTP response), attempts 2–3 both returned `429`.
+   Stopped testing further deliberately — matches the standing "retrying more after a 429 makes it
+   worse" lesson from this project's own GDELT investigation; 3 rapid requests may simply have been
+   too aggressive for GDELT's own tight per-IP threshold, not proof the residential IP itself is
+   blocked. Unknown: whether this specific proxy plan is a *shared* residential pool (other Decodo
+   customers' GDELT traffic through the same IP could already eat into the quota) or a
+   dedicated/exclusive IP — operator couldn't immediately find that on the dashboard, not chased
+   further. **Next step, scheduled**: one single, careful GDELT request after a real cooldown
+   (~25min from the test above) — not a batch, not more retries. If clean: propose swapping
+   `PROXY_URL` wholesale (residential, sticky, sourced same way, likely a strict upgrade for the
+   other 9 consumers too). If still 429/failing: this specific credential pair doesn't clear GDELT's
+   bar either, park the GDELT item again — but the residential proxy is still worth keeping/wiring
+   in for its own sake if it's a strict upgrade over the current datacenter one for everything else.
 4. **Widen timeouts for canada-buys/OFAC — CanadaBuys FIXED session 37, verified live. OFAC
    remains genuinely not fixable this way, unchanged.** Session 36's "not a simple fix" verdict for
    CanadaBuys turned out to be about a constraint that doesn't actually apply here — worth re-reading

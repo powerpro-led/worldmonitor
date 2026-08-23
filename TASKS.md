@@ -392,8 +392,35 @@ assume `localhost:3000` works).
      operator-visible process without being asked to. If the dashboard's Strategic Posture panel still
      looks stale after this fix, restarting that vite process (or however local dev is normally
      restarted) is the next step — the underlying computation is confirmed correct.
-7. **`consumerPrices*` (5 keys)** — unchanged from session 35, needs new infra (Postgres +
-   Playwright scraping + a second Redis client), not a code fix available from this environment.
+7. **`consumerPrices*` (5 keys) — SCOPED session 37 (while waiting on the GDELT cooldown), the
+   "needs new infra" note carried since session 35 was under-specified and one part of it is
+   flatly wrong.** `consumer-prices-core/` is not a from-scratch project — it's a complete, mature
+   microservice already in this repo: 10 markets (AE/AU/BR/CH/GB/IN/KE/SA/SG/US), 25 retailer
+   scrapers, 9 Postgres migrations, a Fastify API server, a scrape→aggregate→publish job pipeline,
+   and a real product-pinning stability plan already at "Rev 3." It's unused only because its
+   runtime dependencies were never provisioned, not because it needs building.
+   **Correction: no second Redis client is actually needed** — grepped `consumer-prices-core/src/`
+   directly for `REDIS_URL`/`createClient`, zero hits anywhere in the source despite `.env.example`
+   listing `REDIS_URL` and `redis` being a `package.json` dependency (vestigial/unused, not wired
+   to anything). `src/jobs/publish.ts` — the actual handoff point to WorldMonitor — writes directly
+   via the Upstash REST API (its own `upstashCommand()` helper, `Authorization: Bearer` calls) using
+   the SAME Upstash instance the rest of the fork already uses, with its own inlined seed-envelope
+   shape mirrored from `scripts/_seed-envelope-source.mjs`. This claim should have been verified
+   against the code the first time it was written, not carried forward on assumption.
+   **What's actually still needed to go live**: (1) a real Postgres instance (`DATABASE_URL`) — the
+   one genuine infra gap; (2) one acquisition provider API key — Firecrawl, Exa, or Parallel P0 (the
+   code supports all three; the stability plan's primary flow is Exa search → Firecrawl scrape); (3)
+   `WORLDMONITOR_SNAPSHOT_API_KEY`, a shared secret, trivial to generate; (4) running the 9
+   migrations (`npm run migrate` inside `consumer-prices-core/`); (5) a host to actually run the job
+   pipeline — the Dockerfile is built for Railway specifically (real outage-tolerance engineering in
+   its `apt-get` steps, not a stub), matching this project's original design, but Railway isn't
+   live per this session's confirmation — would need either provisioning Railway specifically for
+   this one service, wiring into the still-scaffold GCP/Nitric setup, or a local-dev-only loop
+   wrapper (same pattern as the digest-cron fix, session 36) for local visibility only.
+   **Not attempted this session** — this is a genuine operator decision (real Postgres cost, a real
+   scraping-provider API key with its own cost, and a hosting decision), not something to provision
+   unprompted. Flagging the corrected, concrete scope so the next session (or the operator directly)
+   can make that call with accurate information instead of the vague "needs new infra" note.
 
 ---
 

@@ -247,6 +247,15 @@ assume `localhost:3000` works).
    hours) before the next attempt, or a genuinely different egress path — re-running the exact same
    script again on the same IPs is very unlikely to produce a different result and risks extending the
    block further.
+   - **UPDATE, same session: the "genuinely different egress path" this needed now exists and works.**
+     The residential Decodo proxy obtained for the GDELT check (see item 3 below) was tested directly
+     against `archive-api.open-meteo.com/v1/archive` — 2 single, spaced requests at different
+     coordinates, both clean **HTTP 200** — where the datacenter proxy (and direct) hit a 100% block
+     on every leg. Not yet wired into `seed-climate-zone-normals.mjs` or run as a full seed — this was
+     a raw connectivity check only, deliberately kept light (2 requests, not a batch) given the prior
+     session's caution about hammering an already-blocked target. Holding off on wiring this in and
+     running a full seed until the GDELT retest (item 3) resolves, so `PROXY_URL` gets one considered
+     decision covering both use cases instead of two separate partial migrations.
 3. **GDELT residential-proxy check — operator got a residential Decodo plan, tested live, result is
    MIXED — do not round up to "fixed."** `.env`'s existing `PROXY_URL` is a *datacenter* Decodo
    proxy (`dc.decodo.com`), documented as shared across 9 other seed scripts + `ais-relay.cjs` for

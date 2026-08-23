@@ -256,8 +256,53 @@ assume `localhost:3000` works).
    the full numbers before re-raising this as "just widen a timeout."
 5. **Decide on LaunchDaemon persistence for the VPN bypass routes** — unchanged from session 35,
    still pending the operator's call, still blocked on the timeout-widening question above anyway.
-6. **`riskScores`' warm-ping/cache-TTL mismatch** — unchanged from session 35, still deliberately
-   unpatched (shared caching code, needs a careful follow-up pass).
+6. **`riskScores`' staleness — FIXED session 37, verified live. Session 35's "warm-ping/cache-TTL
+   mismatch" diagnosis was a plausible theory but NOT the actual root cause** — corrected here so a
+   future session doesn't re-chase the TTL-race explanation. Traced the real mechanism end-to-end
+   with live evidence rather than re-deriving from code alone:
+   - Empirically confirmed first: `seed-meta:intelligence:risk-scores` was **8710 min (~6 days)
+     stale**, while `ais-relay.cjs`'s CII warm-ping was firing cleanly every 8 min and logging
+     `[CII] Warm-ping OK: 31 scores` every single time — and BOTH the live cache key
+     (`risk:scores:sebuf:v8`) and the 1h stale-fallback key (`risk:scores:sebuf:stale:v8`) had TTL
+     `-2` (never existed), not just expired. That "31 scores, always" was the tell: 31 is exactly
+     `TIER1_COUNTRIES`'s count, matching `getRiskScores`'s FINAL degraded fallback
+     (`computeCIIScores([], emptyAuxiliarySources())`) rather than a real computed or cached result.
+   - Root cause: `server/worldmonitor/intelligence/v1/get-risk-scores.ts`'s `fetchACLEDEvents()`
+     called `fetchAcledCached()` twice via `Promise.all` with **no try/catch**, unlike every other
+     source in `fetchAuxiliarySources()` (all individually `.catch(() => null)`-wrapped). ACLED is
+     blocked on this environment's account tier (session 32's finding, unchanged) — confirmed live:
+     OAuth token exchange succeeds (200), but the actual data-read call returns
+     **`403 {"message":"Access denied"}`**. `fetchAcledCached`'s inner `cachedFetchJson` call
+     re-throws on any non-2xx upstream response, and with no catch above it, that exception
+     propagated straight through `buildRiskScoresPayload()`'s `Promise.all`, rejecting the ENTIRE
+     risk-scores computation on every single call — live traffic and warm-ping alike. `getRiskScores`'s
+     outer catch then fell through to the stale-cache check, which was also always empty, landing on
+     the final all-zero baseline every time — a path that never reaches `persistFreshRiskScorePayload`,
+     so `seed-meta` and both cache keys could never be written. The existing code comment on
+     `fetchACLEDEvents()` already assumed graceful `[]`-on-failure was happening ("fetchAcledCached
+     returns [] both when ACLED auth is unconfigured AND on upstream failure") — that assumption was
+     simply wrong for the "upstream failure" half; only the "unconfigured" half short-circuits before
+     ever throwing.
+   - Fix: wrapped both `fetchAcledCached()` calls in `fetchACLEDEvents()` with `.catch()`, matching
+     the pattern already used everywhere else — restores the graceful degradation the comment assumed.
+     Deliberately did NOT touch the cache-TTL/warm-ping tuning code PR #3562 carefully set up (session
+     35's caution about that code was well-founded, it's just not what was broken).
+   - Verified: 124 tests pass across `cii-scoring`, `seed-health-risk-scores`, `ttl-acled-ais-guards`,
+     `frontend-cii-source-of-truth` (zero new failures — 2 pre-existing failures in
+     `relay-warm-ping-auth.test.mts` confirmed present on the unmodified baseline too, unrelated to
+     this change). **Live end-to-end verification**: an isolated `tsx --env-file=.env` invocation of
+     `getRiskScores()` against the real Redis produced `degraded: false, stale: false`, all 31 scores
+     with real non-zero `combinedScore` values, and confirmed writes — `seed-meta` `fetchedAt` 12s old
+     (`recordCount: 3`), live cache TTL 588s, stale-fallback TTL 3588s (both matching their configured
+     600s/3600s TTLs on a fresh write).
+   - **One loose end, not a code bug**: hitting the RPC through the browser-facing local dev server
+     (vite pid 41694, the 4+ day orphan already flagged in session 36's memory) returns the same
+     correct non-degraded response but does NOT persist to the real Redis — almost certainly the same
+     "process holds env from before a `.env` edit" trap this session hit repeatedly elsewhere (chat-
+     analyst, ais-relay, digest cron), not investigated further since it required restarting an
+     operator-visible process without being asked to. If the dashboard's Strategic Posture panel still
+     looks stale after this fix, restarting that vite process (or however local dev is normally
+     restarted) is the next step — the underlying computation is confirmed correct.
 7. **`consumerPrices*` (5 keys)** — unchanged from session 35, needs new infra (Postgres +
    Playwright scraping + a second Redis client), not a code fix available from this environment.
 

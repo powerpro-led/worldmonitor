@@ -624,9 +624,36 @@ async function fetchACLEDEvents(): Promise<Array<{ country: string; event_type: 
   // A single 30-day request at limit:1500 silently drops tail events once the
   // global count exceeds the cap; splitting ensures post-conflict countries
   // (low recent activity, higher older activity) are not squeezed out.
+  //
+  // Each call is individually caught here — fetchAcledCached only returns []
+  // gracefully when ACLED auth is unconfigured (getAcledAccessToken → null);
+  // on an actual upstream failure (non-2xx status, e.g. a 403 from an
+  // account-tier restriction, or a JSON error body) its inner cachedFetchJson
+  // call THROWS, and that throw is not caught anywhere between here and
+  // buildRiskScoresPayload()'s Promise.all — unlike every other source in
+  // fetchAuxiliarySources(), which is individually .catch(() => null)-wrapped.
+  // An uncaught ACLED failure therefore rejected the WHOLE risk-scores compute,
+  // which cachedFetchJsonWithMeta's fetcher treated as a total miss: the RPC
+  // fell all the way through getRiskScores' outer catch to the final
+  // computeCIIScores([], emptyAuxiliarySources()) baseline (all Tier-1
+  // countries at zero signal) on every single call, live traffic and
+  // ais-relay's CII warm-ping alike — and since that path never reaches
+  // persistFreshRiskScorePayload, seed-meta:intelligence:risk-scores never
+  // advanced either (confirmed empirically stale for 6+ days while warm-ping
+  // logged "OK: 31 scores" every 8 min — 31 being the empty-baseline Tier-1
+  // count, not a real compute). Catching per-window here restores the
+  // graceful degradation the comment below already assumed was happening.
   const [recent, older] = await Promise.all([
-    fetchAcledCached({ eventTypes, startDate: recentWindow.startDate, endDate: recentWindow.endDate, limit: 1000 }),
-    fetchAcledCached({ eventTypes, startDate: olderWindow.startDate, endDate: olderWindow.endDate, limit: 1000 }),
+    fetchAcledCached({ eventTypes, startDate: recentWindow.startDate, endDate: recentWindow.endDate, limit: 1000 })
+      .catch((err) => {
+        console.warn('[CII] ACLED recent-window fetch failed, degrading to no ACLED signal:', (err as Error)?.message ?? err);
+        return [];
+      }),
+    fetchAcledCached({ eventTypes, startDate: olderWindow.startDate, endDate: olderWindow.endDate, limit: 1000 })
+      .catch((err) => {
+        console.warn('[CII] ACLED older-window fetch failed, degrading to no ACLED signal:', (err as Error)?.message ?? err);
+        return [];
+      }),
   ]);
 
   const toRow = (e: (typeof recent)[number]) => {
@@ -641,12 +668,12 @@ async function fetchACLEDEvents(): Promise<Array<{ country: string; event_type: 
 
   // Surface the otherwise-silent empty case. fetchAcledCached returns [] both
   // when ACLED auth is unconfigured (getAcledAccessToken → null) AND on upstream
-  // failure (API error, rate-limit, timeout). With active conflicts ACLED returns
-  // thousands of events, so 0 from BOTH windows means the conflict realtime signal
-  // is dark — CII then relies on UCDP alone, which (an annual release) can fall
-  // outside the 2-year recency window and flip /api/health.riskScores to
-  // COVERAGE_PARTIAL. The message names both causes so an operator doesn't chase a
-  // phantom auth problem during an ACLED outage.
+  // failure (API error, rate-limit, timeout) via the .catch() above. With active
+  // conflicts ACLED returns thousands of events, so 0 from BOTH windows means the
+  // conflict realtime signal is dark — CII then relies on UCDP alone, which (an
+  // annual release) can fall outside the 2-year recency window and flip
+  // /api/health.riskScores to COVERAGE_PARTIAL. The message names both causes so
+  // an operator doesn't chase a phantom auth problem during an ACLED outage.
   if (recent.length === 0 && older.length === 0) {
     console.warn(
       '[CII] ACLED returned 0 events for both windows — if auth is unconfigured set ACLED_EMAIL/ACLED_PASSWORD (or ACLED_ACCESS_TOKEN) on the api project, else check for an upstream ACLED API error/rate-limit. CII conflict realtime signal-density coverage is falling back to UCDP only.',

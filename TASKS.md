@@ -223,15 +223,30 @@ assume `localhost:3000` works).
    whether to commit before this handoff and the conversation moved to a session transfer instead of
    answering — **do not assume "yes, commit"**; ask the operator explicitly before running `git
    commit`/`git push`, same as every other session's discipline here.
-2. **气候异常 (Climate Anomalies) — cooldown elapsed, worth one retry.** See the dedicated item
-   above (climate section) for full detail: a real reliability bug was fixed and verified partially
-   working, then a second live-test run showed a harder, possibly self-inflicted Open-Meteo block
-   (100% failure on direct AND both proxy legs, vs. the first run's ~50% partial success). As of this
-   handoff it has been several hours since that last attempt — a reasonable cooldown — so trying
-   `node scripts/seed-climate-zone-normals.mjs` once more is reasonable. If it's back to the ~50%
-   partial-success pattern, let it run its full internal retry passes; if it's still 100% blocked on
-   every leg, that's a materially different, harder problem than the code fix targets and needs fresh
-   diagnosis, not more retry-tuning.
+2. **气候异常 (Climate Anomalies) — RE-TESTED session 37, still 100% blocked. Do not retry again
+   without a much longer cooldown or a different egress path.** Ran `node scripts/seed-climate-zone-normals.mjs`
+   once more per this handoff's own suggestion (cooldown had elapsed). Trap hit first: a bare `node
+   scripts/seed-climate-zone-normals.mjs` fails immediately with `Missing UPSTASH_REDIS_REST_URL or
+   UPSTASH_REDIS_REST_TOKEN` — `loadEnvFile()` in `scripts/_seed-utils.mjs` only ever looks for
+   `.env.local` (repo root, one level up, or `~/Documents/GitHub/worldmonitor/.env.local`), never
+   `.env`, and this repo only has `.env`. Confirmed via memory (`local_redis_dev_stack.md`) this is
+   already known: the correct invocation is `node --env-file=.env scripts/<script>.mjs`. Re-ran that
+   way and watched it live end-to-end (well past the first live-test's partial-success point): **15/15
+   batches failed on direct AND both proxy legs (CONNECT + curl) in pass 1**, then pass 2 started
+   repeating the identical batch list from the top and failed the same way again — unanimous, not a
+   fluke on a subset. This is the same "100%-blocked" signature the prior attempt saw, not the earlier
+   ~50%-partial pattern that showed real convergence. Killed the process deliberately mid-pass-2
+   (`kill <pid>`) rather than let it grind through all 4 configured passes against an
+   already-confirmed-blocked endpoint — same "retrying more after a 429 makes it worse" lesson already
+   on record from the GDELT investigation. No partial/corrupt write risk from the kill: the script only
+   writes to Redis after all passes complete, so `climate:zone-normals:v1` is untouched, same absent
+   state as before. **Conclusion: this is no longer a code problem.** The retry-storm bug fix (session
+   36) is real, tested, and already committed — it is not what's blocking this. What's blocking it now
+   is an external Open-Meteo block on this environment's egress (direct IP and both Decodo proxy pools)
+   that isn't clearing with hours-scale cooldowns. Needs either a much longer cooldown (days, not
+   hours) before the next attempt, or a genuinely different egress path — re-running the exact same
+   script again on the same IPs is very unlikely to produce a different result and risks extending the
+   block further.
 3. **GDELT residential-proxy check** — still needs the operator's Decodo dashboard; unchanged from
    session 35, not re-investigated this session (re-confirmed still failing, root cause unchanged).
 4. **Widen timeouts for canada-buys/OFAC** — re-investigated this session, concluded NOT a simple

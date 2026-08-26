@@ -21,8 +21,16 @@ Related Claude memory entries (fuller narrative/context per item):
 verified against real Upstash (item 2), then put through a 7-pass multi-agent code review (item 4) that
 found one genuinely critical bug (a cross-user privacy leak on the new push path) plus several real,
 lower-severity/bigger-scope findings — the critical one and 6 others are fixed and verified; the rest are
-explicitly deferred with reasons, not silently dropped. Two commits so far on branch `local-realtime-sync`
-(not `main`, not pushed) — a third, for this review round's fixes, is pending as of this writing.
+explicitly deferred with reasons, not silently dropped (see item 4's own "genuinely deferred" sub-list —
+that IS the next session's work-list, in priority order). **3 commits, merged to `main` locally (fast-
+forward, clean) — `main` is 3 commits ahead of `origin/main`, NOT pushed**, standing "ask before push"
+discipline. Nothing in this feature is live in production yet: it only runs once an operator's sidecar
+process is restarted (picks up the new `local-api-server.mjs` code) AND `main` is actually pushed/deployed
+— as of this handoff neither has happened, so there is no live behavior to monitor yet, just code sitting
+locally ready to go out. If asked to push, that's the very next natural step; if picking up further work
+instead, start from item 4's deferred list, in the order given (`ctx.waitUntil()` threading is the biggest
+single item — real reliability gap, not a correctness bug, needs its own scoped pass touching ~21+ call
+sites).
 
 1. **Local operator real-time sync — built.** Replaces the "loop the existing full-rescan every 10-15s"
    idea (session 38's other option) entirely — that would have cost ~21M Upstash commands/day/operator
@@ -113,8 +121,8 @@ explicitly deferred with reasons, not silently dropped. Two commits so far on br
    unchanged, +18 new tests (`tests/sync-listener.test.mjs`, after the decodeFrame rewrite) all passing, zero
    regressions.
 4. **Multi-agent code review (7 independent passes) run against the branch, findings verified and the real
-   ones fixed — not committed yet as of this writing.** One finding was a genuine, serious pre-fix bug; the
-   rest were real but lower-severity or out of scope for this pass. Fixed:
+   ones fixed — committed (3rd commit, `0c387ae`) and merged to `main`.** One finding was a genuine, serious
+   pre-fix bug; the rest were real but lower-severity or out of scope for this pass. Fixed:
    - **CRITICAL, fixed**: `isMirroredKey()` (the shared write-side/listener gate) only checked the broad
      `brief:` prefix, with no per-user scoping — `sync:notify` is one global channel every operator's
      sidecar subscribes to identically, so ANY user's private brief content would have been pushed and

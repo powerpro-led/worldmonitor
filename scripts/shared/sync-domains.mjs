@@ -156,9 +156,36 @@ export const SYNC_PREFIXES = [
  */
 const MIRROR_EXCLUDED_PREFIXES = ['forecast:simulation-task'];
 
+/**
+ * `brief:` is the one user-scoped prefix in SYNC_PREFIXES (see local-sync.mjs's
+ * keepKey(), which filters it to the current operator's own userId during the
+ * full rescan — the ONLY reason that prefix is safe to mirror at all). The
+ * real-time push has no equivalent per-recipient filtering: `sync:notify` is
+ * one global Redis Pub/Sub channel every operator's sidecar subscribes to
+ * identically, so there is no publish-time way to say "only User A's laptop
+ * should get this." A `brief:<userId>:<slot>` key must therefore NEVER be
+ * pushed this way — real-time freshness for that one narrow case is
+ * sacrificed in favor of correctness, and it falls back to the full rescan
+ * (which DOES apply keepKey() correctly) instead. `brief:llm:*` is shared,
+ * non-user-scoped LLM output (see shouldEnvelopeKey's own bare/enveloped
+ * split in _seed-utils.mjs) and stays safe to push to everyone.
+ *
+ * Found via a multi-agent code review after the initial implementation —
+ * isMirroredKey() previously only checked the broad `brief:` prefix, which
+ * is true for every user's key, not just the reader's own. Fixed here
+ * rather than in the listener, so both write-side gates (this file's own
+ * notifyChange() and server/_shared/sync-notify.ts's notifyKeyChanged())
+ * refuse to publish it in the first place — the listener's own isMirroredKey
+ * check is real, but only defense in depth, not the primary control.
+ */
+function isUserScopedBriefKey(key) {
+  return key.startsWith('brief:') && !key.startsWith('brief:llm:');
+}
+
 /** True if `key` falls under any mirrored prefix — the shared write/read gate. */
 export function isMirroredKey(key) {
   if (typeof key !== 'string') return false;
+  if (isUserScopedBriefKey(key)) return false;
   if (MIRROR_EXCLUDED_PREFIXES.some((prefix) => key.startsWith(prefix))) return false;
   return SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
 }

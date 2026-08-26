@@ -45,7 +45,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Redis } from '@upstash/redis';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,17 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 // cleanly; reconnecting proactively on silence sidesteps that class of hang
 // entirely instead of trying to detect it after the fact.
 const IDLE_TIMEOUT_MS = 90_000;
+// Separate, generous watchdog for catchUp() specifically — its Redis reads
+// (via the @upstash/redis SDK's default client, no custom retry/signal
+// handling) have no per-request timeout of their own, unlike local-sync.mjs's
+// own withTimeoutRetry() wrapper, which exists precisely because this SDK
+// can hang a request forever with no error ever thrown (see that file's own
+// header comment). A catch-up that's still running after this long abandons
+// the attempt for THIS connection cycle rather than blocking it indefinitely
+// — the cursor only advances as entries are actually applied, so nothing is
+// lost, just deferred to the next reconnect's catch-up or the periodic full
+// reconciliation.
+const CATCHUP_WATCHDOG_MS = 5 * 60_000;
 
 /** Matches local-sync.mjs's READ_FOR_TYPE exactly — same one-command-per-real-type discipline. */
 const READ_FOR_TYPE = {
@@ -225,7 +236,15 @@ async function catchUp(redis) {
  */
 function extractFrames(buffer) {
   const frames = [];
-  const parts = buffer.split('\n\n');
+  // Normalize CRLF/CR to LF first — the SSE spec permits any of \r\n, \r, or
+  // \n as a line terminator, and the live wire format this was verified
+  // against (real Upstash, via curl) happened to use bare \n, but a proxy or
+  // future Upstash change emitting \r\n would otherwise never match the
+  // literal '\n\n' blank-line boundary below (the two \n's would be
+  // separated by \r) — frames would silently never be extracted, looking
+  // connected in the logs while applying nothing.
+  const normalized = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const parts = normalized.split('\n\n');
   const remainder = parts.pop() ?? '';
   for (const part of parts) {
     const dataLines = part
@@ -280,7 +299,8 @@ async function runOneConnection(redis) {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
   };
-  resetIdleTimer();
+  const clearIdleTimer = () => clearTimeout(idleTimer);
+  resetIdleTimer(); // guards the connect handshake below only
 
   let response;
   try {
@@ -290,19 +310,37 @@ async function runOneConnection(redis) {
       signal: controller.signal,
     });
   } catch (err) {
-    clearTimeout(idleTimer);
+    clearIdleTimer();
     throw err;
   }
   if (!response.ok || !response.body) {
-    clearTimeout(idleTimer);
+    clearIdleTimer();
     throw new Error(`subscribe failed: HTTP ${response.status}`);
   }
 
   console.log('[sync-listener] connected — listening for changes');
+  // Timer cleared before catch-up, not left running through it — catchUp()
+  // does its own Redis reads, not SSE stream reads, and can legitimately
+  // take longer than IDLE_TIMEOUT_MS under a large backlog (observed live
+  // during this feature's own verification: a large catch-up abandoned the
+  // freshly-opened connection mid-replay because the connect-phase timer was
+  // still armed, forcing an immediate, avoidable reconnect that just
+  // restarted the same slow catch-up). The timer's job is detecting a
+  // silently-dead STREAM, which doesn't apply until we're actually reading
+  // one below.
+  clearIdleTimer();
   // Catch up AFTER the subscribe connection is open, not before, so a
   // notify published in between can't fall in the gap between the catch-up
-  // read and the subscription taking effect.
-  await catchUp(redis);
+  // read and the subscription taking effect. Raced against its own watchdog
+  // (see CATCHUP_WATCHDOG_MS) rather than left unbounded.
+  await Promise.race([
+    catchUp(redis),
+    new Promise((resolve) => setTimeout(() => {
+      console.warn(`[sync-listener] catch-up exceeded ${CATCHUP_WATCHDOG_MS / 1000}s — abandoning for this connection, will retry next reconnect`);
+      resolve();
+    }, CATCHUP_WATCHDOG_MS)),
+  ]);
+  resetIdleTimer(); // now guards the live read loop, reset on every frame received
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -346,8 +384,16 @@ async function runForever() {
 // Only run when invoked directly (e.g. `node sync-listener.mjs`), not when
 // imported — matches how local-api-server.mjs is expected to start this
 // (see its own wiring), and keeps this file importable for tests without
-// opening a real connection as a side effect.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// opening a real connection as a side effect. pathToFileURL (not a raw
+// `file://${...}` template) so a path needing URL-encoding (spaces,
+// non-ASCII) still compares correctly — same isMainModule() pattern
+// local-api-server.mjs and local-sync.mjs both use.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  return pathToFileURL(process.argv[1]).href === import.meta.url;
+}
+
+if (isMainModule()) {
   runForever();
 }
 

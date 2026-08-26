@@ -1835,13 +1835,16 @@ describe('setCachedJson wire shape and failure reporting', { concurrency: 1 }, (
       const ok = await redis.setCachedJson(key, value, ttl);
 
       assert.equal(ok, true, 'setCachedJson should return true on success');
-      // The SET is the first call; setCachedJson also fires two best-effort,
-      // un-awaited fast-path sync notify calls (PUBLISH sync:notify + XADD
-      // sync:changelog — see server/_shared/sync-notify.ts) for this key,
-      // since news:digest:v1 falls under the mirrored-domain allowlist. This
-      // test only pins the SET's own wire shape, not total call count.
-      assert.ok(captured.length >= 1, 'at least the SET write should be issued');
-      const [req] = captured;
+      // setCachedJson also fires two best-effort, un-awaited fast-path sync
+      // notify calls (PUBLISH sync:notify + XADD sync:changelog — see
+      // server/_shared/sync-notify.ts) for this key, since news:digest:v1
+      // falls under the mirrored-domain allowlist — filter those out rather
+      // than loosen this to "at least one call", so a regression that issues
+      // a duplicate/extra SET is still caught (same pattern as
+      // tests/aviation-cache-poison.test.mts's redisSets filter).
+      const setCalls = captured.filter((c) => JSON.parse(String(c.init.body))[0] === 'SET');
+      assert.equal(setCalls.length, 1, 'exactly one SET write should be issued');
+      const [req] = setCalls;
       assert.equal(req.init.method, 'POST');
       assert.equal(req.url, 'https://redis.test/', 'POST goes to base URL (not /set/...)');
       assert.equal(

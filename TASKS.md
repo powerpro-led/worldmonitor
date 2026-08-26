@@ -17,11 +17,12 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ## 🔀 HANDOFF (2026-08-23, THIRTY-NINTH session) — read this first, supersedes every block below
 
-**TL;DR**: resolves session 38's STILL OPEN item 1 (real-time local-sync mechanism) — implemented, not just
-decided. NOT YET COMMITTED as of this writing (standing "ask before commit/push" discipline). One piece is
-explicitly **unverified against a live Upstash endpoint** — see item 2 below before assuming this works
-end-to-end; everything else is verified (unit tests, full regression suite, real smoke-test boot of the
-sidecar with fake credentials to confirm graceful degradation).
+**TL;DR**: resolves session 38's STILL OPEN item 1 (real-time local-sync mechanism) — implemented, live-
+verified against real Upstash (item 2), then put through a 7-pass multi-agent code review (item 4) that
+found one genuinely critical bug (a cross-user privacy leak on the new push path) plus several real,
+lower-severity/bigger-scope findings — the critical one and 6 others are fixed and verified; the rest are
+explicitly deferred with reasons, not silently dropped. Two commits so far on branch `local-realtime-sync`
+(not `main`, not pushed) — a third, for this review round's fixes, is pending as of this writing.
 
 1. **Local operator real-time sync — built.** Replaces the "loop the existing full-rescan every 10-15s"
    idea (session 38's other option) entirely — that would have cost ~21M Upstash commands/day/operator
@@ -111,6 +112,88 @@ sidecar with fake credentials to confirm graceful degradation).
    two of the new files are untracked) — 57 pre-existing failures unchanged, 34 pre-existing cancellations
    unchanged, +18 new tests (`tests/sync-listener.test.mjs`, after the decodeFrame rewrite) all passing, zero
    regressions.
+4. **Multi-agent code review (7 independent passes) run against the branch, findings verified and the real
+   ones fixed — not committed yet as of this writing.** One finding was a genuine, serious pre-fix bug; the
+   rest were real but lower-severity or out of scope for this pass. Fixed:
+   - **CRITICAL, fixed**: `isMirroredKey()` (the shared write-side/listener gate) only checked the broad
+     `brief:` prefix, with no per-user scoping — `sync:notify` is one global channel every operator's
+     sidecar subscribes to identically, so ANY user's private brief content would have been pushed and
+     written into EVERY operator's local mirror in real time, exactly the leak `local-sync.mjs`'s own
+     `keepKey()` exists to prevent during the full rescan (which was and still is correct — this bug only
+     affected the new push path). Fixed by excluding user-scoped `brief:<userId>:<slot>` keys from the
+     real-time push entirely (they still reach the mirror correctly via the full rescan); `brief:llm:*`
+     (shared, non-user-scoped LLM output) stays pushable. Added regression tests
+     (`tests/sync-domains.test.mjs`) — this case had zero test coverage before.
+   - **Confirmed via the review AND independently already observed live during this session's own
+     verification** (a "connection lost (This operation was aborted)" mid-catch-up that wasn't diagnosed at
+     the time): `sync-listener.mjs`'s idle-timeout watchdog was armed before `catchUp()` ran and never reset
+     during it, so a catch-up backlog taking longer than 90s would self-abort the connection before it ever
+     reached the live read loop. Fixed by clearing the timer before catch-up and only arming it once the
+     live read loop starts. This surfaced a second gap while fixing it: `catchUp()`'s Redis reads had no
+     timeout of their own (the `@upstash/redis` SDK can hang a request forever with no error, per
+     `local-sync.mjs`'s own documented finding) — added a 5-minute watchdog around the whole catch-up call
+     specifically, separate from the stream idle timer.
+   - `sync:changelog` had no `MAXLEN` anywhere — an unbounded-growth stream is the exact cost shape this
+     whole feature was built to avoid. Added an approximate `MAXLEN ~ 10000` trim to both write-side XADD
+     calls.
+   - `tests/redis-caching.test.mjs`'s assertion (loosened to `captured.length >= 1` when the new notify
+     calls were added) properly fixed to filter for the `SET` command specifically, matching the pattern
+     already used in `tests/aviation-cache-poison.test.mts` — restores the ability to catch a duplicate
+     write regression.
+   - The "no existing cross-import path from `server/_shared` into `scripts/`" justification for
+     hand-duplicating `SYNC_PREFIXES`/`isMirroredKey` in `server/_shared/sync-notify.ts` was **factually
+     wrong** — `server/_shared/simulation-queue.ts` already imports from `scripts/_simulation-queue-
+     constants.mjs` the same way, with a header comment confirming esbuild bundles it inline at Vercel
+     build time. Fixed by having `sync-notify.ts` import `isMirroredKey` from
+     `scripts/shared/sync-domains.mjs` directly (new `scripts/shared/sync-domains.d.mts` companion
+     declaration, matching `_simulation-queue-constants.d.mts`'s existing pattern) — removes the whole
+     hand-sync-drift risk class instead of just detecting it after the fact.
+   - `local-sync.mjs` was missing the `isMainModule()`-style guard this codebase's own scripts overwhelmingly
+     use (100+ existing instances) — `main()` ran unconditionally at module load. Added, matching
+     `local-api-server.mjs`'s own `isMainModule()` exactly (`pathToFileURL` comparison, not a raw
+     `file://${...}` template). `sync-listener.mjs`'s own guard was upgraded to the same robust pattern
+     while at it (its original `file://${process.argv[1]}` template comparison could break on paths needing
+     URL-encoding). Verified both fire correctly in both directions (real direct-invocation test, and the
+     existing import-based test suite).
+   - Hardened `extractFrames()` to normalize CRLF/CR to LF before splitting on the blank-line frame
+     boundary — the live verification confirmed real Upstash currently uses bare `\n`, but the SSE spec
+     permits `\r\n`, and a future change or intermediary proxy emitting it would otherwise make frames
+     silently stop being extracted (connection looks healthy in logs, nothing ever applies).
+   - **Genuinely deferred, not fixed this pass — real findings, bigger scope or lower severity:**
+     - `setCachedJson`/`runRedisPipeline` don't accept a `ctx` parameter, so the new fire-and-forget notify
+       fetches can't be registered with `ctx.waitUntil()` — this codebase's own established, documented
+       requirement (`server/_shared/usage.ts`, `server/gateway.ts`) for background work in Vercel Edge
+       handlers to survive past the response phase. Without it, the RPC-side push may be silently dropped
+       by isolate teardown some fraction of the time in production — degrading gracefully to the 6h
+       reconciliation backstop, not a correctness bug, but a real reliability gap. Fixing this properly
+       means threading `ctx` through `setCachedJson`/`runRedisPipeline` and updating ~21+ call sites —
+       real, but a bigger, separate change; needs its own pass.
+     - Several writers bypass both blessed notify choke points entirely via private write helpers
+       (`scripts/seed-military-cii.mjs`'s own `redisSetJson`, several raw `redisCommand()` calls in
+       `scripts/seed-forecasts.mjs` for `forecast:predictions:history:v1`/`conflict:ema-windows:v1`), so
+       those specific mirrored keys never get the real-time push, only the 6h backstop — an asymmetric,
+       silent freshness gap contradicting this session's own "every write path funnels through one of these
+       two" framing. Not a regression (these never had push before either), but incomplete coverage.
+     - `local-sync.mjs`'s full rebuild-and-atomic-rename can silently revert a live push-applied value:
+       a push landing between when the rebuild scanned that prefix and when the rebuild finishes (can be
+       minutes) gets discarded when the rebuild's older snapshot replaces the whole file. Real, but fixing
+       it properly needs a merge policy (e.g. comparing `synced_at` timestamps rather than a blind
+       overwrite), not a quick patch — deferred.
+     - `local-api-server.mjs`'s `close()` doesn't clear the 6h reconciliation `setInterval` or tear down the
+       listener's SSE connection — only matters if the sidecar server is ever created+closed repeatedly
+       in-process (not how it runs in practice today, but relevant if a test or future restart path does
+       this).
+     - `notifyPipelineWrites()` runs synchronously inside `runRedisPipeline`'s existing try block before
+       `return result` — currently defensively type-guarded so it can't throw, but the structural coupling
+       means a future edit that does throw would misreport a successful pipeline write as failed.
+     - In non-production `VERCEL_ENV` (preview/dev), `setCachedJson`'s env-prefixed `finalKey` never matches
+       `SYNC_PREFIXES` (the prefix strings don't start with `preview:<sha>:`), so the RPC-side push is a
+       silent no-op there. Low practical severity — the whole local-mirror system implicitly targets
+       production Upstash already (operators aren't mirroring from preview deployments) — but worth knowing
+       if that assumption ever changes.
+     - Minor: `sync-listener.mjs` and `local-sync.mjs` independently define the identical `kv_cache` DDL —
+       low risk (schema is stable, write logic itself isn't duplicated — one does upsert, the other plain
+       insert into a fresh file), but a future column addition needs remembering to edit both.
 
 ---
 

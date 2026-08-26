@@ -112,7 +112,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Redis } from '@upstash/redis';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SYNC_PREFIXES } from '../../scripts/shared/sync-domains.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -525,9 +525,29 @@ async function main() {
   console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
 }
 
-main().catch((err) => {
-  console.error('[local-sync] FATAL:', err.message);
-  // Discard the half-built scratch file; the live mirror was never touched.
-  fs.rmSync(SQLITE_TMP_PATH, { force: true });
-  process.exit(1);
-});
+// Guards `main()` so importing this module (e.g. from a test, or a future
+// in-process caller) doesn't trigger a real sync as a side effect of the
+// import itself — this codebase's own dominant idiom for a script's entry
+// point (100+ scripts/*.mjs files use the equivalent pattern; matches
+// local-api-server.mjs's own isMainModule()). Missing until a multi-agent
+// code review of the sync feature found it: local-api-server.mjs's
+// startFullReconciliationLoop() spawns this file as a CHILD PROCESS rather
+// than importing+calling it in-process specifically because this guard was
+// absent — spawning is still the right call regardless (a hung run must not
+// be able to wedge the sidecar's own HTTP server, only the child), but this
+// guard removes the "importing this would trigger main() as an unwanted
+// side effect" half of that reasoning, and lets a test import this module
+// safely without a real sync running.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  return pathToFileURL(process.argv[1]).href === import.meta.url;
+}
+
+if (isMainModule()) {
+  main().catch((err) => {
+    console.error('[local-sync] FATAL:', err.message);
+    // Discard the half-built scratch file; the live mirror was never touched.
+    fs.rmSync(SQLITE_TMP_PATH, { force: true });
+    process.exit(1);
+  });
+}

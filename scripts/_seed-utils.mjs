@@ -361,6 +361,13 @@ const SYNC_CHANGELOG_STREAM = 'sync:changelog';
 // instead of inlining the value, so one oversized key can't blow up the
 // PUBLISH payload — the listener does one targeted GET for those instead.
 const SYNC_NOTIFY_MAX_INLINE_BYTES = 16 * 1024;
+// Approximate cap (Redis Streams' '~' trims lazily/cheaply, exact MAXLEN
+// would cost an O(n) scan per write) — without this the stream grows
+// forever, exactly the unbounded-cost shape this whole feature exists to
+// avoid. 10k entries is generous headroom for "an operator's laptop was
+// offline for a while" catch-up while keeping a cold XRANGE (cursor lost or
+// never synced) bounded rather than O(all writes ever).
+const SYNC_CHANGELOG_MAXLEN = 10_000;
 
 async function notifyChange(url, token, key, serializedValue) {
   if (!isMirroredKey(key)) return;
@@ -372,7 +379,7 @@ async function notifyChange(url, token, key, serializedValue) {
     // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
     // its last cursor) knows which read command to issue for each key
     // (GET vs ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
-    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, '*', 'key', key, 'type', 'string']),
+    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', 'string']),
   ]);
 }
 

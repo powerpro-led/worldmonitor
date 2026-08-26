@@ -15,74 +15,31 @@
  * no Node-only builtins (Buffer, node:*). Byte-length uses TextEncoder
  * (Web-standard, available on Edge) instead of Buffer.byteLength.
  *
- * SYNC_PREFIXES below is a deliberate DUPLICATE of
- * scripts/shared/sync-domains.mjs's list, not a cross-import — that file
- * lives in a separate, unbundled Node-script module graph this Edge-bundled
- * file has no existing path into. Keep both in sync by hand; a prefix added
- * to one without the other silently breaks either the full rescan/seed-side
- * push (that file) or the RPC-handler push (this file) for that domain.
+ * isMirroredKey() is imported from scripts/shared/sync-domains.mjs rather
+ * than duplicated — an earlier version of this file hand-copied the whole
+ * allowlist here on the (incorrect) claim that this Edge-bundled file "has
+ * no existing path into scripts/". That was wrong: server/_shared/llm.ts and
+ * server/_shared/simulation-queue.ts already cross-import from scripts/ the
+ * same way (simulation-queue.ts's own header: "esbuild bundles the shim's
+ * contents inline at Vercel build time, so the cross-directory import is
+ * fine on the server side") — same pattern used here. A hand-duplicated copy
+ * had already drifted once in this file's short lifetime (the
+ * forecast:simulation-task* exclusion had to be added to both files by
+ * hand); importing the one real definition removes that whole risk class
+ * instead of just detecting it after the fact.
  */
 
-const SYNC_PREFIXES = [
-  'resilience:',
-  'intelligence:',
-  'energy:',
-  'supply_chain:',
-  'market:',
-  'economic:',
-  'climate:',
-  'portwatch:',
-  'risk:',
-  'rss:',
-  'forecast:',
-  'theater-posture:',
-  'theater_posture:',
-  'summary:',
-  'classify:',
-  'trade:',
-  'comtrade:',
-  'conflict:',
-  'unrest:',
-  'displacement:',
-  'military:',
-  'usni-fleet:',
-  'patents:',
-  'cyber:',
-  'natural:',
-  'seismology:',
-  'radiation:',
-  'thermal:',
-  'weather:',
-  'aviation:',
-  'infra:',
-  'bls:',
-  'insider:',
-  'regulatory:',
-  'correlation:',
-  'research:',
-  'news:',
-  'intel:',
-  'prediction:',
-  'positive-events:',
-  'positive_events:',
-  'brief:',
-];
-
-// Narrow exclusion within the broader `forecast:` prefix — see
-// scripts/shared/sync-domains.mjs's MIRROR_EXCLUDED_PREFIXES (this file's
-// write-side twin) for the full story: forecast:simulation-task* is internal
-// worker-queue bookkeeping, not display data. Keep both lists in sync.
-const MIRROR_EXCLUDED_PREFIXES = ['forecast:simulation-task'];
-
-function isMirroredKey(key: string): boolean {
-  if (MIRROR_EXCLUDED_PREFIXES.some((prefix) => key.startsWith(prefix))) return false;
-  return SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
-}
+import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
 
 const SYNC_NOTIFY_CHANNEL = 'sync:notify';
 const SYNC_CHANGELOG_STREAM = 'sync:changelog';
 const SYNC_NOTIFY_MAX_INLINE_BYTES = 16 * 1024;
 const SYNC_NOTIFY_TIMEOUT_MS = 3_000;
+// Keep in sync with scripts/_seed-utils.mjs's SYNC_CHANGELOG_MAXLEN — see
+// that constant's own comment for why an approximate cap is needed here at
+// all (without it the stream grows forever, exactly the unbounded-cost
+// shape this feature exists to avoid).
+const SYNC_CHANGELOG_MAXLEN = 10_000;
 
 function utf8ByteLength(s: string): number {
   return new TextEncoder().encode(s).length;
@@ -120,7 +77,7 @@ export function notifyKeyChanged(
   const changelog = fetch(`${url}/`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(['XADD', SYNC_CHANGELOG_STREAM, '*', 'key', key, 'type', type]),
+    body: JSON.stringify(['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', type]),
     signal: AbortSignal.timeout(SYNC_NOTIFY_TIMEOUT_MS),
   });
 

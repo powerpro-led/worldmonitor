@@ -214,6 +214,20 @@ const CADENCES: Record<string, Cadence> = {
   // Railway cadence" — confirms the intended cadence was hourly.
   // ──────────────────────────────────────────────────────────────────────
   'seed-global-tenders': { kind: 'every', rate: '1 hours' },
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-08-31 (session 40) — scripts/fetch-gpsjam.mjs was scheduled
+  // NOWHERE (not here, not in nitric.yaml, not in any GitHub workflow),
+  // so any Redis reset wiped `intelligence:gpsjam:v2` and nothing
+  // repopulated it until someone ran the script by hand — /api/gpsjam
+  // 503'd in the meantime. Diagnosed originally at the twenty-ninth-session
+  // TASKS.md entry, re-hit session 40. Cadence source: the script's own
+  // header ("Cadence: daily") backed by REDIS_TTL=172800 ("48h" = 2× a
+  // daily run) — same TTL/reasoning as seed-hs2-chokepoint-exposure above.
+  // Registered by service name `fetch-gpsjam` (the script is fetch-*, not
+  // seed-*; scripts/audit-railway-watch-paths.mjs already whitelists that
+  // exact basename as a seed-command shape).
+  // ──────────────────────────────────────────────────────────────────────
+  'fetch-gpsjam': { kind: 'every', rate: '1 days' },
 };
 
 /**

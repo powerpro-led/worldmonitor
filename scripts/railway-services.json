@@ -544,5 +544,11 @@
     "deployMode": "nixpacks-root-scripts",
     "service": "seed-global-tenders",
     "documentedAt": "TASKS.md \u2014 thirty-fifth session: orphaned seeder sweep \u2014 globalTendersCanadaBuys/globalTendersContractsFinder SEED_ERROR, never registered by session 32's sweep"
+  },
+  {
+    "entry": "scripts/fetch-gpsjam.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "fetch-gpsjam",
+    "documentedAt": "TASKS.md \u2014 fortieth session: scheduled nowhere; any Redis reset wiped intelligence:gpsjam:v2 and /api/gpsjam 503'd until a manual re-run. Cadence 'daily' from the script header (REDIS_TTL 48h = 2\u00d7 daily)"
   }
 ]

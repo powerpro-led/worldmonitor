@@ -60,6 +60,21 @@ services:
   - match: scripts/publish-bootstrap-tiers.mjs
     start: node $SERVICE_PATH --loop
     runtime: publish-bootstrap-tiers
+  - match: scripts/loop-fetch-gpsjam.mjs
+    # Local-dev-only wrapper (see its own header). scripts/fetch-gpsjam.mjs is
+    # scheduled for real by gcp/scheduler/main.ts's CADENCES map ('fetch-gpsjam',
+    # every 1 day) — which `nitric start` DOES load as the `scheduler` service —
+    # but a Nitric schedule().every() first fires only after the interval
+    # elapses, so a fresh `nitric start` (or a local Redis reset) leaves
+    # intelligence:gpsjam:v2 empty and /api/gpsjam 503ing for up to 24h. This
+    # wrapper runs the seeder once immediately, then daily. Reuses the
+    # `scheduler` runtime's own image (full-repo node, whose stated job is
+    # "spawns the existing scripts/seed-*.mjs entries as child processes") via
+    # a same-dockerfile runtime alias below — no new Dockerfile for a
+    # scaffold-only, never-deployed local convenience. Production path is
+    # untouched.
+    start: node $SERVICE_PATH
+    runtime: loop-fetch-gpsjam
   # 3 more always-on services, added 2026-08-06 after discovering (while
   # filling in gcp/scheduler/main.ts's cadences) that these `deployMode:
   # "nixpacks-root-scripts"` registry entries are actually always-on Railway
@@ -81,6 +96,12 @@ runtimes:
     dockerfile: gcp/api/node.dockerfile
     context: .
   scheduler:
+    dockerfile: gcp/scheduler/node.dockerfile
+    context: .
+  # Local-dev-only alias of the scheduler image for scripts/loop-fetch-gpsjam.mjs
+  # (see that service entry above). Same generic full-repo node image; never
+  # built for a real deploy.
+  loop-fetch-gpsjam:
     dockerfile: gcp/scheduler/node.dockerfile
     context: .
   relay:

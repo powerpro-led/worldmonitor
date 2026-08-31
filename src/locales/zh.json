@@ -266,7 +266,6 @@
     "cii": "国家不稳定性",
     "strategicRisk": "战略风险概览",
     "intel": "情报动态",
-    "gdeltIntel": "实时情报",
     "cascade": "基础设施级联",
     "politics": "世界新闻",
     "us": "美国",
@@ -1633,9 +1632,6 @@
       "now": "现在",
       "noEventsIn7Days": "7天内无事件"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>新闻情报</strong>实时全球新闻监测：<ul><li>精选主题分类（冲突、网络安全等）</li><li>100+语言的文章已翻译</li><li>每15分钟更新</li><li>14-day media tone &amp; volume trend per topic</li></ul>来源：GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "来自监控的Telegram OSINT频道的实时信号",
       "loading": "正在连接Telegram中继...",
@@ -2561,9 +2557,6 @@
     "whyItMatters": "重要原因",
     "keyEntities": "关键实体",
     "relatedHeadlines": "相关标题",
-    "liveIntel": "实时情报",
-    "loadingNews": "正在加载全球新闻...",
-    "noCoverage": "无近期全球报道",
     "time": "时间",
     "area": "区域",
     "expires": "过期时间",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "多个区域",
     "trending": "「{{term}}」趋势上升 — {{hours}}小时内{{count}}次提及",
     "eventsDetected": "在区域（{{lat}}°, {{lon}}°）检测到{{count}}个事件"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "军事活动",
-        "description": "军事演习、部署和行动"
-      },
-      "cyber": {
-        "name": "网络威胁",
-        "description": "网络攻击、勒索软件和数字威胁"
-      },
-      "nuclear": {
-        "name": "核事务",
-        "description": "核计划、IAEA核查、防扩散"
-      },
-      "sanctions": {
-        "name": "制裁",
-        "description": "经济制裁和贸易限制"
-      },
-      "intelligence": {
-        "name": "情报",
-        "description": "间谍活动、情报行动、监控"
-      },
-      "maritime": {
-        "name": "海上安全",
-        "description": "海军行动、海上咽喉要道、航线"
-      }
-    }
   },
   "common": {
     "loading": "加载中...",

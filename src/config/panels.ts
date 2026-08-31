@@ -31,7 +31,6 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   cii: { name: 'Country Instability', enabled: true, priority: 1, ...(_desktop && { premium: 'enhanced' as const }) },
   'strategic-risk': { name: 'Strategic Risk Overview', enabled: true, priority: 1, ...(_desktop && { premium: 'enhanced' as const }) },
   intel: { name: 'Intel Feed', enabled: true, priority: 1 },
-  'gdelt-intel': { name: 'Live Intelligence', enabled: true, priority: 1, ...(_desktop && { premium: 'enhanced' as const }) },
   cascade: { name: 'Infrastructure Cascade', enabled: true, priority: 1 },
   'military-correlation': { name: 'Force Posture', enabled: true, priority: 2 },
   'escalation-correlation': { name: 'Escalation Monitor', enabled: true, priority: 2 },
@@ -1337,7 +1336,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   // shared with the energy variant, which has no dedicated category block.
   intelligence: {
     labelKey: 'header.panelCatIntelligence',
-    panelKeys: ['cii', 'strategic-risk', 'threat-timeline', 'intel', 'gdelt-intel', 'cascade', 'telegram-intel', 'forecast', 'cross-source-signals', 'regional-intelligence', 'deduction', 'chat-analyst', 'thermal-escalation', 'social-velocity', 'geo-hubs'],
+    panelKeys: ['cii', 'strategic-risk', 'threat-timeline', 'intel', 'cascade', 'telegram-intel', 'forecast', 'cross-source-signals', 'regional-intelligence', 'deduction', 'chat-analyst', 'thermal-escalation', 'social-velocity', 'geo-hubs'],
     variants: ['full'],
   },
   correlation: {

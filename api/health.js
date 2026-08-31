@@ -102,7 +102,6 @@ const BOOTSTRAP_KEYS = {
   weatherAlerts:     'weather:alerts:v1',
   spending:          'economic:spending:v1',
   techEvents:        'research:tech-events-bootstrap:v1',
-  gdeltIntel:        'intelligence:gdelt-intel:v1',
   correlationCards:   'correlation:cards-bootstrap:v1',
   forecasts:         'forecast:predictions:v2',
   forecastsBootstrap: 'forecast:predictions-bootstrap:v1',
@@ -443,7 +442,14 @@ const SEED_META = {
   globalTendersWorldBank:       { key: 'seed-meta:economic:global-tenders:world-bank',       maxStaleMin: 180 },
   techEvents:       { key: 'seed-meta:research:tech-events',       maxStaleMin: 480 },
   researchArxivHnTrending: { key: 'seed-meta:research:arxiv-hn-trending', maxStaleMin: 150 },
-  gdeltIntel:       { key: 'seed-meta:intelligence:gdelt-intel',   maxStaleMin: 720 }, // 6h cron; 12h staleness = 2× cadence = 1 missed tick + cron jitter, alerts at 2 missed ticks. Bumped from 420 (1.16× cadence, virtually zero margin) on 2026-05-12 after the same Railway-deploy-preempted-tick pattern that hit resilienceIntervals on 2026-05-10 (PR #3652): seedAgeMin=467 vs maxStale=420 → ~1min UptimeRobot WARNING flip when a deploy preempted the 15:00 UTC tick. CACHE_TTL is 24h so per-topic merge always has a prior snapshot even at the upper end of the new budget.
+  // Retargeted 2026-08-31: the dedicated GDELT intel seeder (scripts/seed-gdelt-intel.mjs)
+  // and its key intelligence:gdelt-intel:v1 were removed with the "实时情报" panel. The
+  // frontend still maps this check to the `gdelt` source (health-freshness-map.ts), which
+  // is `requiredForRisk` in CORE_SOURCES and drives the Strategic Risk / CII / Intel panel
+  // freshness badges — so the check must stay, pointed at a LIVE key. news:insights is the
+  // news-intelligence aggregate (includes GDELT-derived signal) and is seeded every 30min;
+  // 720min keeps the same generous 2-missed-tick budget the old entry carried.
+  gdeltIntel:       { key: 'seed-meta:news:insights',             maxStaleMin: 720 },
   telegramFeed:     { key: 'seed-meta:intelligence:telegram-feed:v1', maxStaleMin: 10 }, // 60s poll interval; 10min grace catches poll failures before they go stale in the panel
   digestNotifications: { key: 'seed-meta:digest:last-run',          maxStaleMin: 90 }, // Railway digest-notifications cron runs every 30min; 90 = 3x cadence and detects a dead cron before daily digests are missed.
   forecasts:        { key: 'seed-meta:forecast:predictions',       maxStaleMin: 90 },

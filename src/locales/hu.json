@@ -335,7 +335,6 @@
     "cii": "Ország Instabilitása",
     "strategicRisk": "Stratégiai Kockázat Áttekintés",
     "intel": "Intel Feed",
-    "gdeltIntel": "Élő Hírszerzés",
     "cascade": "Infrastruktúra Kaszkád",
     "politics": "Világháber",
     "us": "Egyesült Államok",
@@ -1773,9 +1772,6 @@
       "now": "most",
       "noEventsIn7Days": "Nincs esemény az utolsó 7 napban"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>Hírhírszerzés</strong> Valós idejű globális hírellenőrzés:<ul><li>Kuratált témakategóriák (konfliktusok, kibervédelem stb.)</li><li>Cikkek 100+ nyelvről lefordítva</li><li>Frissítések 15 percenként</li><li>14 napos médiahang és térfogat-trend témánként</li><li>14 napos médiahang és térfogat-trend témánként</li></ul>Forrás: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Valós idejű jelek a figyelt Telegram OSINT csatornákból",
       "loading": "Csatlakozás a Telegram relé-hez...",
@@ -2629,9 +2625,6 @@
     "whyItMatters": "MIÉRT FONTOS",
     "keyEntities": "KULCSFONTOSSÁGÚ SZEREPLŐK",
     "relatedHeadlines": "KAPCSOLÓDÓ HÍREK",
-    "liveIntel": "Élő hírszerzés",
-    "loadingNews": "Globális hírek betöltése...",
-    "noCoverage": "Nincs friss globális bejelentés",
     "time": "Idő",
     "area": "Terület",
     "expires": "Lejár",
@@ -2994,34 +2987,6 @@
     "multipleRegions": "Több régió",
     "trending": "„{{term}}\" Trending - {{count}} említés {{hours}}h alatt",
     "eventsDetected": "{{count}} esemény észlelve a régióban ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Katonai Aktivitás",
-        "description": "Katonai gyakorlatok, telepítések és műveletek"
-      },
-      "cyber": {
-        "name": "Kibernetikai Fenyegetések",
-        "description": "Kibernetikai támadások, zsarolóvírusok és digitális fenyegetések"
-      },
-      "nuclear": {
-        "name": "Nukleáris",
-        "description": "Nukleáris programok, IAEA-inspekciók, terjedés"
-      },
-      "sanctions": {
-        "name": "Szankciók",
-        "description": "Gazdasági szankciók és kereskedelmi korlátozások"
-      },
-      "intelligence": {
-        "name": "Hírszerzés",
-        "description": "Kémkedés, hírszerzési műveletek, megfigyelés"
-      },
-      "maritime": {
-        "name": "Tengeri Biztonság",
-        "description": "Haditengerészeti műveletek, tengeri szűk helyek, hajózási útvonalak"
-      }
-    }
   },
   "common": {
     "loading": "Betöltés...",

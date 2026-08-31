@@ -67,7 +67,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
       'strategic-posture',
       'cii',
       'strategic-risk',
-      'gdelt-intel',
       'cascade',
       'military-correlation',
       'escalation-correlation',
@@ -179,7 +178,6 @@ export const MISSION_PRESETS: readonly MissionPreset[] = [
     timeRange: '24h',
     panels: [
       'map',
-      'gdelt-intel',
       'intel',
       'politics',
       'middleeast',

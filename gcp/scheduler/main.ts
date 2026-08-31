@@ -189,7 +189,6 @@ const CADENCES: Record<string, Cadence> = {
   'seed-forecast-bets': { kind: 'every', rate: '1 days' }, // header: "mirrors the seed-forecast-resolutions service" (registered daily above)
   'seed-fuel-prices': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
   'seed-fx-rates': { kind: 'every', rate: '1 days' }, // TTL=25*3600 "25 hours — covers daily cron with 1h drift buffer"
-  'seed-gdelt-intel': { kind: 'cron', expr: '0 */2 * * *' }, // TTL=86400 "24h — intentionally much longer than the 2h cron"
   'seed-grocery-basket': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
   'seed-hormuz': { kind: 'cron', expr: '0 6 * * *' }, // header: "Cron: every 24 hours (0 6 * * *)"
   'seed-military-flights': { kind: 'every', rate: '10 minutes' }, // LIVE_TTL=600 (10min); health maxStaleMin=30

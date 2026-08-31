@@ -5000,7 +5000,6 @@ export class DeckGLMap {
         x: info.x,
         y: info.y,
       });
-      this.popup.loadHotspotGdeltContext(hotspot);
       this.onHotspotClick?.(hotspot);
       return;
     }
@@ -7251,7 +7250,6 @@ export class DeckGLMap {
       x,
       y,
     });
-    this.popup.loadHotspotGdeltContext(hotspot);
     this.onHotspotClick?.(hotspot);
   }
 

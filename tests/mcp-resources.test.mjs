@@ -784,7 +784,7 @@ describe('api/mcp.ts — resources capability + stability + auth-symmetry', () =
     const cases = [
       {
         uri: 'ui://worldmonitor/news-intelligence.html', hostId: 'list',
-        missing: { data: { 'gdelt-intel': {} } },
+        missing: { data: {} },
         empty: { data: { insights: { topStories: [] } } },
         emptyCopy: /No news stories available\./,
       },

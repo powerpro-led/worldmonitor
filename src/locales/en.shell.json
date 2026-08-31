@@ -98,7 +98,6 @@
     "cii": "Country Instability",
     "strategicRisk": "Strategic Risk Overview",
     "intel": "Intel Feed",
-    "gdeltIntel": "Live Intelligence",
     "cascade": "Infrastructure Cascade",
     "politics": "World News",
     "us": "United States",
@@ -581,9 +580,6 @@
     },
     "fuelPrices": {
       "infoTooltip": "<strong>Fuel Prices</strong> Retail pump prices for gasoline and diesel across 30+ countries, normalized to USD/liter for comparison. Prices are sourced from official government open-data programs and updated weekly. Cheapest and most expensive countries are highlighted. WoW change shown when prior week data is available."
-    },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Real-time global news monitoring:<ul><li>Curated topic categories (conflicts, cyber, etc.)</li><li>Articles from 100+ languages translated</li><li>Updates every 15 minutes</li><li>14-day media tone &amp; volume trend per topic</li><li>14-day media tone &amp; volume trend per topic</li></ul>Source: GDELT Project (gdeltproject.org)"
     },
     "geoHubs": {
       "infoTooltip": "<strong>Geopolitical Activity Hubs</strong><br>Shows regions with the most news activity.<br><br><em>Hub types:</em><br>• 🏛️ Capitals — World capitals and government centers<br>• ⚔️ Conflict Zones — Active conflict areas<br>• ⚓ Strategic — Chokepoints and key regions<br>• 🏢 Organizations — UN, NATO, IAEA, etc.<br><br><em>Activity levels:</em><br>• <span style=\"color: {{highColor}}\">High</span> — Breaking news or 70+ score<br>• <span style=\"color: {{elevatedColor}}\">Elevated</span> — Score 40-69<br>• <span style=\"color: {{lowColor}}\">Low</span> — Score below 40<br><br>Click a hub to zoom to its location."

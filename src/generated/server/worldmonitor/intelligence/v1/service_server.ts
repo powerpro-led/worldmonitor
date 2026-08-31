@@ -144,30 +144,6 @@ export interface BriefSource {
   publishedAt: string;
 }
 
-export interface SearchGdeltDocumentsRequest {
-  query: string;
-  maxRecords: number;
-  timespan: string;
-  toneFilter: string;
-  sort: string;
-}
-
-export interface SearchGdeltDocumentsResponse {
-  articles: GdeltArticle[];
-  query: string;
-  error: string;
-}
-
-export interface GdeltArticle {
-  title: string;
-  url: string;
-  source: string;
-  date: string;
-  image: string;
-  language: string;
-  tone: number;
-}
-
 export interface DeductSituationRequest {
   query: string;
   geoContext: string;
@@ -406,23 +382,6 @@ export interface SecurityAdvisoryItem {
   sourceCountry: string;
   level: string;
   country: string;
-}
-
-export interface GetGdeltTopicTimelineRequest {
-  topic: string;
-}
-
-export interface GetGdeltTopicTimelineResponse {
-  topic: string;
-  tone: GdeltTimelinePoint[];
-  vol: GdeltTimelinePoint[];
-  fetchedAt: string;
-  error: string;
-}
-
-export interface GdeltTimelinePoint {
-  date: string;
-  value: number;
 }
 
 export interface ListCrossSourceSignalsRequest {
@@ -936,7 +895,6 @@ export interface IntelligenceServiceHandler {
   classifyEvent(ctx: ServerContext, req: ClassifyEventRequest): Promise<ClassifyEventResponse>;
   getCountryRisk(ctx: ServerContext, req: GetCountryRiskRequest): Promise<GetCountryRiskResponse>;
   getCountryIntelBrief(ctx: ServerContext, req: GetCountryIntelBriefRequest): Promise<GetCountryIntelBriefResponse>;
-  searchGdeltDocuments(ctx: ServerContext, req: SearchGdeltDocumentsRequest): Promise<SearchGdeltDocumentsResponse>;
   deductSituation(ctx: ServerContext, req: DeductSituationRequest): Promise<DeductSituationResponse>;
   listSatellites(ctx: ServerContext, req: ListSatellitesRequest): Promise<ListSatellitesResponse>;
   listGpsInterference(ctx: ServerContext, req: ListGpsInterferenceRequest): Promise<ListGpsInterferenceResponse>;
@@ -946,7 +904,6 @@ export interface IntelligenceServiceHandler {
   listCompanySignals(ctx: ServerContext, req: ListCompanySignalsRequest): Promise<ListCompanySignalsResponse>;
   getCountryFacts(ctx: ServerContext, req: GetCountryFactsRequest): Promise<GetCountryFactsResponse>;
   listSecurityAdvisories(ctx: ServerContext, req: ListSecurityAdvisoriesRequest): Promise<ListSecurityAdvisoriesResponse>;
-  getGdeltTopicTimeline(ctx: ServerContext, req: GetGdeltTopicTimelineRequest): Promise<GetGdeltTopicTimelineResponse>;
   listCrossSourceSignals(ctx: ServerContext, req: ListCrossSourceSignalsRequest): Promise<ListCrossSourceSignalsResponse>;
   listMarketImplications(ctx: ServerContext, req: ListMarketImplicationsRequest): Promise<ListMarketImplicationsResponse>;
   getSocialVelocity(ctx: ServerContext, req: GetSocialVelocityRequest): Promise<GetSocialVelocityResponse>;
@@ -1181,57 +1138,6 @@ export function createIntelligenceServiceRoutes(
 
           const result = await handler.getCountryIntelBrief(ctx, body);
           return new Response(JSON.stringify(result as GetCountryIntelBriefResponse), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        } catch (err: unknown) {
-          if (err instanceof ValidationError) {
-            return new Response(JSON.stringify({ violations: err.violations }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-          if (options?.onError) {
-            return options.onError(err, req);
-          }
-          const message = err instanceof Error ? err.message : String(err);
-          return new Response(JSON.stringify({ message }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/intelligence/v1/search-gdelt-documents",
-      handler: async (req: Request): Promise<Response> => {
-        try {
-          const pathParams: Record<string, string> = {};
-          const url = new URL(req.url, "http://localhost");
-          const params = url.searchParams;
-          const body: SearchGdeltDocumentsRequest = {
-            query: params.get("query") ?? "",
-            maxRecords: Number(params.get("max_records") ?? "0"),
-            timespan: params.get("timespan") ?? "",
-            toneFilter: params.get("tone_filter") ?? "",
-            sort: params.get("sort") ?? "",
-          };
-          if (options?.validateRequest) {
-            const bodyViolations = options.validateRequest("searchGdeltDocuments", body);
-            if (bodyViolations) {
-              throw new ValidationError(bodyViolations);
-            }
-          }
-
-          const ctx: ServerContext = {
-            request: req,
-            pathParams,
-            headers: Object.fromEntries(req.headers.entries()),
-          };
-
-          const result = await handler.searchGdeltDocuments(ctx, body);
-          return new Response(JSON.stringify(result as SearchGdeltDocumentsResponse), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
@@ -1645,53 +1551,6 @@ export function createIntelligenceServiceRoutes(
 
           const result = await handler.listSecurityAdvisories(ctx, body);
           return new Response(JSON.stringify(result as ListSecurityAdvisoriesResponse), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        } catch (err: unknown) {
-          if (err instanceof ValidationError) {
-            return new Response(JSON.stringify({ violations: err.violations }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-          if (options?.onError) {
-            return options.onError(err, req);
-          }
-          const message = err instanceof Error ? err.message : String(err);
-          return new Response(JSON.stringify({ message }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/intelligence/v1/get-gdelt-topic-timeline",
-      handler: async (req: Request): Promise<Response> => {
-        try {
-          const pathParams: Record<string, string> = {};
-          const url = new URL(req.url, "http://localhost");
-          const params = url.searchParams;
-          const body: GetGdeltTopicTimelineRequest = {
-            topic: params.get("topic") ?? "",
-          };
-          if (options?.validateRequest) {
-            const bodyViolations = options.validateRequest("getGdeltTopicTimeline", body);
-            if (bodyViolations) {
-              throw new ValidationError(bodyViolations);
-            }
-          }
-
-          const ctx: ServerContext = {
-            request: req,
-            pathParams,
-            headers: Object.fromEntries(req.headers.entries()),
-          };
-
-          const result = await handler.getGdeltTopicTimeline(ctx, body);
-          return new Response(JSON.stringify(result as GetGdeltTopicTimelineResponse), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });

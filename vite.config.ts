@@ -96,7 +96,7 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   UcdpEvents: 'panels-defense',
   // News / feeds / briefs
   BreakthroughsTicker: 'panels-news', ClimateNews: 'panels-news',
-  DailyMarketBrief: 'panels-news', GdeltIntel: 'panels-news',
+  DailyMarketBrief: 'panels-news',
   GoodThingsDigest: 'panels-news', LatestBrief: 'panels-news',
   News: 'panels-news',
   PositiveNewsFeed: 'panels-news', TelegramIntel: 'panels-news',
@@ -1524,12 +1524,6 @@ export default defineConfig(({ mode }) => {
           target: 'https://msi.nga.mil',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/nga-msi/, ''),
-        },
-        // GDELT GEO 2.0 API - Global event data
-        '/api/gdelt': {
-          target: 'https://api.gdeltproject.org',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/gdelt/, ''),
         },
         // AISStream WebSocket proxy for live vessel tracking
         '/ws/aisstream': {

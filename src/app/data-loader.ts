@@ -154,8 +154,6 @@ import { fetchConservationWins } from '@/services/conservation-data';
 import { checkMilestones } from '@/services/celebration';
 import { fetchHappinessScores } from '@/services/happiness-data';
 import { fetchRenewableInstallations } from '@/services/renewable-installations';
-import { filterBySentiment } from '@/services/sentiment-gate';
-import { fetchAllPositiveTopicIntelligence } from '@/services/gdelt-intel';
 import { fetchPositiveGeoEvents, geocodePositiveNewsItems, type PositiveGeoEvent } from '@/services/positive-events-geo';
 import type { HappyContentCategory } from '@/services/positive-classifier';
 import { fetchKindnessData } from '@/services/kindness-data';
@@ -3770,31 +3768,11 @@ export class DataLoaderManager implements AppModule {
     const curated = [...this.ctx.happyAllItems];
     this.callPanel('positive-feed', 'renderPositiveNews', curated);
 
-    let supplementary: NewsItem[] = [];
-    try {
-      const gdeltTopics = await fetchAllPositiveTopicIntelligence();
-      const gdeltItems: NewsItem[] = gdeltTopics.flatMap(topic =>
-        topic.articles.map(article => ({
-          source: 'GDELT',
-          title: article.title,
-          link: article.url,
-          pubDate: article.date ? new Date(article.date) : new Date(),
-          isAlert: false,
-          imageUrl: article.image || undefined,
-          happyCategory: classifyNewsItem('GDELT', article.title),
-        }))
-      );
-
-      supplementary = await filterBySentiment(gdeltItems);
-    } catch (err) {
-      console.warn('[App] Happy supplementary pipeline failed, using curated only:', err);
-    }
-
-    if (supplementary.length > 0) {
-      const merged = [...curated, ...supplementary];
-      merged.sort((a, b) => effectivePubDateMs(b) - effectivePubDateMs(a));
-      this.callPanel('positive-feed', 'renderPositiveNews', merged);
-    }
+    // The GDELT positive-topic supplementary merge that used to run here was
+    // removed 2026-08-31 along with the rest of the GDELT intelligence surface —
+    // it queried topics that were never in the seeded cache, so it had always
+    // returned seed-unavailable and never actually contributed items. The
+    // curated RSS feed (happyAllItems) is the sole source now.
 
     const scienceSources = ['GNN Science', 'ScienceDaily', 'Nature News', 'Live Science', 'New Scientist', 'Singularity Hub', 'Human Progress', 'Greater Good (Berkeley)'];
     const scienceItems = this.ctx.happyAllItems.filter(item =>

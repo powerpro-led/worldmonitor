@@ -32,13 +32,9 @@ export {
 } from '../threat-classifier';
 export type { ThreatClassification, ThreatLevel, EventCategory } from '../threat-classifier';
 
-// GDELT intelligence
-export {
-  fetchGdeltArticles,
-  fetchTopicIntelligence,
-  fetchAllTopicIntelligence,
-  fetchHotspotContext,
-  formatArticleDate,
-  extractDomain,
-} from '../gdelt-intel';
-export type { GdeltArticle } from '../gdelt-intel';
+// GDELT intelligence removed entirely 2026-08-31 — GdeltIntelPanel ("实时情报"),
+// MapPopup hotspot context, AND the Good News Explorer positive-topic path
+// (fetchAllPositiveTopicIntelligence + the search-gdelt-documents RPC). The
+// positive-topic path had never actually worked: it queried topics that were
+// never in the seeded cache, so it always returned seed-unavailable. See
+// TASKS.md's FORTIETH-session HANDOFF.

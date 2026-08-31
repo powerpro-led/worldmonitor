@@ -268,7 +268,6 @@
     "cii": "Instabilitate Națională",
     "strategicRisk": "Prezentare generală a riscurilor strategice",
     "intel": "Flux informații",
-    "gdeltIntel": "Informații în timp real",
     "cascade": "Efecte de Cascadă",
     "politics": "Știri Mondiale",
     "us": "Statele Unite",
@@ -1636,9 +1635,6 @@
       "now": "acum",
       "noEventsIn7Days": "Niciun eveniment în 7 zile"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Monitorizare în timp real a știrilor globale:<ul><li>Categorii de subiecte selectate (conflicte, cibernetice etc.)</li><li>Articole din peste 100 de limbi traduse</li><li>Actualizări la fiecare 15 minute</li><li>14-day media tone &amp; volume trend per topic</li></ul>Sursa: Proiectul GDELT (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Semnale în timp real de la canalele monitorizate Telegram OSINT",
       "loading": "Se conectează la releul Telegram...",
@@ -2579,9 +2575,6 @@
     "whyItMatters": "DE CE CONTEZA",
     "keyEntities": "ENTITĂȚI CHEIE",
     "relatedHeadlines": "TITURI ÎNFERATE",
-    "liveIntel": "Live Intelligence",
-    "loadingNews": "Se încarcă știri globale...",
-    "noCoverage": "Nicio acoperire globală recentă",
     "time": "Ora",
     "area": "Zona",
     "expires": "Expiră",
@@ -2944,34 +2937,6 @@
     "multipleRegions": "Regiuni multiple",
     "trending": "Tendințe „{{term}}” - {{count}} mențiuni în {{hours}}h",
     "eventsDetected": "{{count}} evenimente detectate în regiune ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Activitate militară",
-        "description": "Exerciții militare, desfășurari și operațiuni"
-      },
-      "cyber": {
-        "name": "Amenințări cibernetice",
-        "description": "Atacuri cibernetice, ransomware și amenințări digitale"
-      },
-      "nuclear": {
-        "name": "Nuclear",
-        "description": "Programe nucleare, inspecții AIEA, proliferare"
-      },
-      "sanctions": {
-        "name": "Sancțiuni",
-        "description": "Sancțiuni economice și restricții comerciale"
-      },
-      "intelligence": {
-        "name": "Informații",
-        "description": "Spionaj, operațiuni de informații, supraveghere"
-      },
-      "maritime": {
-        "name": "Securitatea Maritimă",
-        "description": "Operațiuni navale, puncte de sufocare maritime, căi maritime"
-      }
-    }
   },
   "common": {
     "loading": "Se încarcă...",

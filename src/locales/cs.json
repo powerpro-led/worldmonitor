@@ -270,7 +270,6 @@
     "cii": "Nestabilita zemí",
     "strategicRisk": "Přehled strategických rizik",
     "intel": "Zpravodajský kanál",
-    "gdeltIntel": "Živé zpravodajství",
     "cascade": "Kaskáda infrastruktury",
     "politics": "Světové zprávy",
     "us": "Spojené státy",
@@ -1618,9 +1617,6 @@
       "now": "nyní",
       "noEventsIn7Days": "Žádné události za 7 dní"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>Zpravodajství o zprávách</strong> Globální sledování zpráv v reálném čase:<ul><li>Vybrané tematické kategorie (konflikty, kybernetika atd.)</li><li>Články ze 100+ jazyků přeloženy</li><li>Aktualizace každých 15 minut</li><li>14-day media tone &amp; volume trend per topic</li></ul>Zdroj: Projekt GDELT (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Signály v reálném čase z monitorovaných OSINT kanálů Telegramu",
       "loading": "Připojování k relé Telegramu...",
@@ -2589,9 +2585,6 @@
     "whyItMatters": "PROČ JE TO DŮLEŽITÉ",
     "keyEntities": "KLÍČOVÉ SUBJEKTY",
     "relatedHeadlines": "SOUVISEJÍCÍ TITULKY",
-    "liveIntel": "Živé zpravodajství",
-    "loadingNews": "Načítání globálních zpráv...",
-    "noCoverage": "Žádné nedávné globální pokrytí",
     "time": "Čas",
     "area": "Oblast",
     "expires": "Vyprší",
@@ -2962,34 +2955,6 @@
     "multipleRegions": "Více regionů",
     "trending": "„{{term}}“ je trendy - {{count}} zmínek za {{hours}} h",
     "eventsDetected": "V regionu ({{lat}}°, {{lon}}°) bylo detekováno událostí: {{count}}"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Vojenská aktivita",
-        "description": "Vojenská cvičení, nasazení a operace"
-      },
-      "cyber": {
-        "name": "Kybernetické hrozby",
-        "description": "Kybernetické útoky, ransomware a digitální hrozby"
-      },
-      "nuclear": {
-        "name": "Jaderné hrozby",
-        "description": "Jaderné programy, inspekce MAAE, šíření"
-      },
-      "sanctions": {
-        "name": "Sankce",
-        "description": "Ekonomické sankce a obchodní omezení"
-      },
-      "intelligence": {
-        "name": "Zpravodajství",
-        "description": "Špionáž, zpravodajské operace, sledování"
-      },
-      "maritime": {
-        "name": "Námořní bezpečnost",
-        "description": "Námořní operace, úzká hrdla na moři, námořní trasy"
-      }
-    }
   },
   "common": {
     "loading": "Načítání...",

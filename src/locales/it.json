@@ -267,7 +267,6 @@
     "cii": "Instabilità del paese",
     "strategicRisk": "Panoramica dei rischi strategici",
     "intel": "Feed di intelligence",
-    "gdeltIntel": "Intelligence in tempo reale",
     "cascade": "Cascata infrastrutturale",
     "politics": "Notizie mondiali",
     "us": "Stati Uniti",
@@ -1447,9 +1446,6 @@
         "stale": "obsoleto"
       }
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Monitoraggio delle notizie globali in tempo reale:<ul><li>Categorie di argomenti selezionate (conflitti, cyber, ecc.)</li><li>Articoli da oltre 100 lingue tradotte</li><li>Aggiornamenti ogni 15 minuti</li><li>14-day media tone &amp; volume trend per topic</li></ul>Fonte: Progetto GDELT (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Segnali in tempo reale dai canali OSINT Telegram monitorati",
       "loading": "Connessione al relay Telegram...",
@@ -2570,9 +2566,6 @@
     "whyItMatters": "PERCHÉ È IMPORTANTE",
     "keyEntities": "ENTITÀ CHIAVE",
     "relatedHeadlines": "TITOLI CORRELATI",
-    "liveIntel": "Intelligence in tempo reale",
-    "loadingNews": "Caricamento notizie globali...",
-    "noCoverage": "Nessuna copertura globale recente",
     "time": "Ora",
     "area": "Zona",
     "expires": "Scade",
@@ -2944,34 +2937,6 @@
     "multipleRegions": "Regioni multiple",
     "trending": "\"{{term}}\" in tendenza — {{count}} menzioni in {{hours}}h",
     "eventsDetected": "{{count}} eventi rilevati nella regione ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Attività militare",
-        "description": "Esercitazioni militari, dispiegamenti e operazioni"
-      },
-      "cyber": {
-        "name": "Minacce informatiche",
-        "description": "Attacchi informatici, ransomware e minacce digitali"
-      },
-      "nuclear": {
-        "name": "Nucleare",
-        "description": "Programmi nucleari, ispezioni AIEA, proliferazione"
-      },
-      "sanctions": {
-        "name": "Sanzioni",
-        "description": "Sanzioni economiche e restrizioni commerciali"
-      },
-      "intelligence": {
-        "name": "Intelligence",
-        "description": "Spionaggio, operazioni di intelligence, sorveglianza"
-      },
-      "maritime": {
-        "name": "Sicurezza marittima",
-        "description": "Operazioni navali, punti di strozzatura marittimi, rotte marittime"
-      }
-    }
   },
   "common": {
     "loading": "Caricamento...",

@@ -265,7 +265,6 @@
     "cii": "Länderinstabilität",
     "strategicRisk": "Strategischer Risikoüberblick",
     "intel": "Nachrichten-Feed",
-    "gdeltIntel": "Live-Intelligence",
     "cascade": "Infrastruktur-Kaskade",
     "politics": "Weltnachrichten",
     "us": "Vereinigte Staaten",
@@ -1445,9 +1444,6 @@
         "stale": "stale"
       }
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Globale Nachrichtenüberwachung in Echtzeit:<ul><li>Kuratierte Themenkategorien (Konflikte, Cyber ​​usw.)</li><li>Artikel aus über 100 Sprachen übersetzt</li><li>Aktualisierungen alle 15 Minuten</li><li>14-day media tone &amp; volume trend per topic</li></ul>Quelle: GDELT-Projekt (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Echtzeit-Signale aus überwachten Telegram-OSINT-Kanälen",
       "loading": "Verbindung zum Telegram-Relay wird hergestellt...",
@@ -2552,9 +2548,6 @@
     "whyItMatters": "WARUM ES WICHTIG IST",
     "keyEntities": "SCHLÜSSELAKTEURE",
     "relatedHeadlines": "VERWANDTE SCHLAGZEILEN",
-    "liveIntel": "Live-Intelligence",
-    "loadingNews": "Globale Nachrichten laden...",
-    "noCoverage": "Keine aktuelle globale Berichterstattung",
     "time": "Zeit",
     "area": "Gebiet",
     "expires": "Läuft ab",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "Mehrere Regionen",
     "trending": "\"{{term}}\" im Trend — {{count}} Erwähnungen in {{hours}}h",
     "eventsDetected": "{{count}} Ereignisse in der Region erkannt ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Militärische Aktivität",
-        "description": "Militärübungen, Einsätze und Operationen"
-      },
-      "cyber": {
-        "name": "Cyberbedrohungen",
-        "description": "Cyberangriffe, Ransomware und digitale Bedrohungen"
-      },
-      "nuclear": {
-        "name": "Nuklear",
-        "description": "Nuklearprogramme, IAEA-Inspektionen, Proliferation"
-      },
-      "sanctions": {
-        "name": "Sanktionen",
-        "description": "Wirtschaftssanktionen und Handelsbeschränkungen"
-      },
-      "intelligence": {
-        "name": "Geheimdienst",
-        "description": "Spionage, Geheimdienstoperationen, Überwachung"
-      },
-      "maritime": {
-        "name": "Maritime Sicherheit",
-        "description": "Marineoperationen, maritime Engpässe, Seewege"
-      }
-    }
   },
   "common": {
     "loading": "Laden...",

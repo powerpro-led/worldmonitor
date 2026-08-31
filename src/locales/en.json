@@ -335,7 +335,6 @@
     "cii": "Country Instability",
     "strategicRisk": "Strategic Risk Overview",
     "intel": "Intel Feed",
-    "gdeltIntel": "Live Intelligence",
     "cascade": "Infrastructure Cascade",
     "politics": "World News",
     "us": "United States",
@@ -1776,9 +1775,6 @@
       "now": "now",
       "noEventsIn7Days": "No events in 7 days"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Real-time global news monitoring:<ul><li>Curated topic categories (conflicts, cyber, etc.)</li><li>Articles from 100+ languages translated</li><li>Updates every 15 minutes</li><li>14-day media tone &amp; volume trend per topic</li><li>14-day media tone &amp; volume trend per topic</li></ul>Source: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Real-time signals from monitored Telegram OSINT channels",
       "loading": "Connecting to Telegram relay...",
@@ -2629,9 +2625,6 @@
     "whyItMatters": "WHY IT MATTERS",
     "keyEntities": "KEY ENTITIES",
     "relatedHeadlines": "RELATED HEADLINES",
-    "liveIntel": "Live Intelligence",
-    "loadingNews": "Loading global news...",
-    "noCoverage": "No recent global coverage",
     "time": "Time",
     "area": "Area",
     "expires": "Expires",
@@ -2994,34 +2987,6 @@
     "multipleRegions": "Multiple Regions",
     "trending": "\"{{term}}\" Trending - {{count}} mentions in {{hours}}h",
     "eventsDetected": "{{count}} events detected in region ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Military Activity",
-        "description": "Military exercises, deployments, and operations"
-      },
-      "cyber": {
-        "name": "Cyber Threats",
-        "description": "Cyber attacks, ransomware, and digital threats"
-      },
-      "nuclear": {
-        "name": "Nuclear",
-        "description": "Nuclear programs, IAEA inspections, proliferation"
-      },
-      "sanctions": {
-        "name": "Sanctions",
-        "description": "Economic sanctions and trade restrictions"
-      },
-      "intelligence": {
-        "name": "Intelligence",
-        "description": "Espionage, intelligence operations, surveillance"
-      },
-      "maritime": {
-        "name": "Maritime Security",
-        "description": "Naval operations, maritime chokepoints, sea lanes"
-      }
-    }
   },
   "common": {
     "loading": "Loading...",

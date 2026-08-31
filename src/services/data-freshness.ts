@@ -122,7 +122,6 @@ const PANEL_FRESHNESS_SOURCES: Record<string, readonly DataSourceId[]> = {
   'strategic-risk': CORE_SOURCES,
   cii: CORE_SOURCES,
   intel: ['gdelt', 'pizzint'],
-  'gdelt-intel': ['gdelt'],
   protests: ['acled', 'acled_conflict', 'gdelt_doc', 'ucdp', 'hapi'],
   'ucdp-events': ['ucdp_events'],
   polymarket: ['polymarket', 'predictions'],

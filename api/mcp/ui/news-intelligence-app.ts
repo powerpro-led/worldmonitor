@@ -11,8 +11,8 @@
 //   { cached_at, stale, data: {
 //       insights: { topStories: [{ primaryTitle, primarySource, sourceProvenance,
 //                                  category, threatLevel, isAlert, countryCode }] },
-//       "gdelt-intel": {...}, "cross-source-signals": {...} } }
-// Any label may be absent (topic/category/country filters narrow the bundle).
+//       "cross-source-signals": {...} } }
+// Any label may be absent (category/country filters narrow the bundle).
 //
 // textContent-only rendering; renderBody stays backtick/`${`/regex-free.
 

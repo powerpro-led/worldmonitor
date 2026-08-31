@@ -89,7 +89,6 @@ export const COMMANDS: Command[] = [
 
   // Panel navigation (matching actual DEFAULT_PANELS keys)
   { id: 'panel:intel', keywords: ['intel', 'intel feed', 'intelligence', 'osint'], label: 'Panel: Intel Feed', icon: '\u{1F50E}', category: 'panels' },
-  { id: 'panel:gdelt-intel', keywords: ['gdelt', 'intelligence feed', 'live intelligence', 'global events'], label: 'Panel: Live Intelligence', icon: '\u{1F50D}', category: 'panels' },
   { id: 'panel:cii', keywords: ['cii', 'instability', 'country risk'], label: 'Panel: Country Instability', icon: '\u{1F3AF}', category: 'panels' },
   { id: 'panel:cascade', keywords: ['cascade', 'infrastructure cascade', 'cascading failure', 'contagion'], label: 'Panel: Infrastructure Cascade', icon: '\u{1F517}', category: 'panels' },
   { id: 'panel:strategic-risk', keywords: ['risk', 'strategic risk', 'threat level'], label: 'Panel: Strategic Risk', icon: '\u26A0\uFE0F', category: 'panels' },

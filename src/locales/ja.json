@@ -266,7 +266,6 @@
     "cii": "国家不安定性",
     "strategicRisk": "戦略リスク概観",
     "intel": "インテルフィード",
-    "gdeltIntel": "ライブインテリジェンス",
     "cascade": "インフラカスケード",
     "politics": "世界ニュース",
     "us": "アメリカ合衆国",
@@ -1633,9 +1632,6 @@
       "now": "現在",
       "noEventsIn7Days": "7日間にイベントなし"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>ニュースインテリジェンス</strong> リアルタイムグローバルニュース監視:<ul><li>厳選されたトピックカテゴリ（紛争、サイバー等）</li><li>100以上の言語から翻訳された記事</li><li>15分ごとに更新</li><li>14-day media tone &amp; volume trend per topic</li></ul>ソース: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "監視対象のTelegram OSINTチャンネルからのリアルタイムシグナル",
       "loading": "Telegramリレーに接続中...",
@@ -2561,9 +2557,6 @@
     "whyItMatters": "重要な理由",
     "keyEntities": "主要エンティティ",
     "relatedHeadlines": "関連見出し",
-    "liveIntel": "ライブインテリジェンス",
-    "loadingNews": "グローバルニュースを読み込み中...",
-    "noCoverage": "最近のグローバル報道なし",
     "time": "時刻",
     "area": "地域",
     "expires": "有効期限",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "複数地域",
     "trending": "\"{{term}}\" トレンド中 — {{hours}}時間で{{count}}件の言及",
     "eventsDetected": "地域（{{lat}}°, {{lon}}°）で{{count}}件のイベントを検出"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "軍事活動",
-        "description": "軍事演習、展開、作戦"
-      },
-      "cyber": {
-        "name": "サイバー脅威",
-        "description": "サイバー攻撃、ランサムウェア、デジタル脅威"
-      },
-      "nuclear": {
-        "name": "核",
-        "description": "核プログラム、IAEA査察、拡散"
-      },
-      "sanctions": {
-        "name": "制裁",
-        "description": "経済制裁と貿易制限"
-      },
-      "intelligence": {
-        "name": "インテリジェンス",
-        "description": "スパイ活動、諜報作戦、監視"
-      },
-      "maritime": {
-        "name": "海洋安全保障",
-        "description": "海軍作戦、海上チョークポイント、シーレーン"
-      }
-    }
   },
   "common": {
     "loading": "読み込み中...",

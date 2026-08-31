@@ -15,6 +15,214 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-08-31, FORTIETH session) — read this first, supersedes every block below
+
+**TL;DR**: session 39's real-time sync (still unpushed, 4 commits) turned out to be live — the VS Code
+sidecar was already running it against local dev, and it exposed a real, previously-unknown bug in
+`docker/redis-rest-proxy.mjs` (the local Redis-REST dev shim) that was breaking most dashboard panels.
+Root-caused and fixed live, not guessed. Also fixed a nitric.yaml quoting bug (Latest Brief resumes
+locally), re-confirmed a known-but-forgotten orphaned seeder (`fetch-gpsjam.mjs`), found+fixed a
+seed-envelope unwrap bug in 2 more RPC handlers (item 5), and — operator's own call, not a bug fix —
+removed `实时情报`/GdeltIntelPanel entirely after a redundancy review (item 6, ~65 files, fully verified).
+**1 commit (`d995272`) on top of session 39's 4 — `main` now 5 commits ahead of `origin/main`, still NOT
+pushed. A large second wave of uncommitted work sits on top (items 5-6) — nothing further pushed or
+committed without asking.**
+2 more files uncommitted in the tree (`nitric.yaml`, new `scripts/loop-digest-notifications.mjs`) —
+ask before committing/pushing, standing discipline.
+
+1. **`docker/redis-rest-proxy.mjs` — critical connection-isolation bug, fixed.** The proxy holds ONE
+   shared `client` connection for every GET/SET/SCAN. `SUBSCRIBE` was in its command allowlist and got
+   dispatched through the same generic path onto that SAME shared connection (only `BLMOVE`-family
+   commands got their own dedicated connection, via `blockingClient`). SUBSCRIBE flips a RESP connection
+   into subscribe-only mode until it unsubscribes — nothing ever did, so the first caller to hit
+   `/subscribe/<channel>` (a route the proxy didn't actually implement; it just fell through to the
+   generic command dispatcher) permanently wedged EVERY other request through the proxy, proxy-wide,
+   regardless of key. `local-api-server.mjs`'s `sync-listener.mjs` (session 39's feature) does exactly
+   this on every reconnect (2s→30s backoff) — so a freshly recreated container got re-wedged within ~1s,
+   every time. Symptom in the app: `[redis] getCachedJson failed: Redis HTTP 500` /
+   `[redis] setCachedJson failed: ERR Can't execute 'set': only (P|S)SUBSCRIBE ... allowed` spamming the
+   vite log, most panels stuck on "Loading…"/"CACHED · 1/35 sources" — looked exactly like missing seed
+   data, was actually one poisoned connection.
+   Fixed: `SUBSCRIBE` removed from the shared-client allowlist entirely; a real `POST /subscribe/{channel}`
+   SSE route added, using `client.duplicate()` per listener (opened/closed with the request) and Upstash's
+   real wire format (`data: subscribe,<ch>,<n>` / `data: message,<ch>,<payload>`, matching
+   `sync-listener.mjs`'s `decodeFrame()` exactly). Also added `XADD`/`XRANGE` to the allowlist — missing
+   entirely, which meant `sync:changelog` (the catch-up half of the same feature) 403'd independent of the
+   wedge. Verified live: 6 SET/GET probes clean across 30s spanning sidecar reconnects; `CLIENT LIST`
+   showed the shared client idle at `cmd=set` while the sidecar's subscribe sat isolated on its own
+   connection (`flags=P`); dashboard reload showed zero new `[redis]` errors, Strategic Risk sources
+   went 1/35→2/35, Country Instability scores moved off static placeholders. **Commit `d995272`.**
+   - Side incident while testing the fix: `docker restart` on the wedged container hung indefinitely, and
+     every follow-up (`start`/`inspect`, even read-only) on that specific container ID hung too — daemon
+     was fine for everything else (`docker ps`, other containers). Looked like a stuck containerd shim from
+     the SIGKILL. Needed an actual Docker Desktop restart to clear; `docker rm` + `docker compose up -d`
+     were instant once it was back. If this recurs: don't keep retrying `docker start`/`restart` on the
+     same container — one hang can queue every subsequent op on that container ID behind it.
+
+2. **`nitric.yaml`'s `seed-digest-notifications` loop wrapper — fixed.** The inline
+   `start: sh -c "while true; do node $SERVICE_PATH; sleep 1800; done"` (added session 38-ish to give the
+   one-shot digest script a local re-invoke cadence) throws `unexpected EOF while looking for matching "`
+   on every `nitric start` — nitric's local start-command parser splits the quoted `-c` argument on
+   whitespace instead of passing it through intact. Fixed by extracting the loop into a real file,
+   `scripts/loop-digest-notifications.mjs` (spawns the digest script as a child every 30min, matching
+   Railway's real cron cadence), and pointing `match:`/`start: node $SERVICE_PATH` at that instead — same
+   pattern `publish-bootstrap-tiers.mjs` already uses successfully. Production's
+   `Dockerfile.digest-notifications` untouched — still runs the digest script directly, one-shot, per
+   Railway's own cron; this only affects local `nitric start` sessions. Verified live: clean start, ran a
+   real cycle (`[digest] Cron run start...`, `watchlist scan: hashes=316 candidates=7...`). **Not yet
+   committed** (`nitric.yaml`, `scripts/loop-digest-notifications.mjs`).
+
+3. **`/api/gpsjam` 503 — not a new bug, a rediscovery.** Already diagnosed by a past session, documented
+   at TASKS.md's "twenty-ninth session" entry further below: `scripts/fetch-gpsjam.mjs` is an orphaned
+   seeder, scheduled nowhere — not in `nitric.yaml`, not in `gcp/scheduler`, no GitHub Actions workflow,
+   **in production either**, confirmed by grep this session too. That session fixed 3 real bugs inside the
+   script but never actually wired it to run anywhere, so any Redis reset (this session's Docker Desktop
+   restart counts) wipes `intelligence:gpsjam:v2` and nothing repopulates it until someone runs the script
+   by hand again. Ran it this session (`node scripts/fetch-gpsjam.mjs`) — 47,985 hexes fetched, key
+   restored, route back to 200. **The real gap (where should this actually be scheduled) is still open —
+   operator's call, same as every other seed-source scheduling decision in this file.**
+
+4. Session 39's own deferred list (`ctx.waitUntil()` threading etc.) is UNTOUCHED this session — see that
+   block immediately below for the full list, still the next scoped-pass candidate whenever picked up.
+
+5. **Seed-envelope unwrap bug — found in 2 RPC handlers, likely present in more.** 117 seed scripts write
+   their canonical key in "contract mode" (`declareRecords` passed to `runSeed`), which wraps the payload
+   as `{_seed, data}` — a documented, established convention (`server/_shared/seed-envelope.ts`'s
+   `stripSeedEnvelope()`/`unwrapEnvelope()`, already used correctly by e.g. `get-resilience-ranking.ts`).
+   Found via the VS Code sidecar dashboard showing several panels stuck on "unavailable" with real,
+   fresh seeded data sitting right there in Redis/the mirror:
+   - `server/worldmonitor/economic/v1/list-global-tenders.ts` (Global Procurement panel): read
+     `snapshot.tenders` directly instead of `snapshot.data.tenders` — always empty, always fell through
+     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed, commit pending.**
+   - `server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts` (Chokepoints/Supply Chain panel):
+     same pattern on TWO keys (`supply_chain:transit-summaries:v1`, `energy:chokepoint-flows:v1`) —
+     `.summaries` read off the raw envelope was always `{}`, which pinned `upstreamUnavailable = true`
+     unconditionally. **Fixed, commit pending.**
+   - Checked and ruled out for the OTHER panels in the same screenshot: FRED series, economic stress
+     index, WTO trade-restrictions/tariff-barriers all write FLAT (non-enveloped) via plain
+     `writeExtraKey()` with no `envelopeMeta` — those 3 panels' "unavailable" state was pure missing
+     data (their seeders hadn't fired yet this session — same "6h cron doesn't fire in a short local
+     `nitric start` session" gap as item 3's gpsjam finding), not a code bug. Ran `seed-economy.mjs` and
+     `seed-supply-chain-trade.mjs` (~9.5min, live WTO API is slow) by hand to populate them; verified
+     live, no code changes needed there.
+   - **NOT a full audit** — 117 seeders use contract mode; only checked the specific keys backing the
+     panels visible in this session's screenshot. A real audit (every `getCachedJson(key, true)` call
+     site cross-referenced against whether ITS seeder's `writeExtraKey`/`runSeed` call passes
+     `envelopeMeta`/uses the canonical enveloped write) would very plausibly turn up more of the same —
+     worth a dedicated pass, not done here.
+   - Sidecar bundle rebuilt twice this session (`npm run build:sidecar-handlers`) to pick up both fixes —
+     handler modules are cached in the sidecar's memory for its process lifetime
+     (`local-api-server.mjs`'s `moduleCache`), so a rebuild alone doesn't reach an already-running
+     sidecar. Killed the sidecar (pid 20689, port 46123) after both rebuilds; VS Code respawns it on
+     next panel use.
+
+6. **`实时情报` (GdeltIntelPanel/"Live Intelligence") removed from the codebase entirely, plus MapPopup's
+   hotspot live-intel context — operator's explicit decision after a redundancy review, not a bug fix.**
+   Reviewed whether the panel earned its place given 100+ other data sources already covered: its
+   article-search half largely duplicated the RSS-backed Intel Feed panel; its one genuinely unique
+   piece (per-topic tone/volume sparkline) was a nice-to-have, not decision-grade signal; and GDELT's
+   conflict-relevant contribution already reaches the dashboard through a *different, working* path
+   (`_conflict-gdelt-bulk.mjs`'s official 15-min bulk CSV export from GCS, feeding CII/conflict-intel —
+   completely unaffected by the DOC API blocking that's plagued this one panel across sessions 35-37 and
+   again this session). Verdict: drop it.
+   Before cutting, evaluated 3 OTHER consumers of the same shared `gdelt-intel.ts` service that weren't
+   part of the original panel discussion — MapPopup hotspot context (same broken pipeline, weak match
+   design even when healthy → **also removed**), PizzINT tensions (`fetchGdeltTensions`, completely
+   separate pipeline/seed key, unaffected either way → **left alone**), Good News Explorer's positive
+   topics (`fetchAllPositiveTopicIntelligence`, queries topics that were NEVER part of the removed
+   6-topic seed cache, so it **structurally could never have worked** — a real, separate, pre-existing
+   bug, not caused by or fixed by this removal → **left alone, flagged as its own open item**).
+   Touched ~65 files: panel component, 2 RPC handlers (kept `search-gdelt-documents.ts` — Good News
+   Explorer still calls it; removed `get-gdelt-topic-timeline.ts` — panel-only), the `.proto` schema +
+   hand-edited generated client/server TS (no `buf`/sebuf codegen toolchain installed locally to
+   regenerate — verified by hand, `tsc --noEmit` clean on both configs), the seeder + its 3 dedicated
+   tests, `nitric.yaml`/`gcp/scheduler`/`railway-services.json` scheduling entries, all panel-registry/
+   config/mission-preset/command-palette entries, ~180 locale keys across all 26 locale files (via a
+   one-off script, verified against `sync:locales:check`), dead CSS (~170 lines), and 10 test files
+   (deleted 3, trimmed 7 — verified against a stashed-baseline diff of the FULL `npm run test:data` run
+   so only genuinely new failures got attention, not this repo's large pre-existing/flaky set).
+   **One real near-miss worth remembering**: initially also removed `api/health.js`'s `gdeltIntel` health
+   check and its `health-freshness-map.ts` mapping, reasoning it was orphaned cleanup — reverted after
+   realizing `'gdelt'` is `requiredForRisk: true` in `CORE_SOURCES`, gating Strategic Risk AND CII panels'
+   hard insufficient-data state. That coupling is real and out of this task's scope — left the health
+   check in place, which means `intelligence:gdelt-intel:v1`'s `seed-meta` will now report stale forever
+   (nothing seeds it again). **Deliberately not resolved — a real follow-up**: either retarget what
+   `'gdelt'` freshness means (it also gets written from a live, unrelated path — unrest-events'
+   GDELT contribution, `dataFreshness.recordUpdate('gdelt', ...)` in `data-loader.ts`'s protests loader)
+   or relax `requiredForRisk`. Separately: `server/worldmonitor/_bootstrap-cache-key-refs.ts` turned out
+   to have ZERO real importers anywhere — its `gdeltIntel` entry removal was cosmetic-only; the REAL
+   bootstrap registry is `shared/bootstrap-tier-keys.js` (synced via `npm run sync:bootstrap-tier-keys`
+   into `api/_bootstrap-tier-keys.js` — a generated file, don't hand-edit it directly), which needed the
+   same removal to satisfy `tests/bootstrap.test.mjs`'s real coverage checks.
+   Fully verified: `tsc --noEmit` clean (both configs), `biome lint` clean, `enforce-sebuf-api-contract.mjs`
+   clean, `sync:locales:check` clean, full `npm run test:data` diffed against a stashed pre-change
+   baseline (zero net-new failures after fixes — 2 real regressions found and fixed:
+   `mcp-bootstrap-parity.test.mjs` needed an `EXCLUDED_FROM_MCP` entry for the now-orphaned-but-still-
+   bootstrapped key, `mcp-tools-list-compression.test.mjs`'s direct-enum mutation-isolation test needed
+   retargeting from the removed `topic` param to `get_prediction_markets.category`).
+
+   **RESOLVED — session 40 (continued).** Both flagged follow-ups above were then closed, operator's
+   call, and committed together with the rest of item 6:
+   - **Good News Explorer / positive-topic path — removed too.** `search-gdelt-documents.ts` (kept in the
+     first pass "because Good News Explorer still calls it") actually reads `intelligence:gdelt-intel:v1`
+     — the exact key the deleted seeder wrote — so post-removal it returns `seed-unavailable` forever: a
+     dead RPC + always-empty path in the shipped surface. Cut the lot: deleted `src/services/gdelt-intel.ts`
+     entirely, `server/worldmonitor/intelligence/v1/search-gdelt-documents.ts`,
+     `proto/.../search_gdelt_documents.proto`; unwired the RPC from `service.proto` + hand-edited
+     generated client/server + `handler.ts` + `server/gateway.ts`'s `RPC_CACHE_TIER` +
+     `scripts/lib/sebuf-query-param-contract.mjs`'s two registries; removed the always-empty GDELT
+     supplementary merge from `data-loader.ts`'s `loadHappySupplementaryAndRender()` (the `positive-feed`
+     panel already renders fine off curated RSS `happyAllItems`); dropped the now-dead
+     `EXCLUDED_FROM_MCP` entry the first pass had added; trimmed `tests/mainjs-eager-clients.test.mjs` +
+     `tests/hapi-gdelt-circuit-breakers.test.mjs` header. `src/services/sentiment-gate.ts` +
+     `scripts/seed-cross-source-signals.mjs`'s `intelligence:gdelt-intel:v1` / `gdelt:intel:tone:*` read
+     fallbacks are now orphaned-but-inert (graceful-degradation branches) — left in place, flagged.
+   - **`gdeltIntel` health check — retargeted, not removed.** Removing it outright ALSO drops the
+     freshness badge on Strategic Risk / CII / Intel panels — `data-freshness.ts`'s `getSourcesForPanel`
+     returns `[]` unless EVERY panel source is health-mapped, and `gdelt` was the health-backed half of
+     `CORE_SOURCES`. So: kept `gdeltIntel: ['gdelt']` in `health-freshness-map.ts`, removed the dead
+     `intelligence:gdelt-intel:v1` from `api/health.js`'s `BOOTSTRAP_KEYS` and from `api/seed-health.js`,
+     and pointed `api/health.js`'s `SEED_META.gdeltIntel` check at the LIVE `seed-meta:news:insights`
+     (the news-intelligence aggregate — GDELT-inclusive, seeded every 30 min; 720 min budget preserved).
+     Badge keeps working; `requiredForRisk` gating unchanged; no more stale-forever.
+   Re-verified to the same bar: `tsc` (root/api/gcp) clean, `enforce-sebuf-api-contract` clean,
+   `sync:locales:check` clean, `sync:bootstrap-tier-keys:check` clean, biome clean on touched files,
+   full `npm run test:data` diffed against an item-6-absent baseline → identical failing-suite set (this
+   repo's ~21 pre-existing/flaky suites), zero net-new. **All uncommitted with the rest of the session.**
+
+5. **Seed-envelope unwrap bug — found in 2 RPC handlers, likely present in more.** 117 seed scripts write
+   their canonical key in "contract mode" (`declareRecords` passed to `runSeed`), which wraps the payload
+   as `{_seed, data}` — a documented, established convention (`server/_shared/seed-envelope.ts`'s
+   `stripSeedEnvelope()`/`unwrapEnvelope()`, already used correctly by e.g. `get-resilience-ranking.ts`).
+   Found via the VS Code sidecar dashboard showing several panels stuck on "unavailable" with real,
+   fresh seeded data sitting right there in Redis/the mirror:
+   - `server/worldmonitor/economic/v1/list-global-tenders.ts` (Global Procurement panel): read
+     `snapshot.tenders` directly instead of `snapshot.data.tenders` — always empty, always fell through
+     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed, commit pending.**
+   - `server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts` (Chokepoints/Supply Chain panel):
+     same pattern on TWO keys (`supply_chain:transit-summaries:v1`, `energy:chokepoint-flows:v1`) —
+     `.summaries` read off the raw envelope was always `{}`, which pinned `upstreamUnavailable = true`
+     unconditionally. **Fixed, commit pending.**
+   - Checked and ruled out for the OTHER panels in the same screenshot: FRED series, economic stress
+     index, WTO trade-restrictions/tariff-barriers all write FLAT (non-enveloped) via plain
+     `writeExtraKey()` with no `envelopeMeta` — those 3 panels' "unavailable" state was pure missing
+     data (their seeders hadn't fired yet this session — same "6h cron doesn't fire in a short local
+     `nitric start` session" gap as item 3's gpsjam finding), not a code bug. Ran `seed-economy.mjs` and
+     `seed-supply-chain-trade.mjs` (~9.5min, live WTO API is slow) by hand to populate them; verified
+     live, no code changes needed there.
+   - **NOT a full audit** — 117 seeders use contract mode; only checked the specific keys backing the
+     panels visible in this session's screenshot. A real audit (every `getCachedJson(key, true)` call
+     site cross-referenced against whether ITS seeder's `writeExtraKey`/`runSeed` call passes
+     `envelopeMeta`/uses the canonical enveloped write) would very plausibly turn up more of the same —
+     worth a dedicated pass, not done here.
+   - Sidecar bundle rebuilt twice this session (`npm run build:sidecar-handlers`) to pick up both fixes —
+     handler modules are cached in the sidecar's memory for its process lifetime
+     (`local-api-server.mjs`'s `moduleCache`), so a rebuild alone doesn't reach an already-running
+     sidecar. Killed the sidecar (pid 20689, port 46123) after both rebuilds; VS Code respawns it on
+     next panel use.
+
+---
+
 ## 🔀 HANDOFF (2026-08-23, THIRTY-NINTH session) — read this first, supersedes every block below
 
 **TL;DR**: resolves session 38's STILL OPEN item 1 (real-time local-sync mechanism) — implemented, live-

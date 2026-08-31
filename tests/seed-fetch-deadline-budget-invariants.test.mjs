@@ -28,17 +28,9 @@ const FETCH_PHASE_MARGIN_MS = 120_000; // _seed-utils.mjs FETCH_PHASE_DEADLINE_M
 const deadlineFromLock = (lockMs) => lockMs + FETCH_PHASE_MARGIN_MS;
 
 describe('seed fetch-phase deadline & TTL invariants (issue #4864)', () => {
-  it('gdelt-intel: soft budget fires before the hard deadline, leaving merge+publish headroom', () => {
-    const src = read('seed-gdelt-intel.mjs');
-    const soft = optValue(src, 'FETCH_SOFT_BUDGET_MS');
-    const minTopic = optValue(src, 'MIN_TOPIC_BUDGET_MS');
-    assert.ok(soft, 'FETCH_SOFT_BUDGET_MS must be defined');
-    // gdelt keeps the default lock (120s) → hard deadline 240s. The soft budget must
-    // trip well before that so the cache-merge + publish complete inside the deadline.
-    const hardDeadline = deadlineFromLock(120_000);
-    assert.ok(soft + 60_000 <= hardDeadline, `soft budget ${soft}ms + merge headroom must stay under the ${hardDeadline}ms hard deadline`);
-    assert.ok(minTopic && minTopic > 0 && minTopic < soft, 'MIN_TOPIC_BUDGET_MS must be a positive fraction of the soft budget');
-  });
+  // gdelt-intel's own invariant test removed 2026-08-31 along with
+  // scripts/seed-gdelt-intel.mjs itself (GdeltIntelPanel/"实时情报" removal —
+  // see TASKS.md's FORTIETH-session HANDOFF).
 
   it('grocery-basket: lock/deadline covers its ~600s degraded serial runtime (24 serial countries)', () => {
     const src = read('seed-grocery-basket.mjs');

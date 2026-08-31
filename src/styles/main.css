@@ -1440,7 +1440,6 @@ canvas,
    spans (.span-N) keep their own min-height reservation contract and are
    excluded. Keep this key list in sync with the ranked offenders in #5332. */
 #panelsGrid > .panel[data-panel="threat-timeline"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
-#panelsGrid > .panel[data-panel="gdelt-intel"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="intel"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="politics"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
 #panelsGrid > .panel[data-panel="energy-complex"]:not(.span-2):not(.span-3):not(.span-4):not(.panel-wide):not(.resized),
@@ -1460,7 +1459,6 @@ canvas,
    the ultra-wide .map-bottom-grid (height:100%/1fr tracks) on that grid's
    own sizing contract. */
 #panelsGrid > .panel[data-panel="threat-timeline"].span-2:not(.resized),
-#panelsGrid > .panel[data-panel="gdelt-intel"].span-2:not(.resized),
 #panelsGrid > .panel[data-panel="energy-complex"].span-2:not(.resized),
 #panelsGrid > .panel[data-panel="strategic-posture"].span-2:not(.resized),
 #panelsGrid > .panel[data-panel="global-procurement"].span-2:not(.resized) {
@@ -13685,177 +13683,6 @@ a.prediction-link:hover {
   .header {
     padding: 8px;
   }
-}
-
-/* ==========================================================================
-   GDELT Intelligence Panel
-   ========================================================================== */
-
-/* gdelt-intel-tabs: now uses shared .panel-tabs / .panel-tab */
-
-.gdelt-intel-articles {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.gdelt-intel-article {
-  display: block;
-  padding: 10px 12px;
-  background: var(--surface);
-  text-decoration: none;
-  transition: background 0.15s ease;
-  border-left: 2px solid transparent;
-}
-
-.gdelt-intel-article:hover {
-  background: var(--overlay-light);
-  border-left-color: var(--accent);
-}
-
-.gdelt-intel-article.tone-negative {
-  border-left-color: var(--danger);
-}
-
-.gdelt-intel-article.tone-positive {
-  border-left-color: var(--success);
-}
-
-.gdelt-intel-article .article-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-  gap: 8px;
-}
-
-.gdelt-intel-article .article-source {
-  font-size: 10px;
-  color: var(--accent);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-}
-
-.gdelt-intel-article .article-time {
-  font-size: 10px;
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
-.gdelt-intel-article .article-title {
-  font-size: 12px;
-  color: var(--text);
-  line-height: 1.4;
-  display: -webkit-box;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.gdelt-topic-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.gdelt-trend-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.gdelt-trend-label {
-  font-size: 10px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.gdelt-trend-value {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.gdelt-trend-value.positive { color: var(--success); }
-.gdelt-trend-value.negative { color: var(--danger); }
-
-/* Hotspot GDELT Context */
-.hotspot-gdelt-context {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.hotspot-gdelt-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-weight: 500;
-}
-
-.hotspot-gdelt-header::before {
-  content: '📡';
-  font-size: 12px;
-}
-
-.hotspot-gdelt-articles {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.hotspot-gdelt-article {
-  display: block;
-  padding: 8px;
-  background: var(--darken-medium);
-  border-radius: 4px;
-  text-decoration: none;
-  transition: background 0.15s ease;
-}
-
-.hotspot-gdelt-article:hover {
-  background: var(--darken-heavy);
-}
-
-.hotspot-gdelt-article .article-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  color: var(--text-dim);
-  margin-bottom: 3px;
-}
-
-.hotspot-gdelt-article .article-title {
-  font-size: 11px;
-  color: var(--text);
-  line-height: 1.35;
-  display: -webkit-box;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.hotspot-gdelt-loading {
-  padding: 12px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 11px;
 }
 
 /* CII Panel */

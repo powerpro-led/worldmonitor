@@ -670,7 +670,7 @@ describe('applyMissionPresetToState', () => {
       'strategic-posture',
       'cii',
       'strategic-risk',
-      'gdelt-intel',
+      'cascade',
     ]);
     assert.equal(applied.mapLayers.conflicts, true);
     assert.equal(applied.mapLayers.ciiChoropleth, true);

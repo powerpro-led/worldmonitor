@@ -192,16 +192,18 @@ describe('api/mcp.ts — tools/list description compression (v1.7.0)', () => {
     });
 
     it('R5: mutating result.inputSchema.properties.<x>.enum does NOT mutate registry (direct-enum case)', async () => {
-      // get_news_intelligence.topic has direct enum (api/mcp.ts:810).
+      // get_prediction_markets.category has direct enum (api/mcp/registry/cache-tools.ts).
+      // Was get_news_intelligence.topic until GdeltIntelPanel's topic filter was removed
+      // 2026-08-31 along with the panel itself — see TASKS.md's FORTIETH-session HANDOFF.
       const tools1 = await getRegistry();
-      const a1 = tools1.find(t => t.name === 'get_news_intelligence');
-      assert.ok(Array.isArray(a1.inputSchema.properties.topic?.enum),
-        'topic.enum must exist for this test');
-      const before = [...a1.inputSchema.properties.topic.enum];
-      a1.inputSchema.properties.topic.enum.length = 0; // mutate to empty
+      const a1 = tools1.find(t => t.name === 'get_prediction_markets');
+      assert.ok(Array.isArray(a1.inputSchema.properties.category?.enum),
+        'category.enum must exist for this test');
+      const before = [...a1.inputSchema.properties.category.enum];
+      a1.inputSchema.properties.category.enum.length = 0; // mutate to empty
       const tools2 = await getRegistry();
-      const a2 = tools2.find(t => t.name === 'get_news_intelligence');
-      assert.deepEqual(a2.inputSchema.properties.topic.enum, before,
+      const a2 = tools2.find(t => t.name === 'get_prediction_markets');
+      assert.deepEqual(a2.inputSchema.properties.category.enum, before,
         'direct enum array was mutated through shared reference');
     });
 

@@ -347,7 +347,6 @@
     "cii": "Nestabilnost država",
     "strategicRisk": "Pregled strateškog rizika",
     "intel": "Intel feed",
-    "gdeltIntel": "Uživa obavještajna aktivnost",
     "cascade": "Kaskada infrastrukture",
     "politics": "Svjetske vijesti",
     "us": "Sjedinjene Države",
@@ -1919,9 +1918,6 @@
       "now": "sada",
       "noEventsIn7Days": "Nema događaja u 7 dana"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>Obavještajnost vijestima</strong> Praćenje vijestima u realnom vremenu:<ul><li>Kurirane kategorije tema (sukobi, kibernetika, itd.)</li><li>Članci iz 100+ jezika prevedeni</li><li>Ažuriranja svakih 15 minuta</li><li>14-dnevni tren medijskih tonova i volumena po temi</li><li>14-dnevni tren medijskih tonova i volumena po temi</li></ul>Izvor: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Signali u realnom vremenu s praćenih Telegram OSINT kanala",
       "loading": "Povezivanje na Telegram relej...",
@@ -2830,9 +2826,6 @@
     "whyItMatters": "ZAŠTO JE VAŽNO",
     "keyEntities": "KLJUČNE SUBJEKTE",
     "relatedHeadlines": "POVEZANE VIJESTI",
-    "liveIntel": "Obavještajne informacije u realnom vremenu",
-    "loadingNews": "Učitavanje svjetskih vijesti...",
-    "noCoverage": "Nema nedavnog svjetskog pokrivanja",
     "time": "Vrijeme",
     "area": "Područje",
     "expires": "Ističe",
@@ -3197,34 +3190,6 @@
     "multipleRegions": "Više regija",
     "trending": "\"{{term}}\" u trendu - {{count}} spominjanja u {{hours}}h",
     "eventsDetected": "{{count}} događaja detektirano u regiji ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Vojna aktivnost",
-        "description": "Vojne vježbe, raspoređivanja i operacije"
-      },
-      "cyber": {
-        "name": "Kibernetske prijetnje",
-        "description": "Kibernetski napadi, ransomware i digitalne prijetnje"
-      },
-      "nuclear": {
-        "name": "Nuklearno",
-        "description": "Nuklearni programi, IAEA inspeksije, proliferacija"
-      },
-      "sanctions": {
-        "name": "Sankcije",
-        "description": "Ekonomske sankcije i trgovinska ograničenja"
-      },
-      "intelligence": {
-        "name": "Obavještajne službe",
-        "description": "Špijunažu, obavještajne operacije, nadzor"
-      },
-      "maritime": {
-        "name": "Pomorska sigurnost",
-        "description": "Pomorske operacije, pomorska uska grla, pomorske rute"
-      }
-    }
   },
   "common": {
     "loading": "Učitavanje...",

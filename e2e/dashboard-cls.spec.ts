@@ -51,7 +51,6 @@ const seededDeferredPanelOrder = [
   'cii',
   'strategic-risk',
   'intel',
-  'gdelt-intel',
   'cascade',
   'military-correlation',
   'escalation-correlation',

@@ -55,7 +55,6 @@
     "techReadiness": "Tech Readiness-index",
     "ucdpEvents": "UCDP-conflictgebeurtenissen",
     "strategicRisk": "Strategisch risicooverzicht",
-    "gdeltIntel": "Levende intelligentie",
     "cascade": "Infrastructuurcascade",
     "satelliteFires": "Branden",
     "displacement": "UNHCR-verplaatsing",
@@ -1055,9 +1054,6 @@
         "degraded": "degraded",
         "stale": "stale"
       }
-    },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Realtime monitoring van mondiaal nieuws:<ul><li>Samengestelde onderwerpcategorieën (conflicten, cyber, etc.)</li><li>Artikelen uit meer dan 100 talen vertaald</li><li>Updates elke 15 minuten</li><li>14-day media tone &amp; volume trend per topic</li></ul>Bron: GDELT Project (gdeltproject.org)"
     },
     "telegramIntel": {
       "infoTooltip": "Realtime signalen van gemonitorde Telegram OSINT-kanalen",
@@ -2297,9 +2293,6 @@
     "whyItMatters": "WAAROM HET ERTOE DOET",
     "keyEntities": "SLEUTELENTITEITEN",
     "relatedHeadlines": "GERELATEERDE KOPPEN",
-    "liveIntel": "Levende intelligentie",
-    "loadingNews": "Wereldnieuws laden...",
-    "noCoverage": "Geen recente wereldwijde dekking",
     "time": "Tijd",
     "area": "Gebied",
     "expires": "Verloopt",
@@ -2671,34 +2664,6 @@
     "multipleRegions": "Meerdere regio's",
     "trending": "\"{{term}}\" trending - {{count}} vermeldingen in {{hours}}u",
     "eventsDetected": "{{count}} gebeurtenissen gedetecteerd in regio ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Militaire activiteit",
-        "description": "Militaire oefeningen, inzet en operaties"
-      },
-      "cyber": {
-        "name": "Cyberdreigingen",
-        "description": "Cyberaanvallen, ransomware en digitale dreigingen"
-      },
-      "nuclear": {
-        "name": "Nucleair",
-        "description": "Nucleaire programma's, IAEA-inspecties, proliferatie"
-      },
-      "sanctions": {
-        "name": "Sancties",
-        "description": "Economische sancties en handelsbeperkingen"
-      },
-      "intelligence": {
-        "name": "Inlichtingen",
-        "description": "Spionage, inlichtingenoperaties, surveillance"
-      },
-      "maritime": {
-        "name": "Maritieme veiligheid",
-        "description": "Marine-operaties, maritieme knelpunten, zeeroutes"
-      }
-    }
   },
   "common": {
     "loading": "Laden...",

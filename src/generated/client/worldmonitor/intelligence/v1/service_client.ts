@@ -144,30 +144,6 @@ export interface BriefSource {
   publishedAt: string;
 }
 
-export interface SearchGdeltDocumentsRequest {
-  query: string;
-  maxRecords: number;
-  timespan: string;
-  toneFilter: string;
-  sort: string;
-}
-
-export interface SearchGdeltDocumentsResponse {
-  articles: GdeltArticle[];
-  query: string;
-  error: string;
-}
-
-export interface GdeltArticle {
-  title: string;
-  url: string;
-  source: string;
-  date: string;
-  image: string;
-  language: string;
-  tone: number;
-}
-
 export interface DeductSituationRequest {
   query: string;
   geoContext: string;
@@ -406,23 +382,6 @@ export interface SecurityAdvisoryItem {
   sourceCountry: string;
   level: string;
   country: string;
-}
-
-export interface GetGdeltTopicTimelineRequest {
-  topic: string;
-}
-
-export interface GetGdeltTopicTimelineResponse {
-  topic: string;
-  tone: GdeltTimelinePoint[];
-  vol: GdeltTimelinePoint[];
-  fetchedAt: string;
-  error: string;
-}
-
-export interface GdeltTimelinePoint {
-  date: string;
-  value: number;
 }
 
 export interface ListCrossSourceSignalsRequest {
@@ -1063,35 +1022,6 @@ export class IntelligenceServiceClient {
     return await resp.json() as GetCountryIntelBriefResponse;
   }
 
-  async searchGdeltDocuments(req: SearchGdeltDocumentsRequest, options?: IntelligenceServiceCallOptions): Promise<SearchGdeltDocumentsResponse> {
-    let path = "/api/intelligence/v1/search-gdelt-documents";
-    const params = new URLSearchParams();
-    if (req.query != null && req.query !== "") params.set("query", String(req.query));
-    if (req.maxRecords != null && req.maxRecords !== 0) params.set("max_records", String(req.maxRecords));
-    if (req.timespan != null && req.timespan !== "") params.set("timespan", String(req.timespan));
-    if (req.toneFilter != null && req.toneFilter !== "") params.set("tone_filter", String(req.toneFilter));
-    if (req.sort != null && req.sort !== "") params.set("sort", String(req.sort));
-    const url = this.baseURL + path + (params.toString() ? "?" + params.toString() : "");
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.defaultHeaders,
-      ...options?.headers,
-    };
-
-    const resp = await this.fetchFn(url, {
-      method: "GET",
-      headers,
-      signal: options?.signal,
-    });
-
-    if (!resp.ok) {
-      return this.handleError(resp);
-    }
-
-    return await resp.json() as SearchGdeltDocumentsResponse;
-  }
-
   async deductSituation(req: DeductSituationRequest, options?: IntelligenceServiceCallOptions): Promise<DeductSituationResponse> {
     let path = "/api/intelligence/v1/deduct-situation";
     const url = this.baseURL + path;
@@ -1316,31 +1246,6 @@ export class IntelligenceServiceClient {
     }
 
     return await resp.json() as ListSecurityAdvisoriesResponse;
-  }
-
-  async getGdeltTopicTimeline(req: GetGdeltTopicTimelineRequest, options?: IntelligenceServiceCallOptions): Promise<GetGdeltTopicTimelineResponse> {
-    let path = "/api/intelligence/v1/get-gdelt-topic-timeline";
-    const params = new URLSearchParams();
-    if (req.topic != null && req.topic !== "") params.set("topic", String(req.topic));
-    const url = this.baseURL + path + (params.toString() ? "?" + params.toString() : "");
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.defaultHeaders,
-      ...options?.headers,
-    };
-
-    const resp = await this.fetchFn(url, {
-      method: "GET",
-      headers,
-      signal: options?.signal,
-    });
-
-    if (!resp.ok) {
-      return this.handleError(resp);
-    }
-
-    return await resp.json() as GetGdeltTopicTimelineResponse;
   }
 
   async listCrossSourceSignals(_req: ListCrossSourceSignalsRequest, options?: IntelligenceServiceCallOptions): Promise<ListCrossSourceSignalsResponse> {

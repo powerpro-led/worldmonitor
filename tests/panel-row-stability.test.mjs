@@ -18,10 +18,10 @@ const css = readFileSync(resolve(root, 'src/styles/main.css'), 'utf-8');
 const panels = readFileSync(resolve(root, 'src/config/panels.ts'), 'utf-8');
 
 const SPAN1_KEYS = [
-  'threat-timeline', 'gdelt-intel', 'intel', 'politics',
+  'threat-timeline', 'intel', 'politics',
   'energy-complex', 'global-procurement', 'strategic-posture', 'cascade',
 ];
-const SPAN2_DEFAULT_KEYS = ['threat-timeline', 'gdelt-intel', 'energy-complex', 'strategic-posture', 'global-procurement'];
+const SPAN2_DEFAULT_KEYS = ['threat-timeline', 'energy-complex', 'strategic-posture', 'global-procurement'];
 const WIDE_KEYS = [];
 
 // The two pin blocks, extracted by their shared height declarations. Regex

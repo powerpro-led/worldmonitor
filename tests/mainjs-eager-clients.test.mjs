@@ -17,7 +17,8 @@ const repoRoot = resolve(__dirname, '..');
 // This is a SOURCE guard (greps src/), so it runs without a dist build —
 // unlike the dist-gated chunk guards in dashboard-eager-chunks.test.mjs.
 const EAGER_SERVICE_FILES = [
-  'src/services/gdelt-intel.ts',
+  // src/services/gdelt-intel.ts removed 2026-08-31 (GDELT intelligence surface
+  // cut entirely — see TASKS.md's FORTIETH-session HANDOFF).
   'src/services/security-advisories.ts',
   'src/services/social-velocity.ts',
   'src/services/pizzint.ts',

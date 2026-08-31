@@ -269,7 +269,6 @@
     "cii": "Niestabilność kraju",
     "strategicRisk": "Przegląd ryzyka strategicznego",
     "intel": "Kanał wywiadowczy",
-    "gdeltIntel": "Wywiad na żywo",
     "cascade": "Kaskada infrastruktury",
     "politics": "Wiadomości ze świata",
     "us": "Stany Zjednoczone",
@@ -1365,9 +1364,6 @@
         "degraded": "degraded",
         "stale": "stale"
       }
-    },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Monitorowanie wiadomości z całego świata w czasie rzeczywistym:<ul><li>Wybrane kategorie tematyczne (konflikty, cyberbezpieczeństwo itp.)</li><li>Przetłumaczone artykuły z ponad 100 języków</li><li>Aktualizacje co 15 minut</li><li>14-day media tone &amp; volume trend per topic</li></ul>Źródło: Projekt GDELT (gdeltproject.org)"
     },
     "telegramIntel": {
       "infoTooltip": "Sygnały w czasie rzeczywistym z monitorowanych kanałów OSINT na Telegram",
@@ -2588,9 +2584,6 @@
     "whyItMatters": "DLACZEGO TO WAŻNE",
     "keyEntities": "KLUCZOWE PODMIOTY",
     "relatedHeadlines": "POWIĄZANE NAGŁÓWKI",
-    "liveIntel": "Intelligence na żywo",
-    "loadingNews": "Ładowanie globalnych wiadomości...",
-    "noCoverage": "Brak aktualnych globalnych relacji",
     "time": "Czas",
     "area": "Obszar",
     "expires": "Wygasa",
@@ -2962,34 +2955,6 @@
     "multipleRegions": "Wiele regionów",
     "trending": "\"{{term}}\" w trendach — {{count}} wzmianek w {{hours}}h",
     "eventsDetected": "{{count}} zdarzeń wykrytych w regionie ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Aktywność wojskowa",
-        "description": "Ćwiczenia wojskowe, rozmieszczenia i operacje"
-      },
-      "cyber": {
-        "name": "Zagrożenia cybernetyczne",
-        "description": "Ataki cybernetyczne, ransomware i zagrożenia cyfrowe"
-      },
-      "nuclear": {
-        "name": "Nuklearne",
-        "description": "Programy jądrowe, inspekcje MAEA, proliferacja"
-      },
-      "sanctions": {
-        "name": "Sankcje",
-        "description": "Sankcje gospodarcze i ograniczenia handlowe"
-      },
-      "intelligence": {
-        "name": "Wywiad",
-        "description": "Szpiegostwo, operacje wywiadowcze, inwigilacja"
-      },
-      "maritime": {
-        "name": "Bezpieczeństwo morskie",
-        "description": "Operacje morskie, wąskie gardła morskie, szlaki morskie"
-      }
-    }
   },
   "common": {
     "loading": "Ładowanie...",

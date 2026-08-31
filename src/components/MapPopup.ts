@@ -15,7 +15,6 @@ import { HS2RingChart } from '@/utils/hs2-ring-chart';
 import type { GetChokepointStatusResponse, TransitDayCount } from '@/services/supply-chain';
 import { fetchChokepointHistory } from '@/services/supply-chain';
 import { t } from '@/services/i18n';
-import { fetchHotspotContext, formatArticleDate, extractDomain, type GdeltArticle } from '@/services/gdelt-intel';
 import { getWingbitsLiveFlight } from '@/services/wingbits';
 import { isFeatureAvailable } from '@/services/runtime-config';
 import { getNaturalEventIcon } from '@/services/eonet';
@@ -1050,47 +1049,8 @@ export class MapPopup {
             </details>
           </div>
         ` : ''}
-        <div class="hotspot-gdelt-context" data-hotspot-id="${escapeHtml(hotspot.id)}">
-          <div class="hotspot-gdelt-header">${t('popups.liveIntel')}</div>
-          <div class="hotspot-gdelt-loading">${t('popups.loadingNews')}</div>
-        </div>
       </div>
     `;
-  }
-
-  public async loadHotspotGdeltContext(hotspot: Hotspot): Promise<void> {
-    if (!this.popup) return;
-
-    const container = this.popup.querySelector('.hotspot-gdelt-context');
-    if (!container) return;
-
-    try {
-      const articles = await fetchHotspotContext(hotspot);
-
-      if (!this.popup || !container.isConnected) return;
-
-      if (articles.length === 0) {
-        setTrustedHtml(container, trustedHtml(`
-          <div class="hotspot-gdelt-header">${t('popups.liveIntel')}</div>
-          <div class="hotspot-gdelt-loading">${t('popups.noCoverage')}</div>
-        `, "legacy direct innerHTML migration"));
-        return;
-      }
-
-      setTrustedHtml(container, trustedHtml(`
-        <div class="hotspot-gdelt-header">${t('popups.liveIntel')}</div>
-        <div class="hotspot-gdelt-articles">
-          ${articles.slice(0, 5).map(article => this.renderGdeltArticle(article)).join('')}
-        </div>
-      `, "legacy direct innerHTML migration"));
-    } catch (error) {
-      if (container.isConnected) {
-        setTrustedHtml(container, trustedHtml(`
-          <div class="hotspot-gdelt-header">${t('popups.liveIntel')}</div>
-          <div class="hotspot-gdelt-loading">${t('common.error')}</div>
-        `, "legacy direct innerHTML migration"));
-      }
-    }
   }
 
   public loadConflictHistory(conflict: ConflictZone): void {
@@ -1254,20 +1214,6 @@ export class MapPopup {
     }
   }
 
-  private renderGdeltArticle(article: GdeltArticle): string {
-    const domain = article.source || extractDomain(article.url);
-    const timeAgo = formatArticleDate(article.date);
-
-    return `
-      <a href="${sanitizeUrl(article.url)}" target="_blank" rel="noopener" class="hotspot-gdelt-article">
-        <div class="article-meta">
-          <span>${escapeHtml(domain)}</span>
-          <span>${escapeHtml(timeAgo)}</span>
-        </div>
-        <div class="article-title">${escapeHtml(article.title)}</div>
-      </a>
-    `;
-  }
 
   private renderEarthquakePopup(earthquake: Earthquake): string {
     const severity = earthquake.magnitude >= 6 ? 'high' : earthquake.magnitude >= 5 ? 'medium' : 'low';

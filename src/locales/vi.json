@@ -266,7 +266,6 @@
     "cii": "Bất ổn Quốc gia",
     "strategicRisk": "Tổng quan Rủi ro Chiến lược",
     "intel": "Nguồn Tình báo",
-    "gdeltIntel": "Tình báo Trực tiếp",
     "cascade": "Chuỗi Hạ tầng",
     "politics": "Tin Thế giới",
     "us": "Hoa Kỳ",
@@ -1633,9 +1632,6 @@
       "now": "hiện tại",
       "noEventsIn7Days": "Không có sự kiện trong 7 ngày"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>Tình báo tin tức</strong> Giám sát tin tức toàn cầu thời gian thực:<ul><li>Danh mục chủ đề được chọn lọc (xung đột, mạng, v.v.)</li><li>Bài viết từ hơn 100 ngôn ngữ được dịch</li><li>Cập nhật mỗi 15 phút</li><li>14-day media tone &amp; volume trend per topic</li></ul>Nguồn: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "Tín hiệu thời gian thực từ các kênh OSINT Telegram được giám sát",
       "loading": "Đang kết nối đến relay Telegram...",
@@ -2561,9 +2557,6 @@
     "whyItMatters": "TẠI SAO ĐIỀU NÀY QUAN TRỌNG",
     "keyEntities": "THỰC THỂ CHÍNH",
     "relatedHeadlines": "TIN LIÊN QUAN",
-    "liveIntel": "Tình báo Trực tiếp",
-    "loadingNews": "Đang tải tin tức toàn cầu...",
-    "noCoverage": "Không có tin tức toàn cầu gần đây",
     "time": "Thời gian",
     "area": "Khu vực",
     "expires": "Hết hạn",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "Nhiều Khu vực",
     "trending": "\"{{term}}\" Xu hướng - {{count}} lượt nhắc trong {{hours}} giờ",
     "eventsDetected": "Phát hiện {{count}} sự kiện trong khu vực ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Hoạt động Quân sự",
-        "description": "Tập trận, triển khai và chiến dịch quân sự"
-      },
-      "cyber": {
-        "name": "Mối đe dọa Mạng",
-        "description": "Tấn công mạng, ransomware và mối đe dọa kỹ thuật số"
-      },
-      "nuclear": {
-        "name": "Hạt nhân",
-        "description": "Chương trình hạt nhân, thanh sát IAEA, phổ biến vũ khí"
-      },
-      "sanctions": {
-        "name": "Cấm vận",
-        "description": "Cấm vận kinh tế và hạn chế thương mại"
-      },
-      "intelligence": {
-        "name": "Tình báo",
-        "description": "Gián điệp, hoạt động tình báo, giám sát"
-      },
-      "maritime": {
-        "name": "An ninh Hàng hải",
-        "description": "Hoạt động hải quân, điểm nghẽn hàng hải, tuyến đường biển"
-      }
-    }
   },
   "common": {
     "loading": "Đang tải...",

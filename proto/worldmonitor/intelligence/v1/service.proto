@@ -16,8 +16,6 @@ import "worldmonitor/intelligence/v1/list_gps_interference.proto";
 import "worldmonitor/intelligence/v1/list_oref_alerts.proto";
 import "worldmonitor/intelligence/v1/list_satellites.proto";
 import "worldmonitor/intelligence/v1/list_telegram_feed.proto";
-import "worldmonitor/intelligence/v1/search_gdelt_documents.proto";
-import "worldmonitor/intelligence/v1/get_gdelt_topic_timeline.proto";
 import "worldmonitor/intelligence/v1/list_cross_source_signals.proto";
 import "worldmonitor/intelligence/v1/list_market_implications.proto";
 import "worldmonitor/intelligence/v1/get_social_velocity.proto";
@@ -65,14 +63,6 @@ service IntelligenceService {
   rpc GetCountryIntelBrief(GetCountryIntelBriefRequest) returns (GetCountryIntelBriefResponse) {
     option (sebuf.http.config) = {
       path: "/get-country-intel-brief"
-      method: HTTP_METHOD_GET
-    };
-  }
-
-  // SearchGdeltDocuments searches the GDELT GKG API for relevant documentation.
-  rpc SearchGdeltDocuments(SearchGdeltDocumentsRequest) returns (SearchGdeltDocumentsResponse) {
-    option (sebuf.http.config) = {
-      path: "/search-gdelt-documents"
       method: HTTP_METHOD_GET
     };
   }
@@ -146,11 +136,6 @@ service IntelligenceService {
   // ListSecurityAdvisories retrieves pre-seeded travel and health advisories.
   rpc ListSecurityAdvisories(ListSecurityAdvisoriesRequest) returns (ListSecurityAdvisoriesResponse) {
     option (sebuf.http.config) = {path: "/list-security-advisories", method: HTTP_METHOD_GET};
-  }
-
-  // GetGdeltTopicTimeline retrieves tone and volume timelines for a GDELT intel topic.
-  rpc GetGdeltTopicTimeline(GetGdeltTopicTimelineRequest) returns (GetGdeltTopicTimelineResponse) {
-    option (sebuf.http.config) = {path: "/get-gdelt-topic-timeline", method: HTTP_METHOD_GET};
   }
 
   // ListCrossSourceSignals returns cross-domain signals ranked by severity with composite escalation detection.

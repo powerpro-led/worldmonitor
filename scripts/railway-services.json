@@ -447,12 +447,6 @@
     "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 fx rates unseeded"
   },
   {
-    "entry": "scripts/seed-gdelt-intel.mjs",
-    "deployMode": "nixpacks-root-scripts",
-    "service": "seed-gdelt-intel",
-    "documentedAt": "TASKS.md \u2014 thirty-second session: orphaned seeder sweep \u2014 gdeltIntel EMPTY"
-  },
-  {
     "entry": "scripts/seed-grocery-basket.mjs",
     "deployMode": "nixpacks-root-scripts",
     "service": "seed-grocery-basket",

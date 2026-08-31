@@ -345,15 +345,10 @@ export const CACHE_TOOLS: ToolDef[] = [
     name: 'get_news_intelligence',
     _uiResourceUri: NEWS_INTELLIGENCE_UI_URI,
     _outputBudgetBytes: 131072,
-    description: 'AI-classified geopolitical threat news summaries, GDELT intelligence signals, cross-source signals, and security advisories from WorldMonitor\'s intelligence layer.',
+    description: 'AI-classified geopolitical threat news summaries, cross-source signals, and security advisories from WorldMonitor\'s intelligence layer.',
     inputSchema: {
       type: 'object',
       properties: {
-        topic: {
-          type: 'string',
-          enum: ['conflict', 'economy', 'cyber', 'nuclear', 'intelligence', 'maritime'],
-          description: 'Filter GDELT intelligence to a single topic.',
-        },
         category: { type: 'string', description: 'Filter top news stories to one category (e.g. "conflict", "economy"; fallback is "general").' },
         country: { type: 'string', description: 'Filter top stories and travel advisories to one ISO 3166-1 alpha-2 country code (case-insensitive).' },
         alerts_only: { type: 'boolean', description: 'Keep only top stories flagged as alerts.' },
@@ -390,12 +385,6 @@ export const CACHE_TOOLS: ToolDef[] = [
           } } },
         },
       },
-      'gdelt-intel': {
-        type: ['object', 'null'],
-        properties: {
-          topics: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, signals: { type: ['array', 'object'] } } } },
-        },
-      },
       'cross-source-signals': {
         type: ['object', 'null'],
         properties: { signals: { type: 'array', items: { type: 'object' } } },
@@ -409,12 +398,10 @@ export const CACHE_TOOLS: ToolDef[] = [
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _postFilter: (data, params) => {
-      const topic = argStr(params.topic);
       const category = argStr(params.category);
       const countries = argStrList(params.country);
       const limit = (argNum(params.limit) ?? DEFAULT_LIST_LIMIT);
       mapNested(data, 'insights', 'topStories', addNewsSourceProvenance);
-      if (topic) narrowNested(data, 'gdelt-intel', 'topics', (t) => argStr(t.id) === topic);
       if (category) narrowNested(data, 'insights', 'topStories', (s) => argStr(s.category) === category);
       if (countries.length > 0) {
         narrowNested(data, 'insights', 'topStories', (s) => matchesCode(s.countryCode, countries));
@@ -428,7 +415,6 @@ export const CACHE_TOOLS: ToolDef[] = [
     },
     _cacheKeys: [
       'news:insights:v1',
-      'intelligence:gdelt-intel:v1',
       'intelligence:cross-source-signals:v1',
       'intelligence:advisories-bootstrap:v1',
     ],
@@ -436,7 +422,6 @@ export const CACHE_TOOLS: ToolDef[] = [
     _maxStaleMin: 30,
     _apiPaths: [
       "GET /api/intelligence/v1/list-cross-source-signals",
-      "GET /api/intelligence/v1/search-gdelt-documents",
     ],
   },
   {

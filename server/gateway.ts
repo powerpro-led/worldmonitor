@@ -192,7 +192,6 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/research/v1/list-trending-repos': 'static',
   '/api/giving/v1/get-giving-summary': 'static',
   '/api/intelligence/v1/get-country-intel-brief': 'static',
-  '/api/intelligence/v1/get-gdelt-topic-timeline': 'medium',
   '/api/climate/v1/list-climate-anomalies': 'daily',
   '/api/climate/v1/list-climate-disasters': 'daily',
   '/api/climate/v1/get-co2-monitoring': 'daily',
@@ -241,7 +240,6 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/intelligence/v1/get-risk-scores': 'slow',
   '/api/intelligence/v1/get-pizzint-status': 'slow',
   '/api/intelligence/v1/classify-event': 'static',
-  '/api/intelligence/v1/search-gdelt-documents': 'slow',
   '/api/infrastructure/v1/get-cable-health': 'slow',
   '/api/positive-events/v1/list-positive-geo-events': 'slow',
 

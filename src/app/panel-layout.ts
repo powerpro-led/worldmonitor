@@ -138,7 +138,6 @@ export const DEFERRED_PANEL_NATURAL_FOOTPRINTS: Readonly<Record<string, Deferred
   'energy-crisis': { rowSpan: 2 },
   'energy-disruptions': { rowSpan: 2 },
   'fuel-shortages': { rowSpan: 2 },
-  'gdelt-intel': { rowSpan: 2 },
   'internet-disruptions': { rowSpan: 2 },
   'oil-inventories': { rowSpan: 2 },
   'pipeline-status': { rowSpan: 2 },
@@ -1596,8 +1595,6 @@ export class PanelLayoutManager implements AppModule {
       const tooltip = PanelLayoutManager.NEWS_PANEL_TOOLTIPS[panelKey] ?? PanelLayoutManager.NEWS_PANEL_TOOLTIPS[key];
       this.createNewsPanelWithLabel(panelKey, label, tooltip, key);
     }
-
-    this.lazyDefaultPanel('gdelt-intel', () => import('@/components/GdeltIntelPanel'), 'GdeltIntelPanel');
 
     this.lazyPanel('deduction', () =>
       this.importPanel(

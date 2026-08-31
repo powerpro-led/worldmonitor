@@ -55,7 +55,6 @@
     "techReadiness": "Teknikberedskapsindex",
     "ucdpEvents": "UCDP-konflikthändelser",
     "strategicRisk": "Strategisk risköversikt",
-    "gdeltIntel": "LIVE-INTELLIGENS",
     "cascade": "Infrastrukturkaskad",
     "satelliteFires": "Bränder",
     "displacement": "UNHCR förskjutning",
@@ -1055,9 +1054,6 @@
         "degraded": "degraded",
         "stale": "stale"
       }
-    },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>News Intelligence</strong> Global nyhetsövervakning i realtid:<ul><li>Utvalda ämneskategorier (konflikter, cyber, etc.)</li><li>Artiklar från 100+ språk översatta</li><li>Uppdateringar var 15:e minut</li><li>14-day media tone &amp; volume trend per topic</li></ul>Källa: GDELT Project (gdeltproject.org)"
     },
     "telegramIntel": {
       "infoTooltip": "Realtidssignaler från övervakade Telegram OSINT-kanaler",
@@ -2297,9 +2293,6 @@
     "whyItMatters": "VARFÖR DET SPELAR ROLL",
     "keyEntities": "NYCKELENTITETER",
     "relatedHeadlines": "RELATERADE RUBRIKER",
-    "liveIntel": "Liveunderrättelser",
-    "loadingNews": "Laddar globala nyheter...",
-    "noCoverage": "Ingen aktuell global bevakning",
     "time": "Tid",
     "area": "Område",
     "expires": "Utgår",
@@ -2671,34 +2664,6 @@
     "multipleRegions": "Flera regioner",
     "trending": "\"{{term}}\" trending - {{count}} omnamnanden pa {{hours}}h",
     "eventsDetected": "{{count}} handelser detekterade i regionen ({{lat}}°, {{lon}}°)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Militär aktivitet",
-        "description": "Militärovningar, utplaceringar och operationer"
-      },
-      "cyber": {
-        "name": "Cyberhot",
-        "description": "Cyberattacker, ransomware och digitala hot"
-      },
-      "nuclear": {
-        "name": "Kärnteknisk",
-        "description": "Kärnvapenprogram, IAEA-inspektioner, spridning"
-      },
-      "sanctions": {
-        "name": "Sanktioner",
-        "description": "Ekonomiska sanktioner och handelsrestriktioner"
-      },
-      "intelligence": {
-        "name": "Underrattelse",
-        "description": "Spionage, underrattelseoperationer, overvakning"
-      },
-      "maritime": {
-        "name": "Maritim sakerhet",
-        "description": "Marinoperationer, maritima flaskhalsar, sjöfartsleder"
-      }
-    }
   },
   "common": {
     "loading": "Laddar...",

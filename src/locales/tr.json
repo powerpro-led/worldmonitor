@@ -266,7 +266,6 @@
     "cii": "Ulke Istikrarsizligi",
     "strategicRisk": "Stratejik Risk Genel Gorunumu",
     "intel": "Istihbarat Akisi",
-    "gdeltIntel": "Canli Istihbarat",
     "cascade": "Altyapi Domino Etkisi",
     "politics": "Dunya Haberleri",
     "us": "ABD",
@@ -1633,9 +1632,6 @@
       "now": "simdi",
       "noEventsIn7Days": "7 gunde olay yok"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>Haber İstihbaratı</strong> Gercek zamanli kuresel haber izleme:<ul><li>Secilmis konu kategorileri (catismalar, siber vb.)</li><li>100+ dilden cevrilen makaleler</li><li>Her 15 dakikada guncelleme</li><li>14-day media tone &amp; volume trend per topic</li></ul>Kaynak: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "İzlenen Telegram OSINT kanallarından gerçek zamanlı sinyaller",
       "loading": "Telegram aktarıcısına bağlanılıyor...",
@@ -2561,9 +2557,6 @@
     "whyItMatters": "NEDEN ONEMLI",
     "keyEntities": "KILIT VARLIKLAR",
     "relatedHeadlines": "ILGILI BASLIKLAR",
-    "liveIntel": "Canli Istihbarat",
-    "loadingNews": "Kuresel haberler yukleniyor...",
-    "noCoverage": "Son kuresel kapsam yok",
     "time": "Zaman",
     "area": "Alan",
     "expires": "Sona Eriyor",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "Birden Fazla Bolge",
     "trending": "\"{{term}}\" Gundemde - {{hours}} saatte {{count}} bahis",
     "eventsDetected": "Bolgede {{count}} olay tespit edildi ({{lat}} derece, {{lon}} derece)"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "Askeri Faaliyet",
-        "description": "Askeri tatbikatlar, konuslandirmalar ve operasyonlar"
-      },
-      "cyber": {
-        "name": "Siber Tehditler",
-        "description": "Siber saldirilar, fidye yazilimi ve dijital tehditler"
-      },
-      "nuclear": {
-        "name": "Nukleer",
-        "description": "Nukleer programlar, IAEA denetimleri, yayilma"
-      },
-      "sanctions": {
-        "name": "Yaptirimlar",
-        "description": "Ekonomik yaptirimlar ve ticaret kisitlamalari"
-      },
-      "intelligence": {
-        "name": "Istihbarat",
-        "description": "Casusluk, istihbarat operasyonlari, gozetleme"
-      },
-      "maritime": {
-        "name": "Deniz Guvenligi",
-        "description": "Donanma operasyonlari, deniz darbogazlari, deniz yollari"
-      }
-    }
   },
   "common": {
     "loading": "Yukleniyor...",

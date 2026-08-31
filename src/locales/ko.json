@@ -266,7 +266,6 @@
     "cii": "국가 불안정",
     "strategicRisk": "전략적 리스크 개요",
     "intel": "정보 피드",
-    "gdeltIntel": "실시간 정보",
     "cascade": "인프라 연쇄 효과",
     "politics": "세계 뉴스",
     "us": "미국",
@@ -1633,9 +1632,6 @@
       "now": "현재",
       "noEventsIn7Days": "7일간 사건 없음"
     },
-    "gdeltIntel": {
-      "infoTooltip": "<strong>뉴스 인텔리전스</strong> 실시간 글로벌 뉴스 모니터링:<ul><li>선별된 주제 카테고리 (분쟁, 사이버 등)</li><li>100개 이상 언어의 기사를 번역</li><li>15분마다 업데이트</li><li>14-day media tone &amp; volume trend per topic</li></ul>출처: GDELT Project (gdeltproject.org)"
-    },
     "telegramIntel": {
       "infoTooltip": "모니터링 중인 Telegram OSINT 채널의 실시간 신호",
       "loading": "Telegram 릴레이에 연결 중...",
@@ -2561,9 +2557,6 @@
     "whyItMatters": "중요한 이유",
     "keyEntities": "주요 행위자",
     "relatedHeadlines": "관련 헤드라인",
-    "liveIntel": "실시간 정보",
-    "loadingNews": "글로벌 뉴스 불러오는 중...",
-    "noCoverage": "최근 글로벌 보도 없음",
     "time": "시각",
     "area": "지역",
     "expires": "만료",
@@ -2926,34 +2919,6 @@
     "multipleRegions": "다수 지역",
     "trending": "\"{{term}}\" 트렌딩 - {{hours}}시간 내 {{count}}건 언급",
     "eventsDetected": "해당 지역({{lat}}°, {{lon}}°)에서 {{count}}건의 사건 감지"
-  },
-  "intel": {
-    "topics": {
-      "military": {
-        "name": "군사 활동",
-        "description": "군사 훈련, 배치 및 작전"
-      },
-      "cyber": {
-        "name": "사이버 위협",
-        "description": "사이버 공격, 랜섬웨어 및 디지털 위협"
-      },
-      "nuclear": {
-        "name": "핵",
-        "description": "핵 프로그램, IAEA 사찰, 확산"
-      },
-      "sanctions": {
-        "name": "제재",
-        "description": "경제 제재 및 무역 제한"
-      },
-      "intelligence": {
-        "name": "정보",
-        "description": "스파이 활동, 정보 작전, 감시"
-      },
-      "maritime": {
-        "name": "해양 안보",
-        "description": "해군 작전, 해상 초크포인트, 해로"
-      }
-    }
   },
   "common": {
     "loading": "불러오는 중...",

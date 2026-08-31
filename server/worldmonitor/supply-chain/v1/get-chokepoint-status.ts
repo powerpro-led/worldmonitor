@@ -13,6 +13,7 @@ import type {
 } from '../../../../src/generated/server/worldmonitor/maritime/v1/service_server';
 
 import { cachedFetchJson, getCachedJson, setCachedJson } from '../../../_shared/redis';
+import { stripSeedEnvelope } from '../../../_shared/seed-envelope';
 import { listNavigationalWarnings } from '../../maritime/v1/list-navigational-warnings';
 import { getVesselSnapshot } from '../../maritime/v1/get-vessel-snapshot';
 // @ts-expect-error — .mjs module, no declaration file
@@ -271,8 +272,19 @@ async function fetchChokepointData(): Promise<ChokepointFetchResult> {
     getCachedJson(TRANSIT_SUMMARIES_KEY, true).catch(() => null) as Promise<TransitSummariesPayload | null>,
     getCachedJson(FLOWS_KEY, true).catch(() => null) as Promise<Record<string, FlowEstimateEntry> | null>,
   ]);
+  // Both seed-supply-chain-trade.mjs and seed-chokepoint-flows.mjs (or the
+  // seeder writing energy:chokepoint-flows:v1) write in contract mode
+  // (declareRecords passed to runSeed), which wraps the payload as
+  // `{_seed, data}`. Missing here until 2026-08-31: `.summaries` was read off
+  // the raw envelope instead of `.data.summaries`, so `summaries` was ALWAYS
+  // empty and `upstreamUnavailable` (below) was ALWAYS true, regardless of
+  // real seeded data sitting in Redis — same root cause confirmed the same
+  // day in list-global-tenders.ts. stripSeedEnvelope() is a no-op on a
+  // plain, non-enveloped value, so this is safe either way.
+  const transitSummaries = stripSeedEnvelope(transitSummariesData) as TransitSummariesPayload | null;
+  const flows = stripSeedEnvelope(flowsData) as Record<string, FlowEstimateEntry> | null;
 
-  const summaries = transitSummariesData?.summaries ?? {};
+  const summaries = transitSummaries?.summaries ?? {};
   const transitSummariesMissing = Object.keys(summaries).length === 0;
 
   const warnings = navResult.warnings || [];
@@ -357,14 +369,14 @@ async function fetchChokepointData(): Promise<ChokepointFetchResult> {
         // explicitly emit false for canonical zero-state fills.
         dataAvailable: ts.dataAvailable ?? true,
       } : { todayTotal: 0, todayTanker: 0, todayCargo: 0, todayOther: 0, wowChangePct: 0, history: [], riskLevel: '', incidentCount7d: 0, disruptionPct: 0, riskSummary: '', riskReportAction: '', dataAvailable: false },
-      flowEstimate: flowsData?.[cp.id] ? {
-        currentMbd: flowsData[cp.id]!.currentMbd,
-        baselineMbd: flowsData[cp.id]!.baselineMbd,
-        flowRatio: flowsData[cp.id]!.flowRatio,
-        disrupted: flowsData[cp.id]!.disrupted,
-        source: flowsData[cp.id]!.source,
-        hazardAlertLevel: flowsData[cp.id]!.hazardAlertLevel ?? '',
-        hazardAlertName: flowsData[cp.id]!.hazardAlertName ?? '',
+      flowEstimate: flows?.[cp.id] ? {
+        currentMbd: flows[cp.id]!.currentMbd,
+        baselineMbd: flows[cp.id]!.baselineMbd,
+        flowRatio: flows[cp.id]!.flowRatio,
+        disrupted: flows[cp.id]!.disrupted,
+        source: flows[cp.id]!.source,
+        hazardAlertLevel: flows[cp.id]!.hazardAlertLevel ?? '',
+        hazardAlertName: flows[cp.id]!.hazardAlertName ?? '',
       } : undefined,
       warRiskTier: threatLevelToWarRiskTier(cp.threatLevel),
     };

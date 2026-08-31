@@ -13,6 +13,7 @@ import type {
 
 import { getCachedJson } from '../../../_shared/redis';
 import { markNoStoreFallbackResponse } from '../../../_shared/response-headers';
+import { stripSeedEnvelope } from '../../../_shared/seed-envelope';
 
 const SEED_CACHE_KEY = 'economic:global-tenders:v1';
 const DEFAULT_PAGE_SIZE = 25;
@@ -165,7 +166,16 @@ function unavailable(ctx: ServerContext): ListGlobalTendersResponse {
 
 export async function listGlobalTenders(ctx: ServerContext, req: ListGlobalTendersRequest): Promise<ListGlobalTendersResponse> {
   try {
-    const snapshot = await getCachedJson(SEED_CACHE_KEY, true) as SeedSnapshot | null;
+    // seed-global-tenders.mjs writes this key in contract mode (passes
+    // declareRecords to runSeed), which wraps the payload as `{_seed, data}` —
+    // stripSeedEnvelope() unwraps that (and is a no-op on a plain, non-enveloped
+    // value, so this is safe regardless of which shape is actually stored).
+    // Missing here until 2026-08-31: every read silently saw `snapshot.tenders`
+    // as undefined and fell through to unavailable(ctx), even with real seeded
+    // data sitting in Redis (confirmed live — 525 tenders in the store, this
+    // handler still reported "canonical procurement snapshot is unavailable").
+    const raw = await getCachedJson(SEED_CACHE_KEY, true);
+    const snapshot = stripSeedEnvelope(raw) as SeedSnapshot | null;
     if (!snapshot || !Array.isArray(snapshot.tenders) || !Array.isArray(snapshot.sourceStatuses)) return unavailable(ctx);
     const freshSnapshot = applySnapshotFreshness(snapshot);
     const page = filterAndPaginateTenders(freshSnapshot.tenders || [], req);

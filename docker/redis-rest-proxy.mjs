@@ -8,6 +8,7 @@
  *   POST /                            → JSON body ["COMMAND", "arg1", ...]
  *   POST /pipeline                    → JSON body [["CMD1",...], ["CMD2",...]]
  *   POST /multi-exec                  → JSON body [["CMD1",...], ["CMD2",...]]
+ *   POST /subscribe/{channel}         → real-time SSE stream (Upstash-compatible wire format)
  *
  * Env:
  *   REDIS_URL  - Redis connection string (default: redis://redis:6379)
@@ -79,7 +80,22 @@ const ALLOWED_COMMANDS = new Set([
   'GEOADD', 'GEOSEARCH', 'GEOPOS', 'GEODIST',
   'INCR', 'DECR', 'INCRBY', 'DECRBY',
   'PING', 'ECHO', 'INFO', 'DBSIZE',
-  'PUBLISH', 'SUBSCRIBE',
+  // PUBLISH only -- SUBSCRIBE is deliberately absent. SUBSCRIBE flips a RESP
+  // connection into subscribe-only mode until it unsubscribes; dispatched
+  // through runCommand() like any other command it would land on the SHARED
+  // `client` (the same connection every GET/SET uses), permanently wedging
+  // every other request through this proxy the moment one caller subscribes
+  // -- confirmed live 2026-08-31 (sync-listener.mjs reconnecting every few
+  // seconds re-wedged a freshly recreated container within ~1s each time).
+  // Real-time subscribe is served exclusively by the dedicated POST
+  // /subscribe/{channel} SSE route below, on its own connection per listener.
+  'PUBLISH',
+  // XADD/XRANGE back the sync:changelog stream (server/_shared/sync-notify.ts's
+  // XADD, sync-listener.mjs's catch-up XRANGE) -- same real-time-sync feature
+  // as the /subscribe route above, added together with it; both were missing
+  // from this allowlist entirely until 2026-08-31, so the changelog catch-up
+  // path 403'd against local dev even once the SUBSCRIBE wedge is fixed.
+  'XADD', 'XRANGE',
   'SETNX', 'SETEX', 'PSETEX', 'GETSET',
   'APPEND', 'STRLEN', 'GETEX', 'PERSIST', 'UNLINK', 'RENAME',
   'HINCRBY', 'HINCRBYFLOAT', 'HSETNX',
@@ -219,6 +235,52 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200);
       res.end(JSON.stringify(results.map((r) => ({ result: enc(r) }))));
       return;
+    }
+
+    // POST /subscribe/{channel} — real-time pub/sub over SSE, matching
+    // Upstash's own wire format exactly (see sync-listener.mjs's decodeFrame(),
+    // verified live against real Upstash 2026-08-23):
+    //   data: subscribe,<channel>,<subscriber count>\n\n   (sent once, on subscribe)
+    //   data: message,<channel>,<raw PUBLISH message>\n\n  (per publish)
+    //
+    // Runs on ITS OWN connection (client.duplicate()), opened fresh per SSE
+    // request and torn down on disconnect -- never the shared `client`. See
+    // ALLOWED_COMMANDS's own comment on SUBSCRIBE for why that isolation is
+    // load-bearing, not just tidiness.
+    if (req.method === 'POST' && req.url.startsWith('/subscribe/')) {
+      const channel = decodeURIComponent(req.url.slice('/subscribe/'.length));
+      if (!channel) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'No channel specified' }));
+        return;
+      }
+
+      const sub = client.duplicate();
+      sub.on('error', (err) => console.error(`Redis (subscribe:${channel}) error:`, err.message));
+      await sub.connect();
+
+      let closed = false;
+      const cleanup = async () => {
+        if (closed) return;
+        closed = true;
+        try { await sub.unsubscribe(channel); } catch { /* connection may already be gone */ }
+        try { await sub.disconnect(); } catch { /* already closed */ }
+      };
+      req.on('close', cleanup);
+      res.on('close', cleanup);
+
+      await sub.subscribe(channel, (message) => {
+        if (closed) return;
+        res.write(`data: message,${channel},${message}\n\n`);
+      });
+
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      res.write(`data: subscribe,${channel},1\n\n`);
+      return; // left open -- an SSE stream, not a request/response pair
     }
 
     // GET / — welcome

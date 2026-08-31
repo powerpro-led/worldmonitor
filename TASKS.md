@@ -24,11 +24,14 @@ Root-caused and fixed live, not guessed. Also fixed a nitric.yaml quoting bug (L
 locally), re-confirmed a known-but-forgotten orphaned seeder (`fetch-gpsjam.mjs`), found+fixed a
 seed-envelope unwrap bug in 2 more RPC handlers (item 5), and — operator's own call, not a bug fix —
 removed `实时情报`/GdeltIntelPanel entirely after a redundancy review (item 6, ~65 files, fully verified).
-**1 commit (`d995272`) on top of session 39's 4 — `main` now 5 commits ahead of `origin/main`, still NOT
-pushed. A large second wave of uncommitted work sits on top (items 5-6) — nothing further pushed or
-committed without asking.**
-2 more files uncommitted in the tree (`nitric.yaml`, new `scripts/loop-digest-notifications.mjs`) —
-ask before committing/pushing, standing discipline.
+**STATUS — session 40 (continued): all six items committed AND pushed.** `main == origin/main` at
+`4d0608b`. Session-40 commits, on top of session 39's 4:
+`d995272` (item 1) · `56d1f7b` (item 2) · `1feb98c` (item 3) · `43a4451` (item 5) ·
+`4d0608b` (item 6 + both its follow-ups — GDELT surface removed entirely, `gdeltIntel` health check
+retargeted to the live `seed-meta:news:insights`; see item 6's own RESOLVED note below).
+Item 4 (session 39's `ctx.waitUntil()` deferred list) is the only thing left untouched — next
+scoped-pass candidate. 4 unrelated `.docx` files still sit untracked in the tree (3rd session flagged,
+operator's to deal with).
 
 1. **`docker/redis-rest-proxy.mjs` — critical connection-isolation bug, fixed.** The proxy holds ONE
    shared `client` connection for every GET/SET/SCAN. `SUBSCRIBE` was in its command allowlist and got
@@ -93,11 +96,11 @@ ask before committing/pushing, standing discipline.
    fresh seeded data sitting right there in Redis/the mirror:
    - `server/worldmonitor/economic/v1/list-global-tenders.ts` (Global Procurement panel): read
      `snapshot.tenders` directly instead of `snapshot.data.tenders` — always empty, always fell through
-     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed, commit pending.**
+     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed — commit `43a4451`.**
    - `server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts` (Chokepoints/Supply Chain panel):
      same pattern on TWO keys (`supply_chain:transit-summaries:v1`, `energy:chokepoint-flows:v1`) —
      `.summaries` read off the raw envelope was always `{}`, which pinned `upstreamUnavailable = true`
-     unconditionally. **Fixed, commit pending.**
+     unconditionally. **Fixed — commit `43a4451`.**
    - Checked and ruled out for the OTHER panels in the same screenshot: FRED series, economic stress
      index, WTO trade-restrictions/tariff-barriers all write FLAT (non-enveloped) via plain
      `writeExtraKey()` with no `envelopeMeta` — those 3 panels' "unavailable" state was pure missing
@@ -188,7 +191,7 @@ ask before committing/pushing, standing discipline.
    Re-verified to the same bar: `tsc` (root/api/gcp) clean, `enforce-sebuf-api-contract` clean,
    `sync:locales:check` clean, `sync:bootstrap-tier-keys:check` clean, biome clean on touched files,
    full `npm run test:data` diffed against an item-6-absent baseline → identical failing-suite set (this
-   repo's ~21 pre-existing/flaky suites), zero net-new. **All uncommitted with the rest of the session.**
+   repo's ~21 pre-existing/flaky suites), zero net-new. **Commit `4d0608b` (pushed).**
 
 5. **Seed-envelope unwrap bug — found in 2 RPC handlers, likely present in more.** 117 seed scripts write
    their canonical key in "contract mode" (`declareRecords` passed to `runSeed`), which wraps the payload
@@ -198,11 +201,11 @@ ask before committing/pushing, standing discipline.
    fresh seeded data sitting right there in Redis/the mirror:
    - `server/worldmonitor/economic/v1/list-global-tenders.ts` (Global Procurement panel): read
      `snapshot.tenders` directly instead of `snapshot.data.tenders` — always empty, always fell through
-     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed, commit pending.**
+     to `unavailable(ctx)`, regardless of 525 real tenders sitting in Redis. **Fixed — commit `43a4451`.**
    - `server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts` (Chokepoints/Supply Chain panel):
      same pattern on TWO keys (`supply_chain:transit-summaries:v1`, `energy:chokepoint-flows:v1`) —
      `.summaries` read off the raw envelope was always `{}`, which pinned `upstreamUnavailable = true`
-     unconditionally. **Fixed, commit pending.**
+     unconditionally. **Fixed — commit `43a4451`.**
    - Checked and ruled out for the OTHER panels in the same screenshot: FRED series, economic stress
      index, WTO trade-restrictions/tariff-barriers all write FLAT (non-enveloped) via plain
      `writeExtraKey()` with no `envelopeMeta` — those 3 panels' "unavailable" state was pure missing

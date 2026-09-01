@@ -370,9 +370,20 @@ async function cmdLogout() {
 
 async function cmdRestart() {
   requireDarwin();
-  if (launchdState() === 'not loaded') die('backend not installed — run `worldmonitor-local install`.');
-  execFileSync('launchctl', ['kickstart', '-k', guiTarget()], { stdio: 'inherit' });
-  ok('backend restarted.');
+  // `kickstart -k` only works while the job is still loaded (crashed past
+  // KeepAlive, `launchctl stop`, or just wedged). If it was booted out
+  // entirely — `uninstall`, a manual `launchctl bootout`, a logout/login
+  // race — kickstart 502s and the job has to be bootstrapped from the plist
+  // again (RunAtLoad then starts it).
+  try {
+    execFileSync('launchctl', ['kickstart', '-k', guiTarget()], { stdio: ['ignore', 'ignore', 'pipe'] });
+    ok('backend restarted (kickstart).');
+    return;
+  } catch { /* not loaded — fall through to bootstrap */ }
+  if (!existsSync(PLIST)) die('backend not installed — run `worldmonitor-local install`.');
+  try { execFileSync('launchctl', ['bootout', `gui/${process.getuid()}`, PLIST], { stdio: 'ignore' }); } catch { /* wasn't loaded */ }
+  execFileSync('launchctl', ['bootstrap', `gui/${process.getuid()}`, PLIST], { stdio: 'inherit' });
+  ok('backend restarted (re-bootstrapped from the plist).');
 }
 
 async function cmdStatus() {

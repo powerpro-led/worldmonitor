@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
@@ -14,8 +14,9 @@ export const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
  * `worldmonitor-local` CLI installs the LaunchAgent on. */
 const PORT = 46123;
 
-/** launchd label written by `worldmonitor-local install`. */
+/** launchd label + plist path written by `worldmonitor-local install`. */
 const LAUNCHD_LABEL = 'com.worldmonitor.local-api';
+const LAUNCHD_PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
 
 /** The loopback transport secret `worldmonitor-local install` writes. Same
  * path resolveLocalApiToken() reads on the backend side. */
@@ -111,14 +112,31 @@ export class BackendClient {
   }
 
   /**
-   * Ask launchd to (re)start the installed service. Deliberately a kickstart,
-   * not a spawn: launchd owns the process; this extension only nudges it.
-   * Throws if the service was never installed (`worldmonitor-local install`).
+   * Ask launchd to (re)start the installed service. Deliberately never a
+   * spawn: launchd owns the process, this extension only nudges it.
+   *
+   * `kickstart -k` handles the common case (job loaded but wedged / crashed
+   * past KeepAlive / `launchctl stop`). If the job was booted out entirely —
+   * a manual `launchctl bootout`, a logout/login race, `worldmonitor-local
+   * uninstall` — kickstart 502s and the plist has to be bootstrapped again
+   * (its RunAtLoad then starts the process). Throws only when there is no
+   * plist at all, i.e. `worldmonitor-local install` was never run.
    */
   async startBackend(): Promise<void> {
     const uid = process.getuid?.() ?? 0;
-    this.log(`[backend] launchctl kickstart -k gui/${uid}/${LAUNCHD_LABEL}`);
-    await execFileAsync('launchctl', ['kickstart', '-k', `gui/${uid}/${LAUNCHD_LABEL}`]);
+    const target = `gui/${uid}/${LAUNCHD_LABEL}`;
+    try {
+      this.log(`[backend] launchctl kickstart -k ${target}`);
+      await execFileAsync('launchctl', ['kickstart', '-k', target]);
+      return;
+    } catch {
+      this.log('[backend] kickstart failed (job not loaded) — bootstrapping from the plist');
+    }
+    if (!existsSync(LAUNCHD_PLIST)) {
+      throw new Error('backend not installed — run `worldmonitor-local install` in the repo first');
+    }
+    await execFileAsync('launchctl', ['bootout', `gui/${uid}`, LAUNCHD_PLIST]).catch(() => {});
+    await execFileAsync('launchctl', ['bootstrap', `gui/${uid}`, LAUNCHD_PLIST]);
   }
 
   dispose(): void {

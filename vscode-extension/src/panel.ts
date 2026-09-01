@@ -122,11 +122,7 @@ export class DashboardPanel {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'WorldMonitor: starting local backend…' },
         async () => {
-          try {
-            await this.backend.startBackend();
-          } catch {
-            throw new Error('Could not start the backend via launchd — run `worldmonitor-local install` first.');
-          }
+          await this.backend.startBackend();
           // Cold start also boots the in-process sync listener; give it room.
           await this.backend.ensureReachable(15_000);
         },

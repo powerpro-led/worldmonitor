@@ -1974,6 +1974,11 @@ test('default-deny: rejects every authenticated route when LOCAL_API_TOKEN is un
   const app = await createLocalApiServer({
     port: 0,
     apiDir: localApi.apiDir,
+    // Point the file fallback (resolveLocalApiToken) at a guaranteed-absent
+    // path so a real ~/.worldmonitor/local-api-token on the dev/CI machine
+    // (written by `worldmonitor-local install`) can't satisfy the gate and
+    // mask this default-deny regression.
+    tokenFile: path.join(os.tmpdir(), 'worldmonitor-nonexistent-token-file'),
     logger: { log() { }, warn() { }, error() { } },
   });
   const { port } = await app.start();

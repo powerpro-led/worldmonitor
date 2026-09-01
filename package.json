@@ -4,6 +4,9 @@
   "version": "2.10.0",
   "license": "AGPL-3.0-only",
   "type": "module",
+  "bin": {
+    "worldmonitor-local": "scripts/worldmonitor-local.mjs"
+  },
   "scripts": {
     "postinstall": "patch-package",
     "lint": "biome lint ./src ./server ./api ./tests ./e2e ./scripts ./middleware.ts && npm run lint:safe-html",
@@ -35,6 +38,7 @@
     "docs:check": "node scripts/docs-stats.mjs --check",
     "nitric:clean-history": "node scripts/clean-nitric-history.mjs",
     "local-sync": "node --env-file-if-exists=.env vscode-extension/sidecar/local-sync.mjs",
+    "local-backend": "node scripts/worldmonitor-local.mjs",
     "dev": "vite",
     "dev:tech": "cross-env VITE_VARIANT=tech vite",
     "dev:finance": "cross-env VITE_VARIANT=finance vite",

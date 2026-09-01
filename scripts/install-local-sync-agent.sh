@@ -10,6 +10,13 @@
 # (the sync being dead for four days with nothing reporting it) is exactly the
 # kind that hides in a lifecycle hook nobody watches.
 #
+# RELATIONSHIP TO com.worldmonitor.local-api (`worldmonitor-local install`):
+# when that backend is running, its OWN in-process sync listener + 6h
+# reconciliation loop already keep the mirror fresh, making this agent
+# redundant. This agent stays as the backstop for when the backend is down
+# (never installed, crashed past KeepAlive's give-up, manually stopped) --
+# same "don't let a lifecycle gap rot the mirror" rationale, one level up.
+#
 # WHICH REDIS IT PULLS FROM IS NOT DECIDED HERE. The agent runs the ordinary
 # `local-sync` entry point, which reads UPSTASH_REDIS_REST_URL from the repo's
 # .env: hosted Upstash in production, the local Docker Redis in dev. That is

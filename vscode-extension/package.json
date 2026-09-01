@@ -18,20 +18,14 @@
         "title": "WorldMonitor: Open Local Dashboard"
       },
       {
+        "command": "worldmonitorLocal.startBackend",
+        "title": "WorldMonitor: Start Local Backend"
+      },
+      {
         "command": "worldmonitorLocal.signInWithGithub",
         "title": "WorldMonitor: Sign In with GitHub"
       }
-    ],
-    "configuration": {
-      "title": "WorldMonitor",
-      "properties": {
-        "worldmonitorLocal.repoRoot": {
-          "type": "string",
-          "default": "",
-          "description": "Absolute path to the worldmonitor repo (dist/, vscode-extension/sidecar/, api/). Defaults to the first open workspace folder."
-        }
-      }
-    }
+    ]
   },
   "scripts": {
     "build": "node esbuild.js",

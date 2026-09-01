@@ -111,6 +111,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { Redis } from '@upstash/redis';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SYNC_PREFIXES } from '../../scripts/shared/sync-domains.mjs';
@@ -397,17 +398,30 @@ async function readValues(redis, entries) {
  * inode open and sees the new file on its next start.
  */
 /**
- * The operator this machine belongs to, recorded by the sidecar
- * (local-api-server.mjs's recordOperatorIdentity) from the Supabase bearer the
- * dashboard obtains by exchanging the VS Code GitHub session token. Read from
- * beside the mirror, the one path both processes compute the same way.
+ * The operator this machine belongs to. Two sources, in priority order:
  *
- * Null until the operator has made one authenticated request. That is a
- * deliberate fail-closed cold start: with no known identity, NO user-scoped
- * brief is mirrored at all rather than guessing or mirroring everyone's. The
- * agent re-runs on its interval, so it self-heals on the next sync.
+ *   1. ~/.worldmonitor/session.json — written by `worldmonitor-local login`.
+ *      Authoritative and available from a cold start: the operator ran an
+ *      explicit login, so identity doesn't have to be inferred from traffic.
+ *   2. operator-identity.json beside the mirror — the older path, written by
+ *      the sidecar's recordOperatorIdentity() the first time the dashboard
+ *      makes an authenticated request. Still the fallback for a machine that
+ *      opened the dashboard but never ran the CLI login.
+ *
+ * Null until one of those exists. That is a deliberate fail-closed cold
+ * start: with no known identity, NO user-scoped brief is mirrored at all
+ * rather than guessing or mirroring everyone's. The agent re-runs on its
+ * interval, so it self-heals once login (or a first authed request) happens.
  */
 function readOperatorUserId() {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  try {
+    const session = JSON.parse(
+      fs.readFileSync(path.join(os.homedir(), '.worldmonitor', 'session.json'), 'utf-8'),
+    );
+    const id = session?.user?.id;
+    if (typeof id === 'string' && UUID_RE.test(id)) return id;
+  } catch { /* not logged in via the CLI — fall through to the traffic-recorded file */ }
   try {
     const raw = fs.readFileSync(path.join(path.dirname(SQLITE_PATH), 'operator-identity.json'), 'utf-8');
     const id = JSON.parse(raw).userId;

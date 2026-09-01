@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
-import type { SidecarProcess } from './sidecarProcess';
+import { BackendClient, BackendUnreachableError } from './backendClient';
 
 /**
  * This fork's own Supabase project (VITE_SUPABASE_URL in .env.local) — the
@@ -51,7 +51,7 @@ export class DashboardPanel {
     await DashboardPanel.current.handleGithubSignIn();
   }
 
-  static async createOrShow(context: vscode.ExtensionContext, sidecar: SidecarProcess): Promise<void> {
+  static async createOrShow(context: vscode.ExtensionContext, backend: BackendClient): Promise<void> {
     if (DashboardPanel.current) {
       DashboardPanel.current.panel.reveal();
       return;
@@ -75,31 +75,66 @@ export class DashboardPanel {
       },
     );
 
-    const instance = new DashboardPanel(panel, sidecar);
+    const instance = new DashboardPanel(panel, backend);
     DashboardPanel.current = instance;
     context.subscriptions.push(panel);
 
     // Assign real content immediately rather than leaving the webview an
-    // unassigned blank document for however long the sidecar takes to come
-    // up. Also means a panel that stays visually empty is now a reportable
-    // state ("stuck on Starting…") instead of ambiguous.
+    // unassigned blank document for however long the backend takes to
+    // answer. Also means a panel that stays visually empty is now a
+    // reportable state ("stuck on Connecting…") instead of ambiguous.
     panel.webview.html = instance.loadingHtml();
 
     try {
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'WorldMonitor: starting local sidecar…' },
-        () => sidecar.ensureRunning(),
-      );
-      sidecar.log('[panel] sidecar ready, rendering dashboard');
+      await instance.connect();
+      backend.log('[panel] backend reachable, rendering dashboard');
       instance.render();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      sidecar.log(`[panel] startup failed: ${message}`);
+      backend.log(`[panel] could not reach backend: ${message}`);
       panel.webview.html = instance.errorHtml(message);
     }
   }
 
-  private constructor(panel: vscode.WebviewPanel, private readonly sidecar: SidecarProcess) {
+  /**
+   * Reach the backend, and if it isn't up, offer to start it — but never
+   * spawn it ourselves. `worldmonitor-local install` put it under launchd;
+   * the most this extension does is ask launchd to kickstart it.
+   */
+  private async connect(): Promise<void> {
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'WorldMonitor: connecting to local backend…' },
+        () => this.backend.ensureReachable(),
+      );
+      return;
+    } catch (err) {
+      if (!(err instanceof BackendUnreachableError)) throw err;
+
+      const choice = await vscode.window.showErrorMessage(
+        err.tokenMissing
+          ? 'WorldMonitor local backend isn\'t installed. Run `worldmonitor-local install` in the repo, then reopen.'
+          : 'WorldMonitor local backend isn\'t running.',
+        ...(err.tokenMissing ? [] : ['Start backend']),
+      );
+      if (choice !== 'Start backend') throw err;
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'WorldMonitor: starting local backend…' },
+        async () => {
+          try {
+            await this.backend.startBackend();
+          } catch {
+            throw new Error('Could not start the backend via launchd — run `worldmonitor-local install` first.');
+          }
+          // Cold start also boots the in-process sync listener; give it room.
+          await this.backend.ensureReachable(15_000);
+        },
+      );
+    }
+  }
+
+  private constructor(panel: vscode.WebviewPanel, private readonly backend: BackendClient) {
     this.panel = panel;
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.panel.webview.onDidReceiveMessage(
@@ -145,11 +180,11 @@ export class DashboardPanel {
     try {
       const session = await vscode.authentication.getSession('github', ['read:user', 'user:email'], { createIfNone: true });
       if (!session) return;
-      this.sidecar.log('[auth] got a VS Code GitHub session, handing off to the dashboard iframe');
+      this.backend.log('[auth] got a VS Code GitHub session, handing off to the dashboard iframe');
       void this.panel.webview.postMessage({ type: 'wm-vscode-github-token', token: session.accessToken });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.sidecar.log(`[auth] vscode.authentication.getSession failed: ${message}`);
+      this.backend.log(`[auth] vscode.authentication.getSession failed: ${message}`);
       void vscode.window.showErrorMessage(`WorldMonitor sign-in failed: ${message}`);
     }
   }
@@ -173,13 +208,13 @@ export class DashboardPanel {
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        this.sidecar.log(`[panel] refused to open non-http(s) external URL: ${url}`);
+        this.backend.log(`[panel] refused to open non-http(s) external URL: ${url}`);
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.sidecar.log(`[panel] openExternal failed: ${message}`);
+      this.backend.log(`[panel] openExternal failed: ${message}`);
     }
   }
 
@@ -188,7 +223,7 @@ export class DashboardPanel {
   loadingHtml(): string {
     return `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family,sans-serif);padding:2rem;color:var(--vscode-foreground);">
       <h2>WorldMonitor</h2>
-      <p>Starting local sidecar…</p>
+      <p>Connecting to local backend…</p>
       <p style="opacity:.7;font-size:.9em;">Local cached data only — no live network fetch.</p>
     </body></html>`;
   }
@@ -207,7 +242,7 @@ export class DashboardPanel {
   private render(): void {
     const nonce = randomBytes(16).toString('base64');
     const csp = buildCsp(nonce);
-    const src = `${this.sidecar.baseUrl}/dashboard.html?embed=vscode`;
+    const src = `${this.backend.baseUrl}/dashboard.html?embed=vscode`;
     this.panel.webview.html = `<!DOCTYPE html><html><head>
       <meta http-equiv="Content-Security-Policy" content="${csp}">
       <style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}iframe{border:0;width:100%;height:100%;display:block;}</style>

@@ -6,16 +6,12 @@ tsconfig.json
 *.map
 .vscode-test/**
 
-# Per-machine state, never distributable. vsce uses THIS file instead of
-# .gitignore once one exists, so these need their own entry despite already
-# being gitignored (repo root .gitignore:99) — omitting them here means
-# `npm run package` silently bakes whoever built the .vsix's real synced
-# brief data (local-cache.db) and Supabase-authenticated identity
-# (operator-identity.json) into the artifact. That defeats the fail-closed
-# guard local-sync.mjs's readOperatorUserId() depends on (null userId ⇒ no
-# user-scoped brief mirrored; a shipped file is never null) and leaks one
-# operator's personal brief data to anyone who installs that .vsix without
-# deleting it first — the packaging-time version of session 39's per-user
-# brief: scoping leak.
-sidecar/local-cache.db
-sidecar/operator-identity.json
+# The whole sidecar/ backend now ships and runs as a standalone launchd
+# service via `worldmonitor-local install` — the extension is a pure client
+# (src/backendClient.ts) and never spawns any of it. Packaging it into the
+# .vsix would only bloat the artifact and, worse, bake in whoever built it
+# real synced brief data (local-cache.db) + Supabase identity
+# (operator-identity.json / session.json) — the packaging-time form of
+# session 39's per-user brief: scoping leak. vsce reads THIS file instead of
+# .gitignore once it exists, so the exclusion has to live here.
+sidecar/**

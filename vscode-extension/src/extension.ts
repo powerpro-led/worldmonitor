@@ -1,8 +1,13 @@
 import * as vscode from 'vscode';
-import { SidecarProcess } from './sidecarProcess';
+import { BackendClient } from './backendClient';
 import { DashboardPanel } from './panel';
 
-let sidecar: SidecarProcess | undefined;
+let backend: BackendClient | undefined;
+
+function getBackend(context: vscode.ExtensionContext): BackendClient {
+  if (!backend) backend = new BackendClient(context);
+  return backend;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   // Status Bar item, not an Activity Bar icon — clicking an Activity Bar
@@ -18,15 +23,23 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('worldmonitorLocal.openDashboard', async () => {
-      const repoRoot = resolveRepoRoot();
-      if (!repoRoot) {
-        vscode.window.showErrorMessage(
-          'WorldMonitor: open the worldmonitor repo as your VS Code workspace, or set worldmonitorLocal.repoRoot.',
+      // No repo root needed anymore: the backend is a standalone launchd
+      // service (`worldmonitor-local install`), and this extension is a pure
+      // client that only talks to 127.0.0.1:46123.
+      await DashboardPanel.createOrShow(context, getBackend(context));
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('worldmonitorLocal.startBackend', async () => {
+      try {
+        await getBackend(context).startBackend();
+        void vscode.window.showInformationMessage('WorldMonitor: backend restart requested via launchd.');
+      } catch {
+        void vscode.window.showErrorMessage(
+          'WorldMonitor: could not start the backend. Run `worldmonitor-local install` in the repo first.',
         );
-        return;
       }
-      if (!sidecar) sidecar = new SidecarProcess(repoRoot, context);
-      await DashboardPanel.createOrShow(context, sidecar);
     }),
   );
 
@@ -38,12 +51,8 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  sidecar?.dispose();
-  sidecar = undefined;
-}
-
-function resolveRepoRoot(): string | undefined {
-  const configured = vscode.workspace.getConfiguration('worldmonitorLocal').get<string>('repoRoot');
-  if (configured) return configured;
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  // Nothing to tear down: the backend is owned by launchd and outlives this
+  // extension by design. The output channel is already registered in
+  // context.subscriptions, so VS Code disposes it for us.
+  backend = undefined;
 }

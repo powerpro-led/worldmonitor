@@ -6,6 +6,7 @@ import dns from 'node:dns/promises';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
+import os from 'node:os';
 import { promisify } from 'node:util';
 import { brotliCompress, gzipSync } from 'node:zlib';
 import path from 'node:path';
@@ -23,6 +24,64 @@ const DESKTOP_AUTH_SECRET_ENV = 'WM_DESKTOP_SHARED_SECRET';
 const DESKTOP_AUTH_TIMESTAMP_HEADER = 'X-WorldMonitor-Desktop-Timestamp';
 const DESKTOP_AUTH_SIGNATURE_HEADER = 'X-WorldMonitor-Desktop-Signature';
 const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
+
+/**
+ * Per-machine state directory shared with the `worldmonitor-local` CLI
+ * (scripts/worldmonitor-local.mjs). Deliberately outside the repo tree: it's
+ * a property of the machine, survives a re-clone, and is never committed by
+ * accident.
+ *   local-api-token — the loopback transport secret guarding every /api/*
+ *                     route (written by `worldmonitor-local install`)
+ *   session.json    — the operator's Supabase session (written by
+ *                     `worldmonitor-local login`)
+ */
+const WM_LOCAL_STATE_DIR = path.join(os.homedir(), '.worldmonitor');
+const WM_LOCAL_TOKEN_FILE = path.join(WM_LOCAL_STATE_DIR, 'local-api-token');
+const WM_LOCAL_SESSION_FILE = path.join(WM_LOCAL_STATE_DIR, 'session.json');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolves the loopback transport secret that guards every /api/* route:
+ *   1. an explicit `options.token` (programmatic callers / tests)
+ *   2. LOCAL_API_TOKEN in the environment — the Tauri Rust shell, Docker, and
+ *      the sidecar's own child spawns all still set it directly; unchanged
+ *   3. ~/.worldmonitor/local-api-token, written once by `worldmonitor-local
+ *      install` — the standalone-backend path, where launchd starts this
+ *      process with no token in its environment on purpose
+ * `options.tokenFile` / LOCAL_API_TOKEN_FILE override the file location (used
+ * by the default-deny test to point at a guaranteed-absent path). Returns ''
+ * when nothing is set — the dispatch() auth gate then 503s every request.
+ */
+function resolveLocalApiToken(options = {}) {
+  if (typeof options.token === 'string' && options.token) return options.token;
+  if (process.env.LOCAL_API_TOKEN) return process.env.LOCAL_API_TOKEN;
+  const tokenFile = options.tokenFile || process.env.LOCAL_API_TOKEN_FILE || WM_LOCAL_TOKEN_FILE;
+  try {
+    const fromFile = readFileSync(tokenFile, 'utf-8').trim();
+    if (fromFile) return fromFile;
+  } catch { /* absent until `worldmonitor-local install` has run */ }
+  return '';
+}
+
+/**
+ * The Supabase user id from ~/.worldmonitor/session.json, written by
+ * `worldmonitor-local login`. Lets this machine know which operator it
+ * belongs to BEFORE the dashboard has made a single authenticated request —
+ * previously the only identity source was recordOperatorIdentity() decoding
+ * a bearer off live traffic. Claims are read, not verified: the login flow
+ * that produced the file already went through Supabase + the org-membership
+ * gate, and every /api/* route still independently rejects a bearer it can't
+ * validate.
+ */
+function readSessionUserId(sessionFile = WM_LOCAL_SESSION_FILE) {
+  try {
+    const session = JSON.parse(readFileSync(sessionFile, 'utf-8'));
+    const id = session?.user?.id;
+    return typeof id === 'string' && UUID_RE.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
 
 // Monkey-patch globalThis.fetch to force IPv4 for HTTPS requests.
 // Node.js built-in fetch (undici) tries IPv6 first via Happy Eyeballs.
@@ -739,14 +798,24 @@ function saveVerboseState() {
 let _identityPath = null;
 let _lastRecordedUserId = null;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function initOperatorIdentity(sqlitePath) {
   if (!sqlitePath) return;
   _identityPath = path.join(path.dirname(sqlitePath), 'operator-identity.json');
   try {
     _lastRecordedUserId = JSON.parse(readFileSync(_identityPath, 'utf-8')).userId || null;
   } catch { /* absent on first run — recorded on the first authenticated request */ }
+  // `worldmonitor-local login` establishes identity independently of any
+  // dashboard traffic. If it has run and operator-identity.json doesn't
+  // already agree, adopt the logged-in user and write it through so the
+  // headless local-sync agent (which only reads operator-identity.json)
+  // converges without waiting for the first authenticated request.
+  const sessionUserId = readSessionUserId();
+  if (sessionUserId && sessionUserId !== _lastRecordedUserId) {
+    _lastRecordedUserId = sessionUserId;
+    try {
+      writeFileSync(_identityPath, JSON.stringify({ userId: sessionUserId, seenAt: new Date().toISOString() }, null, 2));
+    } catch { /* best effort — recordOperatorIdentity() still covers it via live traffic */ }
+  }
 }
 
 function jwtSubject(authHeader) {
@@ -969,6 +1038,7 @@ function resolveConfig(options = {}) {
     ? options.allowPrivateFetchOrigins.filter((o) => typeof o === 'string' && o.length > 0)
     : [];
   const logger = options.logger ?? console;
+  const token = resolveLocalApiToken(options);
   if (mode === 'docker' && requestedFallback) {
     logger.warn(
       `[local-api] Cloud fallback disabled in Docker mode (self-hosted instances must not proxy to ${resolveApiOrigin(process.env.APP_DOMAIN)})`,
@@ -993,6 +1063,7 @@ function resolveConfig(options = {}) {
     allowPrivateRemoteBase,
     allowPrivateFetchOrigins,
     logger,
+    token,
   };
 }
 
@@ -1597,7 +1668,7 @@ async function tryServeStaticAsset(requestUrl, req, context) {
   const isHtml = ext === '.html';
   let contentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
   if (isHtml && requestUrl.searchParams.get('embed') === 'vscode') {
-    const shim = buildVsCodeEmbedShim(process.env.LOCAL_API_TOKEN);
+    const shim = buildVsCodeEmbedShim(context.token);
     const html = body.toString('utf-8').replace(/<head>/i, `<head>${shim}`);
     body = Buffer.from(html, 'utf-8');
   }
@@ -1632,21 +1703,22 @@ async function dispatch(requestUrl, req, routes, context) {
   }
 
   // ── Global auth gate ────────────────────────────────────────────────────
-  // Every endpoint below requires a valid LOCAL_API_TOKEN.  This prevents
+  // Every endpoint below requires a valid transport token.  This prevents
   // other local processes, malicious browser scripts, and rogue extensions
-  // from accessing the sidecar API without the per-session token.
+  // from accessing the sidecar API without the per-machine token.
   //
-  // Default-deny: if LOCAL_API_TOKEN is unset/empty we reject every request.
-  // Treating "unset" as "auth disabled" turns any standalone sidecar run
-  // (e.g. Docker mode) into an open local-HTTP proxy reachable by other
-  // local users, browser tabs on allowed origins, etc. The Tauri Rust
-  // shell always sets LOCAL_API_TOKEN at launch; production callers must
-  // do the same.
-  const expectedToken = process.env.LOCAL_API_TOKEN;
+  // Default-deny: with no token resolved (see resolveLocalApiToken — env,
+  // then ~/.worldmonitor/local-api-token) we reject every request. Treating
+  // "unset" as "auth disabled" turns any standalone run (Docker, a bare
+  // `node local-api-server.mjs`) into an open local-HTTP proxy reachable by
+  // other local users, browser tabs on allowed origins, etc. The Tauri Rust
+  // shell sets LOCAL_API_TOKEN at launch; the standalone backend reads the
+  // file `worldmonitor-local install` wrote.
+  const expectedToken = context.token;
   if (!expectedToken) {
     context.logger.warn(
-      `[local-api] LOCAL_API_TOKEN not set — refusing request to ${requestUrl.pathname}. ` +
-      `Set LOCAL_API_TOKEN before starting the sidecar.`,
+      `[local-api] no transport token resolved — refusing request to ${requestUrl.pathname}. ` +
+      `Set LOCAL_API_TOKEN, or run \`worldmonitor-local install\` to write ~/.worldmonitor/local-api-token.`,
     );
     return json({ error: 'Service misconfigured: LOCAL_API_TOKEN not set' }, 503);
   }

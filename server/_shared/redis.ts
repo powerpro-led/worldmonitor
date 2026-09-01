@@ -3,6 +3,29 @@ import { getRpcNoStoreReasonFromPayload } from './cache-contract';
 import { buildUpstreamEvent, getUsageScope, sendToAxiom } from './usage';
 import { notifyKeyChanged, notifyPipelineWrites } from './sync-notify';
 
+/**
+ * Hand a fire-and-forget sync-notify promise to the current request's
+ * `waitUntil` so a Vercel Edge isolate can't tear down before the PUBLISH /
+ * XADD reach Upstash (session 39's 7-pass review, deferred finding #1 —
+ * without this the RPC-side real-time push is silently dropped some fraction
+ * of the time and only the 6h reconciliation backstop covers it).
+ *
+ * `ctx` comes from the gateway-set UsageScope via AsyncLocalStorage — the
+ * exact mechanism `emitUpstreamFromHook` already uses below — so NO
+ * setCachedJson / runRedisPipeline call site has to thread it. Outside any
+ * gateway request (cron, seed scripts) there's no scope: the fetches were
+ * still dispatched, they just aren't kept alive past return, which those
+ * long-lived runtimes don't need. Never throws.
+ */
+function registerSyncNotify(p: Promise<void> | null): void {
+  if (!p) return;
+  try {
+    getUsageScope()?.ctx?.waitUntil(p);
+  } catch {
+    /* no scope / non-Edge runtime — the notify fetches are already in flight */
+  }
+}
+
 // Default Upstash REST timeouts are tuned for production (Vercel ↔ Upstash
 // same-datacenter latency is sub-50ms, 1.5s leaves >20× headroom). They
 // become a problem only when running scripts that fan out 30+ parallel
@@ -223,10 +246,20 @@ export async function setCachedJson(key: string, value: unknown, ttlSeconds: num
       return false;
     }
     // Fast-path push nudge — fire-and-forget, see sync-notify.ts's own
-    // comment for why this is never awaited. `finalKey` (not `key`) so the
-    // notified key matches what was actually written (env-prefixed in
-    // preview/dev — see getKeyPrefix()).
-    notifyKeyChanged(url, token, finalKey, 'string', JSON.stringify(value));
+    // comment for why this is never awaited. registerSyncNotify hands the
+    // in-flight promise to ctx.waitUntil() so an Edge isolate doesn't drop it.
+    //
+    // Notify with the caller's LOGICAL key, and only when no env prefix is
+    // active (finalKey === key: production, or a `raw` write). Operators
+    // mirror from PRODUCTION Upstash — a preview/dev deploy's
+    // `preview:<sha>:<key>` write must not be pushed into their mirror, and
+    // the unprefixed logical key is what the listener needs to store anyway.
+    // Previously passed `finalKey`, which silently no-op'd in preview/dev via
+    // an isMirroredKey() prefix miss rather than by intent (session 39
+    // review, deferred finding #6).
+    if (finalKey === key) {
+      registerSyncNotify(notifyKeyChanged(url, token, key, 'string', JSON.stringify(value)));
+    }
     return true;
   } catch (err) {
     console.warn('[redis] setCachedJson failed:', errMsg(err));
@@ -412,8 +445,9 @@ export async function runRedisPipeline(commands: RedisPipelineCommand[], raw = f
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return [];
 
+  const normalizedCommands = commands.map((command) => normalizePipelineCommand(command, raw));
+  let result: Array<{ result?: unknown }>;
   try {
-    const normalizedCommands = commands.map((command) => normalizePipelineCommand(command, raw));
     const response = await fetch(`${url}/pipeline`, {
       method: 'POST',
       headers: {
@@ -427,19 +461,26 @@ export async function runRedisPipeline(commands: RedisPipelineCommand[], raw = f
       console.warn(`[redis] runRedisPipeline HTTP ${response.status}`);
       return [];
     }
-    const result = (await response.json()) as Array<{ result?: unknown }>;
-    // Fast-path push nudge for any write verb in this batch that touched a
-    // mirrored key (ZADD/HSET/... — plain SET here goes through the same
-    // path too, e.g. lock/queue writers that don't use setCachedJson).
-    // Fire-and-forget, see sync-notify.ts's own comment for why. Uses the
-    // NORMALIZED commands (post prefixKey()), matching what was actually
-    // written — same reasoning as setCachedJson's finalKey.
-    notifyPipelineWrites(url, token, normalizedCommands);
-    return result;
+    result = (await response.json()) as Array<{ result?: unknown }>;
   } catch (err) {
     console.warn('[redis] runRedisPipeline failed:', errMsg(err));
     return [];
   }
+  // Fast-path push nudge for any write verb in this batch that touched a
+  // mirrored key (ZADD/HSET/... — plain SET here goes through the same path
+  // too, e.g. lock/queue writers that don't use setCachedJson). Fire-and-
+  // forget, see sync-notify.ts's own comment for why. Uses the NORMALIZED
+  // commands (post prefixKey()), matching what was actually written — same
+  // reasoning as setCachedJson. In preview/dev the normalized keys carry the
+  // `preview:<sha>:` prefix and isMirroredKey() rejects them, so this is
+  // already a no-op off production — the same intentional "operators mirror
+  // prod only" boundary setCachedJson enforces explicitly (finding #6).
+  // Structurally OUTSIDE the write's try/catch so it can never cause a
+  // completed pipeline write to be misreported as failed (session 39 review,
+  // deferred finding #5); registerSyncNotify hands the promise to
+  // ctx.waitUntil() (finding #1).
+  registerSyncNotify(notifyPipelineWrites(url, token, normalizedCommands));
+  return result;
 }
 
 export async function compareAndDeleteRedisKey(key: string, expectedValue: string, raw = false): Promise<boolean> {

@@ -24,14 +24,15 @@ Root-caused and fixed live, not guessed. Also fixed a nitric.yaml quoting bug (L
 locally), re-confirmed a known-but-forgotten orphaned seeder (`fetch-gpsjam.mjs`), found+fixed a
 seed-envelope unwrap bug in 2 more RPC handlers (item 5), and — operator's own call, not a bug fix —
 removed `实时情报`/GdeltIntelPanel entirely after a redundancy review (item 6, ~65 files, fully verified).
-**STATUS — session 40 (continued): all six items committed AND pushed.** `main == origin/main` at
-`4d0608b`. Session-40 commits, on top of session 39's 4:
+**STATUS — session 40 (continued): ALL SIX handoff items done + pushed, AND item 4's full deferred
+list.** Session-40 commits on top of session 39's 4:
 `d995272` (item 1) · `56d1f7b` (item 2) · `1feb98c` (item 3) · `43a4451` (item 5) ·
-`4d0608b` (item 6 + both its follow-ups — GDELT surface removed entirely, `gdeltIntel` health check
-retargeted to the live `seed-meta:news:insights`; see item 6's own RESOLVED note below).
-Item 4 (session 39's `ctx.waitUntil()` deferred list) is the only thing left untouched — next
-scoped-pass candidate. 4 unrelated `.docx` files still sit untracked in the tree (3rd session flagged,
-operator's to deal with).
+`4d0608b` (item 6 + both follow-ups) · `1bdf245` (docs) · then item 4's 7 deferred reliability
+findings in one pass (see the "RESOLVED — session 40 (continued)" block at the end of the
+THIRTY-NINTH handoff below — the `ctx.waitUntil()` one needed NO 21-call-site refactor because
+`redis.ts` already has ambient `ctx` via `getUsageScope()`/AsyncLocalStorage).
+Nothing from the handoff left open. 4 unrelated `.docx` files still sit untracked in the tree
+(3rd session flagged, operator's to deal with).
 
 1. **`docker/redis-rest-proxy.mjs` — critical connection-isolation bug, fixed.** The proxy holds ONE
    shared `client` connection for every GET/SET/SCAN. `SUBSCRIBE` was in its command allowlist and got
@@ -413,6 +414,48 @@ sites).
      - Minor: `sync-listener.mjs` and `local-sync.mjs` independently define the identical `kv_cache` DDL —
        low risk (schema is stable, write logic itself isn't duplicated — one does upsert, the other plain
        insert into a fresh file), but a future column addition needs remembering to edit both.
+
+   **RESOLVED — session 40 (continued). All seven deferred findings above fixed in one pass.**
+   The `ctx.waitUntil()` one turned out NOT to need the ~21-call-site refactor: `server/_shared/redis.ts`
+   already imports `getUsageScope()` from `./usage.ts`, and `server/gateway.ts` already wraps every
+   handler in `runWithUsageScope({ ctx, … })` (AsyncLocalStorage) — the exact mechanism
+   `emitUpstreamFromHook()` uses for usage telemetry. So `ctx` is available *ambiently* inside
+   `setCachedJson`/`runRedisPipeline` with zero call-site changes.
+   - **#1** — `sync-notify.ts`'s `notifyKeyChanged`/`notifyPipelineWrites` now RETURN their in-flight
+     promise (or `null`); `redis.ts` has a `registerSyncNotify(p)` helper that does
+     `getUsageScope()?.ctx?.waitUntil(p)` (try/caught — no scope outside a request = fetches already
+     dispatched, no keep-alive needed). Wired into both `setCachedJson` and `runRedisPipeline`.
+   - **#2** — `scripts/_seed-utils.mjs`'s `notifyChange()` is now `export`ed and takes an optional
+     `type` param (string values inline as before; list/zset/hash/set go signal-only, matching
+     `notifyPipelineWrites`). Called from the three bypass sites: `seed-military-cii.mjs`'s
+     `redisSetJson` (its canonical `intelligence:military-cii:v1`), and `seed-forecasts.mjs`'s raw
+     `conflict:ema-windows:v1` SET + `forecast:predictions:history:v1` LPUSH (`appendHistorySnapshot`).
+   - **#3** — `local-sync.mjs`'s rebuild now, just before the atomic rename, re-opens the LIVE db
+     read-only and `SELECT … WHERE synced_at > <run-start>` — any row a listener push applied during
+     the (minutes-long) rebuild is upserted into the tmp db so the rename can't revert it. Rows from a
+     prior rebuild have `synced_at <= run-start` and are correctly superseded. Shrinks the lose-a-push
+     window from minutes to the merge→close→rename gap (~ms); a push in that residual gap still
+     self-heals on the next push/rebuild. Best-effort (try/caught, non-fatal).
+   - **#4** — `startFullReconciliationLoop()` returns a `clearInterval` stop fn; `startSyncListener()`
+     returns a `controller.abort()` stop fn and passes `{ signal }` to `runForever()`, which now
+     breaks its reconnect loop on abort and links the signal into `runOneConnection`'s `AbortController`
+     (aborts the in-flight fetch + read loop immediately). `createLocalApiServer().close()` calls both.
+   - **#5** — the pipeline-write notify is now structurally OUTSIDE `runRedisPipeline`'s write
+     try/catch (result captured, then `return` past it) — a future throwing edit can't misreport a
+     completed write as failed.
+   - **#6** — `setCachedJson` notifies with the caller's LOGICAL key and only when `finalKey === key`
+     (production, or a `raw` write) — preview/dev is now an *intentional, commented* skip, not an
+     accidental `isMirroredKey()` prefix miss.
+   - **#7** — DDL extracted to `vscode-extension/sidecar/kv-cache-schema.mjs`, imported by both writers.
+   Also fixed a stale comment in `scripts/shared/sync-domains.mjs` ("sync-notify.ts DUPLICATES this
+   list" — session 39 already switched it to import).
+   Verified: `tsc` (root/api/gcp) clean, biome clean on touched files (1 pre-existing warning in
+   `local-api-server.mjs:1598`, untouched), `node --check` on all `.mjs`, `sync-domains` + `sync-listener`
+   + `redis-caching` + `simulation-queue-parity` + `aviation-cache-poison` suites all green, full
+   `test:data` diffed against baseline — zero net-new. **No bespoke tests added for the reliability
+   hardening** (matches how session 39 handled its own deferred set); `runForever({signal})` teardown
+   and `notifyChange` type-routing are covered only by `tsc` + reading — a follow-up could extract
+   `local-sync.mjs`'s merge into a testable unit.
 
 ---
 

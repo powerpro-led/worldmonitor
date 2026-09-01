@@ -34,7 +34,7 @@
 //   - Optional env: RELAY_SHARED_SECRET, RELAY_AUTH_HEADER
 
 import { pathToFileURL } from 'node:url';
-import { loadEnvFile, CHROME_UA, getRedisCredentials, acquireLockSafely, releaseLock, withRetry, writeFreshnessMetadata } from './_seed-utils.mjs';
+import { loadEnvFile, CHROME_UA, getRedisCredentials, acquireLockSafely, releaseLock, withRetry, writeFreshnessMetadata, notifyChange } from './_seed-utils.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -463,7 +463,16 @@ async function redisGetJson(url, token, key) {
 }
 
 async function redisSetJson(url, token, key, value, ttl) {
-  await redisCommand(url, token, ['SET', key, JSON.stringify(value), 'EX', ttl]);
+  const serialized = JSON.stringify(value);
+  await redisCommand(url, token, ['SET', key, serialized, 'EX', ttl]);
+  // This seeder writes its canonical key (intelligence:military-cii:v1) through
+  // this bespoke helper, not _seed-utils.mjs's atomicPublish/writeExtraKey, so
+  // the real-time operator-mirror push would otherwise skip it entirely and it
+  // would only refresh on the 6h full-rescan backstop (session 39 review,
+  // deferred finding #2). notifyChange() self-gates on isMirroredKey().
+  notifyChange(url, token, key, serialized).catch((err) => {
+    console.warn(`  [sync-notify] ${key}: best-effort push failed (non-fatal): ${err.message}`);
+  });
 }
 
 async function readMilitaryFlights(readJson) {

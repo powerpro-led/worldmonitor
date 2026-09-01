@@ -2036,8 +2036,9 @@ const FULL_RECONCILIATION_INTERVAL_MS = 6 * 60 * 60_000; // 6h
  * can't wedge the sidecar's own HTTP server, only the (recreated-on-next-
  * interval) child.
  */
+/** @returns {() => void} stop fn — clears the recurring interval (see close()). */
 function startFullReconciliationLoop(context) {
-  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return;
+  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return () => {};
 
   const scriptPath = path.join(__dirname, 'local-sync.mjs');
   const runOnce = () => {
@@ -2050,6 +2051,7 @@ function startFullReconciliationLoop(context) {
   runOnce();
   const timer = setInterval(runOnce, FULL_RECONCILIATION_INTERVAL_MS);
   timer.unref(); // don't hold the process open for this alone
+  return () => clearInterval(timer);
 }
 
 /**
@@ -2062,15 +2064,19 @@ function startFullReconciliationLoop(context) {
  * operation, and its own internal reconnect loop already handles every
  * failure mode it knows how to recover from.
  */
+/** @returns {Promise<() => void>} stop fn — aborts the reconnect loop + in-flight SSE connection (see close()). */
 async function startSyncListener(context) {
-  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return;
+  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return () => {};
   try {
     const { runForever } = await import('./sync-listener.mjs');
-    runForever().catch((err) => {
+    const controller = new AbortController();
+    runForever({ signal: controller.signal }).catch((err) => {
       context.logger.error('[local-api] sync-listener crashed unexpectedly (fast-path push disabled for this session — local-sync.mjs\'s periodic full rescan still covers freshness):', err);
     });
+    return () => controller.abort();
   } catch (err) {
     context.logger.warn(`[local-api] sync-listener.mjs failed to load (non-fatal): ${err.message}`);
+    return () => {};
   }
 }
 
@@ -2080,6 +2086,8 @@ export async function createLocalApiServer(options = {}) {
   initOperatorIdentity(process.env.LOCAL_SQLITE_PATH);
   const routes = await buildRouteTable(context.apiDir);
   let unregisterSelfFetchOrigins = null;
+  let stopReconciliationLoop = null;
+  let stopSyncListener = null;
 
   const server = createServer(async (req, res) => {
     const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${context.port}`);
@@ -2267,12 +2275,19 @@ export async function createLocalApiServer(options = {}) {
       // they're split this way. Both are no-ops outside tauri-sidecar mode
       // or without a read-only Upstash credential, and neither can block or
       // fail server startup.
-      startFullReconciliationLoop(context);
-      startSyncListener(context);
+      stopReconciliationLoop = startFullReconciliationLoop(context);
+      stopSyncListener = await startSyncListener(context);
 
       return { port: boundPort };
     },
     async close() {
+      // Tear down the real-time sync side too — the 6h reconciliation
+      // setInterval and the listener's long-lived SSE connection would
+      // otherwise outlive close() (session 39 review, deferred finding #4;
+      // only matters when the sidecar server is created+closed repeatedly
+      // in one process — a test, or a future restart path).
+      if (stopSyncListener) { stopSyncListener(); stopSyncListener = null; }
+      if (stopReconciliationLoop) { stopReconciliationLoop(); stopReconciliationLoop = null; }
       if (unregisterSelfFetchOrigins) {
         unregisterSelfFetchOrigins();
         unregisterSelfFetchOrigins = null;

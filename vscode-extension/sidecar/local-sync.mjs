@@ -114,6 +114,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SYNC_PREFIXES } from '../../scripts/shared/sync-domains.mjs';
+import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -441,15 +442,9 @@ function openDatabase() {
   fs.rmSync(SQLITE_TMP_PATH, { force: true });
   const db = new DatabaseSync(SQLITE_TMP_PATH);
   // Always a fresh file, so a schema change here is non-breaking — no
-  // migration is ever needed.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS kv_cache (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      type TEXT NOT NULL,
-      synced_at INTEGER NOT NULL
-    )
-  `);
+  // migration is ever needed. DDL shared with sync-listener.mjs via
+  // kv-cache-schema.mjs so the two writers can't drift.
+  db.exec(KV_CACHE_DDL);
   return db;
 }
 
@@ -512,6 +507,39 @@ async function main() {
         totalWritten++;
       }
       db.exec('COMMIT');
+    }
+
+    // Merge back any real-time push sync-listener.mjs applied to the LIVE db
+    // while this rebuild was running (which can take minutes). Those rows
+    // carry a synced_at newer than this run's start timestamp; the blind
+    // rename below would otherwise silently revert them to the older scanned
+    // value until the next push or full rebuild (session 39's 7-pass review,
+    // deferred finding #3 — "needs a merge policy, not a blind overwrite").
+    // Rows from a PRIOR rebuild have synced_at <= syncedAt and are correctly
+    // superseded by this fresh scan.
+    if (fs.existsSync(SQLITE_PATH)) {
+      let live = null;
+      try {
+        live = new DatabaseSync(SQLITE_PATH, { readOnly: true });
+        const fresher = live
+          .prepare('SELECT key, value, type, synced_at AS syncedAt FROM kv_cache WHERE synced_at > ?')
+          .all(syncedAt);
+        const kept = fresher.filter((row) => keepKey(row.key));
+        if (kept.length > 0) {
+          const upsert = db.prepare(
+            'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
+            + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at',
+          );
+          db.exec('BEGIN');
+          for (const row of kept) upsert.run(row.key, row.value, row.type, row.syncedAt);
+          db.exec('COMMIT');
+          console.log(`[local-sync] merged ${kept.length} live push(es) that landed during the rebuild`);
+        }
+      } catch (err) {
+        console.warn(`[local-sync] live-push merge skipped (non-fatal): ${err.message}`);
+      } finally {
+        live?.close();
+      }
     }
   } finally {
     clearTimeout(watchdog);

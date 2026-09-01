@@ -12,10 +12,12 @@
  *     a key the rescan would never mirror doesn't get pushed either.
  *
  * server/_shared/sync-notify.ts (the RPC-handler write-side twin, used by
- * setCachedJson/runRedisPipeline) is a Vercel Edge-bundled TypeScript file in
- * a completely separate, unbundled-vs-bundled module graph from this one —
- * no existing cross-import path reaches from there into scripts/. It
- * DUPLICATES this list rather than importing it; keep both in sync by hand.
+ * setCachedJson/runRedisPipeline) is a Vercel Edge-bundled TypeScript file,
+ * but it IMPORTS isMirroredKey() from this module directly (esbuild inlines
+ * it at build time — same cross-directory pattern server/_shared/llm.ts and
+ * simulation-queue.ts already use). An earlier version hand-duplicated the
+ * list on the incorrect claim that no such path existed, and it drifted
+ * once; the import removed that risk class (2026-08-23).
  */
 
 /** Domain scope — see the per-prefix comments below for how this list was chosen. */

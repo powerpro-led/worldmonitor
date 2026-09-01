@@ -53,6 +53,14 @@ export type MirrorValueType = 'string' | 'zset' | 'hash' | 'set' | 'list';
  * comment. `serializedValue` is optional: writers that only know a key
  * changed (e.g. a ZADD inside runRedisPipeline) omit it and the listener
  * does one targeted read for that key instead of getting the value inline.
+ *
+ * Returns the settled-or-swallowed promise for the two in-flight requests
+ * (or `null` when the key isn't mirrored and nothing was dispatched). The
+ * caller does NOT await it, but MAY hand it to `ctx.waitUntil()` so a Vercel
+ * Edge isolate doesn't tear down before the PUBLISH/XADD reach Upstash —
+ * without that, the RPC-side push is dropped some fraction of the time in
+ * production, degrading to the 6h reconciliation backstop (session 39's
+ * 7-pass review, deferred finding #1). The promise never rejects.
  */
 export function notifyKeyChanged(
   url: string,
@@ -60,8 +68,8 @@ export function notifyKeyChanged(
   key: string,
   type: MirrorValueType,
   serializedValue?: string,
-): void {
-  if (!isMirroredKey(key)) return;
+): Promise<void> | null {
+  if (!isMirroredKey(key)) return null;
   const inline = serializedValue !== undefined && utf8ByteLength(serializedValue) <= SYNC_NOTIFY_MAX_INLINE_BYTES;
   const message = JSON.stringify(inline ? { key, type, value: serializedValue } : { key, type });
 
@@ -81,9 +89,12 @@ export function notifyKeyChanged(
     signal: AbortSignal.timeout(SYNC_NOTIFY_TIMEOUT_MS),
   });
 
-  Promise.all([publish, changelog]).catch((err) => {
-    console.warn(`[sync-notify] ${key}: best-effort push failed (non-fatal):`, err instanceof Error ? err.message : String(err));
-  });
+  return Promise.all([publish, changelog]).then(
+    () => {},
+    (err) => {
+      console.warn(`[sync-notify] ${key}: best-effort push failed (non-fatal):`, err instanceof Error ? err.message : String(err));
+    },
+  );
 }
 
 /** Redis write-command verbs this notify path understands, mapped to their mirror type. */
@@ -104,12 +115,22 @@ const MIRRORABLE_WRITE_VERBS: Record<string, MirrorValueType> = {
  * cheaper to compute correctly than reconstructing the post-write value from
  * a partial command (e.g. one ZADD member among many), and the listener's
  * targeted follow-up read is still far cheaper than a full rescan.
+ *
+ * Never throws (each notifyKeyChanged builds its own promise chain and the
+ * loop does no work that can fail). Returns a single promise covering every
+ * dispatched notify, or `null` when the batch had no mirrored write — the
+ * caller may pass it to `ctx.waitUntil()` (see notifyKeyChanged's contract).
  */
-export function notifyPipelineWrites(url: string, token: string, commands: unknown[][]): void {
+export function notifyPipelineWrites(url: string, token: string, commands: unknown[][]): Promise<void> | null {
+  const pending: Promise<void>[] = [];
   for (const command of commands) {
     const verb = typeof command[0] === 'string' ? command[0].toUpperCase() : '';
     const type = MIRRORABLE_WRITE_VERBS[verb];
     const key = command[1];
-    if (type && typeof key === 'string') notifyKeyChanged(url, token, key, type);
+    if (type && typeof key === 'string') {
+      const p = notifyKeyChanged(url, token, key, type);
+      if (p) pending.push(p);
+    }
   }
+  return pending.length > 0 ? Promise.all(pending).then(() => {}) : null;
 }

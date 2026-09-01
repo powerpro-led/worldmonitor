@@ -47,6 +47,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
+import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,14 +145,7 @@ function upsertRow(key, value, type) {
   const db = new DatabaseSync(SQLITE_PATH);
   try {
     db.exec('PRAGMA journal_mode = WAL');
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS kv_cache (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        type TEXT NOT NULL,
-        synced_at INTEGER NOT NULL
-      )
-    `);
+    db.exec(KV_CACHE_DDL);
     db.prepare(
       'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
       + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at',
@@ -292,8 +286,14 @@ function decodeFrame(raw) {
  * (runForever) treats every return as "reconnect", there's no persistent
  * "healthy" exit.
  */
-async function runOneConnection(redis) {
+async function runOneConnection(redis, externalSignal) {
   const controller = new AbortController();
+  // An external stop (sidecar close()) aborts the in-flight fetch + read loop
+  // immediately instead of waiting out IDLE_TIMEOUT_MS.
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
   let idleTimer;
   const resetIdleTimer = () => {
     clearTimeout(idleTimer);
@@ -364,20 +364,31 @@ async function runOneConnection(redis) {
   }
 }
 
-async function runForever() {
+/**
+ * @param {{ signal?: AbortSignal }} [options] - pass an AbortSignal to stop
+ *   the reconnect loop cleanly (sidecar teardown). Without one it runs for
+ *   the process's whole life, as before.
+ */
+async function runForever(options = {}) {
+  const { signal } = options;
   assertEnv();
   const redis = createReadClient();
   let attempt = 0;
-  for (;;) {
+  while (!signal?.aborted) {
     try {
-      await runOneConnection(redis);
+      await runOneConnection(redis, signal);
       attempt = 0; // a clean connection that later dropped isn't a repeated-failure signal
     } catch (err) {
+      if (signal?.aborted) break;
       console.warn(`[sync-listener] connection lost (${err.message}) — reconnecting`);
     }
+    if (signal?.aborted) break;
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempt, RECONNECT_MAX_DELAY_MS);
     attempt++;
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await new Promise((resolve) => {
+      const t = setTimeout(resolve, delay);
+      signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    });
   }
 }
 

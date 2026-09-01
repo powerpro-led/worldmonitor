@@ -369,17 +369,26 @@ const SYNC_NOTIFY_MAX_INLINE_BYTES = 16 * 1024;
 // never synced) bounded rather than O(all writes ever).
 const SYNC_CHANGELOG_MAXLEN = 10_000;
 
-async function notifyChange(url, token, key, serializedValue) {
+// `type` matches server/_shared/sync-notify.ts's MirrorValueType — only
+// `'string'` values are ever inlined (a JSON blob written whole by a plain
+// SET). For list/zset/hash/set writes (LPUSH/ZADD/...) `serializedValue` is
+// just one member of a larger structure, so those always go signal-only and
+// the listener does one targeted read (LRANGE/ZRANGE/...) — same rule
+// notifyPipelineWrites() uses on the RPC side.
+export async function notifyChange(url, token, key, serializedValue, type = 'string') {
   if (!isMirroredKey(key)) return;
-  const message = Buffer.byteLength(serializedValue, 'utf8') <= SYNC_NOTIFY_MAX_INLINE_BYTES
-    ? JSON.stringify({ key, type: 'string', value: serializedValue })
-    : JSON.stringify({ key, type: 'string' });
+  const canInline = type === 'string'
+    && serializedValue !== undefined
+    && Buffer.byteLength(serializedValue, 'utf8') <= SYNC_NOTIFY_MAX_INLINE_BYTES;
+  const message = canInline
+    ? JSON.stringify({ key, type, value: serializedValue })
+    : JSON.stringify({ key, type });
   await Promise.all([
     redisCommand(url, token, ['PUBLISH', SYNC_NOTIFY_CHANNEL, message]),
     // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
     // its last cursor) knows which read command to issue for each key
     // (GET vs ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
-    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', 'string']),
+    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', type]),
   ]);
 }
 

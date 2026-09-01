@@ -4,7 +4,7 @@
 
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { loadEnvFile, runSeed, CHROME_UA, withRetry, parseRetryAfterMs, getResponseHeader, isRetryableHttpStatus } from './_seed-utils.mjs';
+import { loadEnvFile, runSeed, CHROME_UA, withRetry, parseRetryAfterMs, getResponseHeader, isRetryableHttpStatus, notifyChange } from './_seed-utils.mjs';
 import { compactForecastDashboardPayload } from './_forecast-dashboard.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { resolveAppOrigin } from './_domain-config.mjs';
@@ -4875,6 +4875,12 @@ async function appendHistorySnapshot(data, options = {}) {
   await redisCommand(url, token, ['LPUSH', key, JSON.stringify(snapshot)]);
   await redisCommand(url, token, ['LTRIM', key, 0, maxRuns - 1]);
   await redisCommand(url, token, ['EXPIRE', key, ttlSeconds]);
+  // Raw list write, bypasses _seed-utils.mjs's atomicPublish/writeExtraKey —
+  // push it to operator mirrors too (signal-only; the listener does one
+  // targeted LRANGE). Session 39 review, deferred finding #2.
+  notifyChange(url, token, key, undefined, 'list').catch((err) => {
+    console.warn(`  [sync-notify] ${key}: best-effort push failed (non-fatal): ${err.message}`);
+  });
   return snapshot;
 }
 
@@ -15995,8 +16001,14 @@ async function updateEmaWindows(inputs, url, token) {
 
   const windowsObj = Object.fromEntries(updatedWindows);
   const ttl = 26 * 3600;
-  await redisCommand(url, token, ['SET', 'conflict:ema-windows:v1', JSON.stringify(windowsObj), 'EX', ttl])
+  const windowsSerialized = JSON.stringify(windowsObj);
+  await redisCommand(url, token, ['SET', 'conflict:ema-windows:v1', windowsSerialized, 'EX', ttl])
     .catch(err => console.warn(`  [EMA] Failed to persist windows: ${err.message}`));
+  // Raw SET, bypasses _seed-utils.mjs's atomicPublish/writeExtraKey — push it
+  // to operator mirrors too (session 39 review, deferred finding #2).
+  notifyChange(url, token, 'conflict:ema-windows:v1', windowsSerialized).catch((err) => {
+    console.warn(`  [sync-notify] conflict:ema-windows:v1: best-effort push failed (non-fatal): ${err.message}`);
+  });
   await redisCommand(url, token, ['SET', 'seed-meta:conflict:ema-windows:v1', JSON.stringify({ fetchedAt: new Date().toISOString(), recordCount: updatedWindows.size }), 'EX', ttl])
     .catch(err => console.warn(`  [EMA] Failed to persist seed-meta: ${err.message}`));
 

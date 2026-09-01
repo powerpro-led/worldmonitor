@@ -64,23 +64,30 @@ function resolveLocalApiToken(options = {}) {
 }
 
 /**
- * The Supabase user id from ~/.worldmonitor/session.json, written by
- * `worldmonitor-local login`. Lets this machine know which operator it
- * belongs to BEFORE the dashboard has made a single authenticated request —
- * previously the only identity source was recordOperatorIdentity() decoding
- * a bearer off live traffic. Claims are read, not verified: the login flow
- * that produced the file already went through Supabase + the org-membership
- * gate, and every /api/* route still independently rejects a bearer it can't
- * validate.
+ * The full Supabase session from ~/.worldmonitor/session.json, written by
+ * `worldmonitor-local login`. Returns null when absent/malformed.
  */
-function readSessionUserId(sessionFile = WM_LOCAL_SESSION_FILE) {
+function readOperatorSession(sessionFile = process.env.WM_LOCAL_SESSION_FILE || WM_LOCAL_SESSION_FILE) {
   try {
     const session = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-    const id = session?.user?.id;
-    return typeof id === 'string' && UUID_RE.test(id) ? id : null;
+    return session && typeof session === 'object' ? session : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The Supabase user id from ~/.worldmonitor/session.json. Lets this machine
+ * know which operator it belongs to BEFORE the dashboard has made a single
+ * authenticated request — previously the only identity source was
+ * recordOperatorIdentity() decoding a bearer off live traffic. Claims are
+ * read, not verified: the login flow that produced the file already went
+ * through Supabase + the org-membership gate, and every /api/* route still
+ * independently rejects a bearer it can't validate.
+ */
+function readSessionUserId() {
+  const id = readOperatorSession()?.user?.id;
+  return typeof id === 'string' && UUID_RE.test(id) ? id : null;
 }
 
 // Monkey-patch globalThis.fetch to force IPv4 for HTTPS requests.
@@ -1662,7 +1669,21 @@ async function tryServeStaticAsset(requestUrl, req, context) {
   try {
     body = await readFile(filePath);
   } catch {
-    return null;
+    // A `VITE_DESKTOP_RUNTIME=1` build never renames the entry, so it emits
+    // `index.html` and no `dashboard.html`. `panel.ts` asks for
+    // `/dashboard.html`; serve `index.html` in its place rather than 404 the
+    // whole dashboard. Same document either way — the rename in a plain build
+    // is cosmetic (plus a stylesheet-defer pass that doesn't affect a local
+    // sidecar's correctness).
+    if (path.basename(filePath) === 'dashboard.html') {
+      try {
+        body = await readFile(path.join(path.dirname(filePath), 'index.html'));
+      } catch {
+        return null;
+      }
+    } else {
+      return null;
+    }
   }
   const ext = path.extname(filePath).toLowerCase();
   const isHtml = ext === '.html';
@@ -1765,6 +1786,27 @@ async function dispatch(requestUrl, req, routes, context) {
       remoteBase: context.remoteBase,
       cloudFallback: context.cloudFallback,
       routes: routes.length,
+    });
+  }
+
+  // Hands `worldmonitor-local login`'s Supabase session to the dashboard
+  // iframe so the operator isn't prompted to sign in again in-page when they
+  // already authenticated via the CLI. Behind the same loopback-token gate as
+  // every route here (the ?embed=vscode fetch shim attaches the token), and
+  // the page that consumes it is same-origin loopback — the refresh token
+  // ends up in the exact iframe localStorage the in-page OAuth flow would put
+  // it in, just delivered over a localhost fetch instead of a redirect chain.
+  // 204 when not logged in, so the client cleanly falls back to the button.
+  if (requestUrl.pathname === '/api/operator-session') {
+    const session = readOperatorSession();
+    if (!session?.access_token || !session?.refresh_token) {
+      return new Response(null, { status: 204 });
+    }
+    return json({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at ?? null,
+      user: session.user ?? null,
     });
   }
   // LLM health endpoint — mirrors probe logic from server/_shared/llm-health.ts.

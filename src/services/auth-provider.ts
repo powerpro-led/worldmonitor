@@ -51,7 +51,7 @@ export async function initAuthProvider(): Promise<void> {
       return;
     }
     const { data } = await supabase.auth.getSession();
-    currentSession = data.session;
+    currentSession = data.session ?? (await adoptOperatorSessionIfPresent(supabase));
     initialized = true;
     notifySubscribers();
     supabase.auth.onAuthStateChange((_event, session) => {
@@ -60,6 +60,45 @@ export async function initAuthProvider(): Promise<void> {
     });
   })();
   return initPromise;
+}
+
+/**
+ * VS-Code-embed-only: when the operator has already signed in via
+ * `worldmonitor-local login`, the standalone backend holds their Supabase
+ * session at ~/.worldmonitor/session.json and serves it from the
+ * loopback-token-gated /api/operator-session. Adopt it here so the dashboard
+ * doesn't ask them to sign in a second time in-page. Any failure (not
+ * embedded, not logged in → 204, dead refresh token, network) falls through
+ * to null and the normal in-page GitHub button still works.
+ *
+ * setSession() refreshes the tokens itself if the stored access_token has
+ * expired, and supabase-js then persists the fresh session to this iframe's
+ * own localStorage — so this only needs to run once per iframe lifetime, and
+ * session.json going stale later doesn't matter to an already-booted tab.
+ */
+async function adoptOperatorSessionIfPresent(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+): Promise<Session | null> {
+  if (typeof window === 'undefined') return null;
+  if (!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi) return null;
+  try {
+    const resp = await fetch('/api/operator-session');
+    if (resp.status === 204 || !resp.ok) return null;
+    const body = (await resp.json()) as { access_token?: string; refresh_token?: string };
+    if (!body.access_token || !body.refresh_token) return null;
+    const { data, error } = await supabase.auth.setSession({
+      access_token: body.access_token,
+      refresh_token: body.refresh_token,
+    });
+    if (error) {
+      console.warn('[auth-provider] operator session adoption failed:', error.message);
+      return null;
+    }
+    return data.session;
+  } catch (err) {
+    console.warn('[auth-provider] operator session adoption errored:', err);
+    return null;
+  }
 }
 
 /**

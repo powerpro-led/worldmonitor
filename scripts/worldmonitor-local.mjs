@@ -220,10 +220,10 @@ async function cmdInstall() {
   }
   const token = ensureToken();
 
-  if (!existsSync(path.join(REPO_ROOT, 'dist', 'dashboard.html'))
-      && !existsSync(path.join(REPO_ROOT, 'dist', 'index.html'))) {
-    ok('warning: dist/ not found — build it once with `VITE_DESKTOP_RUNTIME=1 npm run build:desktop`');
-    ok('         (the backend will still start and serve /api/*, but the dashboard page will 404)');
+  if (!existsSync(path.join(REPO_ROOT, 'dist', 'dashboard.html'))) {
+    ok('warning: dist/dashboard.html not found — build it once with `npm run build` from the repo root');
+    ok('         (the backend will still start and serve /api/*, but the dashboard page will 404;');
+    ok('         note a VITE_DESKTOP_RUNTIME=1 build does NOT emit dashboard.html — use a plain build)');
   }
 
   writePlist(port);
@@ -349,7 +349,8 @@ async function cmdLogin() {
   const saved = writeSession(exchanged.session);
   ok('');
   ok(`Logged in as ${saved.user.email || saved.user.id}`);
-  ok(`  session:  ${SESSION_FILE}   (${describeExpiry(saved.expires_at)}, auto-refreshed by the backend)`);
+  ok(`  session:  ${SESSION_FILE}   (${describeExpiry(saved.expires_at)})`);
+  ok('  The dashboard adopts this on load and refreshes it itself; re-run `login` if it has been weeks.');
   ok('  Restart the backend to pick it up now:  worldmonitor-local restart');
 }
 

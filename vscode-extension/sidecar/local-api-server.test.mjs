@@ -2168,3 +2168,72 @@ test('service-status reports bound fallback port after EADDRINUSE recovery', asy
     });
   }
 });
+
+test('/api/operator-session hands the CLI login session to the iframe (204 when absent)', async () => {
+  const localApi = await setupApiDir({});
+  const sessionFile = path.join(os.tmpdir(), `wm-operator-session-${Date.now()}.json`);
+  const originalSessionEnv = process.env.WM_LOCAL_SESSION_FILE;
+  process.env.WM_LOCAL_SESSION_FILE = sessionFile;
+
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+
+  try {
+    // Not logged in → 204, so the client falls back to the in-page button.
+    let resp = await authFetch(`http://127.0.0.1:${port}/api/operator-session`);
+    assert.equal(resp.status, 204);
+
+    // Still gated by the loopback token like every other route here.
+    resp = await fetch(`http://127.0.0.1:${port}/api/operator-session`);
+    assert.equal(resp.status, 401);
+
+    // Logged in → the session fields the iframe needs for supabase.auth.setSession().
+    await writeFile(sessionFile, JSON.stringify({
+      access_token: 'at-xyz', refresh_token: 'rt-xyz', expires_at: 1893456000,
+      user: { id: '15ae70b6-2045-49e5-9381-7e426c1d8295', email: 'op@example.test' },
+    }), 'utf8');
+    resp = await authFetch(`http://127.0.0.1:${port}/api/operator-session`);
+    assert.equal(resp.status, 200);
+    const body = await resp.json();
+    assert.equal(body.access_token, 'at-xyz');
+    assert.equal(body.refresh_token, 'rt-xyz');
+    assert.equal(body.user.email, 'op@example.test');
+  } finally {
+    if (originalSessionEnv === undefined) delete process.env.WM_LOCAL_SESSION_FILE;
+    else process.env.WM_LOCAL_SESSION_FILE = originalSessionEnv;
+    await rm(sessionFile, { force: true });
+    await app.close();
+    await localApi.cleanup();
+  }
+});
+
+test('serves index.html for /dashboard.html when the build emitted no dashboard.html', async () => {
+  const localApi = await setupApiDir({});
+  const staticDir = await mkdtemp(path.join(os.tmpdir(), 'wm-static-'));
+  await writeFile(path.join(staticDir, 'index.html'), '<!doctype html><head></head><body>desktop-build entry</body>', 'utf8');
+
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    staticDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/dashboard.html?embed=vscode`);
+    assert.equal(resp.status, 200);
+    const html = await resp.text();
+    assert.match(html, /desktop-build entry/);
+    // The ?embed=vscode shim still gets injected on the fallback file.
+    assert.match(html, /__wmVsCodeApi/);
+  } finally {
+    await app.close();
+    await localApi.cleanup();
+    await rm(staticDir, { recursive: true, force: true });
+  }
+});

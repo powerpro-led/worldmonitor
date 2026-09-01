@@ -44,15 +44,22 @@ open. The extension only connects to it.
   (`~/.worldmonitor/local-api-token`, guards the port) and the **operator
   identity** (`~/.worldmonitor/session.json`, a GitHub→Supabase session that
   scopes the per-user `brief:` mirror). The `worldmonitor-local` CLI owns
-  both.
+  both. Once you've run `worldmonitor-local login`, the backend serves that
+  session from the loopback-token-gated `/api/operator-session` and the
+  dashboard iframe adopts it on load — no second in-page sign-in. The
+  iframe's own GitHub button stays as the fallback for a machine that hasn't
+  run `login`.
 
 ## First run
 
 Run from the **repo root**:
 
 ```sh
-# 1. Build the real app in desktop-runtime mode (produces dist/)
-VITE_DESKTOP_RUNTIME=1 npm run build:desktop
+# 1. Build the real app (produces dist/, incl. dist/dashboard.html — the page
+#    the extension iframe loads; a VITE_DESKTOP_RUNTIME=1 build does NOT emit
+#    it, and the embed path resolves its API base at runtime anyway, so a
+#    plain build is what's wanted here)
+npm run build
 
 # 2. Install the background backend (writes the loopback token, installs the
 #    LaunchAgent, starts it at login and on crash)

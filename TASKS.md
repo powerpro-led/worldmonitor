@@ -15,7 +15,7 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED + GUI-verified; login↔iframe unified; `npm run build` found broken
+## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split shipped+GUI-verified; login↔iframe unified; data-pipeline reviewed; `npm run build` fixed
 
 The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done, committed, and
 live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-health probe 2s→5s),
@@ -84,23 +84,21 @@ live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-he
    out); `auth-provider.ts`'s `initAuthProvider()` adopts it via `supabase.auth.setSession()` when
    `getSession()` is empty AND the page is the VS Code embed, falling back to the in-page GitHub button
    on any failure. Backend half live-tested (401 / 204 / 200-with-tokens). **The iframe-side adoption
-   is bundled but not yet visually confirmed** — needs a `dist/` rebuild + window reload (see item 4).
+   is bundled but not yet visually confirmed** — a fresh `dist/` now exists (item 4 fixed `npm run
+   build`); just needs a window reload to eyeball.
 3. **Pre-existing, noticed in passing (NOT this task):** the sidecar's own inline `/api/llm-health`
    probe still hardcodes `PROBE_TIMEOUT = 2000` (`local-api-server.mjs` ~line 1770, has a `TODO` to
    import `getLlmHealthStatus()`), so `[llm:openrouter] Offline, skipping` still shows in the backend
    log despite `b5323c7` fixing the shared `server/_shared/llm-health.ts`. Same false-unreachable class,
    different code path.
-4. **`npm run build` is broken on `main`** — discovered `914a04d`, confirmed pre-existing via `git
-   stash`. `vite.config.ts`'s `wm-variant-dashboard-html` plugin (`enforce: post`, `full` variant
-   only, non-desktop only) fails: `anchor "hreflang alternates" matched 0 time(s)`. Root cause:
-   `variantMetaMap.full.url` (from `buildVariantMeta(process.env.APP_DOMAIN)` in
-   `src/config/variant-dashboard-html.ts:89`) no longer equals the hard-coded
-   `https://www.worldmonitor.app/dashboard` in `index.html`'s 26 hreflang `<link>`s — de-brand /
-   domain-config drift. `VITE_DESKTOP_RUNTIME=1 npm run build` still works (skips that plugin) but
-   emits only `index.html`, no `dashboard.html`; the sidecar now falls back `index.html`→`/dashboard.html`
-   (`914a04d`), and `dist/` was restored that way. Fix options: point the plugin's hreflang anchor at
-   the `APP_DOMAIN`-derived URL (or relax `min: 1`→`0` if variant dashboards are dead per
-   `retire_public_product_surface`), or regenerate `index.html`'s hreflang block from domain config.
+4. ~~`npm run build` is broken on `main`~~ **FIXED (`1b3fdbe`).** Pre-existing (discovered `914a04d`,
+   `git stash`-confirmed): `wm-variant-dashboard-html`'s `replaceCounted` hreflang anchor (min:1)
+   matched 0 because `index.html` hard-codes 26 `https://www.worldmonitor.app/dashboard` hreflang
+   links while `buildVariantMeta()` resolves to the configured domain. `htmlVariantPlugin` already
+   normalised `canonical`/`og:url` but skipped the hreflang cluster; it now rewrites every hreflang
+   href to `activeMeta.url` (preserving `?lang=`), same as canonical. Verified: `npm run build` clean,
+   `dashboard.html` + all 5 variant pages regenerate. (The `index.html`→`/dashboard.html` sidecar
+   fallback from `914a04d` stays — still useful for a `VITE_DESKTOP_RUNTIME=1` build.)
 5. FORTY-FIRST session's data-pipeline code review — **done this session**, see the block just below.
 
 ---
@@ -122,15 +120,11 @@ unpushed session-43 commits instead, so it was done by hand against the choke-po
   story-alias dedup / a score cache (which unwraps) — none a contract-mode seeder's canonical key.
   FORTIETH's 2 bugs were the exception, not a pattern. (Caveat: choke-point centralization verified;
   not every one of the 223 sites individually read.)
-- **Lead #6 — CONFIRMED, preview-deploy-only, low severity, NOT fixed.**
-  `server/worldmonitor/webcam/v1/list-webcams.ts:84` reads `getCachedJson('webcam:cameras:active')`
-  non-raw → in a `VERCEL_ENV=preview` deploy `prefixKey()` prepends `preview:<sha>:` but the seeder
-  wrote it unprefixed → miss → empty panel. Prod (empty prefix) + sidecar (bypasses `prefixKey`)
-  unaffected. `military/v1/list-military-bases.ts:134` has the same non-raw read but already
-  self-heals with a `raw:true` retry (`rawKeys` flag, lines 134-147) — ugly but not broken. Fix for
-  webcams: `getCachedJson('webcam:cameras:active', true)`. Left alone because `list-webcams` is a
-  near-dead surface (webcams removed session 18-19; only `api/webcam` → `PinnedWebcamsPanel` survives)
-  — confirm it's still wired before spending the change.
+- **Lead #6 — CONFIRMED + fixed (`911a9a4`).** `list-webcams.ts` read `webcam:cameras:active` non-raw
+  → `VERCEL_ENV=preview` deploys prefix-missed it (seeder writes unprefixed). Verified still wired
+  (`handler.ts` + generated client/server + `src/services/webcams/index.ts`). Now `raw:true`, matching
+  the geo/meta reads right below it. `military/v1/list-military-bases.ts:134` has the same non-raw read
+  but self-heals with a `raw:true` retry (`rawKeys` flag) — ugly, not broken, left alone.
 - **Lead #4 — CONFIRMED broader than session 40's 3-site patch, NOT fixed (needs a plan).** ~11
   seeders write mirrored data keys via raw `redisCommand(['SET',…])` and never call `notifyChange()`,
   bypassing `_seed-utils.mjs`'s centralized push: `seed-wb-indicators` (`economic:`),
@@ -151,8 +145,13 @@ unpushed session-43 commits instead, so it was done by hand against the choke-po
   cold sidecar shows every regional news panel "unavailable" until a live ~190-feed crawl finishes.
   Add a `seed-feed-digest.mjs` / warm-ping, or accept it.
 
-**Net actionable, not yet done:** lead #4 (systemic `notifyChange` gap — the biggest), lead #6
-(1-line webcam fix if the surface is still live), lead #3 cleanup, lead #5 decision.
+**Net actionable, not yet done:** lead #4 (systemic `notifyChange` gap — the biggest; ~11 bespoke
+seeder edits, each unrunnable without live external APIs + Redis — deserves a dedicated pass: a shared
+`_seed-utils.mjs` helper that sweeps a command array + a test, then per-seeder wiring). lead #3
+cleanup (remove `extractMediaToneDeterioration` + the 4 dead GDELT batch-read keys +
+`GDELT_TONE_TOPICS`/`MAX_TONE_SIGNAL_AGE_MS` if then unused, + `src/services/sentiment-gate.ts`).
+lead #5 decision (`seed-feed-digest.mjs` / warm-ping / accept). #2 and #6 are done; `npm run build`
+is fixed.
 
 ---
 

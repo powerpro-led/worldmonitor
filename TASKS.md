@@ -15,7 +15,7 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED + live-verified end to end
+## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED, pushed, live-verified incl. GUI
 
 The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done, committed, and
 live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-health probe 2s→5s),
@@ -74,10 +74,11 @@ live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-he
   `tsc --noEmit` + esbuild clean.
 
 ### Still open
-1. **Final visual confirm of the dashboard in the GUI** — the extension is swapped and the backend
-   proven; what's unconfirmed is only the webview rendering (DevTools Network clean, synced-domain
-   panels draw). Indirect evidence it's fine: only ONE `local-api-server.mjs` process now (the old
-   spawner would make a second). Needs a human eyeball.
+1. ~~Final visual confirm of the dashboard in the GUI.~~ **DONE** — operator reloaded the VS Code
+   window, the dashboard **fully rendered**. The `worldmonitor-local` MCP server also came live in the
+   Claude Code session (41 tools); a real `get_chokepoint_status` call returned real mirror data and
+   logged `mcp.toolcall` on the backend. So the whole loop is proven from *both* real clients (VS Code
+   thin client + MCP agent), not just curl.
 2. **`login` ↔ iframe auth are still separate.** The dashboard iframe keeps its own in-page GitHub
    sign-in (`panel.ts` → `auth-provider.ts`). Unifying (backend hands the `session.json` session to the
    iframe) is a deliberate follow-up, not done.

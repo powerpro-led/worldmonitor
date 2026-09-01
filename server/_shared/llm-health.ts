@@ -3,7 +3,14 @@
 // Probes provider URLs with a fast request, caches results.
 // All LLM call sites check this before attempting expensive fetch calls.
 
-const PROBE_TIMEOUT_MS = 2_000;
+// 2026-09-01: was 2_000ms, causing false "unreachable" verdicts against
+// openrouter.ai — measured round trips of 2.1s-3.8s from this network (VPN
+// path, see vpn_destination_throttling pattern) blew straight through it.
+// A false negative here doesn't just log a warning: isProviderAvailable()
+// gates the real LLM call (llm.ts, summarize-article.ts), so a too-tight
+// timeout silently skips a working provider for the full CACHE_TTL_MS below
+// and dumps traffic onto whatever provider is next in the fallback chain.
+const PROBE_TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 60_000; // re-probe every 60s
 
 interface HealthEntry {

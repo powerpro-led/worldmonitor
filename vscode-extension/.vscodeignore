@@ -5,3 +5,17 @@ esbuild.js
 tsconfig.json
 *.map
 .vscode-test/**
+
+# Per-machine state, never distributable. vsce uses THIS file instead of
+# .gitignore once one exists, so these need their own entry despite already
+# being gitignored (repo root .gitignore:99) — omitting them here means
+# `npm run package` silently bakes whoever built the .vsix's real synced
+# brief data (local-cache.db) and Supabase-authenticated identity
+# (operator-identity.json) into the artifact. That defeats the fail-closed
+# guard local-sync.mjs's readOperatorUserId() depends on (null userId ⇒ no
+# user-scoped brief mirrored; a shipped file is never null) and leaks one
+# operator's personal brief data to anyone who installs that .vsix without
+# deleting it first — the packaging-time version of session 39's per-user
+# brief: scoping leak.
+sidecar/local-cache.db
+sidecar/operator-identity.json

@@ -201,6 +201,16 @@ function htmlVariantPlugin(activeMeta: VariantMeta, activeVariant: string, isDes
         .replace(/<meta name="description" content=".*?" \/>/, `<meta name="description" content="${activeMeta.description}" />`)
         .replace(/<meta name="keywords" content=".*?" \/>/, `<meta name="keywords" content="${activeMeta.keywords}" />`)
         .replace(/<link rel="canonical" href=".*?" \/>/, `<link rel="canonical" href="${activeMeta.url}" />`)
+        // hreflang cluster: index.html hard-codes these to a fixed origin/path
+        // (a pre-domain-config-sweep artifact). Normalise every entry to the
+        // active domain like canonical/og:url above — preserving each entry's
+        // ?lang= suffix — so downstream (variantDashboardHtmlPlugin's
+        // replaceCounted anchor, and correctness for any real deployment)
+        // sees links that actually match the site it was built for.
+        .replace(
+          /(<link rel="alternate" hreflang="[^"]+" href=")[^"?]*(\?[^"]*)?(" \/>)/g,
+          (_m: string, pre: string, query = '', post: string) => `${pre}${activeMeta.url}${query}${post}`,
+        )
         .replace(/<meta name="application-name" content=".*?" \/>/, `<meta name="application-name" content="${activeMeta.siteName}" />`)
         .replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${activeMeta.url}" />`)
         .replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${activeMeta.title}" />`)

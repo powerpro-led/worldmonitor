@@ -1665,9 +1665,10 @@ async function tryServeStaticAsset(requestUrl, req, context) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return null;
   const filePath = resolveStaticFilePath(context.staticDir, requestUrl.pathname);
   if (!filePath) return null;
+  let servedPath = filePath;
   let body;
   try {
-    body = await readFile(filePath);
+    body = await readFile(servedPath);
   } catch {
     // A `VITE_DESKTOP_RUNTIME=1` build never renames the entry, so it emits
     // `index.html` and no `dashboard.html`. `panel.ts` asks for
@@ -1677,7 +1678,8 @@ async function tryServeStaticAsset(requestUrl, req, context) {
     // sidecar's correctness).
     if (path.basename(filePath) === 'dashboard.html') {
       try {
-        body = await readFile(path.join(path.dirname(filePath), 'index.html'));
+        servedPath = path.join(path.dirname(filePath), 'index.html');
+        body = await readFile(servedPath);
       } catch {
         return null;
       }
@@ -1685,7 +1687,9 @@ async function tryServeStaticAsset(requestUrl, req, context) {
       return null;
     }
   }
-  const ext = path.extname(filePath).toLowerCase();
+  // Derived from the file actually read, not the requested path — so a future
+  // change to the fallback target can't send it with the wrong content-type.
+  const ext = path.extname(servedPath).toLowerCase();
   const isHtml = ext === '.html';
   let contentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
   if (isHtml && requestUrl.searchParams.get('embed') === 'vscode') {
@@ -1799,15 +1803,19 @@ async function dispatch(requestUrl, req, routes, context) {
   // 204 when not logged in, so the client cleanly falls back to the button.
   if (requestUrl.pathname === '/api/operator-session') {
     const session = readOperatorSession();
+    // no-store: the body carries a long-lived refresh_token, and without an
+    // explicit directive a 200 GET is eligible for heuristic browser disk
+    // caching — the token would then outlive session.json / a logout on disk.
+    const noStore = { 'cache-control': 'no-store' };
     if (!session?.access_token || !session?.refresh_token) {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers: noStore });
     }
-    return json({
+    return new Response(JSON.stringify({
       access_token: session.access_token,
       refresh_token: session.refresh_token,
       expires_at: session.expires_at ?? null,
       user: session.user ?? null,
-    });
+    }), { status: 200, headers: { 'content-type': 'application/json', ...noStore } });
   }
   // LLM health endpoint — mirrors probe logic from server/_shared/llm-health.ts.
   // TODO: refactor to import getLlmHealthStatus() once handlers share a process-level module cache.

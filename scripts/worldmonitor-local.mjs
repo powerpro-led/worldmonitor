@@ -220,10 +220,13 @@ async function cmdInstall() {
   }
   const token = ensureToken();
 
-  if (!existsSync(path.join(REPO_ROOT, 'dist', 'dashboard.html'))) {
-    ok('warning: dist/dashboard.html not found — build it once with `npm run build` from the repo root');
-    ok('         (the backend will still start and serve /api/*, but the dashboard page will 404;');
-    ok('         note a VITE_DESKTOP_RUNTIME=1 build does NOT emit dashboard.html — use a plain build)');
+  // The backend serves dist/index.html for /dashboard.html when the latter is
+  // absent (a VITE_DESKTOP_RUNTIME=1 build emits only index.html), so either
+  // file is fine — warn only when neither exists.
+  if (!existsSync(path.join(REPO_ROOT, 'dist', 'dashboard.html'))
+      && !existsSync(path.join(REPO_ROOT, 'dist', 'index.html'))) {
+    ok('warning: no dist/ build found — run `npm run build` from the repo root');
+    ok('         (the backend still starts and serves /api/*, but the dashboard page will 404)');
   }
 
   writePlist(port);

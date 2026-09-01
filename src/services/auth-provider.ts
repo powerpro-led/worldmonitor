@@ -51,7 +51,7 @@ export async function initAuthProvider(): Promise<void> {
       return;
     }
     const { data } = await supabase.auth.getSession();
-    currentSession = data.session ?? (await adoptOperatorSessionIfPresent(supabase));
+    currentSession = await reconcileWithOperatorSession(supabase, data.session);
     initialized = true;
     notifySubscribers();
     supabase.auth.onAuthStateChange((_event, session) => {
@@ -63,41 +63,59 @@ export async function initAuthProvider(): Promise<void> {
 }
 
 /**
- * VS-Code-embed-only: when the operator has already signed in via
- * `worldmonitor-local login`, the standalone backend holds their Supabase
- * session at ~/.worldmonitor/session.json and serves it from the
- * loopback-token-gated /api/operator-session. Adopt it here so the dashboard
- * doesn't ask them to sign in a second time in-page. Any failure (not
- * embedded, not logged in → 204, dead refresh token, network) falls through
- * to null and the normal in-page GitHub button still works.
+ * VS-Code-embed-only: when the operator has signed in via `worldmonitor-local
+ * login`, the standalone backend holds their Supabase session at
+ * ~/.worldmonitor/session.json and serves it from the loopback-token-gated
+ * /api/operator-session. Reconcile it against whatever this iframe's
+ * localStorage already had so the dashboard doesn't ask for a second in-page
+ * sign-in — and so a `login` as a *different* operator on a multi-operator
+ * machine actually takes effect instead of being shadowed by a stale-but-
+ * still-valid stored session.
  *
- * setSession() refreshes the tokens itself if the stored access_token has
- * expired, and supabase-js then persists the fresh session to this iframe's
- * own localStorage — so this only needs to run once per iframe lifetime, and
- * session.json going stale later doesn't matter to an already-booted tab.
+ *   - not embedded / not logged in (204) / any failure → keep `existing`
+ *     (which may be null → the in-page GitHub button still works)
+ *   - operator-session matches `existing` → keep `existing`, nothing to do
+ *   - operator-session differs (or `existing` is null) → setSession() to it;
+ *     that refreshes an expired access_token itself and supabase-js persists
+ *     the result to this iframe's storage, so it settles for the tab's life
+ *
+ * Bounded by a timeout: this is on the init critical path (`initialized`
+ * gates every subscribeAuthProvider consumer), and the fetch would otherwise
+ * be un-timed against a backend that might be mid-restart.
  */
-async function adoptOperatorSessionIfPresent(
+async function reconcileWithOperatorSession(
   supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  existing: Session | null,
 ): Promise<Session | null> {
-  if (typeof window === 'undefined') return null;
-  if (!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi) return null;
+  if (typeof window === 'undefined') return existing;
+  if (!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi) return existing;
+
+  const TIMEOUT_MS = 4000;
   try {
-    const resp = await fetch('/api/operator-session');
-    if (resp.status === 204 || !resp.ok) return null;
-    const body = (await resp.json()) as { access_token?: string; refresh_token?: string };
-    if (!body.access_token || !body.refresh_token) return null;
-    const { data, error } = await supabase.auth.setSession({
-      access_token: body.access_token,
-      refresh_token: body.refresh_token,
-    });
-    if (error) {
-      console.warn('[auth-provider] operator session adoption failed:', error.message);
-      return null;
-    }
-    return data.session;
+    return await Promise.race([
+      (async (): Promise<Session | null> => {
+        const resp = await fetch('/api/operator-session', { signal: AbortSignal.timeout(TIMEOUT_MS) });
+        if (resp.status === 204 || !resp.ok) return existing;
+        const body = (await resp.json()) as {
+          access_token?: string; refresh_token?: string; user?: { id?: string };
+        };
+        if (!body.access_token || !body.refresh_token) return existing;
+        if (existing && body.user?.id && existing.user?.id === body.user.id) return existing;
+        const { data, error } = await supabase.auth.setSession({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+        });
+        if (error) {
+          console.warn('[auth-provider] operator session adoption failed:', error.message);
+          return existing;
+        }
+        return data.session ?? existing;
+      })(),
+      new Promise<Session | null>((resolve) => setTimeout(() => resolve(existing), TIMEOUT_MS + 500)),
+    ]);
   } catch (err) {
-    console.warn('[auth-provider] operator session adoption errored:', err);
-    return null;
+    console.warn('[auth-provider] operator session reconcile errored:', err);
+    return existing;
   }
 }
 

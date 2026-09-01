@@ -15,6 +15,100 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-09-01, FORTY-SECOND session) — NEXT TASK: split local backend from the VS Code dashboard
+
+Operator decision this session, explicitly requested as a big-enough refactor to hand to a fresh
+session rather than continue mid-conversation: **separately release** (a) a local backend that runs
+silently in the background on the operator's machine, consumed by both the VS Code dashboard AND the
+operator's own local MCP agent, and (b) the VS Code dashboard extension itself, as a thin UI-only
+client. Internal/invite-only distribution — operator explicitly ruled out building hosted-proxy or
+self-service auth for this; direct Upstash read creds + a manually-shared token per trusted teammate
+is the accepted model. Not started — architecture investigated and confirmed this session, no code
+written for the split itself.
+
+### What's already built — no new implementation needed for these two parts
+
+1. **MCP already works over the existing sidecar.** `vscode-extension/sidecar/local-api-server.mjs`
+   routes `/api/mcp` straight to the real production handler (`api/mcp/handler.ts`, reused unmodified —
+   see the routing comment right above the `/api/mcp` branch, ~line 1676). Any MCP client pointed at
+   `http://127.0.0.1:<port>/api/mcp` already works today, whenever the sidecar happens to be running.
+   Nothing to build here — just needs the sidecar to be reachable independent of VS Code.
+2. **The background-daemon pattern already exists, scoped to the wrong process.**
+   `scripts/install-local-sync-agent.sh` installs a macOS `launchd` **LaunchAgent** (user-domain, not a
+   root LaunchDaemon — correct, since it needs the operator's own `.env`/repo access) that keeps
+   `local-sync.mjs` running independent of the editor. Its own header comment states the exact argument
+   for this whole refactor: *"the mirror is the operator's own local copy of the data layer, and its
+   freshness is a property of the machine, not of whether an editor happens to be open."* Extend this
+   same pattern to `local-api-server.mjs` itself rather than inventing a new mechanism.
+
+### What blocks the split — all three are in `vscode-extension/src/sidecarProcess.ts`
+
+1. **`dispose()` kills the backend process when VS Code deactivates** (~line 236-239,
+   `this.proc?.kill()`) — directly contradicts "runs silently in the background." Under the split, the
+   extension must stop owning the child process's lifetime entirely.
+2. **`killStaleOccupant()` SIGKILLs whatever's already listening on port 46123 before spawning its own
+   copy** (~line 94-109). Correct today (cleans up orphaned sidecars from a previous VS Code activation,
+   per the `ensureRunning()` comment above it). Under the split it becomes a bug: the dashboard would
+   kill the very backend service it's supposed to just connect to. Needs to become a pure health check
+   with no kill path, or at minimum gated on "is this actually MY orphan" vs. "is this the intended
+   standalone backend."
+3. **The auth token is minted fresh and random every VS Code activation** (~line 38,
+   `randomBytes(24).toString('hex')`) and handed to the child process it spawns in the same breath —
+   `start()` (~line 111) passes it as `LOCAL_API_TOKEN` env var to ITS OWN child. This is the one real
+   architectural fork, not just a refactor: today exactly one process (the spawner) can ever know the
+   token, by construction. A standalone backend with two independent consumers (dashboard + MCP agent,
+   possibly starting in either order, possibly before VS Code even opens) needs a token that already
+   exists and gets *distributed*, not minted per-spawn. Proposed default (not yet confirmed with
+   operator): backend generates the token once on first run and persists it to `~/.worldmonitor/
+   local-api-token`; both the dashboard extension and any local MCP client config read that same file.
+   Confirm this location/mechanism before implementing — it's the one genuine judgment call here.
+
+### Proposed target shape (operator has not yet signed off on implementation, only the direction)
+
+- **`worldmonitor-local-backend`** (naming TBD) — `local-api-server.mjs` + `local-sync.mjs`, moved out
+  from under `vscode-extension/sidecar/` into its own top-level package/directory. Installed via a
+  `launchd` LaunchAgent (extend `install-local-sync-agent.sh`'s pattern — likely two agents, or one
+  installer covering both jobs) that starts at login, independent of VS Code. Serves `/api/*` (REST, for
+  the dashboard) and `/api/mcp` (already-working MCP surface, for any local agent) on the same port.
+- **`worldmonitor-local-dashboard`** (the existing extension) — becomes a pure client: on activation,
+  health-check the already-running backend and read the persisted token; if not running, instruct the
+  operator to start it (`launchctl` command or similar) rather than spawning/killing anything itself.
+  `vscode-extension/README.md`'s "Prerequisites"/"How it works" sections will need a rewrite once this
+  lands — they currently describe the extension spawning its own sidecar.
+
+### Suggested entry point
+Read `sidecarProcess.ts` in full, the `/api/mcp` routing block in `local-api-server.mjs` (~line
+1658-1683), and `install-local-sync-agent.sh` (the launchd pattern to extend) before writing code.
+Confirm the token-persistence decision with the operator first — it's the one piece here that's a real
+design choice, not a mechanical extraction.
+
+### Incidental work this session (uncommitted — not what the split refactor is about, but sitting in
+the working tree; a fresh session should either commit or fold these in)
+- `server/_shared/llm-health.ts`: `PROBE_TIMEOUT_MS` 2000ms → 5000ms. Fixed a confirmed-live bug — the
+  probe timeout was too tight for this network's real round trip to `openrouter.ai` (measured 2.1s-3.8s
+  via curl), causing false "unreachable" verdicts that silently skipped real OpenRouter calls for 60s at
+  a time (`isProviderAvailable()` gates real calls in `llm.ts`/`summarize-article.ts`, not just logging).
+- `vscode-extension/.vscodeignore`: added `sidecar/local-cache.db` + `sidecar/operator-identity.json` to
+  the exclusion list. **Found a real privacy leak**: the packaged `.vsix` was baking in whoever built it
+  own Supabase-authenticated identity and a live snapshot of their synced `brief:` data — defeats the
+  fail-closed guard `local-sync.mjs`'s `readOperatorUserId()` depends on (null userId ⇒ no user-scoped
+  data mirrored; a shipped file is never null). The existing `vscode-extension/worldmonitor-local-
+  dashboard-0.1.0.vsix` on disk still has this baked in (not git-tracked, gitignored, but physically
+  present) — delete and rebuild with `npm run package` once ready, don't redistribute the current file.
+- Live-debugging detour this session (nitric log review, unrelated to both items above) is fully
+  captured in Claude memory `session42_nitric_log_review_fixes.md` — fixed a wedged
+  `worldmonitor-redis-rest` `blockingClient` connection (same class as the FORTIETH session's SUBSCRIBE
+  wedge below, different connection) and found the orphaned-process mechanism behind `ais-relay.cjs`'s
+  `EADDRINUSE` crash on nitric restart. Not part of this handoff's scope, referenced here only so a cold
+  session doesn't rediscover it from scratch.
+
+### Still open, unrelated to this handoff
+FORTY-FIRST session's data-pipeline code review (block immediately below) was not started this session
+— operator redirected to live nitric debugging instead, then to this backend/dashboard split decision.
+Still the standing "next task" once the split above is scoped/done.
+
+---
+
 ## 🔀 HANDOFF (2026-09-01, FORTY-FIRST session) — NEXT TASK: data-pipeline code review
 
 `main == origin/main` @ `421624b`. The FORTIETH-session handoff below is fully closed (all 6 items +

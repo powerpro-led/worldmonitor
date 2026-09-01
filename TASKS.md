@@ -15,7 +15,7 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED, pushed, live-verified incl. GUI
+## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED + GUI-verified; login↔iframe unified; `npm run build` found broken
 
 The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done, committed, and
 live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-health probe 2s→5s),
@@ -79,15 +79,29 @@ live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-he
    Claude Code session (41 tools); a real `get_chokepoint_status` call returned real mirror data and
    logged `mcp.toolcall` on the backend. So the whole loop is proven from *both* real clients (VS Code
    thin client + MCP agent), not just curl.
-2. **`login` ↔ iframe auth are still separate.** The dashboard iframe keeps its own in-page GitHub
-   sign-in (`panel.ts` → `auth-provider.ts`). Unifying (backend hands the `session.json` session to the
-   iframe) is a deliberate follow-up, not done.
+2. ~~`login` ↔ iframe auth are still separate.~~ **DONE** (`914a04d`). Backend serves
+   `~/.worldmonitor/session.json` from the loopback-gated `GET /api/operator-session` (204 when logged
+   out); `auth-provider.ts`'s `initAuthProvider()` adopts it via `supabase.auth.setSession()` when
+   `getSession()` is empty AND the page is the VS Code embed, falling back to the in-page GitHub button
+   on any failure. Backend half live-tested (401 / 204 / 200-with-tokens). **The iframe-side adoption
+   is bundled but not yet visually confirmed** — needs a `dist/` rebuild + window reload (see item 4).
 3. **Pre-existing, noticed in passing (NOT this task):** the sidecar's own inline `/api/llm-health`
-   probe still hardcodes `PROBE_TIMEOUT = 2000` (`local-api-server.mjs` ~line 1700, has a `TODO` to
+   probe still hardcodes `PROBE_TIMEOUT = 2000` (`local-api-server.mjs` ~line 1770, has a `TODO` to
    import `getLlmHealthStatus()`), so `[llm:openrouter] Offline, skipping` still shows in the backend
    log despite `b5323c7` fixing the shared `server/_shared/llm-health.ts`. Same false-unreachable class,
    different code path.
-4. FORTY-FIRST session's data-pipeline code review (block below) still not started.
+4. **`npm run build` is broken on `main`** — discovered `914a04d`, confirmed pre-existing via `git
+   stash`. `vite.config.ts`'s `wm-variant-dashboard-html` plugin (`enforce: post`, `full` variant
+   only, non-desktop only) fails: `anchor "hreflang alternates" matched 0 time(s)`. Root cause:
+   `variantMetaMap.full.url` (from `buildVariantMeta(process.env.APP_DOMAIN)` in
+   `src/config/variant-dashboard-html.ts:89`) no longer equals the hard-coded
+   `https://www.worldmonitor.app/dashboard` in `index.html`'s 26 hreflang `<link>`s — de-brand /
+   domain-config drift. `VITE_DESKTOP_RUNTIME=1 npm run build` still works (skips that plugin) but
+   emits only `index.html`, no `dashboard.html`; the sidecar now falls back `index.html`→`/dashboard.html`
+   (`914a04d`), and `dist/` was restored that way. Fix options: point the plugin's hreflang anchor at
+   the `APP_DOMAIN`-derived URL (or relax `min: 1`→`0` if variant dashboards are dead per
+   `retire_public_product_surface`), or regenerate `index.html`'s hreflang block from domain config.
+5. FORTY-FIRST session's data-pipeline code review (block below) still not started.
 
 ---
 

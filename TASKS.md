@@ -15,6 +15,89 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-09-01, FORTY-FIRST session) — NEXT TASK: data-pipeline code review
+
+`main == origin/main` @ `421624b`. The FORTIETH-session handoff below is fully closed (all 6 items +
+item 4's deferred list + a tsconfig deprecation fix, all committed and pushed). This block sets up
+the **next session's requested work: a focused code review of the data pipeline** — the seed →
+Redis → RPC-handler → panel path, plus the operator-mirror sync that shadows it. Not started; a cold
+agent should be able to begin from here.
+
+### The pipeline, end to end
+
+1. **Seed scripts** `scripts/seed-*.mjs` (+ `scripts/_bundle-*.mjs` wrappers) fetch external data and
+   write canonical keys to Redis. **109 of them run in "contract mode"** — pass `declareRecords` /
+   `envelopeMeta` to `runSeed()`/`writeExtraKey()` in `scripts/_seed-utils.mjs`, which wraps the
+   payload as `{_seed:{fetchedAt,recordCount,state,...}, data:<payload>}`. Others write FLAT (bare
+   payload) via plain `writeExtraKey()` / raw `redisCommand()`.
+2. **Envelope contract** lives in THREE hand-kept-in-sync copies: `scripts/_seed-envelope-source.mjs`
+   (source), `server/_shared/seed-envelope.ts` (Edge), `api/_seed-envelope.js` (Edge). Parity is
+   enforced by `scripts/verify-seed-envelope-parity.mjs` ↔ `tests/seed-envelope-parity.test.mjs`.
+   `stripSeedEnvelope()` / `unwrapEnvelope()` are no-ops on a bare (non-enveloped) value.
+3. **Read choke point** `server/_shared/redis.ts`: `getCachedJson(key, raw?)`, `getRawJson(key)`,
+   `runRedisPipeline()`. The `raw`/second-arg flag ONLY toggles key-prefixing, NOT envelope
+   unwrapping — `readCachedJson()`'s live path always `unwrapEnvelope()`s; **the tauri-sidecar path
+   does NOT** (see #known-lead-2). **223 `getCachedJson(…, true)` / `getRawJson()` call sites** across
+   `server/` + `api/` — each one must unwrap the envelope itself iff its backing seeder is
+   contract-mode.
+4. **RPC handlers** `server/worldmonitor/<domain>/v1/*.ts` read those keys, and on a miss/empty return
+   `unavailable(ctx)` / `emptyResponse` → the panel shows "unavailable". `server/gateway.ts` dispatches
+   and wraps every call in `runWithUsageScope({ ctx })`.
+5. **Sidecar mirror** (VS Code embed / Tauri): `vscode-extension/sidecar/local-sync.mjs` full-rescans
+   `SYNC_PREFIXES` (`scripts/shared/sync-domains.mjs`) from Redis into `local-cache.db`;
+   `sync-listener.mjs` applies real-time pushes; `server/_shared/sidecar-cache.ts` serves reads back.
+   Write-side push nudges: `scripts/_seed-utils.mjs`'s `notifyChange()` (scripts) and
+   `server/_shared/sync-notify.ts`'s `notifyKeyChanged()`/`notifyPipelineWrites()` (RPC side).
+6. **Freshness/health**: `api/health.js`'s `SEED_META` + `BOOTSTRAP_KEYS`, `api/seed-health.js`'s
+   `SEED_DOMAINS`, `src/services/health-freshness-map.ts` (check-name → client source), and
+   `src/services/data-freshness.ts` (`getSourcesForPanel` needs EVERY panel source health-mapped or the
+   badge disappears — see FORTIETH item 6 follow-up A).
+7. **Scheduling**: `gcp/scheduler/main.ts`'s `CADENCES` + `scripts/railway-services.json`. **No live
+   scheduler runs any of this right now** — Railway abandoned, `nitric up` never run against GCP, no
+   seeder GitHub Action. Locally, seeders run via `nitric start`'s scheduler service or by hand.
+
+### Concrete leads a review should chase (found this session, not fully run down)
+
+1. **Seed-envelope unwrap audit — NOT DONE.** FORTIETH item 5 fixed exactly 2 handlers
+   (`list-global-tenders.ts`, `get-chokepoint-status.ts`) that read `snapshot.tenders` /
+   `.summaries` off the still-wrapped envelope. Only the keys behind that session's screenshot were
+   checked. The real audit: cross-reference all 223 raw-read sites against whether their seeder is
+   contract-mode, and confirm each unwraps. `tests/forecasts-ticker-set-envelope-unwrap.test.mjs` is
+   the precedent for a per-key regression test.
+2. **`sidecarCacheGet()`'s in-memory `store` path skips `unwrapEnvelope()`** —
+   `server/_shared/sidecar-cache.ts`: the `store` (in-memory LRU) hit returns
+   `JSON.parse(entry.value)` raw, while `decodeMirrorEntry()` (mirror path) AND the live-Redis path
+   both unwrap. Plausible single root cause for the whole envelope-mismatch class in sidecar mode.
+   Verify whether `store` is even populated in the VS Code sidecar (it may only read the mirror).
+3. **Orphaned read fallbacks after the GDELT removal** — `scripts/seed-cross-source-signals.mjs`
+   still batch-reads `intelligence:gdelt-intel:v1` + `gdelt:intel:tone:{military,nuclear,maritime}`
+   (dead keys now) and `src/services/sentiment-gate.ts` is a dead export. Both degrade gracefully;
+   wasteful, not broken.
+4. **`notifyChange()` type coverage** — FORTIETH item 4 added a `type` param and wired the 3 raw-write
+   bypass sites it knew about (`seed-military-cii.mjs`, `seed-forecasts.mjs` ×2). Other seeders with a
+   private `redisSetJson`/raw `redisCommand()` for a mirrored key may still bypass the push.
+5. **`news:feed-digest:*` has no seeder** — it's purely read-through-cached by `list-feed-digest.ts`
+   itself, so a cold sidecar / empty local Redis shows every regional news panel "unavailable" until a
+   live ~190-feed RSS crawl finishes (up to `NEWS_DIGEST_DEADLINE_MS`). Confirm that's intentional vs.
+   a coverage gap; there's no warm-ping for it in `local-api-server.mjs`.
+6. **`getCachedJson` NON-raw vs raw + prefix interaction** — worth a pass on whether any handler reads
+   a seeder-written (unprefixed) key WITHOUT `true`, which would prefix-miss in preview/dev.
+
+### How to verify pipeline changes
+`tsc --noEmit` (root + `tsconfig.api.json` + `tsconfig.gcp.json`), `node scripts/enforce-sebuf-api-contract.mjs`,
+`node scripts/verify-seed-envelope-parity.mjs`, `npm run test:data` (has a ~21-suite pre-existing/flaky
+failure set — diff against a baseline, don't assume net-new). The per-seeder tests
+(`tests/*-seed.test.mjs`) and `tests/seed-utils*.test.mjs` cover the write path.
+
+### Suggested entry point
+`/code-review high` on a scoped diff, or `/code-review ultra` for a multi-agent cloud pass over the
+pipeline files. There is no pending diff — this is a review of existing code, so the reviewer should
+target the paths above by path, e.g. `server/_shared/redis.ts`, `server/_shared/sidecar-cache.ts`,
+`server/_shared/seed-envelope.ts`, `scripts/_seed-utils.mjs`, and a sample of contract-mode
+seeder ↔ handler pairs.
+
+---
+
 ## 🔀 HANDOFF (2026-08-31, FORTIETH session) — read this first, supersedes every block below
 
 **TL;DR**: session 39's real-time sync (still unpushed, 4 commits) turned out to be live — the VS Code

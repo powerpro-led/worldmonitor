@@ -101,7 +101,58 @@ live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-he
    (`914a04d`), and `dist/` was restored that way. Fix options: point the plugin's hreflang anchor at
    the `APP_DOMAIN`-derived URL (or relax `min: 1`→`0` if variant dashboards are dead per
    `retire_public_product_surface`), or regenerate `index.html`'s hreflang block from domain config.
-5. FORTY-FIRST session's data-pipeline code review (block below) still not started.
+5. FORTY-FIRST session's data-pipeline code review — **done this session**, see the block just below.
+
+---
+
+## 🔍 REVIEWED (2026-09-01, FORTY-THIRD session) — data-pipeline code review (the FORTY-FIRST task)
+
+Manual pass over the 6 leads in the FORTY-FIRST handoff (the `/code-review` skill keyed off the
+unpushed session-43 commits instead, so it was done by hand against the choke-point files).
+
+- **Lead #2 — CONFIRMED, fixed (`6a2f317`).** `sidecarCacheGet()`'s in-memory `store` branch
+  returned `JSON.parse` raw while the mirror branch (`decodeMirrorEntry`) and redis.ts's live path
+  both `unwrapEnvelope()`. No caller stores an envelope today (checked all 156 `setCachedJson` sites),
+  and `unwrapEnvelope()` is a no-op on non-enveloped values, so this was a latent shape-flip footgun,
+  now closed by unwrapping symmetrically in both branches.
+- **Lead #1 — NOT WARRANTED.** The 223-raw-read-site audit the handoff feared isn't needed: unwrap is
+  centralized at the redis.ts choke point (`readCachedJson`/`getRawJson`/`getCachedJsonBatch` all
+  `unwrapEnvelope`; sidecar mirror does it in `decodeMirrorEntry`). The only non-unwrapping read is
+  `runRedisPipeline`, and its 3 `['GET',…]` call sites in `server/worldmonitor/` read webhook regs /
+  story-alias dedup / a score cache (which unwraps) — none a contract-mode seeder's canonical key.
+  FORTIETH's 2 bugs were the exception, not a pattern. (Caveat: choke-point centralization verified;
+  not every one of the 223 sites individually read.)
+- **Lead #6 — CONFIRMED, preview-deploy-only, low severity, NOT fixed.**
+  `server/worldmonitor/webcam/v1/list-webcams.ts:84` reads `getCachedJson('webcam:cameras:active')`
+  non-raw → in a `VERCEL_ENV=preview` deploy `prefixKey()` prepends `preview:<sha>:` but the seeder
+  wrote it unprefixed → miss → empty panel. Prod (empty prefix) + sidecar (bypasses `prefixKey`)
+  unaffected. `military/v1/list-military-bases.ts:134` has the same non-raw read but already
+  self-heals with a `raw:true` retry (`rawKeys` flag, lines 134-147) — ugly but not broken. Fix for
+  webcams: `getCachedJson('webcam:cameras:active', true)`. Left alone because `list-webcams` is a
+  near-dead surface (webcams removed session 18-19; only `api/webcam` → `PinnedWebcamsPanel` survives)
+  — confirm it's still wired before spending the change.
+- **Lead #4 — CONFIRMED broader than session 40's 3-site patch, NOT fixed (needs a plan).** ~11
+  seeders write mirrored data keys via raw `redisCommand(['SET',…])` and never call `notifyChange()`,
+  bypassing `_seed-utils.mjs`'s centralized push: `seed-wb-indicators` (`economic:`),
+  `seed-resilience-scores`/`seed-resilience-static` (`resilience:`), `seed-portwatch-port-activity`
+  (`portwatch:`), `seed-jodi-oil`/`seed-energy-spine`/`seed-ember-electricity`/`seed-owid-energy-mix`/
+  `seed-gas-storage-countries` (`energy:`), `seed-comtrade-bilateral-hs4`/`seed-hs2-chokepoint-exposure`
+  (`comtrade:`/`supply_chain:`), `seed-health-air-quality` (`climate:` half). All those prefixes are in
+  `SYNC_PREFIXES`, so `sync-listener.mjs`'s real-time push never fires for their seed writes —
+  freshness lags to `local-api-server.mjs`'s 6h `FULL_RECONCILIATION_INTERVAL_MS` rescan. Fix: route
+  these through `writeExtraKey()` or add explicit `notifyChange(key, type)` per raw SET of a mirrored
+  key. (`_seed-utils.mjs` already has the `type` param since session 40.)
+- **Lead #3 — CONFIRMED dead code, not broken.** `scripts/seed-cross-source-signals.mjs:29-32` still
+  batch-reads the 4 GDELT keys removed in `4d0608b` (fallbacks at 661/685/687);
+  `src/services/sentiment-gate.ts` has no importers. Wasted reads per seed run + a dead module.
+  Cleanup only.
+- **Lead #5 — coverage gap by design, operator call.** `news:feed-digest:*` has no seeder;
+  `list-feed-digest.ts` read-through-caches it, and there's no warm-ping in `local-api-server.mjs`. A
+  cold sidecar shows every regional news panel "unavailable" until a live ~190-feed crawl finishes.
+  Add a `seed-feed-digest.mjs` / warm-ping, or accept it.
+
+**Net actionable, not yet done:** lead #4 (systemic `notifyChange` gap — the biggest), lead #6
+(1-line webcam fix if the surface is still live), lead #3 cleanup, lead #5 decision.
 
 ---
 

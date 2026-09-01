@@ -80,8 +80,10 @@ export async function listWebcams(_ctx: ServerContext, req: ListWebcamsRequest):
   const qE = Math.ceil(req.boundE ?? 180);
   const qN = Math.ceil(req.boundN ?? 90);
 
-  // Read active version
-  const versionResult = await getCachedJson('webcam:cameras:active');
+  // Read active version. raw=true: seed-webcams.mjs writes this key unprefixed,
+  // so a non-raw read prefix-misses in a VERCEL_ENV=preview deploy (prefixKey
+  // prepends preview:<sha>:). The geo/meta reads below already pass raw=true.
+  const versionResult = await getCachedJson('webcam:cameras:active', true);
   const version = versionResult != null ? String(versionResult) : null;
   if (!version) {
     return { webcams: [], clusters: [], totalInView: 0 };

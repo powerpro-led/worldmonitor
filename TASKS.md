@@ -15,16 +15,72 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-09-01, FORTY-SECOND session) — NEXT TASK: split local backend from the VS Code dashboard
+## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED; next: verify it in a real VS Code GUI
+
+The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done and committed**
+(`ead1068`, on `main`, not pushed). Also committed this session, ahead of it: `b5323c7` (llm-health
+probe timeout 2s→5s), `4e10711` (.vscodeignore identity leak), `3a88e25` (the 42nd handoff doc).
+`main` is now `3 → 7` commits ahead of `origin/main`.
+
+### What shipped
+- **`scripts/worldmonitor-local.mjs`** — new CLI, `bin: worldmonitor-local`. `install` / `uninstall` /
+  `run` / `restart` (machine plumbing: writes `~/.worldmonitor/local-api-token` 0600, installs a
+  `com.worldmonitor.local-api` LaunchAgent, RunAtLoad + KeepAlive, running `local-api-server.mjs` with
+  `LOCAL_API_MODE=tauri-sidecar`; **token is never in the plist**). `login` / `logout` / `whoami`
+  (identity: loopback GitHub OAuth via the existing Supabase `github` provider → session at
+  `~/.worldmonitor/session.json` 0600; invite gate = the existing `worldmonitor-org-gate`
+  before-user-created Auth Hook, i.e. GitHub org membership — nothing new deployed). `status` / `token`.
+  `install --dry-run` writes the files but skips `launchctl` (that's what the test uses).
+- **`local-api-server.mjs`** — `resolveLocalApiToken()`: `options.token` → `LOCAL_API_TOKEN` env →
+  `~/.worldmonitor/local-api-token`. Resolved once onto `context.token`; the auth gate and the
+  `?embed=vscode` shim read that, not `process.env` directly. Tauri/Docker/child-spawn env path
+  unchanged. Default-deny preserved (the test now passes `tokenFile:` an absent path so a real
+  installed token can't mask the regression). `readSessionUserId()` + `local-sync.mjs`
+  `readOperatorUserId()` now prefer `session.json`, so per-user `brief:` scoping works from a cold
+  start instead of only after the dashboard's first authed request.
+- **Extension → thin client.** `src/sidecarProcess.ts` **deleted**, replaced by `src/backendClient.ts`:
+  health-check, read the token file, and at most `launchctl kickstart -k` — never spawns/kills a
+  backend. `panel.ts` offers a "Start backend" action on failure; `extension.ts` `deactivate()` is a
+  no-op; `.vscodeignore` drops `sidecar/**` from the `.vsix` entirely; `worldmonitorLocal.repoRoot`
+  setting removed, `worldmonitorLocal.startBackend` command added.
+- Docs: `vscode-extension/README.md` rewritten (architecture diagram, first-run, CLI table, MCP-client
+  JSON); `install-local-sync-agent.sh` header notes it's now the backstop for when the backend is down.
+
+### Verified
+`worldmonitor-local run` live end-to-end: backend with **no `LOCAL_API_TOKEN` in env** reads the file,
+gates every route (200 health / 404 good token / 401 bad / shim carries token), sync listener starts.
+`scripts/worldmonitor-local.test.mjs` 7/7. `npm run test:sidecar` 205/206 — the one failure
+(`service-status … EADDRINUSE`) is a pre-existing port conflict with a running sidecar, confirmed via
+`git stash`. Extension `tsc --noEmit` + esbuild clean.
+
+### Still open (next session)
+1. **Real VS Code GUI pass (F5).** Never run in a GUI. Open the dashboard against an installed backend,
+   check DevTools Network for failed asset loads, confirm synced-domain panels render, and exercise the
+   "Start backend" notification path with the LaunchAgent stopped (`launchctl bootout …`).
+2. **One-time Supabase operator setup for `login`:** add `http://127.0.0.1:46124/callback` to the
+   project's Auth → URL Configuration → Redirect URLs, or `login`'s loopback callback is rejected.
+   Not yet done — `login` is code-complete but untested against live Supabase for that reason.
+3. **`login` ↔ iframe auth are still separate.** The dashboard iframe keeps its own in-page GitHub
+   sign-in (`panel.ts` → `auth-provider.ts`). Unifying (backend hands the `session.json` session to
+   the iframe) is a deliberate follow-up, not done.
+4. **Stale `.vsix` on disk:** `vscode-extension/worldmonitor-local-dashboard-0.1.0.vsix` predates all
+   of this (still has the identity leak `4e10711` fixed). Delete + `npm run package` before sharing.
+5. FORTY-FIRST session's data-pipeline code review (block below) still not started.
+
+---
+
+## ✅ RESOLVED (2026-09-01, FORTY-SECOND session) — split local backend from the VS Code dashboard
+
+**Resolved by the FORTY-THIRD session, commit `ead1068`.** Original scoping notes kept below for the trail.
 
 Operator decision this session, explicitly requested as a big-enough refactor to hand to a fresh
 session rather than continue mid-conversation: **separately release** (a) a local backend that runs
 silently in the background on the operator's machine, consumed by both the VS Code dashboard AND the
 operator's own local MCP agent, and (b) the VS Code dashboard extension itself, as a thin UI-only
 client. Internal/invite-only distribution — operator explicitly ruled out building hosted-proxy or
-self-service auth for this; direct Upstash read creds + a manually-shared token per trusted teammate
-is the accepted model. Not started — architecture investigated and confirmed this session, no code
-written for the split itself.
+self-service auth for this. (Final auth model landed richer than the "manually-shared token" first
+sketched here: a `worldmonitor-local login` GitHub→Supabase flow reusing the existing org-gate hook —
+see the FORTY-THIRD block above.)
 
 ### What's already built — no new implementation needed for these two parts
 

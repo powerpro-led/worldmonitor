@@ -260,7 +260,13 @@ export function sidecarCacheGet(key: string): unknown | null {
       store.delete(key);
       store.set(key, entry);
       hitCount++;
-      return JSON.parse(entry.value);
+      // Envelope-unwrap to stay symmetric with the mirror branch below
+      // (decodeMirrorEntry) and with redis.ts's live-Upstash path, both of
+      // which always unwrap. unwrapEnvelope() is a no-op on a non-enveloped
+      // value, so a handler output stored verbatim by sidecarCacheSet() is
+      // returned unchanged; a raw {_seed,data} that ever gets stored is now
+      // returned bare instead of flipping shape depending on LRU occupancy.
+      return unwrapEnvelope(JSON.parse(entry.value)).data;
     }
   }
 

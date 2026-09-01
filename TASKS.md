@@ -15,12 +15,13 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
-## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED; next: verify it in a real VS Code GUI
+## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split SHIPPED + live-verified end to end
 
-The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done and committed**
-(`ead1068`, on `main`, not pushed). Also committed this session, ahead of it: `b5323c7` (llm-health
-probe timeout 2s→5s), `4e10711` (.vscodeignore identity leak), `3a88e25` (the 42nd handoff doc).
-`main` is now `3 → 7` commits ahead of `origin/main`.
+The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done, committed, and
+live-tested on this machine**. Commits on `main` (not pushed): `b5323c7` (llm-health probe 2s→5s),
+`4e10711` (.vscodeignore identity leak), `3a88e25` (42nd handoff doc), `ead1068` (the split),
+`8bdd094` (43rd handoff doc), `55271ee` (restart bootstrap-fallback fix). `main` is 6 ahead of
+`origin/main`.
 
 ### What shipped
 - **`scripts/worldmonitor-local.mjs`** — new CLI, `bin: worldmonitor-local`. `install` / `uninstall` /
@@ -46,26 +47,46 @@ probe timeout 2s→5s), `4e10711` (.vscodeignore identity leak), `3a88e25` (the 
 - Docs: `vscode-extension/README.md` rewritten (architecture diagram, first-run, CLI table, MCP-client
   JSON); `install-local-sync-agent.sh` header notes it's now the backstop for when the backend is down.
 
-### Verified
-`worldmonitor-local run` live end-to-end: backend with **no `LOCAL_API_TOKEN` in env** reads the file,
-gates every route (200 health / 404 good token / 401 bad / shim carries token), sync listener starts.
-`scripts/worldmonitor-local.test.mjs` 7/7. `npm run test:sidecar` 205/206 — the one failure
-(`service-status … EADDRINUSE`) is a pre-existing port conflict with a running sidecar, confirmed via
-`git stash`. Extension `tsc --noEmit` + esbuild clean.
+### Verified — live, on this machine
+- `worldmonitor-local install` → LaunchAgent bootstrapped, backend on 46123, `RunAtLoad`+`KeepAlive`.
+- REST auth: no token → 401, file token → 200 real payload (`mode: tauri-sidecar`, `cloudFallback:
+  false`). Backend launched by launchd with **no `LOCAL_API_TOKEN` in env** reads
+  `~/.worldmonitor/local-api-token` and gates on it. `?embed=vscode` shim carries the real token.
+- MCP surface: `initialize` + `tools/list` → 41 tools, `auth_kind: env_key`.
+- `restart` both paths: loaded job → `kickstart -k`; booted-out job → `bootstrap <plist>` fallback
+  (this gap was the one live-test bug — fixed in `55271ee`, in the CLI *and* `backendClient.ts`).
+- `worldmonitor-local login` → real GitHub OAuth in the browser → `Logged in as
+  powerpro.led@gmail.com` (Supabase user `15ae70b6-…`, matches the id already on this machine) →
+  `session.json` 0600 with refresh token. `local-sync` log: `operator identity … — brief: scoped to
+  this user`. `operator-identity.json` write-through correctly *skipped* (ids already matched).
+- **User-scoped route:** `/api/latest-brief` + loopback token + Supabase bearer → 200, real per-user
+  brief (`status: ready`, URL scoped to the operator's own id).
+- Fresh `.vsix` built + installed: **19.57 KB / 6 files** (was ~3 MB — the old one bundled `sidecar/`
+  incl. `local-cache.db`); `unzip -l` confirms zero `sidecar/` content. Old
+  `worldmonitor-internal.worldmonitor-local-dashboard@0.1.0` **uninstalled** (it was still running the
+  pre-split spawner — its `killStaleOccupant()` was `kill -9`ing the launchd backend on every dashboard
+  open; launchd `KeepAlive` won the race every time).
+- **MCP client config fixed:** `~/.claude.json` `mcpServers.worldmonitor-local` was stale (`:46200`,
+  placeholder token). Re-registered via `claude mcp` at `http://127.0.0.1:46123/api/mcp` with the real
+  token → `claude mcp get` shows `✔ Connected`. Tools land in a session after a Claude Code restart.
+- `scripts/worldmonitor-local.test.mjs` 7/7. `npm run test:sidecar` 205/206 — the lone failure
+  (`service-status … EADDRINUSE`) is a pre-existing port conflict, confirmed via `git stash`. Extension
+  `tsc --noEmit` + esbuild clean.
 
-### Still open (next session)
-1. **Real VS Code GUI pass (F5).** Never run in a GUI. Open the dashboard against an installed backend,
-   check DevTools Network for failed asset loads, confirm synced-domain panels render, and exercise the
-   "Start backend" notification path with the LaunchAgent stopped (`launchctl bootout …`).
-2. **One-time Supabase operator setup for `login`:** add `http://127.0.0.1:46124/callback` to the
-   project's Auth → URL Configuration → Redirect URLs, or `login`'s loopback callback is rejected.
-   Not yet done — `login` is code-complete but untested against live Supabase for that reason.
-3. **`login` ↔ iframe auth are still separate.** The dashboard iframe keeps its own in-page GitHub
-   sign-in (`panel.ts` → `auth-provider.ts`). Unifying (backend hands the `session.json` session to
-   the iframe) is a deliberate follow-up, not done.
-4. **Stale `.vsix` on disk:** `vscode-extension/worldmonitor-local-dashboard-0.1.0.vsix` predates all
-   of this (still has the identity leak `4e10711` fixed). Delete + `npm run package` before sharing.
-5. FORTY-FIRST session's data-pipeline code review (block below) still not started.
+### Still open
+1. **Final visual confirm of the dashboard in the GUI** — the extension is swapped and the backend
+   proven; what's unconfirmed is only the webview rendering (DevTools Network clean, synced-domain
+   panels draw). Indirect evidence it's fine: only ONE `local-api-server.mjs` process now (the old
+   spawner would make a second). Needs a human eyeball.
+2. **`login` ↔ iframe auth are still separate.** The dashboard iframe keeps its own in-page GitHub
+   sign-in (`panel.ts` → `auth-provider.ts`). Unifying (backend hands the `session.json` session to the
+   iframe) is a deliberate follow-up, not done.
+3. **Pre-existing, noticed in passing (NOT this task):** the sidecar's own inline `/api/llm-health`
+   probe still hardcodes `PROBE_TIMEOUT = 2000` (`local-api-server.mjs` ~line 1700, has a `TODO` to
+   import `getLlmHealthStatus()`), so `[llm:openrouter] Offline, skipping` still shows in the backend
+   log despite `b5323c7` fixing the shared `server/_shared/llm-health.ts`. Same false-unreachable class,
+   different code path.
+4. FORTY-FIRST session's data-pipeline code review (block below) still not started.
 
 ---
 

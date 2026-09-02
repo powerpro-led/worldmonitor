@@ -15,6 +15,117 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-09-02, FORTY-FOURTH session) — NEXT TASKS: session.json auto-refresh, review #4, review #3
+
+`main == origin/main` @ `cca85e2`. Everything from the FORTY-THIRD block below is done and pushed
+(local-backend split, `worldmonitor-local` CLI, login↔iframe unification, `npm run build` fix,
+data-pipeline review leads #1/#2/#5/#6). Four items remain, in priority order:
+
+### 1. Backend must auto-refresh `~/.worldmonitor/session.json` (the "we sign in all the time" bug)
+
+**Symptom the operator hit:** premium-gated panels (AI Market Impact / `list-market-implications`, and
+any other panel behind `hasPremiumAccess()` in `src/services/panel-gating.ts`) showed "unavailable"
+while non-premium panels (news) worked. Root cause: `session.json`'s access token has a ~1h TTL and
+**nothing refreshes the file**. The dashboard iframe's supabase-js auto-refreshes its *own in-memory*
+copy while open, but once the webview is closed >1h the file is stale; on reopen
+`reconcileWithOperatorSession()` (`src/services/auth-provider.ts`) calls
+`supabase.auth.setSession({access_token, refresh_token})` which only recovers if the **refresh token**
+is still alive — and a ~24h-untouched session had aged past Supabase's inactivity timeout, so adoption
+failed → iframe had no session → `hasPremiumAccess()` false → premium panels dead. A fresh
+`worldmonitor-local login` fixes it until the next expiry — not a real fix.
+
+**The fix:** `local-api-server.mjs` refreshes `session.json` on a timer. Pattern to mirror: the news
+digest warm-ping added in `0f493b5` (fire-and-forget block in the server's `start()`, right after the
+LLM-health warm). Roughly:
+  - every ~45 min (before the 1h access-token expiry), if `readOperatorSession()` returns a session,
+    `POST ${VITE_SUPABASE_URL||SUPABASE_URL}/auth/v1/token?grant_type=refresh_token` with
+    `{ refresh_token }` in the body, headers `{ apikey: VITE_SUPABASE_PUBLISHABLE_KEY, Authorization:
+    'Bearer ' + VITE_SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' }`.
+  - on 200, rewrite `session.json` (0600) with the new `access_token`/`refresh_token`/`expires_at`/
+    `user` — reuse the CLI's `writeSession()` shape in `scripts/worldmonitor-local.mjs` (don't import
+    it; the server file is plain `.mjs` bundled standalone — inline a small writer or factor a shared
+    helper into a new `vscode-extension/sidecar/*.mjs` both can import).
+  - `tauri-sidecar` mode only; wrap in try/catch; never block or fail startup. Log one line on
+    success/failure like the warm-ping does.
+  - Also run it once immediately on startup (a backend that booted after >1h down needs it now, not in
+    45 min) — but AFTER the server is listening so it doesn't delay `start()`.
+  - `close()` must clear the interval (see how `stopReconciliationLoop`/`stopSyncListener` are torn
+    down — same pattern; session-39 review deferred-finding-#4 discipline).
+  - Update the `worldmonitor-local login` output line in `scripts/worldmonitor-local.mjs` — it was
+    softened to "The dashboard adopts this on load and refreshes it itself" in `4980671`; once the
+    backend genuinely refreshes the file, it can say so accurately again.
+  - Test: `vscode-extension/sidecar/local-api-server.test.mjs` — a case that sets
+    `WM_LOCAL_SESSION_FILE` to a fixture with a near-expiry `expires_at`, stubs the Supabase token
+    endpoint (the suite already stands up local HTTP servers — see `setupRemoteServer`/`restoreHttps`
+    helpers), and asserts the file gets rewritten. Guard the real timer behind the same
+    `context.mode === 'tauri-sidecar'` check so it never fires in other tests.
+
+**Verify after:** `worldmonitor-local status` should keep showing a non-EXPIRED identity across >1h;
+premium panels stay populated after a long webview close + reopen with no manual `login`.
+
+### 2. Data-pipeline review lead #4 — systemic `notifyChange()` gap (the biggest review item)
+
+~11 seeders write **mirrored** data keys via a raw `redisCommand(['SET', …])` / private per-file
+`redisPipeline()` and never call `_seed-utils.mjs`'s `notifyChange()`, so `sync-listener.mjs`'s
+real-time push never fires for those domains — freshness lags to `local-api-server.mjs`'s 6h
+`FULL_RECONCILIATION_INTERVAL_MS` rescan. Session 40 patched only 3 (`seed-military-cii`,
+`seed-forecasts` ×2). Confirmed-affected (prefix in `SYNC_PREFIXES`, `notifyChange`=0):
+`seed-wb-indicators` (`economic:`), `seed-resilience-scores` + `seed-resilience-static`
+(`resilience:`), `seed-portwatch-port-activity` (`portwatch:`), `seed-jodi-oil` / `seed-energy-spine`
+/ `seed-ember-electricity` / `seed-owid-energy-mix` / `seed-gas-storage-countries` (`energy:`),
+`seed-comtrade-bilateral-hs4` / `seed-hs2-chokepoint-exposure` (`comtrade:`/`supply_chain:`),
+`seed-health-air-quality` (`climate:` half only).
+
+**Approach (don't blast 11 ad-hoc loops):** add ONE shared helper to `scripts/_seed-utils.mjs` —
+`notifyMirroredWrites(url, token, commands)` — that sweeps a pipeline command array, and for every
+`['SET', key, serialized, …]` entry calls the existing `notifyChange(url, token, key, serialized)`
+(which already self-gates on `isMirroredKey()`, so meta keys are safe no-ops). Add a unit test for it
+(precedent: `tests/seed-utils*.test.mjs`). THEN wire each of the ~11 seeders: one call after their
+`redisPipeline()`/pipeline flush succeeds. Each seeder has its own `redisPipeline()` local + differing
+`url`/`token` var names — do them one at a time, `tsc`/lint after each; they can't be run live (hit
+external APIs + real Redis) so lean on the helper's test + reading each call site carefully.
+Full context: the "REVIEWED" block below.
+
+### 3. Data-pipeline review lead #3 — dead GDELT code removal (low-risk cleanup)
+
+`scripts/seed-cross-source-signals.mjs`: remove the 4 dead keys from the batch-read list (lines ~28-31
+— `intelligence:gdelt-intel:v1`, `gdelt:intel:tone:{military,nuclear,maritime}` — removed in
+`4d0608b`), the `extractMediaToneDeterioration()` function (~line 658, always returns `[]` now) and
+its call site, and `GDELT_TONE_TOPICS` / `MAX_TONE_SIGNAL_AGE_MS` if then unused. Also delete
+`src/services/sentiment-gate.ts` (dead export, no importers — grep-confirmed). `node -c` +
+`tsc --noEmit` after; the seeder can't be run live.
+
+### 4. Pre-existing, not this handoff's making — noted so a cold agent doesn't rediscover
+
+- `local-api-server.mjs`'s inline `/api/llm-health` probe still hardcodes `PROBE_TIMEOUT = 2000`
+  (~line 1790, has a `TODO` to import `getLlmHealthStatus()`). `b5323c7` only fixed the shared
+  `server/_shared/llm-health.ts`. Backend log still shows `[llm:openrouter] Offline, skipping` from
+  the too-tight 2s probe when openrouter round-trips take 2.1-3.8s on this network. Any LLM-gated
+  panel that depends on the sidecar's own probe (rather than the shared module) can false-negative.
+- 4 untracked `.docx` files ("外部系统接入…") in the repo root — 4th session flagged, operator's to
+  deal with, not ours to `git add` or delete.
+
+### Verify-changes checklist (unchanged from FORTY-FIRST)
+`tsc --noEmit` (root + `tsconfig.api.json` + `tsconfig.gcp.json`), `npm run test:sidecar` (expect
+207/208 — the lone `service-status … EADDRINUSE` failure is a pre-existing port conflict with the
+running launchd backend, `git stash`-confirmed), `node scripts/verify-seed-envelope-parity.mjs`,
+`npm run test:data` (diff against baseline — ~21-suite pre-existing/flaky set). After any
+`server/_shared/*.ts` or `server/worldmonitor/**` change that the sidecar serves: `npm run
+build:sidecar-handlers` then `worldmonitor-local restart` (the sidecar loads bundled `api/**/[rpc].js`,
+NOT `.ts` source).
+
+### Machine state a cold agent inherits
+`com.worldmonitor.local-api` LaunchAgent installed + running (port 46123, `worldmonitor-local status`).
+`com.worldmonitor.local-sync` LaunchAgent also present (the freshness backstop). `~/.worldmonitor/`
+holds `local-api-token` + `session.json` (freshly re-logged-in this session, ~1h TTL — will expire
+again until item 1 lands). `~/.claude.json` `mcpServers.worldmonitor-local` → `:46123` + real token,
+`✔ Connected`. Nitric running (PID from `pgrep -f 'nitric start'`). The extension `.vsix` installed is
+current (19.57 KB, no `sidecar/`); `dist/` is a fresh plain `npm run build`. The one thing never
+visually confirmed all session: premium panels populating in the webview after iframe auth adoption —
+should work now with the fresh session; a cold agent can ask the operator to reload + eyeball.
+
+---
+
 ## 🔀 HANDOFF (2026-09-01, FORTY-THIRD session) — local backend split shipped+GUI-verified; login↔iframe unified; data-pipeline reviewed; `npm run build` fixed
 
 The FORTY-SECOND handoff below (split the local backend from the dashboard) is **done, committed, and

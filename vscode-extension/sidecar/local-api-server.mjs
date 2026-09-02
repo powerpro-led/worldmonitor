@@ -2392,6 +2392,31 @@ export async function createLocalApiServer(options = {}) {
         if (urls.length) console.log(`[local-api] LLM health warmed for ${urls.length} provider(s)`);
       })();
 
+      // Warm the regional news digest in the background (tauri-sidecar only).
+      // list-feed-digest.ts has NO seeder — it read-through-caches a live
+      // ~190-feed RSS crawl. On a cold backend the first dashboard open hits
+      // the request deadline (NEWS_DIGEST_DEADLINE_MS) before that crawl
+      // finishes and every regional news panel shows "unavailable"; the crawl
+      // then completes in the background and a second open shows data. Firing
+      // it here on startup means the crawl is already done (or running) by the
+      // time an editor opens. One request per lang covers all regions
+      // (the client sends no region param); `en` first so `zh` reuses its
+      // warmed per-feed rss:feed:v8:* caches. Fire-and-forget, never blocks or
+      // fails startup — same discipline as the LLM warm above.
+      if (context.mode === 'tauri-sidecar' && !isCloudPreferred('/api/news/v1/list-feed-digest')) {
+        (async () => {
+          for (const lang of ['en', 'zh']) {
+            try {
+              await fetch(
+                `http://127.0.0.1:${boundPort}/api/news/v1/list-feed-digest?variant=full&lang=${lang}`,
+                { headers: { [LOCAL_API_TRANSPORT_HEADER]: context.token }, signal: AbortSignal.timeout(90_000) },
+              );
+            } catch { /* the crawl it kicked off keeps running server-side regardless */ }
+          }
+          console.log('[local-api] news digest warm-ping fired');
+        })();
+      }
+
       // Local operator real-time sync — see startFullReconciliationLoop() /
       // startSyncListener()'s own comments for what each does and why
       // they're split this way. Both are no-ops outside tauri-sidecar mode

@@ -31,7 +31,17 @@ export class StrategicPosturePanel extends Panel {
 
   private init(): void {
     this.showLoading();
-    void this.fetchAndRender();
+    // Defer the first fetch until the panel is actually in the DOM. When the
+    // dashboard mounts this panel from a deferred shell (past the initial mount
+    // budget — routine inside the VS Code embed), the constructor runs before
+    // mountPanelElement() connects the element, so the fetch would resolve while
+    // `this.element.isConnected` is still false and fetchAndRender() discarded
+    // the result at its own is-connected guard — leaving the panel on its
+    // loading spinner until the 15-minute scheduled refresh happened to land.
+    // runWhenConnected() runs synchronously when already connected (eager mount)
+    // and otherwise fires from notifyConnected() the moment the panel is
+    // inserted.
+    this.runWhenConnected(() => void this.fetchAndRender());
     // Re-augment with vessels after stream has had time to populate
     // AIS data accumulates gradually - check at 30s, 60s, 90s, 120s
     this.vesselTimeouts.push(setTimeout(() => this.reaugmentVessels(), 30 * 1000));

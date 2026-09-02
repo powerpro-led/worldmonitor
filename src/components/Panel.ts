@@ -1,4 +1,4 @@
-import { isDesktopRuntime } from '../services/runtime';
+import { isDesktopRuntime, isVsCodeEmbedRuntime } from '../services/runtime';
 import { invokeTauri } from '../services/tauri-bridge';
 import { t } from '../services/i18n';
 import { h, replaceChildren, safeHtml as sanitizeHtmlFragment, setTrustedHtml, trustedHtml } from '../utils/dom-utils';
@@ -822,6 +822,20 @@ export class Panel {
 
     const style = window.getComputedStyle(this.element);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
+
+    // VS Code embed: the webview iframe owns its own layout and does not deliver
+    // the scroll / resize / IntersectionObserver lifecycle a real browser tab
+    // does. At boot getBoundingClientRect() reads a degenerate (0-height) box and
+    // never recovers until the operator manually resizes the editor window, so
+    // every viewport-gated panel — economic, global-procurement, trade-policy,
+    // supply-chain, strategic-posture, … — stays stuck on its loading spinner
+    // and its scheduled refreshes never fire (session 45). The embed mounts a
+    // small, fixed, curated panel set where every displayed panel is effectively
+    // always in view, so treat the viewport gate as satisfied here. This is a
+    // visibility gate, not an entitlement gate (see App.ts scheduleRefresh
+    // comment) — premium/variant gates still apply — so bypassing it only widens
+    // which mounted panels hydrate and keep refreshing.
+    if (isVsCodeEmbedRuntime()) return true;
 
     const rect = this.element.getBoundingClientRect();
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;

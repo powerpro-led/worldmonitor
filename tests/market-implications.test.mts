@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { normalizeCard } from '../src/services/market-implications.ts';
+import { fetchMarketImplications, normalizeCard } from '../src/services/market-implications.ts';
 import { listMarketImplications } from '../server/worldmonitor/intelligence/v1/list-market-implications.ts';
 
 describe('normalizeCard', () => {
@@ -85,5 +85,52 @@ describe('listMarketImplications handler', () => {
     }
 
     void original; // suppress unused warning
+  });
+});
+
+describe('fetchMarketImplications URL construction', () => {
+  // Regression: inside the VS Code embed, toApiUrl() returns a ROOT-RELATIVE
+  // path ('/api/...'). `new URL(relativePath)` with no base argument throws
+  // TypeError, which fetchMarketImplications' own catch swallowed into a `null`
+  // return — so loadMarketImplications() called showUnavailable() and the panel
+  // sat on "unavailable" forever. The fix passes window.location.origin as the
+  // base (mirrors services/imagery.ts).
+  it('does not throw / swallow when toApiUrl() yields a relative path (embed)', async () => {
+    const g = globalThis as unknown as {
+      window?: unknown;
+      fetch: typeof fetch;
+    };
+    const origWindow = g.window;
+    const origFetch = g.fetch;
+    let requestedUrl = '';
+
+    // Fake embed: a window with an origin, and __wmVsCodeApi so
+    // getConfiguredWebApiBaseUrl() returns '' → toApiUrl() stays relative.
+    g.window = {
+      __wmVsCodeApi: {},
+      location: { origin: 'http://127.0.0.1:46123', protocol: 'http:', host: '127.0.0.1:46123', hostname: '127.0.0.1' },
+    };
+    g.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      requestedUrl = typeof input === 'string' ? input : String((input as Request).url ?? input);
+      return new Response(
+        JSON.stringify({ cards: [], degraded: false, emptyReason: 'none', generatedAt: '2026-01-01T00:00:00Z' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const result = await fetchMarketImplications('');
+      // A non-null result proves new URL() did not throw. (cards:[] is a valid
+      // "no signals right now" response — degraded:false, so it is returned.)
+      assert.notEqual(result, null, 'relative toApiUrl() must not collapse into a null return');
+      assert.match(
+        requestedUrl,
+        /^https?:\/\/127\.0\.0\.1:46123\/api\/intelligence\/v1\/list-market-implications/,
+        `expected a same-origin absolute /api URL, got: ${requestedUrl}`,
+      );
+    } finally {
+      g.window = origWindow;
+      g.fetch = origFetch;
+    }
   });
 });

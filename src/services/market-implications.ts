@@ -84,7 +84,14 @@ export async function fetchMarketImplications(frameworkId = ''): Promise<MarketI
   }
 
   try {
-    const url = new URL(toApiUrl('/api/intelligence/v1/list-market-implications'));
+    // Second arg is required: in the VS Code embed toApiUrl() returns a
+    // root-relative path ('/api/...'), and new URL(relativePath) with no base
+    // throws TypeError — which the catch below swallows into a null return, so
+    // the panel showed "unavailable" forever inside the extension. Resolving
+    // against the page origin keeps the request same-origin, so the embed's
+    // fetch shim still recognises it as an /api/ call and attaches the loopback
+    // token. Mirrors services/imagery.ts.
+    const url = new URL(toApiUrl('/api/intelligence/v1/list-market-implications'), window.location.origin);
     if (frameworkId) url.searchParams.set('frameworkId', frameworkId);
     const resp = await fetch(url.toString(), {
       signal: AbortSignal.timeout(15_000),

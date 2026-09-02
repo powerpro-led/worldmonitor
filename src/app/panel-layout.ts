@@ -43,6 +43,7 @@ import { t } from '@/services/i18n';
 import { getCurrentTheme } from '@/utils';
 import { trackCriticalBannerAction } from '@/services/analytics';
 import { getStoredMapModePreference } from '@/services/map-mode-preference';
+import { isVsCodeEmbedRuntime } from '@/services/runtime';
 import { loadWidgets, saveWidget, isProUser } from '@/services/widget-store';
 import type { CustomWidgetSpec } from '@/services/widget-store';
 import { initEntitlementSubscription, destroyEntitlementSubscription, isEntitled, onEntitlementChange, shouldReloadOnEntitlementChange } from '@/services/entitlements';
@@ -1313,7 +1314,13 @@ export class PanelLayoutManager implements AppModule {
       clearTimeout(deferred.retryTimer);
       deferred.retryTimer = null;
     }
-    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
+    // The VS Code embed's webview iframe does not deliver a working
+    // IntersectionObserver lifecycle at boot (see Panel.isNearViewport) — a
+    // deferred shell's observer never sees an intersection, so panels past the
+    // initial mount budget stay skeleton shells until the operator resizes the
+    // editor window (session 45). Take the eager idle-mount path there instead,
+    // matching the no-IntersectionObserver fallback below.
+    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined' || isVsCodeEmbedRuntime()) {
       const ric = typeof window !== 'undefined'
         ? (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
         : undefined;

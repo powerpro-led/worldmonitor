@@ -140,18 +140,20 @@ unpushed session-43 commits instead, so it was done by hand against the choke-po
   batch-reads the 4 GDELT keys removed in `4d0608b` (fallbacks at 661/685/687);
   `src/services/sentiment-gate.ts` has no importers. Wasted reads per seed run + a dead module.
   Cleanup only.
-- **Lead #5 — coverage gap by design, operator call.** `news:feed-digest:*` has no seeder;
-  `list-feed-digest.ts` read-through-caches it, and there's no warm-ping in `local-api-server.mjs`. A
-  cold sidecar shows every regional news panel "unavailable" until a live ~190-feed crawl finishes.
-  Add a `seed-feed-digest.mjs` / warm-ping, or accept it.
+- **Lead #5 — CONFIRMED + fixed (`0f493b5`).** `news:feed-digest:*` has no seeder;
+  `list-feed-digest.ts` read-through-caches a live ~190-feed crawl, and a cold backend's first
+  dashboard open hit `NEWS_DIGEST_DEADLINE_MS` before the crawl finished -> every regional news panel
+  "unavailable", data on the *second* open (operator reproduced exactly). `local-api-server.mjs` now
+  fires one `GET /api/news/v1/list-feed-digest` per lang (en, then zh) in the background on startup —
+  tauri-sidecar only, only when news isn't cloud-preferred. Verified: crawl runs on restart, digest
+  then returns 16 categories / 267 items.
 
 **Net actionable, not yet done:** lead #4 (systemic `notifyChange` gap — the biggest; ~11 bespoke
 seeder edits, each unrunnable without live external APIs + Redis — deserves a dedicated pass: a shared
 `_seed-utils.mjs` helper that sweeps a command array + a test, then per-seeder wiring). lead #3
 cleanup (remove `extractMediaToneDeterioration` + the 4 dead GDELT batch-read keys +
 `GDELT_TONE_TOPICS`/`MAX_TONE_SIGNAL_AGE_MS` if then unused, + `src/services/sentiment-gate.ts`).
-lead #5 decision (`seed-feed-digest.mjs` / warm-ping / accept). #2 and #6 are done; `npm run build`
-is fixed.
+#2, #5, #6 done; #1 not warranted; `npm run build` fixed.
 
 ---
 

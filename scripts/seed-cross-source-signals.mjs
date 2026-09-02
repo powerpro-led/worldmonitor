@@ -26,10 +26,6 @@ const SOURCE_KEYS = [
   'wildfire:fires:v1',
   `displacement:summary:v1:${new Date().getFullYear()}`,
   'forecast:predictions:v2',
-  'intelligence:gdelt-intel:v1',
-  'gdelt:intel:tone:military',
-  'gdelt:intel:tone:nuclear',
-  'gdelt:intel:tone:maritime',
   'weather:alerts:v1',
   CII_RISK_SCORE_CACHE_KEYS.stale,
   'regulatory:actions:v1',
@@ -109,7 +105,6 @@ const TYPE_CATEGORY = {
   CROSS_SOURCE_SIGNAL_TYPE_FORECAST_DETERIORATION: 'intelligence',
   CROSS_SOURCE_SIGNAL_TYPE_MARKET_STRESS: 'financial',
   CROSS_SOURCE_SIGNAL_TYPE_WEATHER_EXTREME: 'natural',
-  CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION: 'information',
   CROSS_SOURCE_SIGNAL_TYPE_RISK_SCORE_SPIKE: 'intelligence',
   CROSS_SOURCE_SIGNAL_TYPE_REGULATORY_ACTION: 'policy',
 };
@@ -141,7 +136,6 @@ const BASE_WEIGHT = {
   CROSS_SOURCE_SIGNAL_TYPE_WILDFIRE_ESCALATION: 1.5,    // environmental — regional
   CROSS_SOURCE_SIGNAL_TYPE_FORECAST_DETERIORATION: 1.5, // predictive — lower confidence
   CROSS_SOURCE_SIGNAL_TYPE_WEATHER_EXTREME: 1.5,        // environmental — regional
-  CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION: 1.5, // sentiment — lagging
   CROSS_SOURCE_SIGNAL_TYPE_REGULATORY_ACTION: 2.0,      // policy action — direct market impact
 };
 
@@ -645,68 +639,12 @@ function extractWeatherExtreme(d) {
   return signals.slice(0, 2);
 }
 
-const GDELT_TONE_TOPICS = ['military', 'nuclear', 'maritime'];
-
-// The per-topic tone keys survive up to TIMELINE_TTL (7d, #5478) so last-good
-// data stays SERVABLE through a GDELT brownout — but a days-old declining
-// trend must not keep minting deterioration signals stamped detectedAt=now.
-// 48h = two daily series points of slack; older (or undatable) payloads are
-// skipped and the bundled-canonical fallback below still provides a coarse
-// tone signal.
-const MAX_TONE_SIGNAL_AGE_MS = 48 * 3600 * 1000;
-
-function extractMediaToneDeterioration(d) {
-  const signals = [];
-  for (const topic of GDELT_TONE_TOPICS) {
-    const tonePayload = d[`gdelt:intel:tone:${topic}`];
-    if (!tonePayload) continue;
-    const fetchedMs = Date.parse(tonePayload.fetchedAt);
-    if (!Number.isFinite(fetchedMs) || Date.now() - fetchedMs > MAX_TONE_SIGNAL_AGE_MS) continue;
-    const series = Array.isArray(tonePayload.data) ? tonePayload.data : [];
-    if (series.length < 3) continue;
-    const last3 = series.slice(-3);
-    const vals = last3.map(p => safeNum(p.value));
-    const isDeclining = vals[0] > vals[1] && vals[1] > vals[2];
-    const finalVal = vals[2];
-    if (!isDeclining || finalVal >= -1.5) continue;
-    const score = BASE_WEIGHT['CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION'] * Math.min(2, Math.abs(finalVal) / 3);
-    signals.push({
-      id: `gdelt-tone:${topic}`,
-      type: 'CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION',
-      theater: topic === 'maritime' ? 'Indo-Pacific' : 'Global',
-      summary: `Media tone deterioration: ${topic} coverage tone ${finalVal.toFixed(2)} (3-point declining trend)`,
-      severity: scoreTier(score),
-      severityScore: score,
-      detectedAt: Date.now(),
-      contributingTypes: [],
-      signalCount: 0,
-    });
-  }
-  // Fallback: bundled gdelt-intel topics array if per-topic keys unavailable
-  if (signals.length === 0) {
-    const payload = d['intelligence:gdelt-intel:v1'];
-    const topics = Array.isArray(payload?.topics) ? payload.topics : [];
-    for (const topic of topics) {
-      const avgTone = safeNum(topic.avgTone || topic.tone);
-      if (avgTone > -3) continue;
-      const theater = normalizeTheater(topic.region || topic.country || '');
-      const score = BASE_WEIGHT['CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION'] * Math.min(2, Math.abs(avgTone) / 3);
-      signals.push({
-        id: `gdelt-tone:${(topic.id || topic.label || 'unknown').replace(/\s+/g, '-').toLowerCase().slice(0, 40)}`,
-        type: 'CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION',
-        theater,
-        summary: `Media tone deterioration: "${topic.label || topic.topic}" avg tone ${avgTone.toFixed(1)}`,
-        severity: scoreTier(score),
-        severityScore: score,
-        detectedAt: Date.now(),
-        contributingTypes: [],
-        signalCount: 0,
-      });
-      if (signals.length >= 2) break;
-    }
-  }
-  return signals.slice(0, 2);
-}
+// NOTE: the media-tone-deterioration extractor was removed when the GDELT
+// intel surface (the "实时情报" panel, `intelligence:gdelt-intel:v1` and the
+// `gdelt:intel:tone:*` keys) was deleted in 4d0608b — nothing writes those
+// keys any more, so the extractor could only ever return []. The
+// CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION enum value stays in the
+// proto contract and its consumers; only the dead producer is gone.
 
 function extractRiskScoreSpike(d) {
   const payload = d[CII_RISK_SCORE_CACHE_KEYS.stale];
@@ -842,7 +780,6 @@ async function aggregateCrossSourceSignals() {
     extractForecastDeterioration,
     extractMarketStress,
     extractWeatherExtreme,
-    extractMediaToneDeterioration,
     extractRiskScoreSpike,
     extractRegulatoryAction,
   ];

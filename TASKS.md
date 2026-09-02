@@ -21,6 +21,50 @@ Related Claude memory entries (fuller narrative/context per item):
 (local-backend split, `worldmonitor-local` CLI, login↔iframe unification, `npm run build` fix,
 data-pipeline review leads #1/#2/#5/#6). Four items remain, in priority order:
 
+> **FORTY-FIFTH session status (2026-09-02) — ALL of items 1/2/3 done + item 4's llm-probe fixed +
+> two bugs found and fixed along the way.** 3 commits on `main` (NOT pushed). `npm run test:sidecar`
+> 209/210 (lone `service-status … EADDRINUSE` is the documented pre-existing port conflict);
+> `tsc --noEmit` clean; `verify-seed-envelope-parity.mjs` OK; per-seeder `test:data` suites for every
+> wired seeder green (439/439); `sync-domains` 11/11; cross-source-signals suites 110/110.
+>   - **1 — resolved + live-verified.** `local-api-server.mjs` runs `startSessionRefreshLoop(context)`
+>     (tauri-sidecar only, cleared in `close()`): fires once on startup + every **15 min**, and when
+>     `session.json`'s access token has **<25 min runway** `POST`s
+>     `${VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token` and rewrites the file 0600.
+>     Non-throwing; leaves the file intact on any failure. The near-expiry gate (not "every 45 min
+>     unconditionally") keeps the backend timer from racing / cross-invalidating the iframe's own
+>     supabase-js refresh under Supabase refresh-token rotation. CLI `login` line un-softened. 2 new
+>     tests. **`readOperatorSession`/`writeOperatorSession` extracted to a new shared sibling module
+>     `vscode-extension/sidecar/session-file.mjs`** — imported by BOTH `local-api-server.mjs` and
+>     `scripts/worldmonitor-local.mjs` (was a copy-paste lock-step hazard). **Live-verified:** restart
+>     with the token at 12 min runway → `[local-api] session.json refreshed (~60m left)` in the log,
+>     `worldmonitor-local status` went 12m → 60m, access token rotated.
+>   - **2 — resolved (all 12 seeders).** `notifyMirroredWrites(url, token, commands)` in
+>     `_seed-utils.mjs` — sweeps a pipeline command array, fires `notifyChange()` for every
+>     `['SET', key, …]` (self-gates on `isMirroredKey()`), **awaited** by callers, **concurrency-bounded
+>     to 8** via `allSettledWithConcurrency` (a bulk seeder can carry 150+ SETs → firing 2 unthrottled
+>     Upstash calls each would burst 300+ connections and invite 429s). 6 unit tests. Wired:
+>     `seed-wb-indicators`, `seed-resilience-scores`, `seed-resilience-static`,
+>     `seed-portwatch-port-activity`, `seed-comtrade-bilateral-hs4` (batch + final flush),
+>     `seed-jodi-oil`, `seed-owid-energy-mix`, `seed-gas-storage-countries`, `seed-ember-electricity`,
+>     `seed-energy-spine`, `seed-health-air-quality`, **`seed-hs2-chokepoint-exposure`**.
+>     **Bug fixed:** `seed-hs2-chokepoint-exposure` writes `supply-chain:exposure:*` (HYPHEN) and the
+>     RPC reads it, but `SYNC_PREFIXES` only had `supply_chain:` (underscore) — so those keys were
+>     mirrored to the sidecar NOWHERE and the premium Country Chokepoint Index panel had to recompute
+>     every cell from `comtrade:` on first open. Added a narrow `'supply-chain:exposure:'` entry to
+>     `SYNC_PREFIXES` (NOT the broad `supply-chain:` — the other 4 hyphen families cost-shock /
+>     sector-dep / route-explorer-lane / route-impact are request-varying auth-gated per-selection
+>     caches with no seeder, correctly excluded). +2 regression tests in `sync-domains.test.mjs`.
+>   - **3 — resolved.** removed `extractMediaToneDeterioration()` + extractor-list entry + 4 dead
+>     GDELT batch-read keys + `GDELT_TONE_TOPICS`/`MAX_TONE_SIGNAL_AGE_MS` + the two dead
+>     `TYPE_CATEGORY`/`BASE_WEIGHT` `MEDIA_TONE_DETERIORATION` map lines from
+>     `seed-cross-source-signals.mjs` (enum stays in the proto + consumers). Deleted
+>     `src/services/sentiment-gate.ts` (0 importers) + `tests/cross-source-signals-tone-staleness.test.mjs`.
+>   - **4 (partial) — resolved the llm-probe half.** `local-api-server.mjs`'s inline `/api/llm-health`
+>     probe + the startup LLM warm both hardcoded `2000` ms; extracted `LLM_PROBE_TIMEOUT_MS = 5_000`
+>     (matches `server/_shared/llm-health.ts`'s `PROBE_TIMEOUT_MS` bumped in `b5323c7`). The 2s cap
+>     false-negatived OpenRouter on networks where its round-trip is 2.1-3.8s. The 4 untracked `.docx`
+>     files remain the operator's.
+
 ### 1. Backend must auto-refresh `~/.worldmonitor/session.json` (the "we sign in all the time" bug)
 
 **Symptom the operator hit:** premium-gated panels (AI Market Impact / `list-market-implications`, and

@@ -32,6 +32,14 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// session.json read/write shared verbatim with the backend (local-api-server.mjs)
+// so the CLI login flow and the server's refresh timer can't disagree on the
+// file's schema.
+import {
+  readOperatorSession as readSession,
+  writeOperatorSession as writeSession,
+  operatorSessionFilePath,
+} from '../vscode-extension/sidecar/session-file.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_SCRIPT = path.join(REPO_ROOT, 'vscode-extension', 'sidecar', 'local-api-server.mjs');
@@ -40,7 +48,7 @@ const DOTENV_PATH = path.join(REPO_ROOT, '.env');
 
 const WM_DIR = path.join(os.homedir(), '.worldmonitor');
 const TOKEN_FILE = path.join(WM_DIR, 'local-api-token');
-const SESSION_FILE = path.join(WM_DIR, 'session.json');
+const SESSION_FILE = operatorSessionFilePath();
 
 const LABEL = 'com.worldmonitor.local-api';
 const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
@@ -176,29 +184,7 @@ function openBrowser(url) {
   try { execFileSync('open', [url], { stdio: 'ignore' }); } catch { /* fall back to printed URL */ }
 }
 
-// ── session.json ─────────────────────────────────────────────────────────
-function readSession() {
-  try {
-    return JSON.parse(readFileSync(SESSION_FILE, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-function writeSession(session) {
-  ensureWmDir();
-  const trimmed = {
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    expires_at: session.expires_at,
-    token_type: session.token_type,
-    user: { id: session.user?.id, email: session.user?.email },
-  };
-  writeFileSync(SESSION_FILE, `${JSON.stringify(trimmed, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(SESSION_FILE, 0o600);
-  return trimmed;
-}
-
+// ── session.json ── read/write imported from the shared sidecar module above.
 function describeExpiry(expiresAt) {
   if (!expiresAt) return 'unknown expiry';
   const deltaMs = expiresAt * 1000 - Date.now();
@@ -353,7 +339,7 @@ async function cmdLogin() {
   ok('');
   ok(`Logged in as ${saved.user.email || saved.user.id}`);
   ok(`  session:  ${SESSION_FILE}   (${describeExpiry(saved.expires_at)})`);
-  ok('  The dashboard adopts this on load and refreshes it itself; re-run `login` if it has been weeks.');
+  ok('  The backend keeps this token refreshed while it runs; re-run `login` only if it sits idle for weeks.');
   ok('  Restart the backend to pick it up now:  worldmonitor-local restart');
 }
 

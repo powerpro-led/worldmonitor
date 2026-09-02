@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import http, { createServer, request as httpRequest } from 'node:http';
 import https from 'node:https';
 import { createHmac } from 'node:crypto';
@@ -2235,5 +2235,159 @@ test('serves index.html for /dashboard.html when the build emitted no dashboard.
     await app.close();
     await localApi.cleanup();
     await rm(staticDir, { recursive: true, force: true });
+  }
+});
+
+test('tauri-sidecar refreshes a near-expiry session.json against Supabase on startup', async () => {
+  const localApi = await setupApiDir({});
+  const sessionFile = path.join(os.tmpdir(), `wm-session-refresh-${Date.now()}.json`);
+
+  // Fake Supabase GoTrue token endpoint.
+  const tokenHits = [];
+  const supabase = createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      tokenHits.push({
+        path: `${url.pathname}${url.search}`,
+        apikey: req.headers.apikey,
+        auth: req.headers.authorization,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'),
+      });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        access_token: 'at-new',
+        refresh_token: 'rt-new',
+        token_type: 'bearer',
+        expires_in: 3600,
+        user: { id: '15ae70b6-2045-49e5-9381-7e426c1d8295', email: 'op@example.test' },
+      }));
+    });
+  });
+  const supabasePort = await listen(supabase);
+  const supabaseOrigin = `http://127.0.0.1:${supabasePort}`;
+
+  const envSnapshot = {
+    WM_LOCAL_SESSION_FILE: process.env.WM_LOCAL_SESSION_FILE,
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
+    VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    UPSTASH_REDIS_REST_READONLY_TOKEN: process.env.UPSTASH_REDIS_REST_READONLY_TOKEN,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    RELAY_URL: process.env.RELAY_URL,
+  };
+  process.env.WM_LOCAL_SESSION_FILE = sessionFile;
+  process.env.VITE_SUPABASE_URL = supabaseOrigin;
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'anon-test-key';
+  // Keep the tauri-sidecar sync loops inert for this test.
+  delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.RELAY_URL;
+
+  // Access token expires in 5 min — inside the refresh skew window.
+  await writeFile(sessionFile, JSON.stringify({
+    access_token: 'at-old',
+    refresh_token: 'rt-old',
+    token_type: 'bearer',
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+    user: { id: '15ae70b6-2045-49e5-9381-7e426c1d8295', email: 'op@example.test' },
+  }), 'utf8');
+
+  const app = await createLocalApiServer({
+    port: 0,
+    mode: 'tauri-sidecar',
+    apiDir: localApi.apiDir,
+    // The fake Supabase server is loopback — allowlist it past the SSRF guard
+    // (programmatic-only escape hatch, same as the LLM-probe tests).
+    allowPrivateFetchOrigins: [supabaseOrigin],
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  await app.start();
+
+  try {
+    // The startup refresh is fire-and-forget — wait for the file to be rewritten.
+    let session;
+    for (let i = 0; i < 50; i++) {
+      session = JSON.parse(await readFile(sessionFile, 'utf8'));
+      if (session.access_token === 'at-new') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    assert.equal(tokenHits.length, 1);
+    assert.equal(tokenHits[0].path, '/auth/v1/token?grant_type=refresh_token');
+    assert.equal(tokenHits[0].apikey, 'anon-test-key');
+    assert.equal(tokenHits[0].auth, 'Bearer anon-test-key');
+    assert.equal(tokenHits[0].body.refresh_token, 'rt-old');
+
+    assert.equal(session.access_token, 'at-new');
+    assert.equal(session.refresh_token, 'rt-new');
+    assert.equal(typeof session.expires_at, 'number');
+    assert.ok(session.expires_at * 1000 - Date.now() > 30 * 60_000, 'expiry rolled forward ~1h');
+
+    // File perms stay 0600 after the overwrite.
+    assert.equal((await stat(sessionFile)).mode & 0o777, 0o600);
+  } finally {
+    for (const [k, v] of Object.entries(envSnapshot)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    await app.close();
+    await new Promise((resolve, reject) => supabase.close((e) => (e ? reject(e) : resolve())));
+    await rm(sessionFile, { force: true });
+    await localApi.cleanup();
+  }
+});
+
+test('session refresh is skipped when the token still has plenty of runway', async () => {
+  const localApi = await setupApiDir({});
+  const sessionFile = path.join(os.tmpdir(), `wm-session-norefresh-${Date.now()}.json`);
+
+  let hit = false;
+  const supabase = createServer((_req, res) => { hit = true; res.writeHead(500).end(); });
+  const supabasePort = await listen(supabase);
+  const supabaseOrigin = `http://127.0.0.1:${supabasePort}`;
+
+  const envSnapshot = {
+    WM_LOCAL_SESSION_FILE: process.env.WM_LOCAL_SESSION_FILE,
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
+    VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    UPSTASH_REDIS_REST_READONLY_TOKEN: process.env.UPSTASH_REDIS_REST_READONLY_TOKEN,
+  };
+  process.env.WM_LOCAL_SESSION_FILE = sessionFile;
+  process.env.VITE_SUPABASE_URL = supabaseOrigin;
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'anon-test-key';
+  delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+
+  // Expires in 3h — well outside the skew window.
+  await writeFile(sessionFile, JSON.stringify({
+    access_token: 'at-fresh',
+    refresh_token: 'rt-fresh',
+    expires_at: Math.floor(Date.now() / 1000) + 3 * 3600,
+    user: { id: '15ae70b6-2045-49e5-9381-7e426c1d8295', email: 'op@example.test' },
+  }), 'utf8');
+
+  const app = await createLocalApiServer({
+    port: 0,
+    mode: 'tauri-sidecar',
+    apiDir: localApi.apiDir,
+    allowPrivateFetchOrigins: [supabaseOrigin],
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  await app.start();
+
+  try {
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(hit, false, 'Supabase not contacted while the token is far from expiry');
+    const session = JSON.parse(await readFile(sessionFile, 'utf8'));
+    assert.equal(session.access_token, 'at-fresh');
+  } finally {
+    for (const [k, v] of Object.entries(envSnapshot)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    await app.close();
+    await new Promise((resolve, reject) => supabase.close((e) => (e ? reject(e) : resolve())));
+    await rm(sessionFile, { force: true });
+    await localApi.cleanup();
   }
 });

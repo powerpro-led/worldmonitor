@@ -18,12 +18,25 @@ import { spawn } from 'node:child_process';
 // tracked copy (scripts/sync-domain-config.mjs), same fix as api/_domain-
 // config.js and scripts/_domain-config.mjs.
 import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } from './_domain-config.mjs';
+// ~/.worldmonitor/session.json read/write — shared verbatim with the
+// `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
+// login flow and this server's refresh timer.
+import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
 
 const brotliCompressAsync = promisify(brotliCompress);
 const DESKTOP_AUTH_SECRET_ENV = 'WM_DESKTOP_SHARED_SECRET';
 const DESKTOP_AUTH_TIMESTAMP_HEADER = 'X-WorldMonitor-Desktop-Timestamp';
 const DESKTOP_AUTH_SIGNATURE_HEADER = 'X-WorldMonitor-Desktop-Signature';
 const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
+
+// Kept in lock-step with server/_shared/llm-health.ts's PROBE_TIMEOUT_MS
+// (bumped 2s -> 5s in b5323c7). A 2s cap false-negatived OpenRouter on
+// networks where its round-trip runs 2.1-3.8s, so the sidecar logged
+// "[llm:openrouter] Offline, skipping" and any panel trusting this probe
+// saw a provider that was actually up as down. This file is bundled
+// standalone and can't import the .ts module, so the value is duplicated,
+// not shared.
+const LLM_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Per-machine state directory shared with the `worldmonitor-local` CLI
@@ -37,7 +50,6 @@ const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
  */
 const WM_LOCAL_STATE_DIR = path.join(os.homedir(), '.worldmonitor');
 const WM_LOCAL_TOKEN_FILE = path.join(WM_LOCAL_STATE_DIR, 'local-api-token');
-const WM_LOCAL_SESSION_FILE = path.join(WM_LOCAL_STATE_DIR, 'session.json');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -64,19 +76,6 @@ function resolveLocalApiToken(options = {}) {
 }
 
 /**
- * The full Supabase session from ~/.worldmonitor/session.json, written by
- * `worldmonitor-local login`. Returns null when absent/malformed.
- */
-function readOperatorSession(sessionFile = process.env.WM_LOCAL_SESSION_FILE || WM_LOCAL_SESSION_FILE) {
-  try {
-    const session = JSON.parse(readFileSync(sessionFile, 'utf-8'));
-    return session && typeof session === 'object' ? session : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * The Supabase user id from ~/.worldmonitor/session.json. Lets this machine
  * know which operator it belongs to BEFORE the dashboard has made a single
  * authenticated request — previously the only identity source was
@@ -88,6 +87,14 @@ function readOperatorSession(sessionFile = process.env.WM_LOCAL_SESSION_FILE || 
 function readSessionUserId() {
   const id = readOperatorSession()?.user?.id;
   return typeof id === 'string' && UUID_RE.test(id) ? id : null;
+}
+
+/** Compact "~42m left" / "~5h left" for a Supabase `expires_at` (epoch seconds). */
+function describeSessionExpiry(expiresAt) {
+  if (!expiresAt) return 'unknown expiry';
+  const mins = Math.round((expiresAt * 1000 - Date.now()) / 60_000);
+  if (mins <= 0) return 'already expired';
+  return mins < 120 ? `~${mins}m left` : `~${Math.round(mins / 60)}h left`;
 }
 
 // Monkey-patch globalThis.fetch to force IPv4 for HTTPS requests.
@@ -1820,7 +1827,7 @@ async function dispatch(requestUrl, req, routes, context) {
   // LLM health endpoint — mirrors probe logic from server/_shared/llm-health.ts.
   // TODO: refactor to import getLlmHealthStatus() once handlers share a process-level module cache.
   if (requestUrl.pathname === '/api/llm-health') {
-    const PROBE_TIMEOUT = 2000;
+    const PROBE_TIMEOUT = LLM_PROBE_TIMEOUT_MS;
     async function probeOrigin(url, options = {}) {
       try {
         await fetchWithTimeout(url, { method: 'GET', allowPrivateNetwork: options.allowPrivateNetwork === true }, PROBE_TIMEOUT);
@@ -2202,6 +2209,101 @@ async function startSyncListener(context) {
   }
 }
 
+// How often the session-refresh loop wakes. Must be comfortably shorter than
+// SESSION_REFRESH_SKEW_MS so that at least one tick lands inside the refresh
+// window before the ~1h access token actually expires, even with the drift an
+// unref'd timer accumulates.
+const SESSION_REFRESH_INTERVAL_MS = 15 * 60_000; // 15m
+// Refresh only once the token has less than this much runway left. The
+// dashboard iframe's own supabase-js refreshes its in-memory copy ~90s before
+// expiry while the webview is open; gating on near-expiry keeps churn (and,
+// under Supabase refresh-token rotation, cross-invalidation) to a minimum
+// while still leaving a wide margin. When the webview is closed — the case
+// this whole loop exists for — nothing else touches the file and this is the
+// only thing keeping the session alive.
+const SESSION_REFRESH_SKEW_MS = 25 * 60_000; // 25m
+
+/**
+ * Refreshes ~/.worldmonitor/session.json against Supabase's token endpoint so
+ * that premium-gated dashboard panels (anything behind hasPremiumAccess() in
+ * src/services/panel-gating.ts) keep working after the webview has been closed
+ * for longer than the access token's ~1h TTL. Without this, `reconcileWith
+ * OperatorSession()` on the next webview open can only recover if the *refresh*
+ * token is also still alive — and a long-idle one ages past Supabase's
+ * inactivity timeout, leaving the iframe with no session at all.
+ *
+ * Fire-and-forget: never throws into its caller, never blocks startup. On any
+ * failure it leaves session.json untouched (a stale-but-present file still
+ * lets `worldmonitor-local status` report the identity and prompts a manual
+ * `login`) and logs one line, mirroring the warm-ping discipline.
+ */
+async function refreshOperatorSessionOnce(context) {
+  const session = readOperatorSession();
+  if (!session?.refresh_token) return; // not logged in — nothing to refresh
+  if (typeof session.expires_at === 'number'
+      && session.expires_at * 1000 - Date.now() > SESSION_REFRESH_SKEW_MS) {
+    return; // still has plenty of runway; don't race the iframe's own refresh
+  }
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+  if (!supabaseUrl || !anonKey) {
+    context.logger.warn('[local-api] session refresh skipped — VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY not in env');
+    return;
+  }
+  try {
+    const resp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: session.refresh_token }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) {
+      context.logger.warn(
+        `[local-api] session refresh failed (HTTP ${resp.status}) — session.json left as-is; run \`worldmonitor-local login\` if premium panels stop loading`,
+      );
+      return;
+    }
+    const refreshed = await resp.json().catch(() => null);
+    if (!refreshed?.access_token || !refreshed?.refresh_token) {
+      context.logger.warn('[local-api] session refresh returned no tokens — session.json left as-is');
+      return;
+    }
+    const expires_at = typeof refreshed.expires_at === 'number'
+      ? refreshed.expires_at
+      : Number.isFinite(refreshed.expires_in)
+        ? Math.floor(Date.now() / 1000) + refreshed.expires_in
+        : session.expires_at;
+    writeOperatorSession({ ...refreshed, expires_at });
+    context.logger.log(`[local-api] session.json refreshed (${describeSessionExpiry(expires_at)})`);
+  } catch (err) {
+    context.logger.warn(`[local-api] session refresh error (non-fatal): ${err.message}`);
+  }
+}
+
+/**
+ * Wakes on SESSION_REFRESH_INTERVAL_MS and refreshes session.json whenever its
+ * access token is close to expiring. Runs one attempt immediately too: a
+ * backend that just booted after being down for >1h finds the token already
+ * past the skew window and refreshes it now, not on the next tick. tauri-
+ * sidecar only (the only mode where session.json is the operator's own
+ * machine-local identity); a no-op everywhere else, so it never fires in tests
+ * unless a test opts into that mode.
+ */
+/** @returns {() => void} stop fn — clears the recurring interval (see close()). */
+function startSessionRefreshLoop(context) {
+  if (context.mode !== 'tauri-sidecar') return () => {};
+  // Fire-and-forget: start() only calls this once the server is already
+  // listening, so the initial attempt can't delay startup.
+  void refreshOperatorSessionOnce(context);
+  const timer = setInterval(() => { void refreshOperatorSessionOnce(context); }, SESSION_REFRESH_INTERVAL_MS);
+  timer.unref(); // don't hold the process open for this alone
+  return () => clearInterval(timer);
+}
+
 export async function createLocalApiServer(options = {}) {
   const context = resolveConfig(options);
   loadVerboseState(context.dataDir);
@@ -2210,6 +2312,7 @@ export async function createLocalApiServer(options = {}) {
   let unregisterSelfFetchOrigins = null;
   let stopReconciliationLoop = null;
   let stopSyncListener = null;
+  let stopSessionRefresh = null;
 
   const server = createServer(async (req, res) => {
     const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${context.port}`);
@@ -2387,7 +2490,7 @@ export async function createLocalApiServer(options = {}) {
         ].filter(Boolean);
         for (const url of urls) {
           const allowPrivateNetwork = url === process.env.OLLAMA_API_URL || url === process.env.LLM_API_URL;
-          try { await fetchWithTimeout(url, { method: 'GET', allowPrivateNetwork }, 2000); } catch {}
+          try { await fetchWithTimeout(url, { method: 'GET', allowPrivateNetwork }, LLM_PROBE_TIMEOUT_MS); } catch {}
         }
         if (urls.length) console.log(`[local-api] LLM health warmed for ${urls.length} provider(s)`);
       })();
@@ -2425,6 +2528,10 @@ export async function createLocalApiServer(options = {}) {
       stopReconciliationLoop = startFullReconciliationLoop(context);
       stopSyncListener = await startSyncListener(context);
 
+      // Keep ~/.worldmonitor/session.json's access token fresh so premium
+      // panels survive a long webview close — see startSessionRefreshLoop().
+      stopSessionRefresh = startSessionRefreshLoop(context);
+
       return { port: boundPort };
     },
     async close() {
@@ -2435,6 +2542,7 @@ export async function createLocalApiServer(options = {}) {
       // in one process — a test, or a future restart path).
       if (stopSyncListener) { stopSyncListener(); stopSyncListener = null; }
       if (stopReconciliationLoop) { stopReconciliationLoop(); stopReconciliationLoop = null; }
+      if (stopSessionRefresh) { stopSessionRefresh(); stopSessionRefresh = null; }
       if (unregisterSelfFetchOrigins) {
         unregisterSelfFetchOrigins();
         unregisterSelfFetchOrigins = null;

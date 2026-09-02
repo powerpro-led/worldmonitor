@@ -8,6 +8,7 @@ import {
   httpsProxyFetchRaw,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   releaseLock,
   withRetry,
 } from './_seed-utils.mjs';
@@ -437,6 +438,14 @@ export async function main() {
       );
     }
     dataWritten = true;
+
+    // Nudge the real-time sync listener for every mirrored key just written
+    // (per-country energy:ember:v1:* rows + _all; the DEL entries and the
+    // Phase-B seed-meta:* write are not notified here — same rule
+    // notifyPipelineWrites() uses on the RPC side). Without this these only
+    // refresh on the sidecar's 6h full reconciliation (data-pipeline review #4).
+    const { url, token } = getRedisCredentials();
+    await notifyMirroredWrites(url, token, dataCommands);
 
     // Phase B: seed-meta (only after all data is fully written)
     await redisPipeline([['SET', EMBER_META_KEY, JSON.stringify(metaPayload), 'EX', EMBER_TTL_SECONDS]]);

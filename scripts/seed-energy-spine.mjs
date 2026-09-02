@@ -8,6 +8,7 @@ import {
   getRedisCredentials,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   releaseLock,
 } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
@@ -402,6 +403,13 @@ export async function main() {
         `Redis pipeline: ${failures.length}/${commands.length} commands failed`,
       );
     }
+
+    // Nudge the real-time sync listener for every mirrored key just written
+    // (per-country energy:spine:v1:* rows + _countries; seed-meta:* self-
+    // filters). Without this these only refresh on the sidecar's 6h full
+    // reconciliation (data-pipeline review #4).
+    const { url, token } = getRedisCredentials();
+    await notifyMirroredWrites(url, token, commands);
 
     logSeedResult('energy:spine', spineEntries.size, Date.now() - startedAt, {
       countries: spineEntries.size,

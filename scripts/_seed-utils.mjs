@@ -392,6 +392,44 @@ export async function notifyChange(url, token, key, serializedValue, type = 'str
   ]);
 }
 
+// Fire notifyChange() for every mirrored `SET` in a raw pipeline command array.
+//
+// atomicPublish() and writeExtraKey() already nudge the real-time sync
+// listener themselves, but a seeder that builds its OWN `redisPipeline()` and
+// SETs mirrored rows directly (seed-wb-indicators, seed-resilience-*,
+// seed-portwatch-port-activity, the JODI/energy family, seed-comtrade-*, ...)
+// bypasses both — so those domains only refresh on local-api-server.mjs's 6h
+// full reconciliation instead of in near-real-time. Pass the SAME `commands`
+// array you handed redisPipeline(); this walks it and calls notifyChange() for
+// each `['SET', key, value, ...]` entry. notifyChange() self-gates on
+// isMirroredKey(), so `seed-meta:*` and other non-mirrored keys in the same
+// pipeline are safe no-ops — no need to filter here.
+//
+// Unlike notifyChange()'s other call sites (fire-and-forget, never awaited),
+// this one IS meant to be awaited by the caller: a standalone pipeline seeder
+// has no long tail of post-write work for a detached PUBLISH to flush behind
+// and usually process.exit()s within milliseconds, so an un-awaited nudge
+// would almost never make it out. One extra round-trip at the tail of a
+// 15-min-to-6h cron job is a fine price for actually closing the gap.
+//
+// Concurrency-bounded (a bulk seeder can carry 150+ per-country SETs in one
+// pipeline; firing 2 Upstash REST calls each unthrottled would burst 300+
+// connections and invite 429s that bleed into the next run). Still fully
+// non-throwing — allSettledWithConcurrency swallows per-item rejections and a
+// failed nudge must never fail the seed run whose canonical write succeeded.
+const NOTIFY_MIRRORED_CONCURRENCY = 8;
+export async function notifyMirroredWrites(url, token, commands) {
+  if (!url || !token || !Array.isArray(commands)) return;
+  const sets = commands.filter((cmd) => Array.isArray(cmd) && cmd.length >= 3
+    && typeof cmd[0] === 'string' && cmd[0].toUpperCase() === 'SET'
+    && typeof cmd[1] === 'string');
+  if (sets.length === 0) return;
+  await allSettledWithConcurrency(sets, NOTIFY_MIRRORED_CONCURRENCY, (cmd) => {
+    const serialized = typeof cmd[2] === 'string' ? cmd[2] : JSON.stringify(cmd[2]);
+    return notifyChange(url, token, cmd[1], serialized);
+  });
+}
+
 // Upstash REST calls surface transient network issues through fetch/undici
 // errors rather than stable app-level error codes, so we normalize the common
 // timeout/reset/DNS variants here before deciding to skip a seed run.

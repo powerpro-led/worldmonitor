@@ -8,6 +8,7 @@ import {
   releaseLock,
   extendExistingTtl,
   logSeedResult,
+  notifyMirroredWrites,
   readSeedSnapshot,
   resolveProxyForConnect,
   httpsProxyFetchRaw,
@@ -1384,6 +1385,13 @@ async function main() {
     if (failures.length > 0) {
       throw new Error(`Redis pipeline: ${failures.length}/${commands.length} commands failed`);
     }
+
+    // Nudge the real-time sync listener for every mirrored key just written
+    // (per-country supply_chain:portwatch-ports:v1:* rows, plus _countries when
+    // canonical advanced; seed-meta:* self-filters). Without this these only
+    // refresh on the sidecar's 6h full reconciliation (data-pipeline review #4).
+    const { url, token } = getRedisCredentials();
+    await notifyMirroredWrites(url, token, commands);
 
     logSeedResult('supply_chain', countryData.size, Date.now() - startedAt, { source: 'portwatch-ports' });
     console.log(`  Seeded ${countryData.size} countries`);

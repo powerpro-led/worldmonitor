@@ -14,6 +14,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { resolveAppOrigin } from './_domain-config.mjs';
+import { notifyMirroredWrites } from './_seed-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -508,6 +509,12 @@ async function main() {
     const r = JSON.parse(verifyResp[2].result);
     console.log(`  ✓ renewableEnergy: ${r.regions?.length || 0} regions, global=${r.globalPercentage}%`);
   }
+
+  // Nudge the real-time sync listener for the mirrored economic:worldbank-*
+  // keys just written (seed-meta:* entries in the pipeline self-filter).
+  // Without this the Tech Readiness / renewable panels only refresh on the
+  // sidecar's 6h full reconciliation (data-pipeline review #4).
+  await notifyMirroredWrites(redisUrl, redisToken, pipeline);
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`\n=== Done in ${total}s ===`);

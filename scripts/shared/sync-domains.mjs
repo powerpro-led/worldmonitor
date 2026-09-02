@@ -83,6 +83,18 @@ export const SYNC_PREFIXES = [
   // already mirrored, only its comtrade half was missing.
   'trade:',
   'comtrade:',
+  // `supply-chain:exposure:{iso2}:{hs2}:v1` (HYPHEN — distinct from the
+  // underscored `supply_chain:` prefix above) is the ONE hyphen-spelled
+  // supply-chain family that has a scheduled batch seeder
+  // (seed-hs2-chokepoint-exposure.mjs) pre-warming ~174×N per-country/HS2
+  // rows. Absent here it was mirrored nowhere, so the premium Country
+  // Chokepoint Index panel had to recompute every cell from `comtrade:` on
+  // first open in the sidecar. The other hyphen `supply-chain:*` families
+  // (cost-shock, sector-dep, route-explorer-lane, route-impact) are
+  // deliberately NOT included — they are request-varying, auth-gated,
+  // per-selection read-through caches with no seeder, same class as the
+  // excluded `cache:`/`story:` prefixes below.
+  'supply-chain:exposure:',
 
   // Security / conflict / defence.
   'conflict:',

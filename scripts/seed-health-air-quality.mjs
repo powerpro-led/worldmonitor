@@ -9,6 +9,7 @@ import {
   getRedisCredentials,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   parseRetryAfterMs,
   PERMANENT_4XX_STATUSES,
   releaseLock,
@@ -497,6 +498,12 @@ async function publishMirroredPayload(payload) {
   const fetchedAt = Date.now();
   const commands = buildMirrorWriteCommands(payload, CACHE_TTL, fetchedAt, OPENAQ_SOURCE_VERSION);
   await redisPipeline(commands);
+  // Nudge the real-time sync listener for the mirrored key this pipeline wrote
+  // (CLIMATE_AIR_QUALITY_KEY — `health:`/`seed-meta:` entries self-filter in
+  // notifyMirroredWrites). Without this the climate air-quality panel only
+  // refreshes on the sidecar's 6h full reconciliation (data-pipeline review #4).
+  const { url, token } = getRedisCredentials();
+  await notifyMirroredWrites(url, token, commands);
   return {
     fetchedAt,
     payloadBytes: Buffer.byteLength(JSON.stringify(payload), 'utf8'),

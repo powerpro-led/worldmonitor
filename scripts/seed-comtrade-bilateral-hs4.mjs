@@ -10,6 +10,7 @@ import {
   getRedisCredentials,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   releaseLock,
   sleep,
 } from './_seed-utils.mjs';
@@ -369,6 +370,7 @@ export async function main() {
     const apiMode = usePublicApi ? 'public preview (no COMTRADE_API_KEYS)' : `authenticated (${COMTRADE_KEYS.length} key(s), ${INTER_REQUEST_DELAY_MS}ms delay)`;
     console.log(`[bilateral-hs4] Fetching bilateral HS4 data for ${countries.length} countries × ${HS4_CODES.length} products [${apiMode}]...`);
 
+    const { url: redisUrl, token: redisToken } = getRedisCredentials();
     const commands = [];
     let writtenCount = 0;
     let failedCount = 0;
@@ -414,12 +416,17 @@ export async function main() {
       }
 
       if (commands.length >= 50) {
-        await redisPipeline(commands.splice(0));
+        const batch = commands.splice(0);
+        await redisPipeline(batch);
+        // Nudge the real-time sync listener for the comtrade:bilateral-hs4:*
+        // keys in this batch (data-pipeline review #4).
+        await notifyMirroredWrites(redisUrl, redisToken, batch);
       }
     }
 
     if (commands.length > 0) {
       await redisPipeline(commands);
+      await notifyMirroredWrites(redisUrl, redisToken, commands);
     }
 
     // Zero countries written means the run produced nothing, even though no

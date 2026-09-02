@@ -3,6 +3,7 @@ import {
   getRedisCredentials,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   writeFreshnessMetadata,
 } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
@@ -275,6 +276,10 @@ async function computeAndWriteIntervals(url, token, countryCodes, pipelineResult
     await redisPipeline(url, token, commands.slice(i, i + PIPE_BATCH));
   }
   console.log(`[resilience-scores] Wrote ${commands.length} interval keys`);
+  // Nudge the real-time sync listener for the resilience:intervals:v9:* keys
+  // just written; otherwise the Resilience panel only refreshes on the
+  // sidecar's 6h full reconciliation (data-pipeline review #4).
+  await notifyMirroredWrites(url, token, commands);
   if (diagnostics.activeScoreClampCount > 0) {
     console.warn(
       `[resilience-scores] Clamped ${diagnostics.activeScoreClampCount} interval bands to contain the active score ` +

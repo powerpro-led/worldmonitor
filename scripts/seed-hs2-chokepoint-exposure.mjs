@@ -9,6 +9,7 @@ import {
   getRedisCredentials,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   releaseLock,
 } from './_seed-utils.mjs';
 
@@ -334,6 +335,13 @@ export async function main() {
     if (failures.length > 0) {
       throw new Error(`Redis pipeline: ${failures.length}/${commands.length} commands failed`);
     }
+
+    // Nudge the real-time sync listener for the supply-chain:exposure:* keys
+    // just written (seed-meta:* self-filters). Requires the matching
+    // 'supply-chain:exposure:' entry in SYNC_PREFIXES — added alongside this
+    // (data-pipeline review #4).
+    const { url, token } = getRedisCredentials();
+    await notifyMirroredWrites(url, token, commands);
 
     logSeedResult('supply_chain:chokepoint-exposure', writtenCount, Date.now() - startedAt, {
       countries: countries.length,

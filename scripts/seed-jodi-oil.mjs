@@ -10,6 +10,7 @@ import {
   releaseLock,
   extendExistingTtl,
   logSeedResult,
+  notifyMirroredWrites,
   withRetry,
   readSeedSnapshot,
 } from './_seed-utils.mjs';
@@ -359,6 +360,13 @@ async function main() {
     if (failures.length > 0) {
       throw new Error(`Redis pipeline: ${failures.length}/${commands.length} commands failed`);
     }
+
+    // Nudge the real-time sync listener for every mirrored key just written
+    // (the per-country energy:jodi-oil:* rows + the canonical list; the
+    // seed-meta:* entry self-filters). Without this these only refresh on the
+    // sidecar's 6h full reconciliation (data-pipeline review #4).
+    const { url, token } = getRedisCredentials();
+    await notifyMirroredWrites(url, token, commands);
 
     logSeedResult('energy', countries.length, Date.now() - startedAt, { source: 'jodi-oil' });
     console.log(`  Seeded ${countries.length} countries`);

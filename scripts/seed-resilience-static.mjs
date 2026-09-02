@@ -8,6 +8,7 @@ import {
   httpsProxyFetchRaw,
   loadEnvFile,
   logSeedResult,
+  notifyMirroredWrites,
   releaseLock,
   verifySeedKey,
   withRetry,
@@ -1036,6 +1037,12 @@ async function publishSuccess(countryPayloads, manifest, meta, { faoAggregate } 
   if (failures.length > 0) {
     throw new Error(`Redis pipeline: ${failures.length}/${commands.length} commands failed`);
   }
+  // Nudge the real-time sync listener for the resilience:static:* keys just
+  // written (per-country rows + index + FAO aggregate; seed-meta:* self-
+  // filters). Without this the Resilience panel only refreshes on the
+  // sidecar's 6h full reconciliation (data-pipeline review #4).
+  const { url, token } = getRedisCredentials();
+  await notifyMirroredWrites(url, token, commands);
 }
 
 async function preservePreviousSnapshotOnFailure(failedDatasets, seedYear, message) {

@@ -59,6 +59,22 @@ describe('isMirroredKey', () => {
     });
   });
 
+  // Regression: `supply-chain:exposure:` (HYPHEN) has a scheduled batch
+  // seeder (seed-hs2-chokepoint-exposure.mjs) but was mirrored nowhere
+  // because SYNC_PREFIXES only had the underscored `supply_chain:`.
+  describe('supply-chain:exposure: (hyphen) — seeded, must mirror', () => {
+    it('mirrors the hyphen-spelled chokepoint-exposure seed rows', () => {
+      assert.equal(isMirroredKey('supply-chain:exposure:US:27:v1'), true);
+    });
+
+    it('still does NOT mirror the request-varying auth-gated hyphen families', () => {
+      assert.equal(isMirroredKey('supply-chain:cost-shock:US:hormuz:v1'), false);
+      assert.equal(isMirroredKey('supply-chain:sector-dep:US:27:v1'), false);
+      assert.equal(isMirroredKey('supply-chain:route-impact:US:CN:27:v1'), false);
+      assert.equal(isMirroredKey('supply-chain:route-explorer-lane:US:CN:27:dry:v1'), false);
+    });
+  });
+
   it('SYNC_PREFIXES has no accidental duplicate entries', () => {
     assert.equal(new Set(SYNC_PREFIXES).size, SYNC_PREFIXES.length);
   });

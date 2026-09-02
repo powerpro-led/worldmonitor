@@ -15,6 +15,64 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-09-02, FORTY-SEVENTH session) — NEXT TASK: release readiness (blocked on an operator decision)
+
+The operator asked "are we ready to publish a release yet?" — **not yet, and the gap is
+structural, not bugs.** All functional work through the FORTY-SIXTH block is done and verified;
+the operator has confirmed the VS Code embed dashboard renders and every panel loads. What is
+missing is a *distribution* story and a decision only the operator can make. Do NOT start
+packaging work until item 0 is answered.
+
+> **State at handoff:** `main` is **6 commits ahead of `origin/main`** (`6ec112a` `5c0d0b4`
+> `3fd910a` `cb2063d` `62ab13e` `123cb21`), all verified (`tsc`/`biome`/`npm run build`/targeted
+> tests), **none pushed**. Root `package.json` is `world-monitor@2.10.0`, `"private": true`, **zero
+> git tags ever**. Extension `vscode-extension/package.json` is `worldmonitor-local-dashboard@0.1.0`,
+> `publisher: "worldmonitor-internal"` (placeholder — not a registered Marketplace publisher). A
+> stale `vscode-extension/worldmonitor-local-dashboard-0.1.0.vsix` sits in the tree.
+
+### 0. Operator decision — what does "publish a release" mean here? (BLOCKER)
+
+The current install model is **from-source, single-machine, macOS-only**: clone the monorepo,
+`npm install`, `npm run build`, then `worldmonitor-local install` — which writes a launchd plist
+(`scripts/worldmonitor-local.mjs` `writePlist()`) hardcoding `LOCAL_API_RESOURCE_DIR` /
+`WorkingDirectory` to the repo checkout and running `sidecar/local-api-server.mjs` with the system
+node. The backend serves the dashboard from that checkout's `dist/`. There is no artifact that
+carries `dist/` + the sidecar + node deps to a machine without the full monorepo. Everything has
+been developed and tested on ONE machine / ONE operator (`powerpro.led@gmail.com`).
+
+So "release" could mean any of:
+  - **(a) Internal / self-host from source** — write an install doc, tag `v…`, `git push`, cut a
+    GitHub release with notes. No packaging. Lowest effort; matches how it actually runs today.
+  - **(b) GitHub release with a real artifact** — bundle sidecar + a built `dist/` (+ pinned deps)
+    into a tarball or a self-contained `.vsix`, plus a cross-platform install path (the launchd
+    plist is macOS-only — Linux would need systemd, Windows a service shim). Medium-large.
+  - **(c) VS Code Marketplace publish** — needs a registered `publisher`, a PAT, `vsce publish`,
+    icon/README/LICENSE polish, and a decision on how the extension provisions its backend on an
+    end-user machine (today it only *connects* to `127.0.0.1:46123`; it does not install or ship
+    the backend). Largest; also raises "is this meant to be public at all" (the fork reuses the
+    `ixuezudybhjptisexgxx` / "BIOVITA_BOTANICS" Supabase project and that operator's GitHub OAuth).
+
+### 1. Regardless of (a)/(b)/(c): push first
+
+`git push` the 6 stacked commits to `origin/main`. Nothing downstream can proceed until origin has
+them. (Operator has repeatedly said "we haven't released / fix everything" — pushing to the fork's
+own `origin/main` is separate from any public release and is safe.)
+
+### 2. Then, per the chosen path
+
+  - Bump versions deliberately (root `2.10.0`, ext `0.1.0`) and **create the first git tag**.
+  - Move CHANGELOG.md's large `## [Unreleased]` section under a dated version heading.
+  - Regenerate the `.vsix` from a clean build (`cd vscode-extension && npm run package`) and delete
+    the stale one in the tree, or add `*.vsix` to `.gitignore`.
+  - Write the install/upgrade doc (there is a good architecture diagram in
+    `vscode-extension/README.md` but no step-by-step for a fresh machine).
+  - For (b)/(c): solve backend provisioning + non-macOS service management.
+
+### Verify-changes checklist (unchanged from FORTY-FIRST — still applies)
+
+`npm run typecheck` · `npm run typecheck:api` · `npx tsc -p tsconfig.gcp.json --noEmit` ·
+`npm run build` · `npm run test:data` (targeted) · `npm run test:sidecar` · `npx biome check`.
+
 ## 🔀 HANDOFF (2026-09-02, FORTY-FOURTH session) — NEXT TASKS: session.json auto-refresh, review #4, review #3
 
 `main == origin/main` @ `cca85e2`. Everything from the FORTY-THIRD block below is done and pushed

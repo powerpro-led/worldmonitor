@@ -77,6 +77,36 @@ data-pipeline review leads #1/#2/#5/#6). Four items remain, in priority order:
 >     false-negatived OpenRouter on networks where its round-trip is 2.1-3.8s. The 4 untracked `.docx`
 >     files remain the operator's.
 
+> **FORTY-SIXTH session status (2026-09-02) — VS Code embed panels stuck on their loading spinner
+> until the operator manually resized the webview; `AI战略态势` took up to 30 min every reopen;
+> `AI市场影响` never loaded. All fixed in one commit `62ab13e` (NOT pushed — `main` now 5 ahead of
+> `origin/main`). `dist/` rebuilt; operator confirmed all panels now load on webview reload.** One
+> root cause — the webview iframe delivers no working IntersectionObserver / scroll / resize
+> lifecycle at boot and `getBoundingClientRect()` reads a 0-height box that only recovers on a
+> manual resize — hitting four loading layers:
+>   - `Panel.isNearViewport()` gated hydration **and ~50 `refreshScheduler` conditions** on a rect
+>     check that is always false in the embed → `if (isVsCodeEmbedRuntime()) return true;` after the
+>     `display:none`/`visibility:hidden` guards. Visibility gate, not an entitlement gate — every
+>     `hasPremiumAccess() && shouldLoad(x)` keeps its premium half.
+>   - `observeDeferredPanelShell()` mounts below-mount-budget panels via an `IntersectionObserver`
+>     on the skeleton shell that never fires in the embed → added `|| isVsCodeEmbedRuntime()` to the
+>     existing no-IO fallback so the embed takes the eager `requestIdleCallback`/`setTimeout` path.
+>   - `fetchMarketImplications()` built its URL as `new URL(toApiUrl('/api/…'))`. In the embed
+>     `toApiUrl()` returns a **root-relative** path and `new URL(relative)` with no base **throws
+>     `TypeError`**, which the function's own `catch` swallowed into `return null` → the panel showed
+>     "unavailable" forever. Pass `window.location.origin` as the base (mirrors
+>     `src/services/imagery.ts:14`, already correct). Regression test added to
+>     `tests/market-implications.test.mts` — verified it fails on the one-arg form. Grepped: only
+>     `imagery.ts` + this file used `new URL(toApiUrl(...))`.
+>   - `StrategicPosturePanel` self-fetched in its constructor, which runs before
+>     `mountPanelElement()` connects the element; `fetchAndRender()`'s own is-connected guard then
+>     **discarded** the resolved data, so only the 15-min scheduled `.refresh()` recovered it. Fix:
+>     defer the first fetch through `this.runWhenConnected(...)`.
+>   Backends were verified fine directly on `:46123` (`get-theater-posture` 200/9 theaters,
+>   `list-market-implications` 200/4 fresh cards) — purely client-side mount/gate timing.
+>   `tsc`/`biome` clean; `npm run build` OK; `panel-mount-deferral` + `market-implications*` +
+>   `premium-loaders-fan-out-coverage` green.
+
 ### 1. Backend must auto-refresh `~/.worldmonitor/session.json` (the "we sign in all the time" bug)
 
 **Symptom the operator hit:** premium-gated panels (AI Market Impact / `list-market-implications`, and

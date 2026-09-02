@@ -22,10 +22,22 @@ Related Claude memory entries (fuller narrative/context per item):
 data-pipeline review leads #1/#2/#5/#6). Four items remain, in priority order:
 
 > **FORTY-FIFTH session status (2026-09-02) — ALL of items 1/2/3 done + item 4's llm-probe fixed +
-> two bugs found and fixed along the way.** 3 commits on `main` (NOT pushed). `npm run test:sidecar`
-> 209/210 (lone `service-status … EADDRINUSE` is the documented pre-existing port conflict);
-> `tsc --noEmit` clean; `verify-seed-envelope-parity.mjs` OK; per-seeder `test:data` suites for every
-> wired seeder green (439/439); `sync-domains` 11/11; cross-source-signals suites 110/110.
+> three bugs found and fixed along the way.** 4 commits on `main` (NOT pushed): `6ec112a`, `5c0d0b4`,
+> `3fd910a`, `7ace9db`. `npm run test:sidecar` 209/210 (lone `service-status … EADDRINUSE` is the
+> documented pre-existing port conflict); `tsc --noEmit` + `typecheck:api` + `tsconfig.gcp.json` clean;
+> `npm run build` succeeds; `verify-seed-envelope-parity.mjs` OK; per-seeder `test:data` suites green;
+> `sync-domains` 11/11; cross-source-signals suites 110/110.
+>   - **Supabase refresh-token rotation — CONFIRMED ON, and handled (`7ace9db`).** Checked the project
+>     (`ixuezudybhjptisexgxx`, "BIOVITA_BOTANICS" org — the fork reuses that Supabase project) via the
+>     Management DB: `auth.refresh_tokens` = 132 rows / 14 sessions, 118 revoked, exactly one live
+>     token per session, chains up to 61 deep → rotation is enabled. So the new backend refresh timer
+>     and the iframe's own supabase-js autoRefresh were both consuming the one rotating token →
+>     whichever refreshed second got a revoked token → spurious `SIGNED_OUT` → premium panels dark
+>     **while the webview was open**. Fix: `src/services/auth-provider.ts` makes the embed a *follower*
+>     of the backend — `startOperatorSessionSync()` (embed only) re-adopts `/api/operator-session`
+>     every 10 min + on tab `visibilitychange`, so the iframe's token is always >>90s from expiry and
+>     supabase-js's own autoRefresh never fires; plus a `SIGNED_OUT` → immediate re-adopt safety net.
+>     Fully embed-gated — the main web app's auth is untouched.
 >   - **1 — resolved + live-verified.** `local-api-server.mjs` runs `startSessionRefreshLoop(context)`
 >     (tauri-sidecar only, cleared in `close()`): fires once on startup + every **15 min**, and when
 >     `session.json`'s access token has **<25 min runway** `POST`s

@@ -54,12 +54,96 @@ export async function initAuthProvider(): Promise<void> {
     currentSession = await reconcileWithOperatorSession(supabase, data.session);
     initialized = true;
     notifySubscribers();
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       currentSession = session;
       notifySubscribers();
+      // VS Code embed only: the standalone backend's session.json refresh
+      // timer and this iframe's own supabase-js both consume the one rotating
+      // Supabase refresh token for this session, so a lost race there surfaces
+      // here as a spurious SIGNED_OUT. The backend keeps session.json (served
+      // at /api/operator-session) authoritative — re-adopt from it instead of
+      // dropping the operator to the in-page sign-in button.
+      if (event === 'SIGNED_OUT' && isVsCodeEmbed()) {
+        void syncOperatorSession(supabase, 'signed-out');
+      }
     });
+    if (isVsCodeEmbed()) startOperatorSessionSync(supabase);
   })();
   return initPromise;
+}
+
+/** window.__wmVsCodeApi exists only inside the VS Code dashboard iframe. */
+function isVsCodeEmbed(): boolean {
+  return typeof window !== 'undefined'
+    && !!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi;
+}
+
+interface OperatorSessionBody {
+  access_token: string;
+  refresh_token: string;
+  user?: { id?: string };
+}
+
+/** GET /api/operator-session → the backend's current session.json, or null. */
+async function fetchOperatorSession(timeoutMs = 4000): Promise<OperatorSessionBody | null> {
+  try {
+    const resp = await fetch('/api/operator-session', { signal: AbortSignal.timeout(timeoutMs) });
+    if (resp.status === 204 || !resp.ok) return null;
+    const body = (await resp.json()) as Partial<OperatorSessionBody>;
+    if (!body.access_token || !body.refresh_token) return null;
+    return body as OperatorSessionBody;
+  } catch {
+    return null;
+  }
+}
+
+let operatorSyncInFlight = false;
+
+/**
+ * Adopt the backend's current session.json into this iframe when its access
+ * token differs from what supabase-js holds. Cheap and idempotent: a loopback
+ * fetch, plus a setSession() only when the token actually rotated. setSession()
+ * on success emits onAuthStateChange, which updates currentSession + notifies
+ * subscribers, so nothing to do here on the happy path.
+ */
+async function syncOperatorSession(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  reason: string,
+): Promise<void> {
+  if (operatorSyncInFlight) return;
+  operatorSyncInFlight = true;
+  try {
+    const body = await fetchOperatorSession();
+    if (!body || body.access_token === currentSession?.access_token) return;
+    const { error } = await supabase.auth.setSession({
+      access_token: body.access_token,
+      refresh_token: body.refresh_token,
+    });
+    if (error) {
+      console.warn(`[auth-provider] operator session re-adopt (${reason}) failed:`, error.message);
+    }
+  } finally {
+    operatorSyncInFlight = false;
+  }
+}
+
+// Comfortably shorter than both the ~1h access-token TTL and the backend's
+// own 15-min refresh cadence, so the iframe always adopts the backend's
+// freshly-rotated token well before supabase-js's own autoRefresh (which
+// fires ~90s before expiry) would ever need to fire — which is precisely
+// what keeps the two off each other's single rotating refresh token.
+const OPERATOR_SESSION_SYNC_MS = 10 * 60_000;
+let operatorSyncStarted = false;
+
+function startOperatorSessionSync(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+): void {
+  if (operatorSyncStarted || typeof window === 'undefined') return;
+  operatorSyncStarted = true;
+  setInterval(() => { void syncOperatorSession(supabase, 'interval'); }, OPERATOR_SESSION_SYNC_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void syncOperatorSession(supabase, 'visible');
+  });
 }
 
 /**
@@ -87,19 +171,14 @@ async function reconcileWithOperatorSession(
   supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
   existing: Session | null,
 ): Promise<Session | null> {
-  if (typeof window === 'undefined') return existing;
-  if (!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi) return existing;
+  if (!isVsCodeEmbed()) return existing;
 
   const TIMEOUT_MS = 4000;
   try {
     return await Promise.race([
       (async (): Promise<Session | null> => {
-        const resp = await fetch('/api/operator-session', { signal: AbortSignal.timeout(TIMEOUT_MS) });
-        if (resp.status === 204 || !resp.ok) return existing;
-        const body = (await resp.json()) as {
-          access_token?: string; refresh_token?: string; user?: { id?: string };
-        };
-        if (!body.access_token || !body.refresh_token) return existing;
+        const body = await fetchOperatorSession(TIMEOUT_MS);
+        if (!body) return existing;
         if (existing && body.user?.id && existing.user?.id === body.user.id) return existing;
         const { data, error } = await supabase.auth.setSession({
           access_token: body.access_token,

@@ -13,12 +13,13 @@ control panel, plus move production builds to CI.
 
 ## Status
 
-- **As of:** 2026-09-03 (end of session 51) — **handed off to the next session**
-- **Phase:** 0 done (v2.13.0 code) · **1 done** (config store) · **2 is next** · 3, 4 not started
-- **Branch:** `main == origin/main @ c2425dd`. Working tree clean, everything pushed. **No tags** (the S51 `v2.13.0` tag was created then deleted — D12).
+- **As of:** 2026-09-03 (session 53) — Phase 2 committed to `main` (not pushed — D12)
+- **Phase:** 0 done (v2.13.0 code) · 1 done (config store) · **2 done + committed** (control panel + browser sign-in) · **3 is next** · 4 not started
+- **Branch:** `main` — Phase 2 landed as 5 commits `f1a90be`..(docs). **Ahead of `origin/main`, not pushed** (D12: no push/tag/release until all four phases are coherent).
 - **No release** — tag or GitHub release — until all four phases are complete and coherent (**D12**). v2.13.0's code ships inside that eventual release.
-- **START HERE next session:** Phase 2 — `/api/local-config` route + `settings.html` control panel + browser GitHub sign-in. Full checklist below. Read the **Codebase review findings** and **Gotchas** sections first (esp. the module-load `process.env` captures → `/api/local-config` must `restart` after a write, D7).
+- **START HERE next session:** Phase 3 — backend-only `package.json` + `curl | sh` bootstrap + fetched Node + Desktop launcher. Checklist below.
 - **Build artifacts:** `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`) exist locally from the S51 verification build — gitignored, safe to delete/rebuild.
+- **Green (S52):** `tsc` · `typecheck:api` · `biome` (changed files, exit 0) · `test:sidecar` **226/226** (7 new) · `npm run build` (Model B blank env) + `build:sidecar-handlers` · live smoke against real `dist/` + `api/` (shim injection, first-run redirect, `/api/local-config` GET/POST validation, `/api/local-login` refusal, 401 without token).
 
 ---
 
@@ -113,12 +114,13 @@ Target journey ("form-fill"):
 - After a successful POST: `process.env[key] = value` for the live process, THEN spawn `worldmonitor-local restart` (D7 — `SIDECAR_ALLOWED_ORIGINS` [:1157](vscode-extension/sidecar/local-api-server.mjs#L1157) and the Upstash-origin CSP allowance [:2469](vscode-extension/sidecar/local-api-server.mjs#L2469) are captured at module load and only a restart re-reads them).
 - **`src/settings-main.ts` ALREADY EXISTS** (~40 KB) — a full settings UI with `SETTINGS_CATEGORIES`, `runtime-config.ts` (`getSecretState` / `setSecretValue` / `validateSecret` / `MASKED_SENTINEL`), `PLAINTEXT_KEYS`, desktop-secret loading. **Study `src/services/runtime-config.ts` + `src/services/settings-constants.ts` before adding a Config section** — likely extend the existing secret/masking machinery, not build new.
 
-- [ ] `/api/local-config` route — loopback + local-token gated
-  - [ ] GET → `{ [key]: 'set' | 'unset' }` for `CONFIG_KEYS`; public keys (`VITE_SUPABASE_URL`, publishable key) may return the value, `SECRET_CONFIG_KEYS` never do
-  - [ ] POST → per-key shape check → `setConfig` → `process.env[key] = value` → spawn `worldmonitor-local restart`
-- [ ] `settings.html` + `src/settings-main.ts` — Config section (reuse masking), Status (`/api/health` + last sync + mirror key count), Service (Restart / View Logs)
-- [ ] Browser "Sign in with GitHub" in settings.html — reuse `auth-provider.ts`'s `githubIdentityBridgeIssuer()` + postMessage flow; writes `~/.worldmonitor/session.json` via the sidecar; retires `worldmonitor-local login` for end users. `127.0.0.1:46124/callback` already allow-listed in Supabase.
-- [ ] First-run: empty config → dashboard detects "not configured" → routes to `settings.html`. `loadConfigIntoEnv()` runs once at boot, so a POST that writes the Supabase pair needs the `restart` to take effect — the wizard should expect that (progress + reconnect), not assume hot reload.
+- [x] `/api/local-config` route — loopback + local-token gated. **Done S52.** `handleLocalControlPlane()` in `local-api-server.mjs`, special-cased in `dispatch()` right after `/api/operator-session` (past the global token gate).
+  - [x] GET → `{ [key]: { stored, effective, value? } }` for `CONFIG_KEYS`; non-secret keys (`VITE_SUPABASE_URL`, publishable key) return `value`, `SECRET_CONFIG_KEYS` never do.
+  - [x] POST → per-key shape check (`validateConfigValue`) → `setConfig` → `process.env[key] = value` (+ `SUPABASE_URL` mirror) → `spawnBackendRestart()` (detached `worldmonitor-local restart`, skipped under `WM_LOCAL_SKIP_RESTART=1` for tests).
+  - [x] DELETE `?key=…` (query param, not a body — `fetch` DELETE+body is unreliable) → `deleteConfig` + `delete process.env[key]` + restart.
+- [x] `settings.html` + `src/settings-main.ts` — **Done S52.** New **Backend** sidebar section + `renderBackend()`, shown only when `window.__WM_LOCAL_CONTROL_PANEL` (set by `buildLocalControlPanelShim`, injected into `settings.html` over loopback). Config rows reuse the `.settings-secret-row` + `MASKED_SENTINEL` idiom; "from .env" hint when `effective==='set' && stored==='unset'`. Save posts changed rows, then polls `/api/sidecar-health` through the restart. Status block from `/api/local-status`. Service = Restart button (`/api/local-restart`). NOT reusing the Tauri `runtime-config.ts` secret machinery (it routes through `invokeTauri`, no-ops off-desktop) — the section is self-contained around plain `fetch`.
+- [x] Browser "Sign in with GitHub" — **Done S52.** `POST /api/local-login` → shared `beginGithubLogin()` in new `vscode-extension/sidecar/local-login.mjs` (factored out of the CLI `cmdLogin`, imported by both). Sidecar owns the PKCE flow + the `127.0.0.1:46124/callback` server; returns `202 { authUrl }`, the browser opens it (the service may have no GUI session), `writeOperatorSession` on the redirect. Panel polls `/api/operator-session`. `POST /api/local-logout` `rmSync`s session.json. **CLI `login` kept** for headless (resolves OQ4).
+- [x] First-run: empty Supabase config → `buildFirstRunRedirectShim` injected into `dashboard.html`/`index.html` (server-side, no bundle rebuild) → `location.replace('/settings.html?firstrun=1#backend')`. `settings.html` never redirects itself. `initSettingsWindow` opens the Backend section on `firstrun=1` / `#backend`. The Save flow expects the restart (progress + `/api/sidecar-health` poll), not hot reload.
 
 ### Phase 3 — One-command install + bundled Node + slim deps
 
@@ -147,12 +149,34 @@ Target journey ("form-fill"):
 - **OQ1** — Phase 1: during transition, does `install.sh` write BOTH `.env` and the SQLite `config`, or switch fully to SQLite? (Leaning: write both until Phase 2 ships, then SQLite-only + `.env` as override.)
 - **OQ2** — Phase 2: separate `config.db` vs a `config` table inside `local-cache.db`? (`local-cache.db` is rebuilt atomically by `local-sync.mjs` via a tmp-file swap — a `config` table there would be clobbered. Leaning: **separate `~/.worldmonitor/config.db`**.)
 - **OQ3** — Phase 3: nodejs.org download — pin to a specific Node version, or track "latest 22.x"? Checksum verification against the official SHASUMS?
-- **OQ4** — Phase 2: does browser GitHub sign-in fully replace `worldmonitor-local login`, or stay side-by-side (CLI kept for headless/server installs)?
+- **OQ4** — RESOLVED S52: browser sign-in is the documented path for end users; `worldmonitor-local login` is kept for headless/server installs. Both call the same `beginGithubLogin()`.
 - **OQ5** — APP_DOMAIN (session 49 Phase 2 deferral) — fold into this initiative's config store, or keep baked? Cosmetic for a loopback dashboard.
 
 ---
 
 ## Session log
+
+### Session 52 — 2026-09-03
+
+- **Phase 2 built** (all four parts, per operator direction: extend `settings-main.ts`, do it all, sign-in replaces CLI for end users).
+  - New `vscode-extension/sidecar/local-login.mjs` — `beginGithubLogin()` factored out of CLI `cmdLogin`; CLI now a thin wrapper. Added to `SIDECAR_FILES`.
+  - `local-api-server.mjs` — `handleLocalControlPlane()` (`/api/local-config` GET/POST/DELETE, `/api/local-login`, `/api/local-logout`, `/api/local-restart`), `buildLocalControlPanelShim()` + `buildFirstRunRedirectShim()` wired into `tryServeStaticAsset()`.
+  - `settings-main.ts` — Backend section (`renderBackend`), gated on `window.__WM_LOCAL_CONTROL_PANEL`; self-contained around `fetch` (not the Tauri `runtime-config.ts` path).
+  - 7 new `local-api-server.test.mjs` tests → `test:sidecar` 226/226.
+  - `INSTALL.md` + `CHANGELOG.md` updated.
+- **DELETE takes `?key=` in the query string, not a JSON body** — `fetch(url,{method:'DELETE',body})` produced a bare 400 from Node's HTTP parser through undici; raw `http.request` was fine. Query param sidesteps it and the UI is set-only this pass anyway.
+- OQ4 resolved (see above). OQ5 (APP_DOMAIN) still deferred — cosmetic for a loopback dashboard.
+- **Not committed at end of S52.** Committed in S53 as the 5 slices below (green re-verified first: `tsc` 0 · `typecheck:api` 0 · `biome` changed files 0 · `test:sidecar` 226/226).
+
+### Session 53 — 2026-09-03
+
+- **Phase 2 committed** to `main`, 5 slices (per the S52 plan), **not pushed** (D12):
+  1. `f1a90be feat(local): shared beginGithubLogin() module`
+  2. `ed3c281 feat(local): /api/local-config + control-plane routes`
+  3. `e30f1cd feat(local): settings.html Backend control panel`
+  4. `6ba93d2 test(local): control-plane route + shim tests`
+  5. `docs(initiative): Phase 2 done` (this commit)
+- **Next: Phase 3** — backend-only `package.json` prune · `curl | sh` bootstrap · fetched Node into `~/.worldmonitor/app/runtime/` · point plist/.cmd at the bundled node · Desktop launcher assets · `INSTALL.md` one-liner. Checklist in the Phase 3 section. OQ3 (Node version pin + SHASUMS) needs an answer first.
 
 ### Session 51 — 2026-09-03
 

@@ -19,8 +19,10 @@ For the from-source developer setup, see [`vscode-extension/README.md`](vscode-e
   URL + **read-only** token for a self-refreshing cache. See
   [`org.env.example`](scripts/release/org.env.example) for the format. If you
   don't have one, `install.sh` will prompt for the two required Supabase values.
-- AI summary panels need an OpenRouter key — add `OPENROUTER_API_KEY=…` to
-  `.env` yourself after install. The org's shared key is never distributed.
+- AI summary panels need an OpenRouter key. Add it in the backend control
+  panel after install (`http://127.0.0.1:46123/settings.html` → **Backend**), or
+  put `OPENROUTER_API_KEY=…` in `.env` yourself. The org's shared key is never
+  distributed.
 
 See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and why
 it's safe.
@@ -96,6 +98,14 @@ it's safe.
 
 ## Sign in (both platforms)
 
+Open the backend control panel at **`http://127.0.0.1:46123/settings.html`**,
+go to the **Backend** section, and click **Sign in with GitHub**. The same page
+is where you set the OpenRouter / Upstash / Supabase values; saving them
+restarts the backend automatically. A fresh install with no Supabase configured
+redirects the dashboard here on first open.
+
+Headless / server installs with no browser can still use the CLI:
+
 ```sh
 node scripts/worldmonitor-local.mjs login
 ```
@@ -124,9 +134,14 @@ service loads it with `node --env-file`); `config.db` is the same values in a
 store the backend can manage — `config set <KEY> <VALUE>` / `config unset` /
 `config import <file>`. After changing either, `restart`.
 
-The service listens on `127.0.0.1:46123` — REST for the dashboard and
-`/api/mcp` for a local MCP agent. Logs: `/tmp/com.worldmonitor.local-api.log`
-(macOS) or `%USERPROFILE%\.worldmonitor\local-api.log` (Windows).
+Or manage it from the browser: **`http://127.0.0.1:46123/settings.html`** →
+**Backend** shows the current config (secrets masked), operator identity, and a
+Restart button. Saving a config change there restarts the backend for you.
+
+The service listens on `127.0.0.1:46123` — REST for the dashboard, the control
+panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Logs:
+`/tmp/com.worldmonitor.local-api.log` (macOS) or
+`%USERPROFILE%\.worldmonitor\local-api.log` (Windows).
 
 ## Upgrading
 

@@ -9,6 +9,27 @@ All notable changes to World Monitor are documented here.
 The downloadable bundle is now **org-neutral** — one artifact serves any number
 of organisations, each supplying its own config.
 
+### Browser control panel for the standalone backend
+
+- **`http://127.0.0.1:46123/settings.html` → Backend** is a self-service
+  control panel for the standalone backend: view/edit the Supabase, Upstash and
+  OpenRouter config (secrets masked, never echoed), see operator identity and
+  service status, and restart. It only appears when the page is served over
+  loopback by the backend (`window.__WM_LOCAL_CONTROL_PANEL`) — the desktop and
+  web builds are unaffected.
+- **`GET/POST/DELETE /api/local-config`** — transport-token-gated, tight 5-key
+  allow-list, per-key shape validation. A write persists to
+  `~/.worldmonitor/config.db` **and** the live `process.env`, then restarts the
+  backend (origins/CSP are captured at module load, so a URL change needs a
+  fresh process).
+- **"Sign in with GitHub" in the panel** replaces `worldmonitor-local login`
+  for end users. `POST /api/local-login` runs the same loopback PKCE flow
+  (now shared code in `vscode-extension/sidecar/local-login.mjs`); the browser
+  opens the consent URL and the backend writes `~/.worldmonitor/session.json`.
+  The CLI `login` stays for headless/server installs.
+- **First-run redirect** — a bundle with no Supabase configured bounces the
+  dashboard to `settings.html?firstrun=1#backend`.
+
 - **`dist/` is built with `VITE_SUPABASE_*` unset**, so no organisation's
   Supabase project is baked into the JS. `src/services/supabase-client.ts`'s
   `readEnv()` reads `window.__WM_RUNTIME_CONFIG` first and falls back to

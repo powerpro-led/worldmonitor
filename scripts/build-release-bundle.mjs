@@ -152,6 +152,7 @@ cpSync(path.join(ROOT, 'vscode-extension', VSIX), path.join(STAGE, VSIX));
 cpSync(path.join(ROOT, 'scripts', 'release', 'install.sh'), path.join(STAGE, 'install.sh'));
 chmodSync(path.join(STAGE, 'install.sh'), 0o755);
 cpSync(path.join(ROOT, 'scripts', 'release', 'install.ps1'), path.join(STAGE, 'install.ps1'));
+cpSync(path.join(ROOT, 'scripts', 'release', 'TESTING.md'), path.join(STAGE, 'TESTING.md'));
 for (const f of ['package.json', 'package-lock.json', '.env.example', 'LICENSE', 'CHANGELOG.md', 'INSTALL.md']) {
   cpSync(path.join(ROOT, f), path.join(STAGE, f));
 }

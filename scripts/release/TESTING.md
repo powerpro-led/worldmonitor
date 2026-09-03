@@ -96,7 +96,12 @@ sudo sysadminctl -addUser wmtest -fullName "WM Test" -password -   # prompts for
 sudo installer -pkg ~/Downloads/node-v22.*.pkg -target /
 
 cp release/worldmonitor-local-<version>.tar.gz /Users/Shared/
+cp scripts/release/TESTING.md                  /Users/Shared/   # so the wmtest session has this guide
 ```
+
+> This guide (`TESTING.md`) ships in the bundle root from the release *after* it
+> was added, and is always readable on GitHub at
+> `scripts/release/TESTING.md`. The `cp` above covers older bundles that predate it.
 
 ### Test run
 

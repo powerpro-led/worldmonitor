@@ -19,8 +19,10 @@
  *     ~/.worldmonitor/session.json (0600). local-sync.mjs reads it to scope
  *     the per-user `brief:` mirror; nothing new is deployed for any of this.
  *
- * macOS only (launchd). Mirrors scripts/install-local-sync-agent.sh's idiom;
- * that agent stays as the freshness backstop for when this backend is down.
+ * macOS (launchd LaunchAgent) and Windows (a per-user Scheduled Task at logon,
+ * no admin rights) are both supported; the identity commands are pure Node and
+ * work anywhere. Mirrors scripts/install-local-sync-agent.sh's idiom; that
+ * agent stays as the freshness backstop for when this backend is down.
  */
 
 import { spawn, execFileSync } from 'node:child_process';
@@ -46,13 +48,25 @@ const SERVER_SCRIPT = path.join(REPO_ROOT, 'vscode-extension', 'sidecar', 'local
 const SQLITE_PATH = path.join(REPO_ROOT, 'vscode-extension', 'sidecar', 'local-cache.db');
 const DOTENV_PATH = path.join(REPO_ROOT, '.env');
 
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+
 const WM_DIR = path.join(os.homedir(), '.worldmonitor');
 const TOKEN_FILE = path.join(WM_DIR, 'local-api-token');
 const SESSION_FILE = operatorSessionFilePath();
 
 const LABEL = 'com.worldmonitor.local-api';
 const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
-const LOG = `/tmp/${LABEL}.log`;
+// macOS keeps the historical /tmp path (docs + the extension reference it);
+// Windows has no /tmp, so its log lives beside the token in ~/.worldmonitor.
+const WIN_LOG = path.join(WM_DIR, 'local-api.log');
+const LOG = IS_WIN ? WIN_LOG : `/tmp/${LABEL}.log`;
+
+// ── Windows Scheduled Task artefacts (written under ~/.worldmonitor) ──────
+const WIN_TASK_NAME = 'WorldMonitorLocal';
+const WIN_TASK_XML = path.join(WM_DIR, 'worldmonitor-local-task.xml');
+const WIN_RUN_CMD = path.join(WM_DIR, 'worldmonitor-local-run.cmd');
+const WIN_RUN_VBS = path.join(WM_DIR, 'worldmonitor-local-run.vbs');
 
 const DEFAULT_PORT = 46123;
 // Pinned (not ephemeral) so the operator allowlists exactly ONE redirect URL
@@ -71,9 +85,9 @@ const opt = (name, fallback) => {
 const die = (msg) => { console.error(`error: ${msg}`); process.exit(1); };
 const ok = (msg) => console.log(msg);
 
-function requireDarwin() {
-  if (process.platform !== 'darwin') {
-    die(`this command is macOS-only (launchd). Platform: ${process.platform}.`);
+function requireServiceOS() {
+  if (!IS_MAC && !IS_WIN) {
+    die(`service management supports macOS (launchd) and Windows (Scheduled Task) only. Platform: ${process.platform}. Use \`worldmonitor-local run\` to run it in the foreground.`);
   }
 }
 
@@ -165,6 +179,119 @@ function bootstrap() {
   execFileSync('launchctl', ['bootstrap', `gui/${process.getuid()}`, PLIST], { stdio: 'inherit' });
 }
 
+// ── Windows Scheduled Task ───────────────────────────────────────────────
+// A per-user logon task (no admin). Task action is `wscript <vbs>`, the vbs
+// launches a .cmd wrapper with a hidden window (window style 0), the .cmd sets
+// the same env the launchd plist does and runs the backend, appending stdout +
+// stderr to LOG. RestartOnFailure in the XML approximates launchd's KeepAlive.
+function schtasks(args, { check = true } = {}) {
+  try {
+    return execFileSync('schtasks', args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    if (check) throw err;
+    return null;
+  }
+}
+
+function winTaskState() {
+  const out = schtasks(['/query', '/tn', WIN_TASK_NAME, '/fo', 'LIST'], { check: false });
+  if (!out) return 'not installed';
+  const m = out.match(/^\s*Status:\s*(.+?)\s*$/mi);
+  return m ? m[1] : 'installed';
+}
+
+// Kill whatever is LISTENING on `port` (used by restart/uninstall — a detached
+// backend child is not owned by the task once wscript returns).
+function winKillPort(port) {
+  const text = execFileSyncSafe('netstat', ['-ano']) || '';
+  const pids = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    if (!/LISTENING/i.test(line)) continue;
+    if (!new RegExp(`[:.]${port}\\b`).test(line)) continue;
+    const pid = line.trim().split(/\s+/).pop();
+    if (/^\d+$/.test(pid) && pid !== '0') pids.add(pid);
+  }
+  for (const pid of pids) {
+    try { execFileSync('taskkill', ['/F', '/PID', pid], { stdio: 'ignore' }); } catch { /* already gone */ }
+  }
+  return pids.size;
+}
+
+function execFileSyncSafe(cmd, args) {
+  try { return execFileSync(cmd, args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
+}
+
+function writeWinTaskFiles(port) {
+  const nodeBin = process.execPath;
+  // .cmd — the actual launch, env matches writePlist()'s EnvironmentVariables.
+  const cmd = [
+    '@echo off',
+    'setlocal',
+    'set "LOCAL_API_MODE=tauri-sidecar"',
+    `set "LOCAL_API_PORT=${port}"`,
+    `set "LOCAL_API_RESOURCE_DIR=${REPO_ROOT}"`,
+    `set "LOCAL_SQLITE_PATH=${SQLITE_PATH}"`,
+    `"${nodeBin}" "--env-file-if-exists=${DOTENV_PATH}" "${SERVER_SCRIPT}" >> "${LOG}" 2>&1`,
+    '',
+  ].join('\r\n');
+  // .vbs — run the .cmd with no visible window (style 0) and WAIT (True): the
+  // wscript process then lives as long as the backend, so Task Scheduler sees
+  // the task as Running and RestartOnFailure fires if the backend crashes.
+  // Chr(34) for the path quotes — avoids VBScript quote-doubling ambiguity and
+  // survives a space in the profile path.
+  const vbs = [
+    'Set sh = CreateObject("WScript.Shell")',
+    `cmd = "cmd /c " & Chr(34) & "${WIN_RUN_CMD}" & Chr(34)`,
+    'sh.Run cmd, 0, True',
+    '',
+  ].join('\r\n');
+  // Task Scheduler definition: logon trigger, hidden, restart 3x/1min.
+  const xml = `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>WorldMonitor local backend (127.0.0.1:${port})</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <Hidden>true</Hidden>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>wscript.exe</Command>
+      <Arguments>"${WIN_RUN_VBS}"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`;
+  ensureWmDir();
+  writeFileSync(WIN_RUN_CMD, cmd);
+  writeFileSync(WIN_RUN_VBS, vbs);
+  // schtasks /create /xml wants UTF-16 with a BOM.
+  writeFileSync(WIN_TASK_XML, "\uFEFF" + xml, 'utf16le');
+}
+
 // ── .env (for login: Supabase URL + anon key) ────────────────────────────
 function loadDotenv() {
   try { process.loadEnvFile(DOTENV_PATH); } catch { /* absent — rely on ambient env */ }
@@ -181,7 +308,11 @@ function supabaseConfig() {
 }
 
 function openBrowser(url) {
-  try { execFileSync('open', [url], { stdio: 'ignore' }); } catch { /* fall back to printed URL */ }
+  try {
+    if (IS_WIN) execFileSync('cmd', ['/c', 'start', '', url], { stdio: 'ignore' });
+    else if (IS_MAC) execFileSync('open', [url], { stdio: 'ignore' });
+    else execFileSync('xdg-open', [url], { stdio: 'ignore' });
+  } catch { /* fall back to printed URL */ }
 }
 
 // ── session.json ── read/write imported from the shared sidecar module above.
@@ -195,7 +326,7 @@ function describeExpiry(expiresAt) {
 
 // ── commands ─────────────────────────────────────────────────────────────
 async function cmdInstall() {
-  requireDarwin();
+  requireServiceOS();
   const port = Number(opt('port', DEFAULT_PORT));
   const explicitToken = opt('token', null);
 
@@ -211,8 +342,33 @@ async function cmdInstall() {
   // file is fine — warn only when neither exists.
   if (!existsSync(path.join(REPO_ROOT, 'dist', 'dashboard.html'))
       && !existsSync(path.join(REPO_ROOT, 'dist', 'index.html'))) {
-    ok('warning: no dist/ build found — run `npm run build` from the repo root');
-    ok('         (the backend still starts and serves /api/*, but the dashboard page will 404)');
+    ok('warning: no dist/ build found next to this CLI — the backend still starts');
+    ok('         and serves /api/*, but the dashboard page will 404');
+  }
+
+  if (IS_WIN) {
+    writeWinTaskFiles(port);
+    if (flag('dry-run')) {
+      ok('');
+      ok(`dry run — wrote ${TOKEN_FILE}, ${WIN_TASK_XML} (+ .cmd/.vbs); skipped schtasks.`);
+      ok(`  fp ${fingerprint(token)}   port ${port}`);
+      return;
+    }
+    schtasks(['/create', '/tn', WIN_TASK_NAME, '/xml', WIN_TASK_XML, '/f']);
+    schtasks(['/run', '/tn', WIN_TASK_NAME], { check: false });
+    ok('');
+    ok(`installed Scheduled Task "${WIN_TASK_NAME}"`);
+    ok(`  backend:  ${process.execPath} ${SERVER_SCRIPT}`);
+    ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
+    ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);
+    ok(`  log:      ${LOG}`);
+    ok('  starts:   at logon and on failure (LogonTrigger + RestartOnFailure 3x/1min)');
+    ok('');
+    ok('  status:   worldmonitor-local status');
+    ok('  remove:   worldmonitor-local uninstall');
+    ok('');
+    ok('For user-scoped data (your Latest Brief), also run:  worldmonitor-local login');
+    return;
   }
 
   writePlist(port);
@@ -359,7 +515,20 @@ async function cmdLogout() {
 }
 
 async function cmdRestart() {
-  requireDarwin();
+  requireServiceOS();
+  const port = Number(opt('port', DEFAULT_PORT));
+
+  if (IS_WIN) {
+    if (winTaskState() === 'not installed') die('backend not installed — run `worldmonitor-local install`.');
+    // The task's node child is detached once wscript returns, so /end alone
+    // won't stop it — kill by listening port, then re-run the task.
+    schtasks(['/end', '/tn', WIN_TASK_NAME], { check: false });
+    const killed = winKillPort(port);
+    schtasks(['/run', '/tn', WIN_TASK_NAME]);
+    ok(`backend restarted (killed ${killed} listener${killed === 1 ? '' : 's'} on :${port}, re-ran the task).`);
+    return;
+  }
+
   // `kickstart -k` only works while the job is still loaded (crashed past
   // KeepAlive, `launchctl stop`, or just wedged). If it was booted out
   // entirely — `uninstall`, a manual `launchctl bootout`, a logout/login
@@ -388,7 +557,8 @@ async function cmdStatus() {
   } catch { /* down */ }
 
   ok(`backend    ${health ? `up   127.0.0.1:${port}  (mode ${health.mode})` : `DOWN 127.0.0.1:${port}`}`);
-  if (process.platform === 'darwin') ok(`launchd    ${launchdState()}  (${LABEL})`);
+  if (IS_MAC) ok(`launchd    ${launchdState()}  (${LABEL})`);
+  if (IS_WIN) ok(`task       ${winTaskState()}  (${WIN_TASK_NAME})`);
   ok(`token      ${token ? `set   fp ${fingerprint(token)}   ${TOKEN_FILE}` : 'MISSING — run `worldmonitor-local install`'}`);
   ok(`identity   ${session ? `${session.user?.email || session.user?.id}  (${describeExpiry(session.expires_at)})` : 'not logged in — run `worldmonitor-local login`'}`);
   if (health && token) ok(`mcp        http://127.0.0.1:${port}/api/mcp   header  x-worldmonitor-local-token: <worldmonitor-local token>`);
@@ -409,7 +579,19 @@ async function cmdToken() {
 }
 
 async function cmdUninstall() {
-  requireDarwin();
+  requireServiceOS();
+  const port = Number(opt('port', DEFAULT_PORT));
+
+  if (IS_WIN) {
+    schtasks(['/end', '/tn', WIN_TASK_NAME], { check: false });
+    winKillPort(port);
+    schtasks(['/delete', '/tn', WIN_TASK_NAME, '/f'], { check: false });
+    for (const f of [WIN_TASK_XML, WIN_RUN_CMD, WIN_RUN_VBS]) rmSync(f, { force: true });
+    ok(`removed Scheduled Task "${WIN_TASK_NAME}" and its launcher files.`);
+    ok(`left ~/.worldmonitor/ intact (token + session). Delete that folder to fully purge.`);
+    return;
+  }
+
   try { execFileSync('launchctl', ['bootout', guiTarget()], { stdio: 'ignore' }); } catch { /* already gone */ }
   rmSync(PLIST, { force: true });
   ok(`removed ${LABEL} and its plist.`);
@@ -417,19 +599,21 @@ async function cmdUninstall() {
 }
 
 function usage() {
+  const svc = IS_WIN ? 'Scheduled Task' : 'launchd service';
   ok(`worldmonitor-local — manage the standalone local backend
+  (macOS: launchd LaunchAgent · Windows: per-user Scheduled Task at logon)
 
   install [--token <hex>] [--port <n>] [--dry-run]
-                                         generate the loopback token + install the launchd service
-  uninstall                              remove the launchd service (keeps ~/.worldmonitor/)
-  run [--token <hex>] [--port <n>]       run the backend in the foreground (no launchd)
-  restart                                launchctl kickstart -k the installed service
+                                         generate the loopback token + install the ${svc}
+  uninstall                              remove the ${svc} (keeps ~/.worldmonitor/)
+  run [--token <hex>] [--port <n>]       run the backend in the foreground (no service)
+  restart                                restart the installed ${svc}
 
   login [--callback-port <n>]            GitHub OAuth -> Supabase session -> ~/.worldmonitor/session.json
   logout                                 revoke + delete the stored session
   whoami                                 print the logged-in identity
 
-  status                                 backend / launchd / token / identity at a glance
+  status                                 backend / service / token / identity at a glance
   token [--fingerprint]                  print the loopback token (for an MCP client's header)
 
 SETUP (one-time, operator): add  http://127.0.0.1:${DEFAULT_CALLBACK_PORT}/callback  to the Supabase

@@ -37,7 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage('WorldMonitor: backend restart requested via launchd.');
       } catch {
         void vscode.window.showErrorMessage(
-          'WorldMonitor: could not start the backend. Run `worldmonitor-local install` in the repo first.',
+          'WorldMonitor: could not start the backend. Run the installer (install.sh / install.ps1) first.',
         );
       }
     }),

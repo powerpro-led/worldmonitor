@@ -4,6 +4,24 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-09-03
+
+Windows support for the downloadable bundle.
+
+- `worldmonitor-local` now manages the backend on **Windows** via a per-user
+  Scheduled Task (`WorldMonitorLocal`) that starts at logon — no admin rights.
+  `install` writes a Task Scheduler XML plus a hidden-window `.cmd`/`.vbs`
+  launcher under `~/.worldmonitor/`; `restart` kills the port listener and
+  re-runs the task; `uninstall` removes all three. `status` reports the task
+  state. macOS/launchd behaviour is unchanged.
+- New `install.ps1` (PowerShell) mirrors `install.sh`: Node ≥ 22.5 check,
+  `npm ci --omit=dev --ignore-scripts`, interactive `.env`, task registration,
+  and a `code --install-extension` of the bundled `.vsix`.
+- `build-release-bundle.mjs` now also emits `worldmonitor-local-<v>.zip`
+  (Windows) beside the `.tar.gz`, each with its own `.sha256`.
+- The VS Code extension's `startBackend()` uses `schtasks /run` on Windows
+  instead of `launchctl`; "run the installer" wording replaces "in the repo".
+
 ## [2.11.0] - 2026-09-03
 
 First tagged release. Ships the standalone local backend

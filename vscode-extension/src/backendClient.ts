@@ -14,9 +14,13 @@ export const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
  * `worldmonitor-local` CLI installs the LaunchAgent on. */
 const PORT = 46123;
 
-/** launchd label + plist path written by `worldmonitor-local install`. */
+/** launchd label + plist path written by `worldmonitor-local install` (macOS). */
 const LAUNCHD_LABEL = 'com.worldmonitor.local-api';
 const LAUNCHD_PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
+
+/** Scheduled Task name `worldmonitor-local install` registers on Windows. */
+const WIN_TASK_NAME = 'WorldMonitorLocal';
+const IS_WIN = process.platform === 'win32';
 
 /** The loopback transport secret `worldmonitor-local install` writes. Same
  * path resolveLocalApiToken() reads on the backend side. */
@@ -123,6 +127,20 @@ export class BackendClient {
    * plist at all, i.e. `worldmonitor-local install` was never run.
    */
   async startBackend(): Promise<void> {
+    if (IS_WIN) {
+      // The CLI owns the Scheduled Task; this only nudges it. `schtasks /run`
+      // forces an immediate start regardless of the logon trigger.
+      this.log(`[backend] schtasks /run /tn ${WIN_TASK_NAME}`);
+      try {
+        await execFileAsync('schtasks', ['/run', '/tn', WIN_TASK_NAME]);
+        return;
+      } catch {
+        throw new Error(
+          'backend not installed — run `worldmonitor-local install` (or install.ps1) first',
+        );
+      }
+    }
+
     const uid = process.getuid?.() ?? 0;
     const target = `gui/${uid}/${LAUNCHD_LABEL}`;
     try {
@@ -133,7 +151,7 @@ export class BackendClient {
       this.log('[backend] kickstart failed (job not loaded) — bootstrapping from the plist');
     }
     if (!existsSync(LAUNCHD_PLIST)) {
-      throw new Error('backend not installed — run `worldmonitor-local install` in the repo first');
+      throw new Error('backend not installed — run `worldmonitor-local install` first');
     }
     await execFileAsync('launchctl', ['bootout', `gui/${uid}`, LAUNCHD_PLIST]).catch(() => {});
     await execFileAsync('launchctl', ['bootstrap', `gui/${uid}`, LAUNCHD_PLIST]);

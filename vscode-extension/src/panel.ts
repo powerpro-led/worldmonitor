@@ -113,7 +113,7 @@ export class DashboardPanel {
 
       const choice = await vscode.window.showErrorMessage(
         err.tokenMissing
-          ? 'WorldMonitor local backend isn\'t installed. Run `worldmonitor-local install` in the repo, then reopen.'
+          ? 'WorldMonitor local backend isn\'t installed. Run the installer (install.sh / install.ps1, or `worldmonitor-local install`), then reopen.'
           : 'WorldMonitor local backend isn\'t running.',
         ...(err.tokenMissing ? [] : ['Start backend']),
       );

@@ -5,8 +5,10 @@
  * Dashboard extension).
  *
  * Output (under release/, git-ignored):
- *   worldmonitor-local-<version>.tar.gz        the bundle
- *   worldmonitor-local-<version>.tar.gz.sha256 its checksum
+ *   worldmonitor-local-<version>.tar.gz         the bundle (macOS / Linux)
+ *   worldmonitor-local-<version>.zip            the same tree (Windows)
+ *   worldmonitor-local-<version>.tar.gz.sha256  + per-archive checksums
+ *   worldmonitor-local-<version>.zip.sha256
  *
  * Run from the repo root:
  *   node scripts/build-release-bundle.mjs [--skip-build]
@@ -143,10 +145,11 @@ cpSync(
   path.join(STAGE, 'scripts', 'shared', 'sync-domains.mjs'),
 );
 
-// the extension artifact + installer + docs at the bundle root
+// the extension artifact + installers + docs at the bundle root
 cpSync(path.join(ROOT, 'vscode-extension', VSIX), path.join(STAGE, VSIX));
 cpSync(path.join(ROOT, 'scripts', 'release', 'install.sh'), path.join(STAGE, 'install.sh'));
 chmodSync(path.join(STAGE, 'install.sh'), 0o755);
+cpSync(path.join(ROOT, 'scripts', 'release', 'install.ps1'), path.join(STAGE, 'install.ps1'));
 for (const f of ['package.json', 'package-lock.json', '.env.example', 'LICENSE', 'CHANGELOG.md', 'INSTALL.md']) {
   cpSync(path.join(ROOT, f), path.join(STAGE, f));
 }
@@ -168,21 +171,29 @@ writeFileSync(
     `extension          ${extPkg.name}@${extPkg.version}`,
     `built              ${new Date().toISOString()}`,
     `contents           ${fileCount} files, ${(totalBytes / 1e6).toFixed(1)} MB unpacked`,
-    'node_modules       NOT included — install.sh runs `npm ci --omit=dev --ignore-scripts`',
+    'node_modules       NOT included — the installer runs `npm ci --omit=dev --ignore-scripts`',
+    'install            macOS/Linux: ./install.sh   ·   Windows: .\\install.ps1',
     '',
   ].join('\n'),
 );
 
-// ── 5. tar + checksum ──────────────────────────────────────────────────
-const tarball = `${NAME}.tar.gz`;
-run('tar', ['-czf', path.join(OUT_DIR, tarball), '-C', OUT_DIR, NAME]);
-const checksum = execFileSync('shasum', ['-a', '256', tarball], { cwd: OUT_DIR }).toString();
-writeFileSync(path.join(OUT_DIR, `${tarball}.sha256`), checksum);
+// ── 5. archives + checksums ───────────────────────────────────────────
+const archives = [`${NAME}.tar.gz`, `${NAME}.zip`];
+run('tar', ['-czf', path.join(OUT_DIR, archives[0]), '-C', OUT_DIR, NAME]);
+// --norsrc/--noextattr/--noqtn: no __MACOSX or ._ sidecar entries in the zip.
+run('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--keepParent', STAGE, path.join(OUT_DIR, archives[1])]);
 
-const tarBytes = statSync(path.join(OUT_DIR, tarball)).size;
 console.log('\n─────────────────────────────────────────────');
-console.log(`bundle:   release/${tarball}   (${(tarBytes / 1e6).toFixed(1)} MB)`);
-console.log(`checksum: release/${tarball}.sha256`);
-console.log(checksum.trim());
+const shaLines = [];
+for (const a of archives) {
+  const sum = execFileSync('shasum', ['-a', '256', a], { cwd: OUT_DIR }).toString();
+  writeFileSync(path.join(OUT_DIR, `${a}.sha256`), sum);
+  const bytes = statSync(path.join(OUT_DIR, a)).size;
+  console.log(`  release/${a}   (${(bytes / 1e6).toFixed(1)} MB)`);
+  shaLines.push(sum.trim());
+}
+console.log('');
+shaLines.forEach((l) => console.log(l));
 console.log('\nnext:  gh release create v' + VERSION
-  + ` release/${tarball} release/${tarball}.sha256 --title "v${VERSION}" --notes-file <notes>`);
+  + `\n         ${archives.map((a) => `release/${a} release/${a}.sha256`).join(' \\\n         ')} \\`
+  + `\n         vscode-extension/${VSIX} --title "v${VERSION}" --notes-file <notes>`);

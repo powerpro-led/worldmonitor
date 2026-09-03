@@ -13,6 +13,8 @@
  * Run from the repo root:
  *   node scripts/build-release-bundle.mjs [--skip-build]
  *
+ * How to test the resulting bundle: scripts/release/TESTING.md
+ *
  * WHY the layout is preserved verbatim: scripts/worldmonitor-local.mjs derives
  * REPO_ROOT as `../` from its own location and hard-codes the launchd plist's
  * WorkingDirectory / LOCAL_API_RESOURCE_DIR to it. So as long as the bundle

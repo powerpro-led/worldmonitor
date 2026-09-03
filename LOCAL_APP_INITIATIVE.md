@@ -13,11 +13,12 @@ control panel, plus move production builds to CI.
 
 ## Status
 
-- **As of:** 2026-09-03 (session 51)
-- **Phase:** 1 of 4 in progress — config store landing; Phase 0 (v2.13.0) code done + pushed, **not tagged** (see D12)
-- **Branch:** `main == origin/main`, `c379806` = v2.13.0 Model B (incl. the S51 blocker fix), Phase 1 work uncommitted in the working tree
-- **No release** until all four phases are complete and coherent — **D12**. The `v2.13.0` tag that was briefly pushed in S51 was deleted; no GitHub release exists.
-- **Next action:** finish Phase 1 (installer seeding + doc), then Phase 2.
+- **As of:** 2026-09-03 (end of session 51) — **handed off to the next session**
+- **Phase:** 0 done (v2.13.0 code) · **1 done** (config store) · **2 is next** · 3, 4 not started
+- **Branch:** `main == origin/main @ c2425dd`. Working tree clean, everything pushed. **No tags** (the S51 `v2.13.0` tag was created then deleted — D12).
+- **No release** — tag or GitHub release — until all four phases are complete and coherent (**D12**). v2.13.0's code ships inside that eventual release.
+- **START HERE next session:** Phase 2 — `/api/local-config` route + `settings.html` control panel + browser GitHub sign-in. Full checklist below. Read the **Codebase review findings** and **Gotchas** sections first (esp. the module-load `process.env` captures → `/api/local-config` must `restart` after a write, D7).
+- **Build artifacts:** `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`) exist locally from the S51 verification build — gitignored, safe to delete/rebuild.
 
 ---
 
@@ -105,13 +106,19 @@ Target journey ("form-fill"):
 
 ### Phase 2 — `/api/local-config` + settings.html control panel
 
-- [ ] `/api/local-config` route in `local-api-server.mjs` dispatch — loopback + local-token gated
-  - [ ] GET → `{ key: 'set' | 'not set' }` for the allowlist; never the value
-  - [ ] POST → validate shape per key, write SQLite row, `process.env[key] = value`, then trigger `worldmonitor-local restart`
-  - [ ] Key allowlist: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_READONLY_TOKEN`, `OPENROUTER_API_KEY`
-- [ ] `settings.html` + `src/settings-main.ts` — Config section (masked fields), Status section (`/api/health` + last sync + mirror key count), Service section (Restart / View Logs)
-- [ ] Browser "Sign in with GitHub" in settings.html — reuse `auth-provider.ts` identity-bridge flow; writes `~/.worldmonitor/session.json`; retire the `worldmonitor-local login` CLI step for end users
-- [ ] First-run: empty config → dashboard detects "not configured" → routes to `settings.html`. Requires `load-config`/reads to be lazy enough that no restart is needed after the first save of the Supabase pair (verify).
+**Entry points found in S51 (start here):**
+
+- Route registration: `dispatch()` in `local-api-server.mjs` [:1760](vscode-extension/sidecar/local-api-server.mjs#L1760) special-cases pathnames before the generic route table — `/api/sidecar-health` [:1770](vscode-extension/sidecar/local-api-server.mjs#L1770), `/api/operator-session` [:1853](vscode-extension/sidecar/local-api-server.mjs#L1853). Add `/api/local-config` the same way (an `if (requestUrl.pathname === '/api/local-config')` block). The `x-worldmonitor-local-token` gate already runs in `dispatch()` for `/api/*` — confirm it covers this path.
+- Store API is done: `import { CONFIG_KEYS, SECRET_CONFIG_KEYS, readAllConfig, setConfig, deleteConfig } from './config-store.mjs'` — the handler is mostly glue. `setConfig` already validates the allow-list + non-empty; add per-key shape checks (URL looks like a URL, etc.).
+- After a successful POST: `process.env[key] = value` for the live process, THEN spawn `worldmonitor-local restart` (D7 — `SIDECAR_ALLOWED_ORIGINS` [:1157](vscode-extension/sidecar/local-api-server.mjs#L1157) and the Upstash-origin CSP allowance [:2469](vscode-extension/sidecar/local-api-server.mjs#L2469) are captured at module load and only a restart re-reads them).
+- **`src/settings-main.ts` ALREADY EXISTS** (~40 KB) — a full settings UI with `SETTINGS_CATEGORIES`, `runtime-config.ts` (`getSecretState` / `setSecretValue` / `validateSecret` / `MASKED_SENTINEL`), `PLAINTEXT_KEYS`, desktop-secret loading. **Study `src/services/runtime-config.ts` + `src/services/settings-constants.ts` before adding a Config section** — likely extend the existing secret/masking machinery, not build new.
+
+- [ ] `/api/local-config` route — loopback + local-token gated
+  - [ ] GET → `{ [key]: 'set' | 'unset' }` for `CONFIG_KEYS`; public keys (`VITE_SUPABASE_URL`, publishable key) may return the value, `SECRET_CONFIG_KEYS` never do
+  - [ ] POST → per-key shape check → `setConfig` → `process.env[key] = value` → spawn `worldmonitor-local restart`
+- [ ] `settings.html` + `src/settings-main.ts` — Config section (reuse masking), Status (`/api/health` + last sync + mirror key count), Service (Restart / View Logs)
+- [ ] Browser "Sign in with GitHub" in settings.html — reuse `auth-provider.ts`'s `githubIdentityBridgeIssuer()` + postMessage flow; writes `~/.worldmonitor/session.json` via the sidecar; retires `worldmonitor-local login` for end users. `127.0.0.1:46124/callback` already allow-listed in Supabase.
+- [ ] First-run: empty config → dashboard detects "not configured" → routes to `settings.html`. `loadConfigIntoEnv()` runs once at boot, so a POST that writes the Supabase pair needs the `restart` to take effect — the wizard should expect that (progress + reconnect), not assume hot reload.
 
 ### Phase 3 — One-command install + bundled Node + slim deps
 
@@ -152,8 +159,9 @@ Target journey ("form-fill"):
 - **Phase 0 blocker fixed** (`getSupabaseUrl()` + `githubIdentityBridgeIssuer()` derivation) + Tier A bundle verified. Committed as `c379806 release(v2.13.0)`, pushed. `6e38d82` = this file.
 - **Tagging reversed.** Briefly pushed `v2.13.0`, operator said release only when the whole initiative is complete → **D12**. Tag deleted local + origin; no GitHub release was created (the `gh release create` was permission-blocked anyway).
 - **OQ2 resolved → D13** (separate `~/.worldmonitor/config.db`). Design nuance → **D14** (body-level `loadConfigIntoEnv()`, not an import side-effect).
-- **Phase 1 landed.** `4f7d4f3` = config store core (`config-store.mjs`, wiring, `config` subcommand, `config-store.test.mjs`, hermetic `test:sidecar` 219/219). Then installer `config import .env` seed step + INSTALL.md note (this commit). Phase 1 code-complete; the `wmtest` e2e check folds into Phase 3.
-- **Next:** Phase 2 — `/api/local-config` + `settings.html` control panel + browser GitHub sign-in.
+- **Phase 1 landed + pushed.** `4f7d4f3` config store core · `6d29490` installer seeding + INSTALL.md · `c2425dd` markdownlint fix. `main == origin/main @ c2425dd`, tree clean.
+- **Handed off to the next session.** Phase 2 entry points captured in the Phase 2 section above (route dispatch pattern, existing `settings-main.ts` infra, restart-after-write). No open blockers.
+- Note: `npm run lint:md` shows ~81 pre-existing errors repo-wide in OTHER `.md` files (predates this initiative; `lint.yml` only runs on PRs touching `.md`, and this repo commits straight to `main`). Our files are clean.
 
 ### Session 50 — 2026-09-03
 

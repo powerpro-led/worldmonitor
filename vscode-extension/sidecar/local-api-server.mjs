@@ -1661,6 +1661,29 @@ function buildVsCodeEmbedShim(localToken) {
 }
 
 /**
+ * Model B runtime config. The downloadable bundle ships a `dist/` built with
+ * VITE_SUPABASE_* UNSET so no org's Supabase project is baked into the JS; the
+ * backend injects its own .env values here and src/services/supabase-client.ts's
+ * readEnv() reads `window.__WM_RUNTIME_CONFIG` before import.meta.env. Injected
+ * into EVERY served HTML document (plain browser tab + the VS Code iframe),
+ * ahead of any deferred module script. Client-safe values only — the
+ * publishable/anon key is public by design (it already ships in a
+ * normally-built dist/). Empty string when nothing is configured, so a
+ * conventionally-built dist/ with baked env is unaffected.
+ */
+function buildRuntimeConfigShim() {
+  const cfg = {};
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (url) cfg.supabaseUrl = url;
+  if (key) cfg.supabaseKey = key;
+  if (Object.keys(cfg).length === 0) return '';
+  // Escape `<` so a value can never break out of the <script> element.
+  const json = JSON.stringify(cfg).replace(/</g, '\\u003c');
+  return `<script>window.__WM_RUNTIME_CONFIG=${json};</script>`;
+}
+
+/**
  * Serves the plain web build's dist/ over real HTTP — what lets the VS Code
  * extension's <iframe> (and any plain browser tab, e.g. the login flow's
  * real-navigation leg) load the dashboard without going through Tauri's own
@@ -1699,10 +1722,18 @@ async function tryServeStaticAsset(requestUrl, req, context) {
   const ext = path.extname(servedPath).toLowerCase();
   const isHtml = ext === '.html';
   let contentType = STATIC_CONTENT_TYPES[ext] || 'application/octet-stream';
-  if (isHtml && requestUrl.searchParams.get('embed') === 'vscode') {
-    const shim = buildVsCodeEmbedShim(context.token);
-    const html = body.toString('utf-8').replace(/<head>/i, `<head>${shim}`);
-    body = Buffer.from(html, 'utf-8');
+  if (isHtml) {
+    // Runtime config for EVERY served document; the VS Code embed shim only
+    // when the iframe asks for it. Both go right after <head>, ahead of the
+    // app's deferred module scripts.
+    let head = buildRuntimeConfigShim();
+    if (requestUrl.searchParams.get('embed') === 'vscode') {
+      head += buildVsCodeEmbedShim(context.token);
+    }
+    if (head) {
+      const html = body.toString('utf-8').replace(/<head>/i, `<head>${head}`);
+      body = Buffer.from(html, 'utf-8');
+    }
   }
   return new Response(req.method === 'HEAD' ? null : body, {
     status: 200,

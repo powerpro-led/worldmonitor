@@ -1322,12 +1322,22 @@ export default async function handler(req, ctx) {
 
   const now = Date.now();
 
+  // Local sidecar (LOCAL_API_MODE=tauri-sidecar): a single instance backed by
+  // a read-only SQLite mirror, no writable Redis. It skips the cross-instance
+  // snapshot cache + refresh lock and sweeps the registry directly —
+  // redisPipeline serves that sweep's GET/STRLEN/LLEN/EXISTS batch from the
+  // mirror. So /api/health returns a real verdict with zero Redis credentials
+  // instead of 503 REDIS_DOWN, and nothing is ever written to shared Redis.
+  const isLocalSidecar = process.env.LOCAL_API_MODE === 'tauri-sidecar';
+  const SKIP_SNAPSHOT_FASTPATH = Symbol('skip-snapshot-fastpath');
+
   // A snapshot hit is one Redis command instead of the ~390-command registry
   // sweep below. A failed snapshot read is a real Redis outage, not a cache
   // miss: returning 503 preserves UptimeRobot's hard-down signal.
   let refreshLockToken = null;
   let ownsSnapshotRefreshLock = false;
   try {
+    if (isLocalSidecar) throw SKIP_SNAPSHOT_FASTPATH;
     if (!getRedisCredentials()) throw new Error('Redis not configured');
     // Read the snapshot this request will actually render. `?compact=1` — the
     // browser poll, ~115k/day — reads the ~1 KB compact key instead of dragging the
@@ -1392,12 +1402,15 @@ export default async function handler(req, ctx) {
       // the normal cold-burst path still permits only the elected owner.
     }
   } catch (err) {
-    if (ownsSnapshotRefreshLock) await releaseHealthVerdictRefreshLock(refreshLockToken);
-    return jsonResponse({
-      status: 'REDIS_DOWN',
-      error: err.message,
-      checkedAt: new Date(now).toISOString(),
-    }, 503, headers);
+    if (err !== SKIP_SNAPSHOT_FASTPATH) {
+      if (ownsSnapshotRefreshLock) await releaseHealthVerdictRefreshLock(refreshLockToken);
+      return jsonResponse({
+        status: 'REDIS_DOWN',
+        error: err.message,
+        checkedAt: new Date(now).toISOString(),
+      }, 503, headers);
+    }
+    // sidecar: intentional bypass — fall through to the direct registry sweep
   }
 
   const allDataKeys = [
@@ -1419,7 +1432,7 @@ export default async function handler(req, ctx) {
       ...activationEntries.map(([, marker]) => ['EXISTS', marker]),
       ['GET', CHINA_COVERAGE_SUMMARY_KEY],
     ];
-    if (!getRedisCredentials()) throw new Error('Redis not configured');
+    if (!isLocalSidecar && !getRedisCredentials()) throw new Error('Redis not configured');
     results = await redisPipeline(commands, 8_000);
     if (!results) throw new Error('Redis request failed');
   } catch (err) {
@@ -1573,7 +1586,9 @@ export default async function handler(req, ctx) {
   // live verdict just computed; the next request will retry by sweeping.
   // Both snapshots are written by the SAME sweep, in one pipeline, so the compact
   // form can never disagree with the full one or outlive it.
-  const snapshotWriteResult = await redisPipeline([
+  // Local sidecar has no writable Redis and no second instance to serve — skip
+  // the snapshot write (and its per-request "write failed" warning) entirely.
+  const snapshotWriteResult = isLocalSidecar ? 'skipped' : await redisPipeline([
     [
       'SET',
       HEALTH_VERDICT_SNAPSHOT_KEY,
@@ -1589,9 +1604,11 @@ export default async function handler(req, ctx) {
       String(HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS),
     ],
   ], 4_000).catch(() => null);
-  const snapshotWriteFailed = !snapshotWriteResult
+  const snapshotWriteFailed = !isLocalSidecar && (
+    !snapshotWriteResult
     || snapshotWriteResult.length !== 2
-    || snapshotWriteResult.some((entry) => entry?.error);
+    || snapshotWriteResult.some((entry) => entry?.error)
+  );
   if (ownsSnapshotRefreshLock) await releaseHealthVerdictRefreshLock(refreshLockToken);
   // A failed cache write does not invalidate the live verdict. Releasing only
   // this request's token lets the next caller retry immediately without ever

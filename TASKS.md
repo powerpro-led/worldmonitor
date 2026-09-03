@@ -15,6 +15,106 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ---
 
+## 🔀 HANDOFF (2026-09-03, FORTY-NINTH session) — NEXT TASK: finish Model B (v2.13.0), then run the Tier B test
+
+**Nothing is committed.** `main` == `origin/main` @ `24aff62`. All work below is in the working
+tree only. Prior context: `v2.11.0` (macOS) + `v2.12.0` (Windows) shipped and are live GitHub
+releases (see the FORTY-EIGHTH block's RESOLVED note). The operator then asked for two more
+things: (1) the installer must not hand operators shared **write** credentials, and (2) one
+release artifact must serve **multiple orgs** without a rebuild ("Model B"). This session
+implemented both, targeting **`v2.13.0`**, but stopped on a blocker.
+
+### State of the working tree (uncommitted)
+
+```
+ M CHANGELOG.md               2.13.0 section (+ a 2.12.1 section that was never tagged — fold in)
+ M INSTALL.md                 org.env flow, SECURITY.md pointer
+ M package.json               version 2.12.0 -> 2.13.0
+ M api/_upstash-json.js       redisPipeline sidecar branch now serves GET/STRLEN/LLEN/EXISTS from mirror
+ M api/health.js              LOCAL_API_MODE=tauri-sidecar: skip snapshot/lock, sweep from mirror, no Redis writes -> /api/health 200 with zero creds
+ M scripts/build-release-bundle.mjs   builds dist/ with VITE_SUPABASE_*='' ; stages SECURITY.md + org.env.example ; refuses to ship a .env/org.env
+ M scripts/release/install.sh         --config / $WM_ORG_ENV / ./org.env ; prompts only as fallback ; dropped full-Upstash-token + OpenRouter prompts
+ M scripts/release/install.ps1        same, -Config param
+ M src/services/supabase-client.ts    readEnv() reads window.__WM_RUNTIME_CONFIG before import.meta.env
+ M vscode-extension/sidecar/local-api-server.mjs   buildRuntimeConfigShim() injects window.__WM_RUNTIME_CONFIG into every served HTML doc
+?? scripts/release/SECURITY.md
+?? scripts/release/org.env.example
+```
+
+Checks already green: `tsc`, `tsc -p tsconfig.api.json`, `biome` on changed files, `bash -n
+install.sh`, `markdownlint`, `npm run test:sidecar` (210/210), the 10 health test suites
+(107/107) — all run BEFORE the auth-provider blocker was found; re-run after fixing it.
+
+### BLOCKER — one hardcoded org ref still bakes into `dist/`
+
+`src/services/auth-provider.ts:298`:
+
+```js
+const GITHUB_IDENTITY_BRIDGE_ISSUER = 'https://ixuezudybhjptisexgxx.supabase.co/functions/v1/github-identity-bridge';
+```
+
+Used at line 363 (`fetch(\`${...}/tickets\`)`) in the VS Code GitHub sign-in flow. The build's
+`VITE_SUPABASE_*=''` blanking worked for everything else (the `sb_publishable_` grep hit was a
+false positive — a format-check literal inside `@supabase/supabase-js`, not our key). This one
+literal is org-specific and must derive from the runtime Supabase URL.
+
+**Planned fix (operator paused it — get the go before writing):** export `getSupabaseUrl()` from
+`supabase-client.ts` (returns `readEnv('VITE_SUPABASE_URL')`), then in `auth-provider.ts` compute
+the issuer as `` `${getSupabaseUrl()}/functions/v1/github-identity-bridge` `` at the call site
+(line ~356 already has a non-null `getSupabaseClient()` guard). Then grep the whole `src/` +
+`api/` for any other hardcoded `ixuezudybhjptisexgxx` / `.supabase.co` / project-specific
+literal before trusting the bundle.
+
+### Then, to finish v2.13.0
+
+1. Apply the blocker fix; re-run the green checks above.
+2. `node scripts/build-release-bundle.mjs` → verify `grep -rl ixuezudybhjptisexgxx
+   release/worldmonitor-local-2.13.0/dist/` returns **nothing**.
+3. Live-check: extract to a scratch dir, `npm ci --omit=dev --ignore-scripts`, start the backend
+   with a `.env` that has `VITE_SUPABASE_URL`/`_PUBLISHABLE_KEY` set, `curl -s
+   http://127.0.0.1:<port>/dashboard.html | grep __WM_RUNTIME_CONFIG` → the injected `<script>`
+   must be present with the right values. Also `/api/health` → 200 with NO Upstash creds.
+   (Operator interrupted two attempts to start a local server this session — ASK before starting
+   one; they may want to run it themselves.)
+4. CHANGELOG: the `[2.12.1]` section was written but 2.12.1 was never tagged — merge it into
+   `[2.13.0]` or tag 2.12.1 first. Operator's call.
+5. Commit (one commit or a few logical ones), `git push`, `git tag -a v2.13.0`, push the tag,
+   `gh release create v2.13.0` with tar.gz + zip + both .sha256 + the `.vsix`.
+
+### Deferred — Phase 2 (domain-neutral artifact)
+
+`APP_DOMAIN` is still baked at build time (`vite.config.ts:817` synthesizes
+`import.meta.env.VITE_APP_DOMAIN` from `process.env.APP_DOMAIN`; `src/config/domain.ts` exports
+`APP_DOMAIN` as a top-level const consumed by ~15 call sites incl. runtime CSP construction in
+`main.ts`). For a loopback dashboard this is cosmetic (same-origin `/api/*`, Sentry reads
+"development"). Making it runtime = convert `domain.ts` to a lazy read + touch those call sites +
+inject `appDomain` into `__WM_RUNTIME_CONFIG`. Medium refactor; only worth it if a truly
+domain-neutral single artifact becomes a hard requirement.
+
+### Parallel: the Tier B (fresh-user) test is mid-setup — NOT blocked on the above
+
+The operator was testing the **published v2.12.0** bundle in a fresh macOS user account when the
+Model B work started. That test can resume independently (it validates packaging/launchd/vsix,
+which Model B doesn't change) OR be redone against v2.13.0 once it ships.
+
+- Test account **`wmtest`** exists (UID 503, `/Users/wmtest`, its own password).
+- System-wide Node **v22.23.2** installed (`/usr/local/bin/node`) so `wmtest` has node on PATH.
+- Dev backend `com.worldmonitor.local-api` is **booted out** in John's session (port 46123 freed
+  for the test). Restore after: `launchctl bootstrap gui/$(id -u)
+  ~/Library/LaunchAgents/com.worldmonitor.local-api.plist`.
+- `/Users/Shared/` (world-rw) holds: `worldmonitor-local-2.12.0.tar.gz` (+ `.sha256`, sha256
+  `3514e27c…`, == published), `wmtest-runbook.md`, `TESTING.md`, `wm-install-answers.txt` (6
+  lines: Supabase URL, anon key, 4 blanks — for a required-only test), `john-reply.md`, and
+  `wmtest-status.md` (mode 666, the shared John<->wmtest scratchpad — READ IT, it has the full
+  back-and-forth incl. the security assessment).
+- Fast User Switching had to be enabled (`sudo defaults write
+  /Library/Preferences/.GlobalPreferences MultipleSessionEnabled -bool true`).
+
+### Verify-changes checklist (unchanged)
+
+`npm run typecheck` · `npm run typecheck:api` · `npx tsc -p tsconfig.gcp.json --noEmit` ·
+`npm run build` · `npm run test:data` (targeted) · `npm run test:sidecar` · `npx biome check`.
+
 ## 🔀 HANDOFF (2026-09-02, FORTY-SEVENTH session) — NEXT TASK: release readiness (blocked on an operator decision)
 
 > **RESOLVED — FORTY-EIGHTH session (2026-09-03). Operator chose path (b): GitHub release

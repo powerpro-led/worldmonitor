@@ -51,10 +51,19 @@ function run(cmd, args, opts = {}) {
 }
 
 // ── 1. build ──────────────────────────────────────────────────────────────
+// Model B: build dist/ with VITE_SUPABASE_* forced empty so no org's Supabase
+// project is baked into the JS. supabase-client.ts's readEnv() then falls back
+// to window.__WM_RUNTIME_CONFIG, which the standalone backend injects into the
+// HTML it serves from its own .env. Vite gives an already-set process.env var
+// (even "") priority over .env files, so this cleanly blanks them for the build
+// without touching the repo's .env. APP_DOMAIN stays baked (non-secret; only
+// cosmetic for a loopback-served dashboard) — see TASKS.md for the Phase 2
+// domain-neutral follow-up.
+const buildEnv = { ...process.env, VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' };
 if (skipBuild) {
   console.log('--skip-build: reusing the working tree\'s dist/ and api/**/*.js');
 } else {
-  run('npm', ['run', 'build']);
+  run('npm', ['run', 'build'], { env: buildEnv });
   run('npm', ['run', 'build:sidecar-sebuf']);
   run('npm', ['run', 'build:sidecar-handlers']);
 }
@@ -153,8 +162,18 @@ cpSync(path.join(ROOT, 'scripts', 'release', 'install.sh'), path.join(STAGE, 'in
 chmodSync(path.join(STAGE, 'install.sh'), 0o755);
 cpSync(path.join(ROOT, 'scripts', 'release', 'install.ps1'), path.join(STAGE, 'install.ps1'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'TESTING.md'), path.join(STAGE, 'TESTING.md'));
+cpSync(path.join(ROOT, 'scripts', 'release', 'SECURITY.md'), path.join(STAGE, 'SECURITY.md'));
+// org.env.example — the per-org config template (Model B). NOTE: never stage a
+// filled org.env / .env; the bundle must ship org-neutral.
+cpSync(path.join(ROOT, 'scripts', 'release', 'org.env.example'), path.join(STAGE, 'org.env.example'));
 for (const f of ['package.json', 'package-lock.json', '.env.example', 'LICENSE', 'CHANGELOG.md', 'INSTALL.md']) {
   cpSync(path.join(ROOT, f), path.join(STAGE, f));
+}
+// Guard: a real .env or org.env must never end up in the bundle.
+for (const leaked of ['.env', 'org.env']) {
+  if (existsSync(path.join(STAGE, leaked))) {
+    throw new Error(`refusing to ship: ${leaked} is present in the staged bundle`);
+  }
 }
 
 // ── 4. manifest ─────────────────────────────────────────────────────────

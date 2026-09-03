@@ -15,11 +15,35 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 function readEnv(key: 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_PUBLISHABLE_KEY'): string | undefined {
+  // Runtime config wins over build-time env. The downloadable local bundle
+  // (Model B) ships a `dist/` built with VITE_SUPABASE_* UNSET so no org's
+  // project is baked into the JS; the standalone backend injects
+  // `window.__WM_RUNTIME_CONFIG = { supabaseUrl, supabaseKey }` into the HTML
+  // it serves, from its own .env. The cloud web app has no such injection, so
+  // import.meta.env stays the fallback and its behaviour is unchanged.
+  try {
+    const rc = (globalThis as { __WM_RUNTIME_CONFIG?: Record<string, string> }).__WM_RUNTIME_CONFIG;
+    const runtimeVal = key === 'VITE_SUPABASE_URL' ? rc?.supabaseUrl : rc?.supabaseKey;
+    if (typeof runtimeVal === 'string' && runtimeVal.length > 0) return runtimeVal;
+  } catch {
+    /* no runtime config — fall through to build-time env */
+  }
   try {
     return import.meta.env[key];
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The configured Supabase project URL (runtime config → build-time env), or
+ * undefined when unset. Exported so callers that must derive a project-scoped
+ * URL — e.g. the github-identity-bridge Edge Function endpoint in
+ * auth-provider.ts — never hardcode the project ref, which would defeat Model
+ * B's org-neutral `dist/` (see readEnv()'s comment above).
+ */
+export function getSupabaseUrl(): string | undefined {
+  return readEnv('VITE_SUPABASE_URL');
 }
 
 // Pinned to the 'worldmonitor' schema generic so the return type matches

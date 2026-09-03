@@ -18,7 +18,7 @@
  * No tiers post-billing-cut: `getCurrentAuthUser().plan` is always `'pro'`
  * once signed in (and thus already org-gated) — see src/services/entitlements.ts.
  */
-import { getSupabaseClient } from './supabase-client';
+import { getSupabaseClient, getSupabaseUrl } from './supabase-client';
 import type { Session } from '@supabase/supabase-js';
 
 export interface AuthProviderUser {
@@ -293,9 +293,19 @@ export async function signInWithGithub(): Promise<void> {
  * Supabase Edge Function — a minimal custom OIDC provider that bridges a
  * GitHub access token into a real Supabase session (see
  * installVsCodeGithubTokenListener() below for the full contract). Already
- * live and registered as the `custom:github-bridge` provider on this
- * fork's own Supabase project (VITE_SUPABASE_URL) — nothing new to deploy. */
-const GITHUB_IDENTITY_BRIDGE_ISSUER = 'https://ixuezudybhjptisexgxx.supabase.co/functions/v1/github-identity-bridge';
+ * live and registered as the `custom:github-bridge` provider on the
+ * configured Supabase project — nothing new to deploy.
+ *
+ * Derived from getSupabaseUrl() (runtime-config-aware) rather than a
+ * hardcoded project ref: the Model B downloadable bundle ships a `dist/`
+ * built with VITE_SUPABASE_* UNSET so no org's project is baked into the JS,
+ * and each org's github-identity-bridge lives on its own Supabase project.
+ * Returns null when no Supabase URL is configured. */
+function githubIdentityBridgeIssuer(): string | null {
+  const base = getSupabaseUrl();
+  if (!base) return null;
+  return `${base.replace(/\/$/, '')}/functions/v1/github-identity-bridge`;
+}
 
 let vsCodeGithubTokenListenerInstalled = false;
 
@@ -358,9 +368,14 @@ async function completeVsCodeGithubSignIn(token: string): Promise<void> {
     console.warn('[auth-provider] Supabase not configured, cannot complete VS Code GitHub sign-in');
     return;
   }
+  const issuer = githubIdentityBridgeIssuer();
+  if (!issuer) {
+    console.warn('[auth-provider] Supabase URL not configured, cannot complete VS Code GitHub sign-in');
+    return;
+  }
 
   try {
-    const ticketResp = await fetch(`${GITHUB_IDENTITY_BRIDGE_ISSUER}/tickets`, {
+    const ticketResp = await fetch(`${issuer}/tickets`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });

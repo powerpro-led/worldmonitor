@@ -13,12 +13,17 @@ For the from-source developer setup, see [`vscode-extension/README.md`](vscode-e
 - Node.js **>= 22.5.0** and npm — the backend uses the built-in `node:sqlite`,
   stable since 22.5.0 (`node -v` to check; install from <https://nodejs.org>)
 - VS Code (to view the dashboard)
-- The Supabase URL + publishable key for the WorldMonitor project. Ask the
-  operator.
-- For a self-refreshing dashboard: the Upstash Redis REST URL plus **two**
-  tokens — the **read-only** token (local cache sync) and the **full** token
-  (`/api/health` freshness badges; read-only is not sufficient for that route).
-  Both are optional; without them the backend serves whatever is already cached.
+- An **`org.env`** file from your organisation — the bundle ships with no
+  Supabase/Upstash values baked in. It contains at least `VITE_SUPABASE_URL` +
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (both public), and optionally the Upstash REST
+  URL + **read-only** token for a self-refreshing cache. See
+  [`org.env.example`](scripts/release/org.env.example) for the format. If you
+  don't have one, `install.sh` will prompt for the two required Supabase values.
+- AI summary panels need an OpenRouter key — add `OPENROUTER_API_KEY=…` to
+  `.env` yourself after install. The org's shared key is never distributed.
+
+See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and why
+it's safe.
 
 ## Install — macOS
 
@@ -39,11 +44,15 @@ For the from-source developer setup, see [`vscode-extension/README.md`](vscode-e
    cd ~/Applications/worldmonitor-local-<version>
    ```
 
-4. Run the installer and answer its prompts:
+4. Put your org's `org.env` next to `install.sh` (or pass `--config <path>`),
+   then run the installer:
 
    ```sh
+   cp /path/to/org.env .        # or: ./install.sh --config /path/to/org.env
    ./install.sh
    ```
+
+   With no `org.env` it falls back to prompting for the two Supabase values.
 
    It runs `npm ci --omit=dev --ignore-scripts`, writes a minimal `.env` (0600)
    from your answers, registers the `com.worldmonitor.local-api` launchd service
@@ -67,13 +76,17 @@ For the from-source developer setup, see [`vscode-extension/README.md`](vscode-e
 3. Extract it somewhere permanent (e.g. `%USERPROFILE%\worldmonitor\`).
    **The extracted folder is the install location — don't move it afterwards.**
 
-4. In PowerShell, from inside the extracted folder:
+4. Put your org's `org.env` in the extracted folder (or pass `-Config <path>`),
+   then in PowerShell from inside it:
 
    ```powershell
    .\install.ps1
+   # or:  .\install.ps1 -Config C:\path\to\org.env
    # if PowerShell blocks it:
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
+
+   With no `org.env` it falls back to prompting for the two Supabase values.
 
    It runs `npm ci --omit=dev --ignore-scripts`, writes a minimal `.env` from
    your answers, registers the **`WorldMonitorLocal`** Scheduled Task (starts at
@@ -122,8 +135,8 @@ The service listens on `127.0.0.1:46123` — REST for the dashboard and
 
 | Symptom | Check |
 | --- | --- |
-| Dashboard panels stay empty | `status` shows `backend up`? Without Upstash keys nothing refreshes the cache — add them to `.env` and `restart`. |
-| `/api/health` 503 `REDIS_DOWN` / freshness badges blank | `UPSTASH_REDIS_REST_TOKEN` (the **full** token, not the read-only one) missing from `.env`. |
+| Dashboard panels stay empty | `status` shows `backend up`? Without the Upstash URL + read-only token nothing refreshes the cache — add them to `.env` and `restart`. |
+| Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
 | "Brief service unavailable" | You haven't run `login`, or the session expired — run `login` again. |
 | Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and needs to be up first. |
 | `login` fails after GitHub consent | Your account isn't in the allow-listed org, or the `127.0.0.1:46124/callback` redirect URL isn't allowlisted in Supabase. |

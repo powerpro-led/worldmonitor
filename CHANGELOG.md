@@ -4,6 +4,52 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-09-03
+
+The downloadable bundle is now **org-neutral** — one artifact serves any number
+of organisations, each supplying its own config.
+
+- **`dist/` is built with `VITE_SUPABASE_*` unset**, so no organisation's
+  Supabase project is baked into the JS. `src/services/supabase-client.ts`'s
+  `readEnv()` reads `window.__WM_RUNTIME_CONFIG` first and falls back to
+  `import.meta.env` — the cloud web app is unchanged.
+- **The standalone backend injects `window.__WM_RUNTIME_CONFIG`** (Supabase URL
+  + publishable key, from its own `.env`) into every HTML document it serves,
+  ahead of the app's module scripts. `<` is escaped so a value can't break out
+  of the `<script>` element.
+- **The `github-identity-bridge` issuer is derived at runtime.** VS Code GitHub
+  sign-in (`auth-provider.ts`) no longer hardcodes the Supabase project ref —
+  it builds the Edge Function URL from `getSupabaseUrl()` (the same
+  runtime-config-aware read `supabase-client.ts` uses), so no organisation's
+  project is baked into `dist/`. Each org's bridge lives on its own project.
+- **`install.sh` / `install.ps1` take an `org.env` file** — next to the script,
+  via `--config` / `-Config`, or `$WM_ORG_ENV`. It carries `VITE_SUPABASE_URL` +
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (both public) and optionally the Upstash REST
+  URL + read-only token. With no `org.env` the installer prompts for the two
+  Supabase values. See `org.env.example` and `SECURITY.md` (both shipped in the
+  bundle).
+- `build-release-bundle.mjs` refuses to ship a bundle that contains a real
+  `.env` or `org.env`.
+- `APP_DOMAIN` is still baked at build time (non-secret, cosmetic for a
+  loopback dashboard). A fully domain-neutral artifact is tracked as follow-up.
+
+### Security — local installs no longer take shared write credentials
+
+- **`install.sh` / `install.ps1` no longer prompt for `UPSTASH_REDIS_REST_TOKEN`
+  (the full read/write token) or `OPENROUTER_API_KEY`.** A local instance was
+  only ever asked for the full token so `/api/health`'s snapshot cache would
+  work — but that handler *writes* `health:*` keys and a lock to shared Redis,
+  so every operator's laptop could wipe the shared cache. Now the installer
+  asks only for the **read-only** Upstash token (what `local-sync` needs and is
+  built around). OpenRouter is documented as a manual `.env` addition.
+- **`api/health.js` runs credential-free under `LOCAL_API_MODE=tauri-sidecar`.**
+  It skips the cross-instance snapshot cache + refresh lock and sweeps the
+  registry directly; `redisPipeline`'s sidecar branch now serves that sweep's
+  mixed `GET`/`STRLEN`/`LLEN`/`EXISTS` batch from the SQLite mirror (previously
+  GET-only, so the whole batch failed closed → 503 `REDIS_DOWN`). The endpoint
+  now returns a real verdict from local data with zero Redis credentials, and
+  never writes to shared Redis. Edge/production behaviour is unchanged.
+
 ## [2.12.0] - 2026-09-03
 
 Windows support for the downloadable bundle.

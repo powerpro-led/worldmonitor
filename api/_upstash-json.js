@@ -196,12 +196,37 @@ export async function redisPipeline(commands, timeoutMs = 5_000) {
   // whenever live creds are configured, and only returning the old
   // "unavailable" null when they are genuinely absent.
   if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    // Serve any all-reads pipeline from the mirror, not just all-GET. health.js's
+    // registry sweep mixes STRLEN/LLEN (data-key size probes) and EXISTS
+    // (activation markers) with GET (seed-meta) in ONE pipeline; the old
+    // GET-only test failed that whole batch closed, so /api/health answered 503
+    // REDIS_DOWN in the sidecar even though every key it needs is in the mirror.
+    // local-sync stores list/zset/hash/set values as a JSON-encoded string
+    // (local-sync.mjs writeMirror: `JSON.stringify(raw)`), so LLEN is that
+    // array's length; STRLEN is the stored string's byte length; EXISTS is
+    // presence. Redis semantics, computed locally, zero credentials.
+    const READ_OPS = new Set(['GET', 'STRLEN', 'LLEN', 'EXISTS']);
     const isAllReads = Array.isArray(commands)
       && commands.length > 0
-      && commands.every((c) => Array.isArray(c) && String(c[0]).toUpperCase() === 'GET');
+      && commands.every((c) => Array.isArray(c) && READ_OPS.has(String(c[0]).toUpperCase()));
     if (isAllReads) {
-      const rows = readMirrorValues(commands.map(([, key]) => String(key)));
-      return rows === null ? null : rows.map((value) => ({ result: value }));
+      const rows = readMirrorValues(commands.map((c) => String(c[1])));
+      if (rows === null) return null;
+      return commands.map((c, i) => {
+        const op = String(c[0]).toUpperCase();
+        const raw = rows[i];
+        if (op === 'GET') return { result: raw };
+        if (op === 'EXISTS') return { result: raw == null ? 0 : 1 };
+        if (op === 'STRLEN') return { result: raw == null ? 0 : Buffer.byteLength(raw, 'utf8') };
+        // LLEN
+        if (raw == null) return { result: 0 };
+        try {
+          const arr = JSON.parse(raw);
+          return { result: Array.isArray(arr) ? arr.length : 0 };
+        } catch {
+          return { result: 0 };
+        }
+      });
     }
     if (!getRedisCredentials()) return null;
     // else: live creds exist — fall through to the real pipeline call below.

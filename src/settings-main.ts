@@ -75,7 +75,20 @@ const SIDEBAR_ICONS: Record<string, string> = {
   security: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>',
   tracking: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>',
   debug: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>',
+  backend: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 1h16c.55 0 1 .45 1 1v6c0 .55-.45 1-1 1H4c-.55 0-1-.45-1-1V2c0-.55.45-1 1-1zm0 8h16v6c0 .55-.45 1-1 1H4c-.55 0-1-.45-1-1V9zm3 2v2h2v-2H7zm0-8v2h2V3H7zm10 16v2h2v-2h-2zM4 17h16c.55 0 1 .45 1 1v4c0 .55-.45 1-1 1H4c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1zm3 2v2h2v-2H7z"/></svg>',
 };
+
+/**
+ * True when this settings page is the standalone backend's loopback control
+ * panel (served by local-api-server.mjs, which injects
+ * buildLocalControlPanelShim → window.__WM_LOCAL_CONTROL_PANEL). Distinct from
+ * isDesktopRuntime(): the desktop settings window and the web build never see
+ * this flag, so the Backend section only shows where it can actually work.
+ */
+function isLocalControlPanel(): boolean {
+  return typeof window !== 'undefined'
+    && (window as unknown as Record<string, unknown>).__WM_LOCAL_CONTROL_PANEL === true;
+}
 
 // ── Sidebar ──
 
@@ -128,6 +141,15 @@ function renderSidebar(): void {
 
   items.push('<div class="settings-nav-sep"></div>');
 
+  if (isLocalControlPanel()) {
+    items.push(`
+      <button class="settings-nav-item${activeSection === 'backend' ? ' active' : ''}" data-section="backend" role="tab" aria-selected="${activeSection === 'backend'}">
+        ${SIDEBAR_ICONS.backend}
+        <span class="settings-nav-label">Backend</span>
+      </button>
+    `);
+  }
+
   items.push(`
     <button class="settings-nav-item${activeSection === 'debug' ? ' active' : ''}" data-section="debug" role="tab" aria-selected="${activeSection === 'debug'}">
       ${SIDEBAR_ICONS.debug}
@@ -156,6 +178,8 @@ function renderSection(sectionId: string): void {
       renderOverview(area);
     } else if (sectionId === 'debug') {
       renderDebug(area);
+    } else if (sectionId === 'backend') {
+      void renderBackend(area);
     } else {
       const cat = SETTINGS_CATEGORIES.find(c => c.id === sectionId);
       if (cat) renderFeatureSection(area, cat);
@@ -730,6 +754,225 @@ function initDiagnostics(): void {
   _diagCleanup = stopAutoRefresh;
 }
 
+// ── Backend section (standalone-backend loopback control panel only) ──
+
+interface LocalConfigEntry {
+  stored: 'set' | 'unset';
+  effective: 'set' | 'unset';
+  value?: string;
+}
+
+const BACKEND_CONFIG_FIELDS: Array<{ key: string; label: string; secret: boolean; url: boolean }> = [
+  { key: 'VITE_SUPABASE_URL', label: 'Supabase URL', secret: false, url: true },
+  { key: 'VITE_SUPABASE_PUBLISHABLE_KEY', label: 'Supabase publishable key', secret: false, url: false },
+  { key: 'UPSTASH_REDIS_REST_URL', label: 'Upstash Redis REST URL', secret: false, url: true },
+  { key: 'UPSTASH_REDIS_REST_READONLY_TOKEN', label: 'Upstash read-only token', secret: true, url: false },
+  { key: 'OPENROUTER_API_KEY', label: 'OpenRouter API key', secret: true, url: false },
+];
+
+function setBackendStatus(id: string, message: string, tone: 'ok' | 'error' = 'ok'): void {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove('ok', 'error');
+  el.classList.add(tone);
+}
+
+/** Poll /api/sidecar-health until the backend answers again after a restart. */
+async function waitForBackendReady(timeoutMs = 25000): Promise<boolean> {
+  const start = Date.now();
+  let sawDown = false;
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const r = await fetch('/api/sidecar-health', { cache: 'no-store' });
+      if (r.ok && (sawDown || Date.now() - start > 5000)) return true;
+    } catch {
+      sawDown = true;
+    }
+  }
+  return false;
+}
+
+/** Poll /api/operator-session until a session lands (browser sign-in completed). */
+async function pollForOperatorSession(timeoutMs = 180000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const r = await fetch('/api/operator-session', { cache: 'no-store' });
+      if (r.status === 200) return true;
+    } catch { /* backend momentarily unreachable */ }
+  }
+  return false;
+}
+
+async function renderBackend(area: HTMLElement): Promise<void> {
+  setTrustedHtml(area, trustedHtml(`
+    <div class="settings-section-header"><h2>Backend</h2></div>
+    <div id="backendPanel"><p class="diag-empty">Loading…</p></div>
+  `, "backend control panel"));
+  const panel = area.querySelector<HTMLElement>('#backendPanel');
+  if (!panel) return;
+
+  const [cfg, identity, status] = await Promise.all([
+    fetch('/api/local-config', { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+    fetch('/api/operator-session', { cache: 'no-store' }).then(r => r.status === 200 ? r.json() : null).catch(() => null),
+    fetch('/api/local-status', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]) as [Record<string, LocalConfigEntry>, { user?: { email?: string; id?: string } } | null, Record<string, unknown> | null];
+
+  const firstrun = new URLSearchParams(location.search).get('firstrun') === '1';
+
+  const configRows = BACKEND_CONFIG_FIELDS.map(f => {
+    const entry: LocalConfigEntry = cfg[f.key] || { stored: 'unset', effective: 'unset' };
+    const envOverride = entry.effective === 'set' && entry.stored === 'unset';
+    const initial = f.secret
+      ? (entry.stored === 'set' ? MASKED_SENTINEL : '')
+      : (entry.value ?? '');
+    const statusText = entry.effective === 'set' ? (envOverride ? 'from .env' : 'set') : 'not set';
+    const statusClass = entry.effective === 'set' ? 'ok' : 'warn';
+    return `
+      <div class="settings-secret-row">
+        <div class="settings-secret-label">${escapeHtml(f.label)}</div>
+        <span class="settings-secret-status ${statusClass}">${escapeHtml(statusText)}</span>
+        <div class="settings-input-wrapper">
+          <input type="${f.secret ? 'password' : 'text'}" data-cfg-key="${f.key}" data-initial="${escapeHtml(initial)}"
+            autocomplete="off" spellcheck="false" placeholder="${f.url ? 'https://…' : 'Enter value…'}"
+            ${initial ? `value="${escapeHtml(initial)}"` : ''}>
+        </div>
+        ${envOverride ? '<span class="settings-secret-hint">Also set in ~/.worldmonitor/.env — that value wins until removed there.</span>' : ''}
+      </div>`;
+  }).join('');
+
+  const signedInName = identity?.user?.email || identity?.user?.id || '';
+  const identityHtml = signedInName
+    ? `<p>Signed in as <strong>${escapeHtml(signedInName)}</strong></p>
+       <button type="button" class="settings-btn settings-btn-secondary" id="backendSignOut">Sign out</button>`
+    : `<p>Not signed in — premium data panels stay empty until you connect a GitHub account in the allow-listed org.</p>
+       <button type="button" class="settings-btn settings-btn-primary" id="backendSignIn">Sign in with GitHub</button>`;
+
+  const statusHtml = status
+    ? `<dl class="backend-status-dl">
+         <dt>Mode</dt><dd>${escapeHtml(String(status.mode ?? '—'))}</dd>
+         <dt>Port</dt><dd>${escapeHtml(String(status.port ?? '—'))}</dd>
+         <dt>Routes</dt><dd>${escapeHtml(String(status.routes ?? '—'))}</dd>
+       </dl>`
+    : '<p class="diag-empty">Backend status unavailable.</p>';
+
+  setTrustedHtml(panel, trustedHtml(`
+    ${firstrun ? '<div class="backend-welcome"><strong>Welcome.</strong> Paste your Supabase URL and publishable key, save, then sign in with GitHub to finish setup.</div>' : ''}
+    <section class="wm-section">
+      <h3 class="wm-section-title">Configuration</h3>
+      <p class="wm-section-desc">Stored in <code>~/.worldmonitor/config.db</code>. Saving restarts the backend to apply.</p>
+      <div class="settings-feat-list">${configRows}</div>
+      <div class="backend-actions">
+        <button type="button" class="settings-btn settings-btn-primary" id="backendSaveConfig">Save &amp; restart</button>
+        <span id="backendConfigStatus" class="settings-action-status" aria-live="polite"></span>
+      </div>
+    </section>
+    <section class="wm-section">
+      <h3 class="wm-section-title">Operator identity</h3>
+      ${identityHtml}
+      <span id="backendAuthStatus" class="settings-action-status" aria-live="polite"></span>
+    </section>
+    <section class="wm-section">
+      <h3 class="wm-section-title">Service</h3>
+      ${statusHtml}
+      <div class="backend-actions">
+        <button type="button" class="settings-btn settings-btn-secondary" id="backendRestart">Restart backend</button>
+        <span id="backendServiceStatus" class="settings-action-status" aria-live="polite"></span>
+      </div>
+    </section>
+  `, "backend control panel"));
+
+  panel.querySelector('#backendSaveConfig')?.addEventListener('click', () => {
+    void (async () => {
+      const payload: Record<string, string> = {};
+      panel.querySelectorAll<HTMLInputElement>('input[data-cfg-key]').forEach(inp => {
+        const key = inp.dataset.cfgKey;
+        const value = inp.value.trim();
+        if (!key || !value || value === MASKED_SENTINEL || value === inp.dataset.initial) return;
+        payload[key] = value;
+      });
+      if (Object.keys(payload).length === 0) {
+        setBackendStatus('backendConfigStatus', 'No changes to save.');
+        return;
+      }
+      setBackendStatus('backendConfigStatus', 'Saving…');
+      let res: Response;
+      try {
+        res = await fetch('/api/local-config', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        setBackendStatus('backendConfigStatus', `Failed: ${String(err)}`, 'error');
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string; rejected?: Record<string, string> };
+        const detail = body.rejected ? Object.entries(body.rejected).map(([k, v]) => `${k}: ${v}`).join('; ') : body.error;
+        setBackendStatus('backendConfigStatus', `Rejected — ${detail || res.status}`, 'error');
+        return;
+      }
+      setBackendStatus('backendConfigStatus', 'Saved — backend restarting…');
+      const ready = await waitForBackendReady();
+      setBackendStatus('backendConfigStatus', ready ? 'Backend restarted.' : 'Saved; backend still restarting…', ready ? 'ok' : 'error');
+      renderSection('backend');
+    })();
+  });
+
+  panel.querySelector('#backendSignIn')?.addEventListener('click', () => {
+    void (async () => {
+      setBackendStatus('backendAuthStatus', 'Starting GitHub sign-in…');
+      let res: Response;
+      try {
+        res = await fetch('/api/local-login', { method: 'POST' });
+      } catch (err) {
+        setBackendStatus('backendAuthStatus', `Failed: ${String(err)}`, 'error');
+        return;
+      }
+      if (res.status !== 202) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setBackendStatus('backendAuthStatus', `Failed: ${body.error || res.status}`, 'error');
+        return;
+      }
+      const { authUrl } = await res.json() as { authUrl: string };
+      window.open(authUrl, '_blank', 'noopener,noreferrer');
+      setBackendStatus('backendAuthStatus', 'Finish the sign-in in the new tab…');
+      const signedIn = await pollForOperatorSession();
+      if (signedIn) {
+        setBackendStatus('backendAuthStatus', 'Signed in.');
+        renderSection('backend');
+      } else {
+        setBackendStatus('backendAuthStatus', 'Timed out waiting for sign-in.', 'error');
+      }
+    })();
+  });
+
+  panel.querySelector('#backendSignOut')?.addEventListener('click', () => {
+    void (async () => {
+      try {
+        await fetch('/api/local-logout', { method: 'POST' });
+      } catch { /* best effort */ }
+      renderSection('backend');
+    })();
+  });
+
+  panel.querySelector('#backendRestart')?.addEventListener('click', () => {
+    void (async () => {
+      setBackendStatus('backendServiceStatus', 'Restarting…');
+      try {
+        await fetch('/api/local-restart', { method: 'POST' });
+      } catch { /* the process is going down — expected */ }
+      const ready = await waitForBackendReady();
+      setBackendStatus('backendServiceStatus', ready ? 'Backend restarted.' : 'Still restarting…', ready ? 'ok' : 'error');
+      if (ready) renderSection('backend');
+    })();
+  });
+}
+
 // ── Search ──
 
 function highlightMatch(text: string, query: string): string {
@@ -847,7 +1090,11 @@ async function initSettingsWindow(): Promise<void> {
   await loadDesktopSecrets();
   settingsManager = new SettingsManager();
 
-  renderSection('overview');
+  const wantsBackend = isLocalControlPanel() && (
+    location.hash === '#backend'
+    || new URLSearchParams(location.search).get('firstrun') === '1'
+  );
+  renderSection(wantsBackend ? 'backend' : 'overview');
 
   document.getElementById('sidebarNav')?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-section]');

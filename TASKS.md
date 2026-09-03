@@ -18,9 +18,27 @@ Related Claude memory entries (fuller narrative/context per item):
 ## 🔀 HANDOFF (2026-09-02, FORTY-SEVENTH session) — NEXT TASK: release readiness (blocked on an operator decision)
 
 > **RESOLVED — FORTY-EIGHTH session (2026-09-03). Operator chose path (b): GitHub release
-> with a downloadable macOS bundle.** Shipped as **`v2.11.0`** —
-> <https://github.com/powerpro-led/worldmonitor/releases/tag/v2.11.0> — the repo's first tag ever.
-> `main` @ `4e70a71` == `origin/main` (the 7 stacked commits + `release(v2.11.0)` all pushed).
+> with a downloadable bundle.** Shipped as **`v2.11.0`** (macOS, repo's first tag ever) then
+> **`v2.12.0`** (adds Windows) —
+> <https://github.com/powerpro-led/worldmonitor/releases/tag/v2.12.0> (Latest).
+> `main` @ `c9d9fca` == `origin/main`; tags `v2.11.0` + `v2.12.0` pushed. Published archive
+> checksums verified against local build hashes.
+>
+> **`v2.12.0` — Windows support.** `scripts/worldmonitor-local.mjs` gained an `IS_WIN` branch:
+> `install` registers a per-user **Scheduled Task `WorldMonitorLocal`** (LogonTrigger, no admin)
+> whose action is `wscript <vbs>` → `cmd /c <cmd>` → node, with `sh.Run(cmd, 0, True)` so wscript
+> *waits* on node and Task Scheduler's `RestartOnFailure` (3×/1min) actually supervises it;
+> hidden window via `windowStyle 0`. Task XML written UTF-16 + BOM (schtasks requirement).
+> `restart` kills the `:46123` listener (the detached node child is out of `schtasks /end`'s
+> reach) then re-runs the task; `uninstall` clears task + `.xml`/`.cmd`/`.vbs`; `status` shows
+> task state; Windows log → `~/.worldmonitor/local-api.log` (no `/tmp`). New
+> `scripts/release/install.ps1` (PowerShell mirror of `install.sh`).
+> `build-release-bundle.mjs` also emits `worldmonitor-local-<v>.zip` (via `ditto`, no `__MACOSX`)
+> + its `.sha256`. VS Code ext `backendClient.startBackend()` uses `schtasks /run` on win32;
+> `panel.ts`/`extension.ts` drop "in the repo" wording. `INSTALL.md` split macOS / Windows.
+> **Windows path is NOT yet run on a real Windows machine** — operator has one to test on;
+> `install.ps1` was not `pwsh`-parse-checked (no pwsh on the build mac). Forced-`win32` dry-runs
+> of the CLI produce correct Task XML / `.cmd` / `.vbs`.
 >   - **`scripts/build-release-bundle.mjs`** assembles `release/worldmonitor-local-<v>.tar.gz`
 >     (+ `.sha256`): `npm run build` + `build:sidecar-sebuf` + `build:sidecar-handlers`, then
 >     stages compiled `api/**/*.js`, `server/` (only the 4 `_shared/*.js` that actually exist),

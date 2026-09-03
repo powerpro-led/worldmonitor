@@ -42,6 +42,19 @@ import {
   writeOperatorSession as writeSession,
   operatorSessionFilePath,
 } from '../vscode-extension/sidecar/session-file.mjs';
+// Config lives in ~/.worldmonitor/config.db, read by both this CLI and the
+// backend (local-api-server.mjs). loadConfigIntoEnv() fills process.env for
+// keys `.env` didn't set; the `config` subcommand manages the store.
+import {
+  loadConfigIntoEnv,
+  readAllConfig,
+  setConfig,
+  deleteConfig,
+  importFromEnvText,
+  getConfigDbPath,
+  CONFIG_KEYS,
+  SECRET_CONFIG_KEYS,
+} from '../vscode-extension/sidecar/config-store.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_SCRIPT = path.join(REPO_ROOT, 'vscode-extension', 'sidecar', 'local-api-server.mjs');
@@ -295,6 +308,8 @@ function writeWinTaskFiles(port) {
 // ── .env (for login: Supabase URL + anon key) ────────────────────────────
 function loadDotenv() {
   try { process.loadEnvFile(DOTENV_PATH); } catch { /* absent — rely on ambient env */ }
+  // Fill any gap from ~/.worldmonitor/config.db (`.env` above still wins).
+  loadConfigIntoEnv();
 }
 
 function supabaseConfig() {
@@ -578,6 +593,46 @@ async function cmdToken() {
   ok(flag('fingerprint') ? fingerprint(token) : token);
 }
 
+async function cmdConfig() {
+  const args = rest.filter((a) => !a.startsWith('--'));
+  const [sub, key, ...valueParts] = args;
+
+  if (!sub || sub === 'list') {
+    const stored = readAllConfig();
+    ok(`config.db  ${getConfigDbPath()}`);
+    for (const k of CONFIG_KEYS) {
+      const v = stored[k];
+      const shown = v == null
+        ? '(unset)'
+        : SECRET_CONFIG_KEYS.includes(k) ? 'set' : v;
+      ok(`  ${k.padEnd(34)} ${shown}`);
+    }
+    ok('\n.env and real environment variables override anything stored here.');
+    return;
+  }
+  if (sub === 'set') {
+    if (!key || valueParts.length === 0) die('usage: worldmonitor-local config set <KEY> <VALUE>');
+    try { setConfig(key, valueParts.join(' ')); } catch (err) { die(err.message); }
+    ok(`set ${key}`);
+    return;
+  }
+  if (sub === 'unset') {
+    if (!key) die('usage: worldmonitor-local config unset <KEY>');
+    deleteConfig(key);
+    ok(`unset ${key}`);
+    return;
+  }
+  if (sub === 'import') {
+    if (!key) die('usage: worldmonitor-local config import <file>');
+    if (!existsSync(key)) die(`file not found: ${key}`);
+    let imported;
+    try { imported = importFromEnvText(readFileSync(key, 'utf8')); } catch (err) { die(err.message); }
+    ok(imported.length ? `imported: ${imported.join(', ')}` : 'nothing imported (no allow-listed keys in that file)');
+    return;
+  }
+  die(`unknown: config ${sub}  (use: list | set | unset | import)`);
+}
+
 async function cmdUninstall() {
   requireServiceOS();
   const port = Number(opt('port', DEFAULT_PORT));
@@ -616,6 +671,11 @@ function usage() {
   status                                 backend / service / token / identity at a glance
   token [--fingerprint]                  print the loopback token (for an MCP client's header)
 
+  config list                            show stored config (~/.worldmonitor/config.db; secrets masked)
+  config set <KEY> <VALUE>               store one allow-listed key
+  config unset <KEY>                     remove one key
+  config import <file>                   seed config.db from an org.env / .env
+
 SETUP (one-time, operator): add  http://127.0.0.1:${DEFAULT_CALLBACK_PORT}/callback  to the Supabase
 project's Auth -> URL Configuration -> Redirect URLs, so \`login\`'s loopback is accepted.`);
 }
@@ -630,6 +690,7 @@ const commands = {
   whoami: cmdWhoami,
   status: cmdStatus,
   token: cmdToken,
+  config: cmdConfig,
   help: async () => usage(),
 };
 

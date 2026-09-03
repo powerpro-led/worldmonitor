@@ -13,11 +13,11 @@ control panel, plus move production builds to CI.
 
 ## Status
 
-- **As of:** 2026-09-03 (session 50)
-- **Phase:** 0 of 4 — planning complete, nothing implemented
-- **Branch:** `main == origin/main @ 24aff62`; all prior work (v2.13.0 Model B) uncommitted in the working tree
-- **Blocking predecessor:** v2.13.0 must ship first (see Phase 0)
-- **Next action:** get operator go-ahead on the v2.13.0 `auth-provider.ts` blocker fix
+- **As of:** 2026-09-03 (session 51)
+- **Phase:** 1 of 4 in progress — config store landing; Phase 0 (v2.13.0) code done + pushed, **not tagged** (see D12)
+- **Branch:** `main == origin/main`, `c379806` = v2.13.0 Model B (incl. the S51 blocker fix), Phase 1 work uncommitted in the working tree
+- **No release** until all four phases are complete and coherent — **D12**. The `v2.13.0` tag that was briefly pushed in S51 was deleted; no GitHub release exists.
+- **Next action:** finish Phase 1 (installer seeding + doc), then Phase 2.
 
 ---
 
@@ -47,6 +47,9 @@ Target journey ("form-fill"):
 | D9 | **`org.env` (Model B) is KEPT.** `install.sh --config org.env` pre-seeds the SQLite `config` for zero-touch org rollouts; the UI is for self-service + the per-operator OpenRouter key. | Multi-operator fork — org admin hands out one file; the two coexist. | S50 |
 | D10 | **Production build+publish = GitHub Actions**, tag-triggered. Local `build-release-bundle.mjs` stays the dev/test path only; the Actions workflow must not become a blocker for dev. | Operator's throttled local network. Two freebies: sub-option B ⇒ single `ubuntu-latest` job, no matrix; Model B ⇒ no repo secrets, only `GITHUB_TOKEN`. | S50 |
 | D11 | **`wmtest` fresh-user testing** via Fast User Switching (`MultipleSessionEnabled` on, account UID 503 — set up S49). | Fast dev/test iteration without polluting the main account. | S50 |
+| D12 | **No release (tag or GitHub release) until all four phases are complete and coherent.** v2.13.0's code ships inside that eventual release, not as its own tag. | Operator: "release when full complete, not half." The S51 `v2.13.0` tag was created then deleted. | S51 |
+| D13 | **Config store = a SEPARATE `~/.worldmonitor/config.db`**, not a table in `local-cache.db`. Resolves OQ2. | `local-sync.mjs` `fs.renameSync`s a freshly-built `local-cache.db` over the old one every run ([local-sync.mjs:565](vscode-extension/sidecar/local-sync.mjs#L565)) — any table there is destroyed each sync. `config.db` sits with `session.json` / `local-api-token`, which nothing rewrites. | S51 |
+| D14 | **`loadConfigIntoEnv()` fills `process.env` for any allow-listed key not already non-empty** (`.env` / real env wins), run as the first statement after the import block — NOT `??=` on a `load-config.mjs` module, and NOT the first *import*. | ESM evaluates all of a file's static imports before its body; `local-api-server.mjs`'s imports (`_domain-config.mjs`, `session-file.mjs`) are env-free at eval, and every config consumer (`api/` handlers, sync workers) is `await import()`ed later — so a body-level call is early enough and clearer than an import side-effect. | S51 |
 
 ---
 
@@ -80,18 +83,19 @@ Target journey ("form-fill"):
 - [x] `node scripts/build-release-bundle.mjs` — **done S51.** Built `release/worldmonitor-local-2.13.0.tar.gz` (19.7 MB) + `.zip` (20.7 MB). `grep -rl ixuezudybhjptisexgxx …/dist/` → **empty**; no `*.supabase.co` project URL in `dist/`; identity-bridge is the bare `/functions/v1/github-identity-bridge` path.
 - [x] Live check — **done S51 (Tier A, sandbox on :46202).** `npm ci --omit=dev --ignore-scripts` exit 0. `/dashboard.html` 200 and carries `<script>window.__WM_RUNTIME_CONFIG={supabaseUrl,supabaseKey}</script>` from `.env`. `/api/health` **200 with ZERO Upstash creds** (real verdict from the SQLite mirror; no shared-Redis read/write). `/api/sidecar-health` 200. No `ERR_MODULE_NOT_FOUND`. (Note: `/api/health` needs a *populated* mirror — `readMirrorValues()` opens read-only and fails closed on a missing db; a real install's `local-sync` writes it first.)
 - [x] CHANGELOG — **done S51.** Orphan `[2.12.1]` folded into `[2.13.0]` as a `### Security` subsection; added a bullet for the identity-bridge issuer derivation.
-- [ ] Commit → push  *(operator: stop before tag — S51 answer)*
-- [ ] `git tag -a v2.13.0` → push tag → `gh release create` (tar.gz + zip + both .sha256 + .vsix) — **deferred to operator / CI**
-- [ ] (Parallel, independent) Tier B fresh-user test of the published bundle — see `TASKS.md` FORTY-NINTH block
+- [x] Commit → push — **done S51.** `c379806` on `origin/main`.
+- [ ] ~~`git tag -a v2.13.0` → `gh release create`~~ — **cancelled per D12.** Ships inside the eventual full-initiative release.
+- [ ] (Parallel, independent) Tier B fresh-user test — see `TASKS.md` FORTY-NINTH block
 
 ### Phase 1 — Config store (`.env` → SQLite, `process.env` interface kept)
-- [ ] `config` table in the mirror db (or a sibling `config.db`) — `key TEXT PRIMARY KEY, value TEXT, updated_at`
-- [ ] `vscode-extension/sidecar/load-config.mjs` — opens the table, `for (const {key,value} of rows) process.env[key] ??= value`. Idempotent, safe when the db/table is absent.
-- [ ] Make it the FIRST import of `local-api-server.mjs` and `scripts/worldmonitor-local.mjs`
-- [ ] `worldmonitor-local.mjs` config summary reads SQLite alongside `.env`
-- [ ] Update the ~4 sidecar tests that `delete process.env.X`
-- [ ] `install.sh` / `install.ps1`: seed the `config` table from `org.env` (keep writing `.env` too during transition, or switch fully — decide)
+- [x] **`vscode-extension/sidecar/config-store.mjs`** (new) — separate `~/.worldmonitor/config.db` (D13), `config(key,value,updated_at)` table. Exports `CONFIG_KEYS` (5-key allow-list, no write creds) · `SECRET_CONFIG_KEYS` · `getConfigDbPath()` (honours `$LOCAL_CONFIG_DB_PATH`) · `readAllConfig()` (`{}` when absent) · `loadConfigIntoEnv(env=process.env)` (fills gaps, mirrors `VITE_SUPABASE_URL`→`SUPABASE_URL`, never throws) · `setConfig` / `deleteConfig` · `importFromEnvText`.
+- [x] Wired into **`local-api-server.mjs`** — `loadConfigIntoEnv()` as the first body statement after the import block (D14), logs `[local-api] config.db filled: …`.
+- [x] Wired into **`worldmonitor-local.mjs`** — `loadConfigIntoEnv()` inside `loadDotenv()` (covers the `login` path); new **`config`** subcommand (`list` / `set` / `unset` / `import`) + `usage()` entry; `readFileSync`/`existsSync` already imported.
+- [x] **`build-release-bundle.mjs`** stages `config-store.mjs` in `SIDECAR_FILES`.
+- [x] Tests — **`config-store.test.mjs`** (new, 9 tests) added to `test:sidecar`; the script now also sets `LOCAL_CONFIG_DB_PATH=./.test-no-config.db` so the whole suite is hermetic regardless of a real `~/.worldmonitor/config.db` (`.gitignore`d). No `delete process.env.X` test needed changes — `loadConfigIntoEnv` respects already-set values and the suite's db path is a non-file. `test:sidecar` 219/219.
+- [ ] `install.sh` / `install.ps1`: after writing `.env`, `node scripts/worldmonitor-local.mjs config import <org.env-or-.env>` (keep `.env` too during transition — OQ1).
 - [ ] Green checks + a fresh `wmtest` install verifying config comes from SQLite with no `.env`
+- **Green so far (S51):** `tsc` · `typecheck:api` · `biome` (changed files, exit 0) · `test:sidecar` 219/219 · `config-store.test.mjs` 9/9 · CLI `config` smoke (set/list/unset/import, write-cred rejected, secrets masked, `SUPABASE_URL` mirrored).
 
 ### Phase 2 — `/api/local-config` + settings.html control panel
 - [ ] `/api/local-config` route in `local-api-server.mjs` dispatch — loopback + local-token gated
@@ -135,13 +139,11 @@ Target journey ("form-fill"):
 ## Session log
 
 ### Session 51 — 2026-09-03
-- **Phase 0 blocker fixed.** `getSupabaseUrl()` export + `githubIdentityBridgeIssuer()` derivation; hardcoded project ref gone from `src/`.
-- All green checks + Tier A bundle verification pass (see Phase 0 checklist).
-- **Committed + pushed.** `main @ 6e38d82 == origin/main`:
-  - `c379806 release(v2.13.0): org-neutral downloadable bundle` — the whole Model B set (session 49 work + the S51 blocker fix), CHANGELOG `[2.12.1]` folded into `[2.13.0]`.
-  - `6e38d82 docs: LOCAL_APP_INITIATIVE.md` — this file.
-- **Left for v2.13.0 (operator / CI):** `git tag -a v2.13.0` + push tag + `gh release create` with `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`, regenerate — the build printed the `next:` command) + the `.vsix`. Deliberately stopped before tagging (operator's S51 call).
-- **Next initiative step:** Phase 1 (config store) — see checklist. Resolve OQ2 (separate `config.db`) first.
+- **Phase 0 blocker fixed** (`getSupabaseUrl()` + `githubIdentityBridgeIssuer()` derivation) + Tier A bundle verified. Committed as `c379806 release(v2.13.0)`, pushed. `6e38d82` = this file.
+- **Tagging reversed.** Briefly pushed `v2.13.0`, operator said release only when the whole initiative is complete → **D12**. Tag deleted local + origin; no GitHub release was created (the `gh release create` was permission-blocked anyway).
+- **OQ2 resolved → D13** (separate `~/.worldmonitor/config.db`). Design nuance → **D14** (body-level `loadConfigIntoEnv()`, not an import side-effect).
+- **Phase 1 core landed** (uncommitted): `config-store.mjs` + wiring in `local-api-server.mjs` + `worldmonitor-local.mjs` (new `config` subcommand) + `build-release-bundle.mjs` staging + `config-store.test.mjs` (9 tests) + hermetic `test:sidecar`. All green (219/219 sidecar, CLI smoke). See Phase 1 checklist.
+- **Next:** commit Phase 1 core → installer seeding (`config import`) → then Phase 2.
 
 ### Session 50 — 2026-09-03
 - Design discussion: full install-UX overhaul explored and scoped. Decisions D1–D11 locked above.

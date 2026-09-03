@@ -125,3 +125,6 @@ api/seed-contract-probe.js
 api/symbol-search.js
 api/user-prefs.js
 api/widget-agent.js
+
+# transient: test:sidecar points LOCAL_CONFIG_DB_PATH here (never actually written)
+.test-no-config.db

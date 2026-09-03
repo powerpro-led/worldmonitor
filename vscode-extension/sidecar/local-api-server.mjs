@@ -22,6 +22,17 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
 // login flow and this server's refresh timer.
 import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
+import { loadConfigIntoEnv } from './config-store.mjs';
+
+// Fill process.env from ~/.worldmonitor/config.db for any Supabase / Upstash /
+// OpenRouter key `node --env-file` didn't already set. Must run before
+// anything reads that config — which, for the dynamically-imported api/ route
+// handlers and the sync workers, is well past this point. `.env` still wins;
+// config.db is the fallback the settings UI writes.
+{
+  const filled = loadConfigIntoEnv();
+  if (filled.length) console.log(`[local-api] config.db filled: ${filled.join(', ')}`);
+}
 
 const brotliCompressAsync = promisify(brotliCompress);
 const DESKTOP_AUTH_SECRET_ENV = 'WM_DESKTOP_SHARED_SECRET';

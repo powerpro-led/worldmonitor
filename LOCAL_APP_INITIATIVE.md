@@ -68,6 +68,7 @@ Target journey ("form-fill"):
 | `worldmonitor-local.mjs` config summary [:302-303](scripts/worldmonitor-local.mjs#L302) | 1 | Add a SQLite read alongside |
 
 **Gotchas to design around:**
+
 - `SIDECAR_ALLOWED_ORIGINS` ([local-api-server.mjs:1157](vscode-extension/sidecar/local-api-server.mjs#L1157)) and the Upstash-origin CSP allowance ([:2469](vscode-extension/sidecar/local-api-server.mjs#L2469)) are computed at module load. Changing the Upstash URL via the UI needs a process restart → `/api/local-config` always calls `restart` (D7).
 - Import ordering is the only real constraint: `load-config.mjs` must be the FIRST import of `local-api-server.mjs` and `worldmonitor-local.mjs`. `local-sync.mjs` / `sync-listener.mjs` are `import()`ed after the server's top-of-file, so they see a populated `process.env`.
 - ~4 sidecar tests `delete process.env.X` — they'll need to also clear the config table or point `LOCAL_SQLITE_PATH` at a temp db.
@@ -77,6 +78,7 @@ Target journey ("form-fill"):
 ## Work breakdown
 
 ### Phase 0 — Ship v2.13.0 (blocking predecessor, NOT part of this initiative but gates it)
+
 - [x] Fix `src/services/auth-provider.ts:298` — **done S51.** `getSupabaseUrl()` exported from `supabase-client.ts`; new `githubIdentityBridgeIssuer()` in `auth-provider.ts` derives `${getSupabaseUrl()}/functions/v1/github-identity-bridge`, returns null when unset; call site in `completeVsCodeGithubSignIn()` guards on it. Hardcoded `ixuezudybhjptisexgxx` const removed.
 - [x] `grep` for other project-specific literals — **done.** Only remaining hits: a prose comment in `supabase-client.ts:6` (stripped from `dist/` at minify) and `status.supabase.com` in `api/infrastructure/v1/[rpc].js` (unrelated status-page URL). No runtime literal.
 - [x] Green checks — **done S51.** `tsc --noEmit` ✓ · `typecheck:api` ✓ · `biome` (2 changed files) ✓ · `test:sidecar` 210/210 ✓ · health suites (10 files, run via `tsx --test`) 126/126 ✓ · no test references the issuer.
@@ -88,6 +90,7 @@ Target journey ("form-fill"):
 - [ ] (Parallel, independent) Tier B fresh-user test — see `TASKS.md` FORTY-NINTH block
 
 ### Phase 1 — Config store (`.env` → SQLite, `process.env` interface kept)
+
 - [x] **`vscode-extension/sidecar/config-store.mjs`** (new) — separate `~/.worldmonitor/config.db` (D13), `config(key,value,updated_at)` table. Exports `CONFIG_KEYS` (5-key allow-list, no write creds) · `SECRET_CONFIG_KEYS` · `getConfigDbPath()` (honours `$LOCAL_CONFIG_DB_PATH`) · `readAllConfig()` (`{}` when absent) · `loadConfigIntoEnv(env=process.env)` (fills gaps, mirrors `VITE_SUPABASE_URL`→`SUPABASE_URL`, never throws) · `setConfig` / `deleteConfig` · `importFromEnvText`.
 - [x] Wired into **`local-api-server.mjs`** — `loadConfigIntoEnv()` as the first body statement after the import block (D14), logs `[local-api] config.db filled: …`.
 - [x] Wired into **`worldmonitor-local.mjs`** — `loadConfigIntoEnv()` inside `loadDotenv()` (covers the `login` path); new **`config`** subcommand (`list` / `set` / `unset` / `import`) + `usage()` entry; `readFileSync`/`existsSync` already imported.
@@ -101,6 +104,7 @@ Target journey ("form-fill"):
 **Phase 1 status: code complete.** Remaining item is a `wmtest` end-to-end check, folded into the Phase 3 installer test.
 
 ### Phase 2 — `/api/local-config` + settings.html control panel
+
 - [ ] `/api/local-config` route in `local-api-server.mjs` dispatch — loopback + local-token gated
   - [ ] GET → `{ key: 'set' | 'not set' }` for the allowlist; never the value
   - [ ] POST → validate shape per key, write SQLite row, `process.env[key] = value`, then trigger `worldmonitor-local restart`
@@ -110,6 +114,7 @@ Target journey ("form-fill"):
 - [ ] First-run: empty config → dashboard detects "not configured" → routes to `settings.html`. Requires `load-config`/reads to be lazy enough that no restart is needed after the first save of the Supabase pair (verify).
 
 ### Phase 3 — One-command install + bundled Node + slim deps
+
 - [ ] Backend-only `package.json` — prune to what `local-api-server.mjs` + `local-sync.mjs` + `sync-listener.mjs` + `api/**` + `server/_shared/*` + `scripts/shared/sync-domains.mjs` actually import. Test a clean `npm ci --omit=dev --ignore-scripts` + full boot.
 - [ ] `build-release-bundle.mjs` — emit ONE universal tarball (no per-platform), stage the slim `package.json`
 - [ ] `scripts/release/install` (the `curl | sh` bootstrap): detect OS/arch → download platform Node from nodejs.org → `~/.worldmonitor/app/runtime/` → download+extract the app tarball → `npm ci` with the bundled Node → register service (existing `worldmonitor-local install` logic) → drop Desktop launcher + icon → print the settings URL
@@ -119,6 +124,7 @@ Target journey ("form-fill"):
 - [ ] `INSTALL.md` — replace the manual steps with the one-liner
 
 ### Phase 4 — CI (GitHub Actions, production release)
+
 - [ ] `.github/workflows/release.yml` — trigger on `v*` tag push
   - [ ] `ubuntu-latest`, single job (no matrix — sub-option B)
   - [ ] `npm ci` → `npm run build` (with `VITE_SUPABASE_URL='' VITE_SUPABASE_PUBLISHABLE_KEY=''`) → `build:sidecar-sebuf` → `build:sidecar-handlers` → `node scripts/build-release-bundle.mjs`
@@ -142,6 +148,7 @@ Target journey ("form-fill"):
 ## Session log
 
 ### Session 51 — 2026-09-03
+
 - **Phase 0 blocker fixed** (`getSupabaseUrl()` + `githubIdentityBridgeIssuer()` derivation) + Tier A bundle verified. Committed as `c379806 release(v2.13.0)`, pushed. `6e38d82` = this file.
 - **Tagging reversed.** Briefly pushed `v2.13.0`, operator said release only when the whole initiative is complete → **D12**. Tag deleted local + origin; no GitHub release was created (the `gh release create` was permission-blocked anyway).
 - **OQ2 resolved → D13** (separate `~/.worldmonitor/config.db`). Design nuance → **D14** (body-level `loadConfigIntoEnv()`, not an import side-effect).
@@ -149,6 +156,7 @@ Target journey ("form-fill"):
 - **Next:** Phase 2 — `/api/local-config` + `settings.html` control panel + browser GitHub sign-in.
 
 ### Session 50 — 2026-09-03
+
 - Design discussion: full install-UX overhaul explored and scoped. Decisions D1–D11 locked above.
 - Codebase review of the `.env` → SQLite surface — findings + gotchas recorded above. Conclusion: contained if `process.env` stays the interface (load, don't rewrite accessors).
 - Created this file as the single source of truth.

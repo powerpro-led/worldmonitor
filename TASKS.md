@@ -44,8 +44,13 @@ Related Claude memory entries (fuller narrative/context per item):
 >   - **Verified end-to-end**: extract tarball to a clean dir, `npm ci --omit=dev
 >     --ignore-scripts`, start backend on an alt port → `/api/sidecar-health` 200, `/api/health`
 >     200 (with the full Upstash token; 503 `REDIS_DOWN` without it — env, not a bundle bug),
->     `/dashboard.html` 200, `local-sync` pulls every prefix from Upstash, zero
+>     `/dashboard.html` 200, `local-sync` pulls every prefix from Upstash (6463 keys), zero
 >     `ERR_MODULE_NOT_FOUND`. The `sync-domains.mjs` omission was caught and fixed during this.
+>   - **MCP verified from the bundle too** (`/api/mcp`, token-gated): `initialize` handshake OK,
+>     `tools/list` = 41 tools, `tools/call get_conflict_events` with `jmespath` returns
+>     mirror-backed data, `resources/list` OK, every `mcp.downstream` log line `error_code: null`.
+>     `get_world_brief` returns cached headlines with the LLM summary `SKIPPED` (no
+>     `OPENROUTER_API_KEY`). The dead `redisPipeline` shim is not on any live tool path.
 >   - **Still open / deferred**: macOS-only (launchd); `publisher: worldmonitor-internal` stays a
 >     placeholder (not a Marketplace publish — path (c) was not chosen); the `redisPipeline` shim
 >     in `local-api-server.mjs:968` (`import('../../server/_shared/redis')`) is a **pre-existing**

@@ -17,6 +17,41 @@ Related Claude memory entries (fuller narrative/context per item):
 
 ## 🔀 HANDOFF (2026-09-02, FORTY-SEVENTH session) — NEXT TASK: release readiness (blocked on an operator decision)
 
+> **RESOLVED — FORTY-EIGHTH session (2026-09-03). Operator chose path (b): GitHub release
+> with a downloadable macOS bundle.** Shipped as **`v2.11.0`** —
+> <https://github.com/powerpro-led/worldmonitor/releases/tag/v2.11.0> — the repo's first tag ever.
+> `main` @ `4e70a71` == `origin/main` (the 7 stacked commits + `release(v2.11.0)` all pushed).
+>   - **`scripts/build-release-bundle.mjs`** assembles `release/worldmonitor-local-<v>.tar.gz`
+>     (+ `.sha256`): `npm run build` + `build:sidecar-sebuf` + `build:sidecar-handlers`, then
+>     stages compiled `api/**/*.js`, `server/` (only the 4 `_shared/*.js` that actually exist),
+>     `shared/`, `dist/`, the 6 sidecar runtime `.mjs`, `scripts/worldmonitor-local.mjs` +
+>     `scripts/shared/sync-domains.mjs` (the ONLY `scripts/` file the sidecar imports — found via
+>     verify, `local-sync.mjs`/`sync-listener.mjs` need it for `SYNC_PREFIXES`/`isMirroredKey`),
+>     a clean `.vsix`, `package.json` + `package-lock.json`, `.env.example`. **`node_modules` is
+>     NOT bundled** — `install.sh` runs `npm ci --omit=dev --ignore-scripts` (736 pkgs / ~1.2 GB
+>     on the target; `patch-package` is a devDep for `@nitric/sdk`, unused by the standalone
+>     backend, so `--ignore-scripts` is correct).
+>   - **`scripts/release/install.sh`** (macOS): Node ≥22.5 check → `npm ci` → interactive `.env`
+>     (Supabase URL/key required; Upstash URL + **read-only** token for `local-sync` + **full**
+>     token for `/api/health` freshness badges — `local-sync`'s `assertEnv()` refuses the full
+>     token by design, `api/health.js` `getRedisCredentials()` needs it; OpenRouter optional) →
+>     `worldmonitor-local install` → `code --install-extension` the bundled `.vsix`.
+>   - **`INSTALL.md`** (repo root): fresh-machine install / upgrade / troubleshooting.
+>   - `package.json` `2.10.0`→`2.11.0`, `engines.node >=22.5.0`. CHANGELOG `[Unreleased]` rolled
+>     into a dated `[2.11.0]` heading. `vscode-extension/package.json` gained `repository` +
+>     `license`. `.gitignore` `/release/` (anchored — a bare `release/` also hides
+>     `scripts/release/`).
+>   - **Verified end-to-end**: extract tarball to a clean dir, `npm ci --omit=dev
+>     --ignore-scripts`, start backend on an alt port → `/api/sidecar-health` 200, `/api/health`
+>     200 (with the full Upstash token; 503 `REDIS_DOWN` without it — env, not a bundle bug),
+>     `/dashboard.html` 200, `local-sync` pulls every prefix from Upstash, zero
+>     `ERR_MODULE_NOT_FOUND`. The `sync-domains.mjs` omission was caught and fixed during this.
+>   - **Still open / deferred**: macOS-only (launchd); `publisher: worldmonitor-internal` stays a
+>     placeholder (not a Marketplace publish — path (c) was not chosen); the `redisPipeline` shim
+>     in `local-api-server.mjs:968` (`import('../../server/_shared/redis')`) is a **pre-existing**
+>     dead path — fails `ERR_MODULE_NOT_FOUND` on the dev machine too; REST dashboard unaffected.
+>     No operator has installed the bundle on a second machine yet.
+
 The operator asked "are we ready to publish a release yet?" — **not yet, and the gap is
 structural, not bugs.** All functional work through the FORTY-SIXTH block is done and verified;
 the operator has confirmed the VS Code embed dashboard renders and every panel loads. What is

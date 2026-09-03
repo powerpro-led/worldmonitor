@@ -93,9 +93,12 @@ Target journey ("form-fill"):
 - [x] Wired into **`worldmonitor-local.mjs`** — `loadConfigIntoEnv()` inside `loadDotenv()` (covers the `login` path); new **`config`** subcommand (`list` / `set` / `unset` / `import`) + `usage()` entry; `readFileSync`/`existsSync` already imported.
 - [x] **`build-release-bundle.mjs`** stages `config-store.mjs` in `SIDECAR_FILES`.
 - [x] Tests — **`config-store.test.mjs`** (new, 9 tests) added to `test:sidecar`; the script now also sets `LOCAL_CONFIG_DB_PATH=./.test-no-config.db` so the whole suite is hermetic regardless of a real `~/.worldmonitor/config.db` (`.gitignore`d). No `delete process.env.X` test needed changes — `loadConfigIntoEnv` respects already-set values and the suite's db path is a non-file. `test:sidecar` 219/219.
-- [ ] `install.sh` / `install.ps1`: after writing `.env`, `node scripts/worldmonitor-local.mjs config import <org.env-or-.env>` (keep `.env` too during transition — OQ1).
-- [ ] Green checks + a fresh `wmtest` install verifying config comes from SQLite with no `.env`
-- **Green so far (S51):** `tsc` · `typecheck:api` · `biome` (changed files, exit 0) · `test:sidecar` 219/219 · `config-store.test.mjs` 9/9 · CLI `config` smoke (set/list/unset/import, write-cred rejected, secrets masked, `SUPABASE_URL` mirrored).
+- [x] **`install.sh` / `install.ps1`** — after writing `.env`, a `# 2b` step runs `node scripts/worldmonitor-local.mjs config import .env` (non-fatal on failure; `.env` stays authoritative — OQ1 = dual-write during transition). `bash -n` clean; seed step simulated (4 allow-listed keys imported from a sample `.env`, `LOCAL_API_MODE`/`SUPABASE_URL` skipped).
+- [x] **`INSTALL.md`** — `config list` in the manage-backend block + a short paragraph on `.env` vs `config.db`.
+- [ ] Fresh `wmtest` install verifying config comes from SQLite with no `.env` — deferred to the Phase 1/3 combined `wmtest` pass (needs the one-command installer too).
+- **Green (S51):** `tsc` · `typecheck:api` · `biome` (changed files, exit 0) · `test:sidecar` 219/219 · `config-store.test.mjs` 9/9 · CLI `config` smoke (set/list/unset/import, write-cred rejected, secrets masked, `SUPABASE_URL` mirrored) · installer seed-step simulated.
+
+**Phase 1 status: code complete.** Remaining item is a `wmtest` end-to-end check, folded into the Phase 3 installer test.
 
 ### Phase 2 — `/api/local-config` + settings.html control panel
 - [ ] `/api/local-config` route in `local-api-server.mjs` dispatch — loopback + local-token gated
@@ -142,8 +145,8 @@ Target journey ("form-fill"):
 - **Phase 0 blocker fixed** (`getSupabaseUrl()` + `githubIdentityBridgeIssuer()` derivation) + Tier A bundle verified. Committed as `c379806 release(v2.13.0)`, pushed. `6e38d82` = this file.
 - **Tagging reversed.** Briefly pushed `v2.13.0`, operator said release only when the whole initiative is complete → **D12**. Tag deleted local + origin; no GitHub release was created (the `gh release create` was permission-blocked anyway).
 - **OQ2 resolved → D13** (separate `~/.worldmonitor/config.db`). Design nuance → **D14** (body-level `loadConfigIntoEnv()`, not an import side-effect).
-- **Phase 1 core landed** (uncommitted): `config-store.mjs` + wiring in `local-api-server.mjs` + `worldmonitor-local.mjs` (new `config` subcommand) + `build-release-bundle.mjs` staging + `config-store.test.mjs` (9 tests) + hermetic `test:sidecar`. All green (219/219 sidecar, CLI smoke). See Phase 1 checklist.
-- **Next:** commit Phase 1 core → installer seeding (`config import`) → then Phase 2.
+- **Phase 1 landed.** `4f7d4f3` = config store core (`config-store.mjs`, wiring, `config` subcommand, `config-store.test.mjs`, hermetic `test:sidecar` 219/219). Then installer `config import .env` seed step + INSTALL.md note (this commit). Phase 1 code-complete; the `wmtest` e2e check folds into Phase 3.
+- **Next:** Phase 2 — `/api/local-config` + `settings.html` control panel + browser GitHub sign-in.
 
 ### Session 50 — 2026-09-03
 - Design discussion: full install-UX overhaul explored and scoped. Decisions D1–D11 locked above.

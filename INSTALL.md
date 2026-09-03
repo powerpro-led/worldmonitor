@@ -113,9 +113,16 @@ palette.
 ```sh
 node scripts/worldmonitor-local.mjs status      # backend / service / token / identity
 node scripts/worldmonitor-local.mjs restart     # kick the service (after an upgrade)
+node scripts/worldmonitor-local.mjs config list # stored config (~/.worldmonitor/config.db)
 node scripts/worldmonitor-local.mjs logout      # drop the stored session
 node scripts/worldmonitor-local.mjs uninstall   # remove the service (keeps ~/.worldmonitor/)
 ```
+
+The installer copies your Supabase / Upstash-read-only values into
+`~/.worldmonitor/config.db` as well as `.env`. `.env` stays authoritative (the
+service loads it with `node --env-file`); `config.db` is the same values in a
+store the backend can manage — `config set <KEY> <VALUE>` / `config unset` /
+`config import <file>`. After changing either, `restart`.
 
 The service listens on `127.0.0.1:46123` — REST for the dashboard and
 `/api/mcp` for a local MCP agent. Logs: `/tmp/com.worldmonitor.local-api.log`

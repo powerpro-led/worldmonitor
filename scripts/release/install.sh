@@ -129,6 +129,15 @@ else
   info "wrote $SCRIPT_DIR/.env (0600)"
 fi
 
+# ── 2b. seed ~/.worldmonitor/config.db ───────────────────────────────
+# .env stays the primary source (node --env-file loads it); config.db is the
+# same values in a store the in-app settings panel can edit later. Only the
+# allow-listed keys are copied — never a shared write credential.
+if [ -f .env ]; then
+  node scripts/worldmonitor-local.mjs config import .env || \
+    info "note: could not seed config.db (non-fatal; .env is still authoritative)"
+fi
+
 # ── 3. launchd service ────────────────────────────────────────────────
 say "Registering the launchd service…"
 node scripts/worldmonitor-local.mjs install

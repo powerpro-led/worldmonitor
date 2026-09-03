@@ -118,6 +118,14 @@ if (Test-Path .env) {
   Info "wrote $ScriptDir\.env"
 }
 
+# --- 2b. seed ~/.worldmonitor/config.db ---------------------------
+# .env stays the primary source; config.db is the same values in a store the
+# in-app settings panel can edit later. Only allow-listed keys are copied.
+if (Test-Path .env) {
+  & node scripts/worldmonitor-local.mjs config import .env
+  if ($LASTEXITCODE -ne 0) { Info "note: could not seed config.db (non-fatal; .env is still authoritative)" }
+}
+
 # --- 3. Scheduled Task ----------------------------------------------
 Say "Registering the Scheduled Task..."
 & node scripts/worldmonitor-local.mjs install

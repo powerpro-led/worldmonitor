@@ -135,9 +135,13 @@ Target journey ("form-fill"):
 ## Session log
 
 ### Session 51 — 2026-09-03
-- **Phase 0 blocker fixed.** `getSupabaseUrl()` export + `githubIdentityBridgeIssuer()` derivation; hardcoded project ref gone from `src/`. Diff: `auth-provider.ts` +25/-5, `supabase-client.ts` +24.
-- All green checks pass (see Phase 0 checklist). No test touched the issuer.
-- Left to finish v2.13.0: local verification build (`build-release-bundle.mjs` → confirm clean `dist/`), the live `__WM_RUNTIME_CONFIG` / credential-free `/api/health` check (needs a local server — ASK operator), CHANGELOG `[2.12.1]` fold, commit/push/tag/`gh release`.
+- **Phase 0 blocker fixed.** `getSupabaseUrl()` export + `githubIdentityBridgeIssuer()` derivation; hardcoded project ref gone from `src/`.
+- All green checks + Tier A bundle verification pass (see Phase 0 checklist).
+- **Committed + pushed.** `main @ 6e38d82 == origin/main`:
+  - `c379806 release(v2.13.0): org-neutral downloadable bundle` — the whole Model B set (session 49 work + the S51 blocker fix), CHANGELOG `[2.12.1]` folded into `[2.13.0]`.
+  - `6e38d82 docs: LOCAL_APP_INITIATIVE.md` — this file.
+- **Left for v2.13.0 (operator / CI):** `git tag -a v2.13.0` + push tag + `gh release create` with `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`, regenerate — the build printed the `next:` command) + the `.vsix`. Deliberately stopped before tagging (operator's S51 call).
+- **Next initiative step:** Phase 1 (config store) — see checklist. Resolve OQ2 (separate `config.db`) first.
 
 ### Session 50 — 2026-09-03
 - Design discussion: full install-UX overhaul explored and scoped. Decisions D1–D11 locked above.

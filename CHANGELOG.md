@@ -4,6 +4,14 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-09-03
+
+First tagged release. Ships the standalone local backend
+(`worldmonitor-local`) and the VS Code Local Dashboard extension as a
+downloadable macOS bundle — see `INSTALL.md`. Everything below accumulated
+since `2.6.1`; the intervening `2.6.2`–`2.10.0` version bumps were never
+changelogged and are folded in here.
+
 ### Changed
 
 - **CII formula `v8`** — fixed dead UCDP conflict-floor attribution. The server

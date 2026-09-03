@@ -1,6 +1,7 @@
 node_modules/
 .idea/
 dist/
+/release/
 public/blog/
 public/countries/
 public/chokepoints/

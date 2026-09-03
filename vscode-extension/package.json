@@ -5,6 +5,12 @@
   "version": "0.1.0",
   "publisher": "worldmonitor-internal",
   "private": true,
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/powerpro-led/worldmonitor.git",
+    "directory": "vscode-extension"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

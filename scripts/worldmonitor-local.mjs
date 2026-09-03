@@ -30,7 +30,6 @@ import { randomBytes, createHash } from 'node:crypto';
 import {
   mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync,
 } from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +38,6 @@ import { fileURLToPath } from 'node:url';
 // file's schema.
 import {
   readOperatorSession as readSession,
-  writeOperatorSession as writeSession,
   operatorSessionFilePath,
 } from '../vscode-extension/sidecar/session-file.mjs';
 // Config lives in ~/.worldmonitor/config.db, read by both this CLI and the
@@ -55,6 +53,10 @@ import {
   CONFIG_KEYS,
   SECRET_CONFIG_KEYS,
 } from '../vscode-extension/sidecar/config-store.mjs';
+// The loopback GitHub OAuth (PKCE) flow, shared verbatim with the backend's
+// POST /api/local-login (settings.html "Sign in with GitHub") so the CLI and
+// the browser path can't disagree on how session.json is produced.
+import { beginGithubLogin } from '../vscode-extension/sidecar/local-login.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_SCRIPT = path.join(REPO_ROOT, 'vscode-extension', 'sidecar', 'local-api-server.mjs');
@@ -445,68 +447,29 @@ async function cmdRun() {
 async function cmdLogin() {
   const { url, key } = supabaseConfig();
   const callbackPort = Number(opt('callback-port', DEFAULT_CALLBACK_PORT));
-  const redirectTo = `http://127.0.0.1:${callbackPort}/callback`;
 
-  const { createClient } = await import('@supabase/supabase-js');
-  const memStore = new Map();
-  const supabase = createClient(url, key, {
-    auth: {
-      flowType: 'pkce',
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storage: {
-        getItem: (k) => (memStore.has(k) ? memStore.get(k) : null),
-        setItem: (k, v) => memStore.set(k, v),
-        removeItem: (k) => memStore.delete(k),
-      },
-    },
-  });
+  let flow;
+  try {
+    flow = await beginGithubLogin({ supabaseUrl: url, supabaseKey: key, callbackPort });
+  } catch (e) {
+    die(e.message);
+  }
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'github',
-    options: { redirectTo, skipBrowserRedirect: true, scopes: 'read:user user:email' },
-  });
-  if (error || !data?.url) die(`could not start GitHub OAuth: ${error?.message || 'no URL returned'}`);
+  ok('Opening your browser to sign in with GitHub…');
+  ok(`  If it doesn't open, visit:\n  ${flow.authUrl}\n`);
+  openBrowser(flow.authUrl);
 
-  const outcome = await new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      const reqUrl = new URL(req.url, redirectTo);
-      if (reqUrl.pathname !== '/callback') { res.writeHead(404).end(); return; }
-      const code = reqUrl.searchParams.get('code');
-      const errParam = reqUrl.searchParams.get('error_description') || reqUrl.searchParams.get('error');
-      res.writeHead(200, { 'content-type': 'text/html' });
-      res.end(`<!doctype html><meta charset=utf-8><body style="font:14px system-ui;padding:3rem">
-        <h2>WorldMonitor CLI</h2><p>${code ? 'Sign-in complete — you can close this tab.' : 'Sign-in failed — check the terminal.'}</p>`);
-      server.close();
-      resolve({ code, errParam });
-    });
-    server.on('error', (e) => {
-      die(e.code === 'EADDRINUSE'
-        ? `callback port ${callbackPort} is busy — retry with --callback-port <n> (and allowlist that URL in Supabase).`
-        : `callback server failed: ${e.message}`);
-    });
-    server.listen(callbackPort, '127.0.0.1', () => {
-      ok(`Opening your browser to sign in with GitHub…`);
-      ok(`  If it doesn't open, visit:\n  ${data.url}\n`);
-      openBrowser(data.url);
-    });
-    setTimeout(() => { server.close(); resolve({ timedOut: true }); }, 180_000);
-  });
-
-  if (outcome.timedOut) die('timed out waiting for the browser callback (3 min).');
-  if (outcome.errParam || !outcome.code) {
+  let saved;
+  try {
+    saved = await flow.completed;
+  } catch (e) {
     ok('');
-    ok(`GitHub sign-in did not complete: ${outcome.errParam || 'no authorization code returned'}`);
+    ok(`GitHub sign-in did not complete: ${e.message}`);
     ok('If GitHub itself succeeded, your account is likely not in the allow-listed org —');
     ok('ask the operator for an invite (they add you to the GitHub org).');
     process.exit(1);
   }
 
-  const { data: exchanged, error: exErr } = await supabase.auth.exchangeCodeForSession(outcome.code);
-  if (exErr || !exchanged?.session) die(`code exchange failed: ${exErr?.message || 'no session'}`);
-
-  const saved = writeSession(exchanged.session);
   ok('');
   ok(`Logged in as ${saved.user.email || saved.user.id}`);
   ok(`  session:  ${SESSION_FILE}   (${describeExpiry(saved.expires_at)})`);

@@ -18388,6 +18388,57 @@ a.prediction-link:hover {
   border-color: var(--text-dim);
 }
 
+.unified-settings-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.unified-settings-input:focus {
+  outline: none;
+  border-color: var(--text-dim);
+}
+
+/* Per-operator LLM-key tab (Workstream 3 Part B) */
+.us-llmkey-status {
+  font-size: 11px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.us-llmkey-status-ok { color: var(--green); border-color: rgba(68, 255, 136, 0.3); }
+.us-llmkey-status-warn { color: var(--warning, #ffb300); border-color: rgba(255, 179, 0, 0.3); }
+
+.us-llmkey-input-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.us-llmkey-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.us-llmkey-clear:hover { color: var(--text); border-color: var(--text-dim); }
+
+.us-llmkey-badge {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+
+.us-llmkey-badge-on { color: var(--green); }
+
 /* Responsive grids */
 @media (max-width: 500px) {
 

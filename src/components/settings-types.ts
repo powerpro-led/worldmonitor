@@ -8,4 +8,5 @@ export type UnifiedSettingsTabId =
   | 'settings'
   | 'panels'
   | 'sources'
-  | 'notifications';
+  | 'notifications'
+  | 'ai';

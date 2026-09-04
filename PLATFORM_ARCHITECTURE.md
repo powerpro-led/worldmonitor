@@ -13,14 +13,14 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstreams 4 + 2 shipped; OQ-P6 resolved (P14); W7's `list-feed-digest` seeder shipped; W3 Part A (LLM-key backend) shipped** (`config-store.mjs` + `GET/PUT /api/local-llm-config`). W3 Parts B (dashboard modal) + C (hard-disable) remain. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **As of:** 2026-09-04 (session 57) — **Workstream 3 (per-operator LLM keys) fully shipped** (Parts A backend, B dashboard `ai` tab, C hard-disable visibility), alongside W4 + 2 + OQ-P6→P14 + W7's `list-feed-digest` seeder. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
 - **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
 - **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. One item stays open: **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` disagree). **OQ-P6 RESOLVED S57** — see P14 + the resolved-questions section.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
 - **START HERE: Workstream 5 (deploy pipeline)** — everything remaining waits on it. Its two operator-gated blockers are unchanged: **OQ-P7** and a review of **P13**.
 - **Decisions needed from the operator before Workstream 5:** OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation).
-- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder)~~ (done) → 5 → 3 → 6 → rest of 7.
+- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder) → 3~~ (done) → 5 → 6 → rest of 7.
 
 ---
 
@@ -149,16 +149,47 @@ data-source fetching and holds no data-source keys — it is a read replica.
   The CLI (`worldmonitor-local config set …`) covers these for free via
   `CONFIG_KEYS`. Tests: 5 new in `local-api-server.test.mjs` (empty store,
   persist+mask+live-env, clear-on-empty, reject-non-LLM-key, Ollama-URL-alone).
-- [ ] **Part B — dashboard modal.** A fresh minimal component in `src/` (NOT
-  `settings-main.ts` — that's the Tauri path), opened from a Settings
-  affordance in the dashboard chrome, rendered only in the sidecar-backed
-  runtime, wired to `/api/local-llm-config` (GET on open, PUT on save; reuse
-  `/api/local-validate-secret` for the verify button).
-- [ ] **Part C — hard-disable (OQ-P5).** When GET reports
-  `anyProviderConfigured: false`, the dashboard disables/hides chat + summarize
-  with a clean "AI features need an API key (Dashboard → Settings)" state.
-  Confirm `chat-analyst` / the summary RPCs already degrade cleanly
-  server-side (they should — every provider returns `null`).
+- [x] **DONE S57 — dashboard modal (Part B).** Not a separate modal — a new
+  **`ai` tab inside `UnifiedSettings`** (`src/components/UnifiedSettings.ts`),
+  the dashboard chrome's existing settings surface (gear icon / `view:settings`
+  command → `unifiedSettings.open()`). `src/services/llm-key-settings.ts`
+  (new, mirrors `renderNotificationsSettings`'s `{html, attach}` content-module
+  shape): 4 fields (OpenRouter key, Groq key, Ollama URL, Ollama model), GET on
+  open, dirty-tracked PUT on save. **Secrets are never round-tripped** — GET
+  reports only `{set}`, so a field left untouched submits nothing; an explicit
+  per-secret **Clear** button is the only way to unset one (a keystroke arms
+  "set to new value", never "clear on empty blur" — a stray click can't drop a
+  live key). Tab gated on `isVsCodeEmbedRuntime()`, added to
+  `UnifiedSettingsTabId` (`settings-types.ts`) — NOT the broader
+  `isSidecarBackedRuntime()`, since Tauri already has its own AI settings via
+  `settings-main.ts`. A successful save dispatches `wm:llm-config-changed` so
+  other UI can react without a reload.
+- [x] **DONE S57 — hard-disable, made visible (Part C).** The *server* side of
+  OQ-P5 was already correct (found, not built): `getProviderCredentials()`
+  returns `null` per provider when unset, which the chat SSE path turns into a
+  clean `emit({error:'llm_unavailable'})` (`server/_shared/llm.ts`) and
+  summarize falls through to the browser-T5 fallback
+  (`summarize-gate.ts`'s header). What was missing was **visibility**:
+  `LlmStatusIndicator` (`/api/llm-health` poller, red/green dot) existed but
+  `setupLlmStatusIndicator()` gated it to `isDesktopRuntime()` only — a
+  pre-Workstream-3 relic that silently excluded the ONE runtime (the embed)
+  that most needs the signal. Widened to mount in the embed too; the tooltip
+  now distinguishes **"no provider configured"** (needs a key) from **"LLM
+  offline"** (configured but unreachable) — different remediation, previously
+  conflated. In the embed the indicator is also now **clickable → opens the
+  new `ai` settings tab directly**; Tauri keeps its prior non-interactive
+  behavior. Re-polls immediately on `wm:llm-config-changed` instead of sitting
+  on a stale red dot for up to 60s after a save. A comprehensive sweep to
+  hide/disable every individual chat/summarize button across the app was
+  **not** attempted — there is no existing app-wide "AI available" gate to
+  hook (confirmed by search), and building one is out of scope for this pass;
+  the indicator + settings tab are the discoverable, honest surface for now.
+- [x] **DONE S57 — tests.** `tests/llm-key-settings.test.mjs` (19 cases,
+  source-grep style — matches this repo's own convention for inline-HTML
+  settings content with no jsdom/vitest wiring into `node:test`): field
+  contract, secret-never-echoed, Clear-only-clears, partial-PUT-on-save,
+  cleanup-removes-every-listener, tab gating, indicator wiring. `tsc --noEmit`
+  0 · `lint-boundaries` clean · `biome` clean on all touched files.
 - [ ] Everything else in `settings-main.ts` is admin-panel-only (Workstream 6).
 
 ### Workstream 4 — denylist mirror
@@ -455,6 +486,64 @@ pipeline with no producer.
   `local-api-server.mjs:1747` is untouched, unrelated).
 - **Parts B + C are frontend** (`src/` dashboard modal + the chat/summarize
   gating) — a separate pass.
+
+**Then Workstream 3 Parts B + C shipped, in the same session** — the
+dashboard-facing half of the LLM-key work.
+
+- **Part B landed as a tab, not a new modal.** The dashboard already has a
+  chrome-level settings surface — `UnifiedSettings` (gear icon / the
+  `view:settings` command → `unifiedSettings.open()`), tabbed
+  (`settings`/`panels`/`sources`/optionally `notifications`). Rather than
+  build a parallel modal, added a 5th tab `ai`, gated `isVsCodeEmbedRuntime()`
+  — **not** `isSidecarBackedRuntime()`, which also covers Tauri, where
+  `settings-main.ts` already owns AI config via the (working, for Tauri) keychain
+  path. `src/services/llm-key-settings.ts` mirrors
+  `renderNotificationsSettings`'s `{html, attach(container) => cleanup}`
+  content-module shape (the established pattern for tab content in this
+  component) rather than inventing a new one.
+- **Secrets never round-trip — by construction, not by policy.** The GET
+  response's `{set: boolean}` for the two API-key fields has no `value` field
+  at all (Part A's design), so there's nothing to prefill even if the modal
+  wanted to. A field a user never touches submits nothing on save; the only
+  way to unset a key is the field's own **Clear** button, which is the sole
+  writer of an explicit `mode:'clear'`. A keystroke always means "set to a new
+  value" — never "clear," so an accidental click-into-then-tab-away on an
+  empty input cannot silently drop a live key. Save sends only the dirty
+  subset as a partial PUT.
+- **Part C's real finding: the server side of OQ-P5 was already done.**
+  `getProviderCredentials()` (S57 Part A discovery) returning `null` per
+  provider already makes the chat SSE path emit a clean
+  `{error:'llm_unavailable'}` (`server/_shared/llm.ts`) and summarize fall
+  through to the browser-T5 client fallback (`summarize-gate.ts`'s own header
+  documents this). What was missing was **visibility, not degradation**:
+  `LlmStatusIndicator` (the `/api/llm-health` red/green dot) already existed
+  and already worked against the sidecar's own health endpoint — but
+  `setupLlmStatusIndicator()` gated its mount to `isDesktopRuntime()` only, a
+  guard that predates the VS Code embed as a second sidecar-backed runtime and
+  silently excluded exactly the audience OQ-P5 is for. Widened to
+  `isDesktopRuntime() || isVsCodeEmbedRuntime()`.
+- Two small, targeted improvements riding along, both scoped to not touching
+  the majority (cloud/Tauri) path: the tooltip now says **"No LLM provider
+  configured"** rather than **"LLM offline"** when zero providers are set
+  (`data.providers.length === 0`) — different problem, different fix, and the
+  prior copy conflated them. And, embed-only, the indicator is now **clickable
+  → `unifiedSettings.open('ai')`**; Tauri's indicator is unchanged
+  (non-interactive, as before `onClick` was optional). A `wm:llm-config-changed`
+  event (dispatched by the settings tab on a successful save) makes the
+  indicator re-poll immediately instead of showing a stale red dot for up to
+  the 60s interval.
+- **Deliberately not attempted:** a sweep to hide/disable every individual
+  chat/summarize button across the app. Searched for an existing app-wide "AI
+  available" gate to hook — there isn't one; every panel independently calls
+  its RPC and handles the response. Building that chokepoint is a real,
+  separate-sized piece of work, not a corner cut here. The settings tab +
+  status indicator are the honest, discoverable surface for this pass.
+- Green: **19 new tests** in `tests/llm-key-settings.test.mjs` (source-grep
+  style, matching this repo's own convention for inline-HTML settings content
+  — no jsdom/vitest wired into `node:test` here, confirmed against
+  `tests/notifications-settings-ui-invariants.test.mjs`'s own header before
+  choosing the approach). `tsc --noEmit` 0 · `node scripts/lint-boundaries.mjs`
+  clean · `biome` clean on every touched file.
 
 ### Session 56 — 2026-09-04
 

@@ -21,9 +21,11 @@ import { escapeHtml } from '@/utils/sanitize';
 import type { PanelConfig } from '@/types';
 import { renderPreferences } from '@/services/preferences-content';
 import { renderNotificationsSettings, type NotificationsSettingsResult } from '@/services/notifications-settings';
+import { renderLlmKeySettings, type LlmKeySettingsResult } from '@/services/llm-key-settings';
 import { getAuthState } from '@/services/auth-state';
 import { track } from '@/services/analytics';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import { isVsCodeEmbedRuntime } from '@/services/runtime';
 
 
 function showToast(msg: string): void {
@@ -63,6 +65,7 @@ export class UnifiedSettings {
   private prefsCleanup: (() => void) | null = null;
   private notifCleanup: (() => void) | null = null;
   private pendingNotifs: NotificationsSettingsResult | null = null;
+  private llmKeyCleanup: (() => void) | null = null;
   private draftPanelSettings: Record<string, PanelConfig> = {};
   private panelsJustSaved = false;
   private savedTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -229,6 +232,8 @@ export class UnifiedSettings {
     this.notifCleanup?.();
     this.notifCleanup = null;
     this.pendingNotifs = null;
+    this.llmKeyCleanup?.();
+    this.llmKeyCleanup = null;
     this.resetPanelDraft();
     localStorage.removeItem('wm-settings-open');
     document.removeEventListener('keydown', this.escapeHandler);
@@ -250,6 +255,8 @@ export class UnifiedSettings {
     this.notifCleanup?.();
     this.notifCleanup = null;
     this.pendingNotifs = null;
+    this.llmKeyCleanup?.();
+    this.llmKeyCleanup = null;
     document.removeEventListener('keydown', this.escapeHandler);
     this.overlay.remove();
   }
@@ -260,6 +267,8 @@ export class UnifiedSettings {
     this.notifCleanup?.();
     this.notifCleanup = null;
     this.pendingNotifs = null;
+    this.llmKeyCleanup?.();
+    this.llmKeyCleanup = null;
 
     const tabClass = (id: TabId) => `unified-settings-tab${this.activeTab === id ? ' active' : ''}`;
     const isSignedIn = !this.config.isDesktopApp && (getAuthState().user !== null);
@@ -272,6 +281,12 @@ export class UnifiedSettings {
     const notifs = showNotificationsTab
       ? renderNotificationsSettings({ isSignedIn })
       : null;
+    // The AI tab is the VS Code operator backend's ONLY write path for its
+    // per-operator LLM keys — the Tauri desktop app's runtime-config /
+    // settingsManager (keychain-backed) covers that case elsewhere and would
+    // no-op here anyway (Workstream 3 Part A/B).
+    const showAiTab = isVsCodeEmbedRuntime();
+    const llmKeys: LlmKeySettingsResult | null = showAiTab ? renderLlmKeySettings() : null;
 
     setTrustedHtml(this.overlay, trustedHtml(`
       <div class="modal unified-settings-modal">
@@ -284,6 +299,7 @@ export class UnifiedSettings {
           <button class="${tabClass('panels')}" data-tab="panels" role="tab" aria-selected="${this.activeTab === 'panels'}" id="us-tab-panels" aria-controls="us-tab-panel-panels">${t('header.tabPanels')}</button>
           <button class="${tabClass('sources')}" data-tab="sources" role="tab" aria-selected="${this.activeTab === 'sources'}" id="us-tab-sources" aria-controls="us-tab-panel-sources">${t('header.tabSources')}</button>
           ${showNotificationsTab ? `<button class="${tabClass('notifications')}" data-tab="notifications" role="tab" aria-selected="${this.activeTab === 'notifications'}" id="us-tab-notifications" aria-controls="us-tab-panel-notifications">${t('header.tabNotifications')}</button>` : ''}
+          ${showAiTab ? `<button class="${tabClass('ai')}" data-tab="ai" role="tab" aria-selected="${this.activeTab === 'ai'}" id="us-tab-ai" aria-controls="us-tab-panel-ai">${t('header.tabAi', { defaultValue: 'AI' })}</button>` : ''}
         </div>
         <div class="unified-settings-tab-panel${this.activeTab === 'settings' ? ' active' : ''}" data-panel-id="settings" id="us-tab-panel-settings" role="tabpanel" aria-labelledby="us-tab-settings">
           ${prefs.html}
@@ -321,12 +337,22 @@ export class UnifiedSettings {
           ${notifs.html}
         </div>
         ` : ''}
+        ${llmKeys ? `
+        <div class="unified-settings-tab-panel${this.activeTab === 'ai' ? ' active' : ''}" data-panel-id="ai" id="us-tab-panel-ai" role="tabpanel" aria-labelledby="us-tab-ai">
+          ${llmKeys.html}
+        </div>
+        ` : ''}
       </div>
     `, "legacy direct innerHTML migration"));
 
     const settingsPanel = this.overlay.querySelector('#us-tab-panel-settings');
     if (settingsPanel) {
       this.prefsCleanup = prefs.attach(settingsPanel as HTMLElement);
+    }
+
+    if (llmKeys) {
+      const aiPanel = this.overlay.querySelector('#us-tab-panel-ai');
+      if (aiPanel) this.llmKeyCleanup = llmKeys.attach(aiPanel as HTMLElement);
     }
 
     // Defer notifications attach until the tab is first activated —

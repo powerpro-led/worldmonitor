@@ -48,7 +48,7 @@ import {
 } from '@/config';
 import { resolveNewsCategories, enabledNewsCategoryKeys } from '@/config/feed-resolution';
 import { getVariantMetaUrl, VARIANT_SLUGS } from '@/config/domain';
-import { isDesktopRuntime } from '@/services/runtime';
+import { isDesktopRuntime, isVsCodeEmbedRuntime } from '@/services/runtime';
 import {
   MISSION_PRESETS,
   applyMissionPresetToState,
@@ -1429,8 +1429,19 @@ export class EventHandlerManager implements AppModule {
   }
 
   setupLlmStatusIndicator(): void {
-    if (!isDesktopRuntime()) return;
-    this.ctx.llmStatusIndicator = new LlmStatusIndicator();
+    // /api/llm-health exists in every sidecar-backed runtime (the comment on
+    // the 404 branch below says so), not just Tauri — this gate predates the
+    // VS Code operator backend (PLATFORM_ARCHITECTURE.md) as a second one.
+    // Widened rather than narrowed: `isDesktopRuntime()` alone silently
+    // dropped the ONE runtime (the embed) where the OQ-P5 hard-disable most
+    // needs a visible, discoverable signal (Workstream 3 Part C).
+    const isEmbed = isVsCodeEmbedRuntime();
+    if (!isDesktopRuntime() && !isEmbed) return;
+    // The embed is also the only runtime with an AI settings tab to click
+    // into (Part B) — Tauri keeps its prior, non-interactive indicator.
+    this.ctx.llmStatusIndicator = new LlmStatusIndicator(
+      isEmbed ? () => this.ctx.unifiedSettings?.open('ai') : undefined,
+    );
     const headerRight = this.ctx.container.querySelector('.header-right');
     if (headerRight) {
       headerRight.appendChild(this.ctx.llmStatusIndicator.getElement());

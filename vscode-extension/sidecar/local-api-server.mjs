@@ -3,7 +3,7 @@ import http, { createServer } from 'node:http';
 import https from 'node:https';
 import { createHmac } from 'node:crypto';
 import dns from 'node:dns/promises';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import os from 'node:os';
@@ -21,18 +21,8 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // ~/.worldmonitor/session.json read/write — shared verbatim with the
 // `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
 // login flow and this server's refresh timer.
-import { readOperatorSession, writeOperatorSession, operatorSessionFilePath } from './session-file.mjs';
-import {
-  loadConfigIntoEnv,
-  readAllConfig,
-  setConfig,
-  deleteConfig,
-  CONFIG_KEYS,
-  SECRET_CONFIG_KEYS,
-} from './config-store.mjs';
-// The loopback GitHub OAuth (PKCE) flow behind POST /api/local-login — shared
-// verbatim with `worldmonitor-local login` (scripts/worldmonitor-local.mjs).
-import { beginGithubLogin } from './local-login.mjs';
+import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
+import { loadConfigIntoEnv } from './config-store.mjs';
 
 // Fill process.env from ~/.worldmonitor/config.db for any Supabase / Upstash /
 // OpenRouter key `node --env-file` didn't already set. Must run before
@@ -1685,31 +1675,6 @@ function buildVsCodeEmbedShim(localToken) {
 }
 
 /**
- * Injected into settings.html ONLY when served over loopback by this sidecar —
- * the standalone backend's browser control panel (Phase 2 of the local-app
- * initiative). Same trust model as buildVsCodeEmbedShim: the page can only be
- * opened by someone already on 127.0.0.1:<port>, and it needs the transport
- * token to reach the token-gated /api/local-config + /api/local-login routes.
- * Sets window.__WM_LOCAL_CONTROL_PANEL so src/settings-main.ts shows its
- * "Backend" section, and wraps window.fetch to attach the token to same-origin
- * /api/* calls (settings-main.ts's own diagFetch goes through Tauri IPC, which
- * doesn't exist here). No __wmVsCodeApi — this is a top-level tab, not an iframe.
- */
-function buildLocalControlPanelShim(localToken) {
-  return `<script>(function(){window.__WM_LOCAL_CONTROL_PANEL=true;var LOCAL_TOKEN=${JSON.stringify(localToken || '')};var originalFetch=window.fetch.bind(window);window.fetch=function(input,init){var url=typeof input==='string'?input:(input&&input.url)||'';if(url.indexOf('/api/')===0||url.indexOf(window.location.origin+'/api/')===0){init=init||{};var headers=new Headers((init&&init.headers)||(input instanceof Request?input.headers:undefined));headers.set('x-worldmonitor-local-token',LOCAL_TOKEN);init=Object.assign({},init,{headers:headers});}return originalFetch(input,init);};})();</script>`;
-}
-
-/**
- * First-run redirect: a Model-B bundle with no Supabase configured yet can't
- * render a working dashboard, so bounce the dashboard doc to the settings
- * control panel's Backend section. Server-side so no dashboard rebuild is
- * needed. settings.html itself is never redirected (it's how you fix this).
- */
-function buildFirstRunRedirectShim() {
-  return `<script>(function(){try{if(location.pathname.indexOf('settings')===-1){location.replace('/settings.html?firstrun=1#backend');}}catch(e){}})();</script>`;
-}
-
-/**
  * Model B runtime config. The downloadable bundle ships a `dist/` built with
  * VITE_SUPABASE_* UNSET so no org's Supabase project is baked into the JS; the
  * backend injects its own .env values here and src/services/supabase-client.ts's
@@ -1775,21 +1740,9 @@ async function tryServeStaticAsset(requestUrl, req, context) {
     // Runtime config for EVERY served document; the VS Code embed shim only
     // when the iframe asks for it. Both go right after <head>, ahead of the
     // app's deferred module scripts.
-    const docName = path.basename(servedPath);
     let head = buildRuntimeConfigShim();
     if (requestUrl.searchParams.get('embed') === 'vscode') {
       head += buildVsCodeEmbedShim(context.token);
-    }
-    if (docName === 'settings.html') {
-      // Loopback control panel — hand it the transport token so its Backend
-      // section can reach /api/local-config etc.
-      head += buildLocalControlPanelShim(context.token);
-    } else if (
-      (docName === 'dashboard.html' || docName === 'index.html')
-      && !process.env.VITE_SUPABASE_URL && !process.env.SUPABASE_URL
-    ) {
-      // No Supabase configured yet — send first-run users to the control panel.
-      head += buildFirstRunRedirectShim();
     }
     if (head) {
       const html = body.toString('utf-8').replace(/<head>/i, `<head>${head}`);
@@ -1805,179 +1758,6 @@ async function tryServeStaticAsset(requestUrl, req, context) {
       'cache-control': isHtml ? 'no-store' : 'no-cache',
     },
   });
-}
-
-// ── Loopback control-plane (settings.html) ──────────────────────────────────
-// GET/POST /api/local-config, POST /api/local-login|logout|restart. All are
-// x-worldmonitor-local-token gated (they sit below dispatch()'s global auth
-// gate) and reachable only over loopback — the settings page gets the token
-// from buildLocalControlPanelShim(), the same mechanism the VS Code embed
-// already uses. They let the browser control panel replace the two worst
-// install-time friction points: hand-editing ~/.worldmonitor/.env and running
-// `worldmonitor-local login` in a terminal.
-
-/** Absolute path to the `worldmonitor-local` CLI — sibling layout in both the repo and the release bundle. */
-function cliScriptPath() {
-  return path.join(__dirname, '..', '..', 'scripts', 'worldmonitor-local.mjs');
-}
-
-/**
- * Spawn `worldmonitor-local restart` detached and unref'd. A config write MUST
- * restart: SIDECAR_ALLOWED_ORIGINS and the Upstash-origin CSP/SSRF allowance
- * are captured at module load, so a changed Supabase/Upstash URL only takes
- * effect in a fresh process. Skipped under WM_LOCAL_SKIP_RESTART (tests).
- * Delayed so the HTTP response flushes before this process is signalled.
- */
-function spawnBackendRestart(context, { delayMs = 250 } = {}) {
-  if (process.env.WM_LOCAL_SKIP_RESTART === '1') {
-    context.logger.log('[local-api] WM_LOCAL_SKIP_RESTART set — not restarting after config write');
-    return;
-  }
-  setTimeout(() => {
-    try {
-      const child = spawn(process.execPath, [cliScriptPath(), 'restart'], { detached: true, stdio: 'ignore' });
-      child.on('error', (err) => context.logger.warn(`[local-api] restart spawn failed: ${err.message}`));
-      child.unref();
-    } catch (err) {
-      context.logger.warn(`[local-api] restart spawn threw: ${err.message}`);
-    }
-  }, delayMs).unref?.();
-}
-
-async function readJsonBody(req) {
-  const raw = await readBody(req);
-  if (!raw || raw.length === 0) return {};
-  try {
-    const parsed = JSON.parse(raw.toString('utf-8'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return null; // signal malformed
-  }
-}
-
-/** Per-key shape check for a config value. Returns null when OK, else a reason string. */
-function validateConfigValue(key, value) {
-  if (typeof value !== 'string' || value.trim().length === 0) return 'value is empty';
-  const v = value.trim();
-  if (key === 'VITE_SUPABASE_URL' || key === 'UPSTASH_REDIS_REST_URL') {
-    let u;
-    try { u = new URL(v); } catch { return 'not a valid URL'; }
-    if (u.protocol !== 'https:') return 'must be an https:// URL';
-    return null;
-  }
-  if (key === 'VITE_SUPABASE_PUBLISHABLE_KEY') {
-    return v.length >= 20 ? null : 'looks too short for a publishable key';
-  }
-  // UPSTASH_REDIS_REST_READONLY_TOKEN, OPENROUTER_API_KEY
-  return v.length >= 20 ? null : 'looks too short';
-}
-
-/** In-flight `POST /api/local-login` guard — one browser sign-in at a time. */
-let pendingLocalLogin = null;
-
-async function handleLocalControlPlane(requestUrl, req, context) {
-  const { pathname } = requestUrl;
-
-  // ── GET/POST/DELETE /api/local-config ──
-  if (pathname === '/api/local-config') {
-    if (req.method === 'GET') {
-      const stored = readAllConfig();
-      const out = {};
-      for (const key of CONFIG_KEYS) {
-        const isSecret = SECRET_CONFIG_KEYS.includes(key);
-        const hasStored = typeof stored[key] === 'string' && stored[key].length > 0;
-        const entry = {
-          stored: hasStored ? 'set' : 'unset',
-          effective: process.env[key] ? 'set' : 'unset',
-        };
-        // Non-secret values (Supabase URL + publishable key are public by
-        // design) are echoed so the form can prefill; secrets never are.
-        if (!isSecret && hasStored) entry.value = stored[key];
-        out[key] = entry;
-      }
-      return json(out, 200, { 'cache-control': 'no-store' });
-    }
-
-    if (req.method === 'POST') {
-      const body = await readJsonBody(req);
-      if (body === null) return json({ error: 'malformed JSON body' }, 400);
-      const entries = Object.entries(body);
-      if (entries.length === 0) return json({ error: 'no config keys in body' }, 400);
-      const rejected = {};
-      for (const [key, value] of entries) {
-        if (!CONFIG_KEYS.includes(key)) { rejected[key] = 'unknown config key'; continue; }
-        const reason = validateConfigValue(key, value);
-        if (reason) rejected[key] = reason;
-      }
-      if (Object.keys(rejected).length > 0) return json({ error: 'validation failed', rejected }, 400);
-      const applied = [];
-      for (const [key, value] of entries) {
-        setConfig(key, value.trim());
-        process.env[key] = value.trim();
-        if (key === 'VITE_SUPABASE_URL') process.env.SUPABASE_URL = value.trim();
-        applied.push(key);
-      }
-      context.logger.log(`[local-api] /api/local-config wrote ${applied.join(', ')} — restarting`);
-      spawnBackendRestart(context);
-      return json({ ok: true, applied, restarting: process.env.WM_LOCAL_SKIP_RESTART !== '1' });
-    }
-
-    if (req.method === 'DELETE') {
-      // Key in the query string, not a body — `fetch(url, {method:'DELETE',
-      // body})` is unreliable through some HTTP stacks, and a DELETE needs
-      // nothing more than the key.
-      const key = requestUrl.searchParams.get('key');
-      if (!CONFIG_KEYS.includes(key)) return json({ error: 'unknown config key' }, 400);
-      deleteConfig(key);
-      delete process.env[key];
-      if (key === 'VITE_SUPABASE_URL') delete process.env.SUPABASE_URL;
-      context.logger.log(`[local-api] /api/local-config cleared ${key} — restarting`);
-      spawnBackendRestart(context);
-      return json({ ok: true, cleared: key, restarting: process.env.WM_LOCAL_SKIP_RESTART !== '1' });
-    }
-
-    return json({ error: 'method not allowed' }, 405);
-  }
-
-  // ── POST /api/local-login — browser "Sign in with GitHub" ──
-  if (pathname === '/api/local-login' && req.method === 'POST') {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    if (!supabaseUrl || !supabaseKey) {
-      return json({ error: 'Supabase is not configured yet — set the URL and publishable key first.' }, 400);
-    }
-    if (pendingLocalLogin) return json({ error: 'a sign-in is already in progress' }, 409);
-    let flow;
-    try {
-      flow = await beginGithubLogin({ supabaseUrl, supabaseKey });
-    } catch (err) {
-      return json({ error: err.message }, 502);
-    }
-    pendingLocalLogin = flow;
-    flow.completed
-      .then((saved) => context.logger.log(`[local-api] browser sign-in complete: ${saved.user?.email || saved.user?.id}`))
-      .catch((err) => context.logger.warn(`[local-api] browser sign-in did not complete: ${err.message}`))
-      .finally(() => { pendingLocalLogin = null; });
-    // 202: the browser must now navigate to authUrl; sign-in finishes on the
-    // 127.0.0.1:46124/callback redirect. The page polls /api/operator-session.
-    return json({ authUrl: flow.authUrl }, 202);
-  }
-
-  // ── POST /api/local-logout ──
-  if (pathname === '/api/local-logout' && req.method === 'POST') {
-    try { rmSync(operatorSessionFilePath(), { force: true }); } catch { /* already gone */ }
-    context.logger.log('[local-api] operator session cleared via /api/local-logout');
-    return json({ ok: true }, 200, { 'cache-control': 'no-store' });
-  }
-
-  // ── POST /api/local-restart ──
-  if (pathname === '/api/local-restart' && req.method === 'POST') {
-    context.logger.log('[local-api] restart requested via /api/local-restart');
-    spawnBackendRestart(context, { delayMs: 250 });
-    return json({ ok: true, restarting: process.env.WM_LOCAL_SKIP_RESTART !== '1' });
-  }
-
-  return null; // not a control-plane path
 }
 
 async function dispatch(requestUrl, req, routes, context) {
@@ -2089,12 +1869,6 @@ async function dispatch(requestUrl, req, routes, context) {
       user: session.user ?? null,
     }), { status: 200, headers: { 'content-type': 'application/json', ...noStore } });
   }
-
-  // Loopback control panel (settings.html) — config store + browser sign-in +
-  // restart. Token-gated (we're past the global auth gate) and loopback-only.
-  const controlPlane = await handleLocalControlPlane(requestUrl, req, context);
-  if (controlPlane) return controlPlane;
-
   // LLM health endpoint — mirrors probe logic from server/_shared/llm-health.ts.
   // TODO: refactor to import getLlmHealthStatus() once handlers share a process-level module cache.
   if (requestUrl.pathname === '/api/llm-health') {

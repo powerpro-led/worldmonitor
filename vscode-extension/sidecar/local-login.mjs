@@ -2,18 +2,22 @@
  * local-login — the loopback GitHub OAuth (PKCE) flow that turns a browser
  * consent into a Supabase session on disk (~/.worldmonitor/session.json).
  *
- * Shared VERBATIM by two callers so they can't drift:
- *   1. `worldmonitor-local login` (scripts/worldmonitor-local.mjs) — the CLI
- *      path, kept for headless / server installs.
- *   2. POST /api/local-login (local-api-server.mjs) — the settings.html
- *      "Sign in with GitHub" button, which replaces the CLI step for end users.
+ * ONE caller today: `worldmonitor-local login` (scripts/worldmonitor-local.mjs).
+ *
+ * It lives in its own module rather than inline in the CLI because a second
+ * caller is expected back: the Local App Initiative's Phase 2 added POST
+ * /api/local-login (the settings.html "Sign in with GitHub" button) and the
+ * platform pivot then reverted it — see PLATFORM_ARCHITECTURE.md Workstream R,
+ * which deletes the control plane but deliberately KEEPS this module, and
+ * Workstream 1, where the post-login step seeds the `local-config` broker
+ * cache. Keeping the flow factored out means that re-entry is a new caller,
+ * not a re-extraction.
  *
  * The caller owns:
  *   - Supabase config resolution (`.env` / config.db → passed in here), and
- *   - how the browser is opened. The CLI shells `open`/`xdg-open`; the sidecar
- *     (which runs as a launchd/schtasks service and may have NO GUI session)
- *     just hands `authUrl` back to the page that POSTed, and the browser opens
- *     it with window.open().
+ *   - how the browser is opened. The CLI shells `open`/`xdg-open`. A non-CLI
+ *     caller running as a launchd/schtasks service may have NO GUI session, so
+ *     the contract is to hand `authUrl` back rather than assume it can open it.
  *
  * The callback server binds 127.0.0.1:46124 — the ONE redirect URL the operator
  * allowlists in the Supabase project (see the CLI's SETUP note). It is a

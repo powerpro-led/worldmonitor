@@ -53,9 +53,9 @@ import {
   CONFIG_KEYS,
   SECRET_CONFIG_KEYS,
 } from '../vscode-extension/sidecar/config-store.mjs';
-// The loopback GitHub OAuth (PKCE) flow, shared verbatim with the backend's
-// POST /api/local-login (settings.html "Sign in with GitHub") so the CLI and
-// the browser path can't disagree on how session.json is produced.
+// The loopback GitHub OAuth (PKCE) flow. Kept in its own module (rather than
+// inline here) because Workstream 1 adds a second caller — see that file's
+// header.
 import { beginGithubLogin } from '../vscode-extension/sidecar/local-login.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

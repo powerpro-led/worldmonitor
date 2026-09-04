@@ -104,6 +104,119 @@ function excluded(src) {
   return false;
 }
 
+/** Escape a literal string for embedding in a RegExp source. */
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Every `assets/…` reference in one built HTML entry point. */
+function distHtmlAssetRefs(file) {
+  const html = readFileSync(file, 'utf-8');
+  return new Set(html.match(/assets\/[A-Za-z0-9._-]+\.(?:js|css)/g) || []);
+}
+
+/**
+ * The built assets reachable ONLY from settings.html — its own entry chunk and
+ * stylesheet, and nothing the dashboard can still reach.
+ *
+ * Deliberately NOT a `settings-*` filename match: the names are content-hashed,
+ * and several genuinely shared chunks are also named `settings-something`
+ * (`settings-persistence-*.js`, `globe-render-settings-*.js`).
+ *
+ * Nor is an HTML-level set subtraction enough, which is the subtle part. A
+ * built HTML file lists only its STATIC imports (script + modulepreload tags);
+ * a chunk pulled in by a dynamic `import()` appears solely inside the importing
+ * JS chunk. Measured on this repo's dist/, a plain HTML subtraction wrongly
+ * classified `ollama-models-*.js` (dynamically imported by the dashboard entry
+ * `main-*.js` AND by `panels-risk-*.js`) and `settings-persistence-*.js`
+ * (imported by `main-*.js` and `UnifiedSettings-*.js`) as settings-exclusive.
+ * Pruning either would have shipped a dashboard that 404s on a dynamic import
+ * at runtime, in an operator's webview, with nothing failing at build time.
+ *
+ * So: start from settings.html's own refs minus every other HTML entry's, then
+ * iterate to a fixpoint, dropping any candidate that some RETAINED file still
+ * references. What survives is referenced by settings.html and by other pruned
+ * chunks only.
+ */
+function resolveSettingsOnlyDistAssets() {
+  const distDir = path.join(ROOT, 'dist');
+  const settingsHtml = path.join(distDir, 'settings.html');
+  if (!existsSync(settingsHtml)) {
+    // Already pruned (a --skip-build re-run over a pruned dist/) — nothing to do.
+    return { assets: new Set() };
+  }
+
+  const candidates = distHtmlAssetRefs(settingsHtml);
+  for (const entry of readdirSync(distDir)) {
+    if (!entry.endsWith('.html') || entry === 'settings.html') continue;
+    for (const ref of distHtmlAssetRefs(path.join(distDir, entry))) candidates.delete(ref);
+  }
+
+  // Every dist file whose content could reference a chunk, with its text. sw.js
+  // is excluded because its precache manifest lists everything by definition —
+  // it is rewritten to match the prune by pruneSettingsFromServiceWorker().
+  const scannable = [];
+  for (const entry of readdirSync(path.join(distDir, 'assets'))) {
+    if (!/\.(js|css)$/.test(entry)) continue; // skip .br/.gz twins
+    scannable.push([`assets/${entry}`, readFileSync(path.join(distDir, 'assets', entry), 'utf-8')]);
+  }
+  for (const entry of readdirSync(distDir)) {
+    if (!entry.endsWith('.html') || entry === 'settings.html') continue;
+    scannable.push([entry, readFileSync(path.join(distDir, entry), 'utf-8')]);
+  }
+
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, text] of scannable) {
+      if (candidates.has(name)) continue; // itself pruned — its refs don't retain anything
+      for (const candidate of candidates) {
+        if (candidate === name) continue;
+        if (text.includes(path.basename(candidate))) {
+          candidates.delete(candidate);
+          changed = true;
+        }
+      }
+    }
+  }
+  return { assets: candidates };
+}
+
+/**
+ * Drop the pruned assets from dist/sw.js's Workbox precache manifest.
+ *
+ * REQUIRED, not tidiness: `precacheAndRoute()` fails the whole service-worker
+ * install if any manifest URL 404s, so shipping a manifest that still lists a
+ * pruned file would break the SW for every operator — and it would break it
+ * silently, since a failed install just leaves the previous SW (or none) in
+ * place. settings.html itself is not in the manifest; its assets are.
+ *
+ * Throws if an entry it expected to remove isn't found, so a future Workbox or
+ * Vite change to the manifest's shape surfaces as a loud build failure rather
+ * than a bundle that half-works.
+ */
+function pruneSettingsFromServiceWorker(assets) {
+  if (assets.size === 0) return;
+  const swPath = path.join(STAGE, 'dist', 'sw.js');
+  if (!existsSync(swPath)) return; // no service worker in this build
+  let sw = readFileSync(swPath, 'utf-8');
+  for (const asset of assets) {
+    const pattern = new RegExp(
+      `\\{url:"${escapeRegExp(asset)}",revision:[^}]*\\},?`,
+    );
+    if (!pattern.test(sw)) {
+      throw new Error(
+        `build-release-bundle: pruned ${asset} from dist/ but found no matching entry in `
+        + `sw.js's precache manifest. The manifest's shape has changed — update `
+        + `pruneSettingsFromServiceWorker() before shipping, or the service worker will `
+        + `fail to install on a 404.`,
+      );
+    }
+    sw = sw.replace(pattern, '');
+  }
+  writeFileSync(swPath, sw);
+  console.log(`  pruned ${assets.size} settings-only asset(s) from dist/ and sw.js`);
+}
+
 function copyDir(rel, extraReject) {
   cpSync(path.join(ROOT, rel), path.join(STAGE, rel), {
     recursive: true,
@@ -136,7 +249,27 @@ await esbuild({
 // shared/: .js/.cjs/.json reference data. The .ts twins are dev-only and skipped.
 copyDir('shared');
 // built frontend the backend serves over real HTTP for the extension iframe.
-copyDir('dist');
+//
+// settings.html is pruned here. It is the ORG-ADMIN panel (see
+// PLATFORM_ARCHITECTURE.md Workstream 6) and must not ship to operators
+// (OQ-P4) — the per-operator LLM-key modal lives inside dashboard.html
+// instead (Workstream 3). A post-copy prune rather than a build variant
+// because there is no operator-specific Vite build to remove it from:
+// vite.config.ts has ONE unconditional `input: { main, settings }`, and the
+// cloud admin deploy of Workstream 6 needs settings.html out of that same
+// dist/. Forking the Vite build for one file would be the wrong trade.
+//
+// Nothing links to settings.html from dashboard.html — it was only ever
+// reachable via the Phase 2 first-run redirect shim, itself reverted in
+// Workstream R — so pruning it leaves no dead link.
+const settingsPrune = resolveSettingsOnlyDistAssets();
+copyDir('dist', (src) => {
+  const rel = path.relative(path.join(ROOT, 'dist'), src).split(path.sep).join('/');
+  if (rel === 'settings.html') return true;
+  // Compressed twins are emitted alongside each asset; drop them together.
+  return settingsPrune.assets.has(rel.replace(/\.(br|gz)$/, ''));
+});
+pruneSettingsFromServiceWorker(settingsPrune.assets);
 // NOTE: patches/ is deliberately NOT staged. The slim backend manifest
 // (scripts/release/backend-package.json) has no postinstall, so patch-package
 // never runs from the bundle, and the one patched package (@nitric/sdk) is not

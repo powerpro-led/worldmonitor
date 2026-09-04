@@ -83,10 +83,12 @@ const SESSION_FILE = operatorSessionFilePath();
 
 const LABEL = 'com.worldmonitor.local-api';
 const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
-// macOS keeps the historical /tmp path (docs + the extension reference it);
-// Windows has no /tmp, so its log lives beside the token in ~/.worldmonitor.
-const WIN_LOG = path.join(WM_DIR, 'local-api.log');
-const LOG = IS_WIN ? WIN_LOG : `/tmp/${LABEL}.log`;
+// Per-user log, beside the token in ~/.worldmonitor. NOT /tmp/<LABEL>.log: on a
+// shared Mac the first user to start the backend owns that file (0644), and
+// every later user's launchd job then can't open it for writing → the job dies
+// with EX_CONFIG (exit 78) in a KeepAlive loop and node never runs. (The
+// frozen VS Code extension keys off the launchd LABEL / plist, not this path.)
+const LOG = path.join(WM_DIR, 'local-api.log');
 
 // ── Windows Scheduled Task artefacts (written under ~/.worldmonitor) ──────
 const WIN_TASK_NAME = 'WorldMonitorLocal';

@@ -94,9 +94,9 @@ with `node --env-file`; `config.db` holds the same allow-listed values in a
 store the control panel can edit. After changing either, `restart`.
 
 The service listens on `127.0.0.1:46123` — REST for the dashboard, the control
-panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Logs:
-`/tmp/com.worldmonitor.local-api.log` (macOS) or
-`%USERPROFILE%\.worldmonitor\local-api.log` (Windows).
+panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Log:
+`~/.worldmonitor/local-api.log` (`%USERPROFILE%\.worldmonitor\local-api.log` on
+Windows).
 
 ## Upgrading
 

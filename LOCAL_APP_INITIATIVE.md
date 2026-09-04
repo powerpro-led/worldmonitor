@@ -17,11 +17,12 @@ control panel, plus move production builds to CI.
 - **Phase:** 0 done · 1 done · 2 done · 3 done · **4 done** (`release.yml`). D12 lifts once the pre-release checks below pass.
 - **Branch:** `main` — Phase 2 = `f1a90be`..`ad77eb8`; Phase 3 = `1ff78f2` + `3897f7c`; Phase 4 = the S54 CI commit. **Ahead of `origin/main`, not pushed** (D12).
 - **START HERE next session — pre-release checks, then D12 lifts:**
-  1. `git push origin main` (finally — the whole initiative is coherent).
-  2. Fresh-user `wmtest` install (Fast User Switching): run `scripts/release/install` with `WM_APP_TARBALL` pointing at the local bundle (no GitHub release exists yet) — the deferred Phase 1+3 end-to-end.
+  1. ~~`git push origin main`~~ — DONE (operator pushed after the S54 CI commit).
+  2. Fresh-user `wmtest` install — **run 1 done S54, found + fixed one release bug** (`/tmp` launchd log path → `EX_CONFIG` for any non-first user on a shared Mac; fix = per-user `~/.worldmonitor/local-api.log`, committed S54). **Re-run 2 pending** to confirm from clean state — brief + re-staged fixed bundle in `/Users/Shared/worldmonitor-wmtest/` (`BRIEF.md` RE-RUN note, `RESULTS-run1.md` = the finding, `RESULTS.md` = run-2 template).
   3. `install.ps1` on real Windows hardware (standing gap since S48).
   4. (optional) replace `scripts/release/assets/icon.png` with real artwork → re-run `make-placeholder-icons.mjs`.
   5. `git tag -a v2.13.0 -m … && git push --tags` → `release.yml` fires → first real GitHub release. Watch the run (Linux archive branch of `build-release-bundle.mjs` is unverified until this).
+- **Known limitation (not a blocker):** fixed launchd label `com.worldmonitor.local-api` + fixed port `46123`. Fine across separate GUI login sessions; two backends running at once on one machine (e.g. a dev backend + a Fast-User-Switching test session simultaneously) collide on the port. Per-user port derivation would ripple into the frozen extension's hardcoded `:46123` + MCP config — deferred.
 - **Build artifacts:** `release/worldmonitor-local-2.13.0.*` rebuilt S54 — gitignored, safe to delete/rebuild.
 - **Green (S54):** `tsc` 0 · `typecheck:api` 0 · `biome` changed-files exit 0 (2 pre-existing non-error findings in `local-api-server.mjs`, unrelated) · `test:sidecar` **226/226** · `build:backend-lockfile --check` clean · markdownlint clean · `release.yml` valid YAML · **bootstrap end-to-end** (macOS): real Node `v22.23.2` fetch+SHA256+extract → `setup.sh` on bundled Node → `npm ci` 39 pkgs → `.env`/`config.db` seeded → launcher built → backend boots on the bundled runtime; 2nd run skips the Node download; `server/_shared/redis.js` ships + resolves.
 
@@ -165,6 +166,13 @@ Target journey ("form-fill"):
 ## Session log
 
 ### Session 54 — 2026-09-04
+
+**Part 4 — wmtest run 1 + fix:**
+
+- Operator pushed `main` (all 4 phases). Ran the fresh-user install as `wmtest` (uid 503) via the shared-folder brief.
+- **Release bug found:** `worldmonitor-local.mjs` hardcoded the Unix launchd log to `/tmp/com.worldmonitor.local-api.log`. `/tmp` is world-writable + sticky, so the first user to start the backend owns that file (0644) and every later user's launchd job can't open it → `EX_CONFIG` (exit 78), KeepAlive loop, node never runs. Multi-operator fork ⇒ real blocker.
+- **Fixed S54** (`worldmonitor-local.mjs`): `const LOG = path.join(WM_DIR, 'local-api.log')` for all platforms (was `IS_WIN ? WIN_LOG : /tmp/${LABEL}.log`). The frozen extension keys off the launchd LABEL / plist, not the log path — safe. `INSTALL.md` log path updated. Bundle rebuilt + re-staged to `/Users/Shared/worldmonitor-wmtest/` for run 2.
+- Run 1 confirmed everything else: bundled Node `v22.23.2` (real nodejs.org download + SHASUMS verify), plist `ProgramArguments[0]` = bundled node, `redis.js` ships + resolves, `WorldMonitor.app` built, `.env`/`config.db` seeded with only the 2 public Supabase keys, `npm ci` 39 pkgs. Post-patch: `state = running`, `/api/sidecar-health` ok, `/api/health` 503 (no Upstash), `restart` healthy.
 
 **Part 3 — Phase 4 (CI):**
 

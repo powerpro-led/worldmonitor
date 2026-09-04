@@ -34,6 +34,23 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
+ * The per-operator LLM credential set (PLATFORM_ARCHITECTURE.md Workstream 3 /
+ * OQ-P4). The ONLY data-source-style keys an operator supplies locally — the
+ * other ~26 are org-admin-tier and live in the org's cloud (P3). Set from the
+ * dashboard's LLM-key modal (`/api/local-llm-config`) or the CLI (`config set`),
+ * loaded into `process.env` at sidecar startup like every other row, and read
+ * by `server/_shared/llm.ts`'s `getProviderCredentials()` (which returns null →
+ * provider skipped when a key is absent — that IS the OQ-P5 hard-disable).
+ * `OLLAMA_MODEL` / `OLLAMA_API_URL` are not secrets (see SECRET_CONFIG_KEYS).
+ */
+export const OPERATOR_LLM_CONFIG_KEYS = Object.freeze([
+  'OPENROUTER_API_KEY',
+  'GROQ_API_KEY',
+  'OLLAMA_API_URL',
+  'OLLAMA_MODEL',
+]);
+
+/**
  * The only keys the store will accept or surface. Everything else is skipped
  * on import and rejected by setConfig(). Deliberately tight — see
  * scripts/release/SECURITY.md. Mirrors the installer's org.env allow-list.
@@ -44,7 +61,7 @@ export const CONFIG_KEYS = Object.freeze([
   'UPSTASH_REDIS_REST_URL',
   'UPSTASH_REDIS_REST_READONLY_TOKEN',
   'APP_DOMAIN',
-  'OPENROUTER_API_KEY',
+  ...OPERATOR_LLM_CONFIG_KEYS,
 ]);
 
 /**
@@ -85,6 +102,9 @@ export const RESTART_REQUIRED_CONFIG_KEYS = Object.freeze([
 export const SECRET_CONFIG_KEYS = Object.freeze([
   'UPSTASH_REDIS_REST_READONLY_TOKEN',
   'OPENROUTER_API_KEY',
+  'GROQ_API_KEY',
+  // OLLAMA_API_URL / OLLAMA_MODEL are a local endpoint + a model name, not
+  // secrets — shown verbatim like APP_DOMAIN.
 ]);
 
 const CONFIG_DDL = `

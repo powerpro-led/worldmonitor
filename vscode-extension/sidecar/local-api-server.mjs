@@ -22,7 +22,14 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
 // login flow and this server's refresh timer.
 import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
-import { loadConfigIntoEnv } from './config-store.mjs';
+import {
+  loadConfigIntoEnv,
+  readAllConfig,
+  setConfig,
+  deleteConfig,
+  OPERATOR_LLM_CONFIG_KEYS,
+  SECRET_CONFIG_KEYS,
+} from './config-store.mjs';
 // Brokered Upstash credential (P4) — see local-config-broker.mjs.
 import { startBrokerRefreshLoop } from './local-config-broker.mjs';
 
@@ -2107,6 +2114,73 @@ async function dispatch(requestUrl, req, routes, context) {
     }
   }
 
+  // Per-operator LLM credentials (PLATFORM_ARCHITECTURE.md Workstream 3 / OQ-P4).
+  // The ONE key set an operator supplies locally — everything else data-source
+  // is org-admin-tier and lives in the org's cloud. Unlike /api/local-env-update
+  // (process.env only, lost on restart), this PERSISTS to config.db via
+  // setConfig so it survives the launchd/scheduled-service restarts the
+  // operator backend actually runs under, AND mirrors the value into
+  // process.env immediately so llm.ts picks it up without a restart (none of
+  // these keys are in RESTART_REQUIRED_CONFIG_KEYS).
+  if (requestUrl.pathname === '/api/local-llm-config') {
+    const buildStatus = () => {
+      const stored = readAllConfig();
+      const keys = {};
+      for (const key of OPERATOR_LLM_CONFIG_KEYS) {
+        const value = typeof stored[key] === 'string' ? stored[key] : '';
+        keys[key] = SECRET_CONFIG_KEYS.includes(key)
+          ? { set: value.length > 0 }
+          : { set: value.length > 0, value };
+      }
+      // Mirrors getProviderCredentials() in server/_shared/llm.ts: a provider is
+      // usable once its key (or, for Ollama, its URL) is present. No provider
+      // configured → chat/summarize are hard-disabled client-side (OQ-P5).
+      const anyProviderConfigured =
+        keys.OPENROUTER_API_KEY.set || keys.GROQ_API_KEY.set || keys.OLLAMA_API_URL.set;
+      return { keys, anyProviderConfigured };
+    };
+
+    if (req.method === 'GET') return json(buildStatus());
+
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      if (!body) return json({ error: 'expected a JSON object of { KEY: value }' }, 400);
+      let parsed;
+      try { parsed = JSON.parse(body.toString()); } catch { return json({ error: 'invalid JSON' }, 400); }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return json({ error: 'expected a JSON object of { KEY: value }' }, 400);
+      }
+      const provided = Object.keys(parsed);
+      const unknown = provided.filter((k) => !OPERATOR_LLM_CONFIG_KEYS.includes(k));
+      if (unknown.length > 0) return json({ error: `not an operator LLM key: ${unknown.join(', ')}` }, 403);
+
+      let changed = false;
+      for (const key of provided) {
+        const raw = parsed[key];
+        const value = raw == null ? '' : String(raw).trim();
+        if (value) {
+          try { setConfig(key, value); } catch (err) { return json({ error: err.message }, 400); }
+          process.env[key] = value;
+        } else {
+          deleteConfig(key);
+          delete process.env[key];
+        }
+        context.logger.log(`[local-api] llm-config ${value ? 'set' : 'unset'}: ${key}`);
+        changed = true;
+      }
+      if (changed) {
+        // Same cache-bust as /api/local-env-update — force handlers to re-read
+        // process.env on their next invocation.
+        moduleCache.clear();
+        failedImports.clear();
+        cloudPreferred.clear();
+      }
+      return json(buildStatus());
+    }
+
+    return json({ error: 'GET or PUT required' }, 405);
+  }
+
   if (context.cloudFallback && isCloudPreferred(requestUrl.pathname)) {
     const cloudResponse = await tryCloudFallback(requestUrl, req, context, 'cloud-preferred');
     if (cloudResponse) return cloudResponse;
@@ -2384,7 +2458,8 @@ export async function createLocalApiServer(options = {}) {
       || requestUrl.pathname === '/api/local-debug-toggle'
       || requestUrl.pathname === '/api/local-env-update'
       || requestUrl.pathname === '/api/local-env-update-batch'
-      || requestUrl.pathname === '/api/local-validate-secret';
+      || requestUrl.pathname === '/api/local-validate-secret'
+      || requestUrl.pathname === '/api/local-llm-config';
 
     try {
       const response = await dispatch(requestUrl, req, routes, context);

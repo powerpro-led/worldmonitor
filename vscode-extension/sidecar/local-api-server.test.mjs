@@ -1306,6 +1306,132 @@ test('accepts OLLAMA_MODEL via /api/local-env-update', async () => {
   }
 });
 
+// ── /api/local-llm-config — per-operator LLM credentials (Workstream 3) ──────
+// Each test points LOCAL_CONFIG_DB_PATH at a throwaway file so the persisted
+// config.db writes don't leak between tests or touch ~/.worldmonitor.
+async function withTempConfigDb(fn) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'wm-llmcfg-'));
+  const prev = process.env.LOCAL_CONFIG_DB_PATH;
+  process.env.LOCAL_CONFIG_DB_PATH = path.join(dir, 'config.db');
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env.LOCAL_CONFIG_DB_PATH;
+    else process.env.LOCAL_CONFIG_DB_PATH = prev;
+    for (const k of ['OPENROUTER_API_KEY', 'GROQ_API_KEY', 'OLLAMA_API_URL', 'OLLAMA_MODEL']) delete process.env[k];
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test('GET /api/local-llm-config reports nothing configured on an empty store', async () => {
+  await withTempConfigDb(async () => {
+    const localApi = await setupApiDir({});
+    const app = await createLocalApiServer({ port: 0, apiDir: localApi.apiDir, logger: { log() {}, warn() {}, error() {} } });
+    const { port } = await app.start();
+    try {
+      const res = await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`);
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.anyProviderConfigured, false);
+      assert.deepEqual(body.keys.OPENROUTER_API_KEY, { set: false });
+      assert.deepEqual(body.keys.OLLAMA_API_URL, { set: false, value: '' });
+    } finally {
+      await app.close();
+      await localApi.cleanup();
+    }
+  });
+});
+
+test('PUT /api/local-llm-config persists a key, mirrors it to process.env, and never echoes a secret', async () => {
+  await withTempConfigDb(async () => {
+    const { readAllConfig } = await import('./config-store.mjs');
+    const localApi = await setupApiDir({});
+    const app = await createLocalApiServer({ port: 0, apiDir: localApi.apiDir, logger: { log() {}, warn() {}, error() {} } });
+    const { port } = await app.start();
+    try {
+      const res = await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ OPENROUTER_API_KEY: '  sk-or-test-123  ', OLLAMA_MODEL: 'llama3.1:8b' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.anyProviderConfigured, true);
+      assert.deepEqual(body.keys.OPENROUTER_API_KEY, { set: true }); // masked — no value field
+      assert.deepEqual(body.keys.OLLAMA_MODEL, { set: true, value: 'llama3.1:8b' });
+      assert.equal(process.env.OPENROUTER_API_KEY, 'sk-or-test-123'); // trimmed, live
+      assert.equal(readAllConfig().OPENROUTER_API_KEY, 'sk-or-test-123'); // durable
+    } finally {
+      await app.close();
+      await localApi.cleanup();
+    }
+  });
+});
+
+test('PUT /api/local-llm-config with an empty value clears the key', async () => {
+  await withTempConfigDb(async () => {
+    const localApi = await setupApiDir({});
+    const app = await createLocalApiServer({ port: 0, apiDir: localApi.apiDir, logger: { log() {}, warn() {}, error() {} } });
+    const { port } = await app.start();
+    try {
+      await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ GROQ_API_KEY: 'gsk-abc' }),
+      });
+      const res = await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ GROQ_API_KEY: '' }),
+      });
+      const body = await res.json();
+      assert.equal(body.keys.GROQ_API_KEY.set, false);
+      assert.equal(body.anyProviderConfigured, false);
+      assert.equal(process.env.GROQ_API_KEY, undefined);
+    } finally {
+      await app.close();
+      await localApi.cleanup();
+    }
+  });
+});
+
+test('PUT /api/local-llm-config rejects keys outside the operator LLM set', async () => {
+  await withTempConfigDb(async () => {
+    const localApi = await setupApiDir({});
+    const app = await createLocalApiServer({ port: 0, apiDir: localApi.apiDir, logger: { log() {}, warn() {}, error() {} } });
+    const { port } = await app.start();
+    try {
+      const res = await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ UPSTASH_REDIS_REST_READONLY_TOKEN: 'nope' }),
+      });
+      assert.equal(res.status, 403);
+    } finally {
+      await app.close();
+      await localApi.cleanup();
+    }
+  });
+});
+
+test('GET /api/local-llm-config — Ollama URL alone counts as a configured provider', async () => {
+  await withTempConfigDb(async () => {
+    const localApi = await setupApiDir({});
+    const app = await createLocalApiServer({ port: 0, apiDir: localApi.apiDir, logger: { log() {}, warn() {}, error() {} } });
+    const { port } = await app.start();
+    try {
+      await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ OLLAMA_API_URL: 'http://127.0.0.1:11434' }),
+      });
+      const res = await authFetch(`http://127.0.0.1:${port}/api/local-llm-config`);
+      const body = await res.json();
+      assert.equal(body.anyProviderConfigured, true);
+      assert.equal(body.keys.OLLAMA_API_URL.value, 'http://127.0.0.1:11434');
+    } finally {
+      await app.close();
+      await localApi.cleanup();
+    }
+  });
+});
+
 test('accepts WM_DESKTOP_SHARED_SECRET via /api/local-env-update', async () => {
   const originalSecret = process.env.WM_DESKTOP_SHARED_SECRET;
   const localApi = await setupApiDir({});

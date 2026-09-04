@@ -13,7 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstreams 4 (denylist mirror) + 2 (vendor the bridge) shipped; OQ-P6 resolved (P14); Workstream 7's `list-feed-digest` seeder shipped** (`scripts/seed-news-digest.mjs` + scheduler `*/10` + sidecar warm-ping removed). Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **As of:** 2026-09-04 (session 57) — **Workstreams 4 + 2 shipped; OQ-P6 resolved (P14); W7's `list-feed-digest` seeder shipped; W3 Part A (LLM-key backend) shipped** (`config-store.mjs` + `GET/PUT /api/local-llm-config`). W3 Parts B (dashboard modal) + C (hard-disable) remain. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
 - **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
 - **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. One item stays open: **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` disagree). **OQ-P6 RESOLVED S57** — see P14 + the resolved-questions section.
@@ -124,9 +124,41 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 3 — per-operator LLM key modal (in `dashboard.html`, OQ-P4)
 
-- [ ] A small modal **inside the dashboard** (fresh component, or a trimmed reuse of `settings-main.ts`'s AI category) — `OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_API_URL` + `OLLAMA_MODEL`. Opened from a Settings affordance in the dashboard chrome — NOT a separate `settings.html` page.
-- [ ] Stored per-operator in `config.db` (local) — NOT sent anywhere. `server/_shared/llm.ts` reads it.
-- [ ] **No key → chat/summarize hard-disabled** (OQ-P5): `llm.ts` / `chat-analyst` return a clean "AI features need an API key" state; the dashboard hides/disables those affordances. No cloud LLM proxy.
+> **S57 — the `runtime-config` / `settingsManager` path is Tauri-desktop only.**
+> `setSecretValue()` no-ops outside `isDesktopRuntime()` (it invokes Tauri
+> keychain commands), so the VS Code operator backend needs its own write path.
+> W1 already did half of it: `config-store.mjs`'s `CONFIG_KEYS` carried
+> `OPENROUTER_API_KEY`, `loadConfigIntoEnv()` hydrates every row into
+> `process.env` at startup, and `llm.ts`'s `getProviderCredentials()` reads
+> `process.env` and returns `null` (→ provider skipped) when a key is absent —
+> so the OQ-P5 hard-disable is already the server-side default.
+
+- [x] **DONE S57 — backend (Part A).** `config-store.mjs`: new
+  `OPERATOR_LLM_CONFIG_KEYS` group (`OPENROUTER_API_KEY`, `GROQ_API_KEY`,
+  `OLLAMA_API_URL`, `OLLAMA_MODEL`), all folded into `CONFIG_KEYS`
+  (`GROQ_API_KEY` also into `SECRET_CONFIG_KEYS`; `OLLAMA_*` are not secrets).
+  New sidecar route **`GET/PUT /api/local-llm-config`** (transport-authed like
+  the sibling `/api/local-*` routes): GET returns per-key `{set}` (secrets
+  masked) / `{set, value}` (Ollama) + `anyProviderConfigured`; PUT **persists
+  to `config.db` via `setConfig`** (unlike `/api/local-env-update`, which is
+  `process.env`-only and lost on the launchd/scheduled-service restarts the
+  operator backend runs under) AND mirrors into `process.env` immediately +
+  busts the handler module cache (no restart — none are
+  `RESTART_REQUIRED_CONFIG_KEYS`). `anyProviderConfigured` mirrors
+  `getProviderCredentials()`: any of OpenRouter key / Groq key / Ollama URL.
+  The CLI (`worldmonitor-local config set …`) covers these for free via
+  `CONFIG_KEYS`. Tests: 5 new in `local-api-server.test.mjs` (empty store,
+  persist+mask+live-env, clear-on-empty, reject-non-LLM-key, Ollama-URL-alone).
+- [ ] **Part B — dashboard modal.** A fresh minimal component in `src/` (NOT
+  `settings-main.ts` — that's the Tauri path), opened from a Settings
+  affordance in the dashboard chrome, rendered only in the sidecar-backed
+  runtime, wired to `/api/local-llm-config` (GET on open, PUT on save; reuse
+  `/api/local-validate-secret` for the verify button).
+- [ ] **Part C — hard-disable (OQ-P5).** When GET reports
+  `anyProviderConfigured: false`, the dashboard disables/hides chat + summarize
+  with a clean "AI features need an API key (Dashboard → Settings)" state.
+  Confirm `chat-analyst` / the summary RPCs already degrade cleanly
+  server-side (they should — every provider returns `null`).
 - [ ] Everything else in `settings-main.ts` is admin-panel-only (Workstream 6).
 
 ### Workstream 4 — denylist mirror
@@ -382,6 +414,47 @@ pipeline with no producer.
 - **Not done here:** widening `NEWS_DIGEST_SEED_LANGS` per org (one env change),
   and whether `seed-insights` should drop its own `warmDigestCache` fallback
   now that the key is always warm (left as a harmless fallback).
+
+**Then Workstream 3 Part A shipped** — the per-operator LLM-key backend.
+
+- **Why "Part A":** the obvious path — reuse `settings-main.ts` / `runtime-config`
+  — doesn't work. `setSecretValue()` is Tauri-desktop only (`isDesktopRuntime()`
+  gate; it invokes keychain commands) and silently no-ops in the VS Code
+  operator backend. So the write path is new. W1 had already laid the read
+  side: `OPENROUTER_API_KEY` was in `CONFIG_KEYS`, `loadConfigIntoEnv()`
+  hydrates `process.env` at startup, `llm.ts` reads `process.env` and returns
+  `null` per-provider when unset — the OQ-P5 hard-disable is already the
+  server default.
+- `config-store.mjs`: `OPERATOR_LLM_CONFIG_KEYS` = the 4 keys; folded into
+  `CONFIG_KEYS`; `GROQ_API_KEY` added to `SECRET_CONFIG_KEYS` (`OLLAMA_API_URL`
+  / `OLLAMA_MODEL` are an endpoint + a model name, shown verbatim). This alone
+  gives the CLI (`worldmonitor-local config set GROQ_API_KEY …`) + startup
+  hydration.
+- `local-api-server.mjs`: new **`GET/PUT /api/local-llm-config`**. GET →
+  `{ keys: { <KEY>: {set} | {set, value} }, anyProviderConfigured }`
+  (`anyProviderConfigured` mirrors `getProviderCredentials()`: OpenRouter key
+  OR Groq key OR Ollama URL). PUT → for each provided key: non-empty
+  `setConfig()` + `process.env[key] = value`; empty → `deleteConfig()` +
+  `delete process.env[key]`; unknown key → 403. Busts
+  `moduleCache`/`failedImports`/`cloudPreferred` so handlers re-read env with
+  **no restart** (none are `RESTART_REQUIRED_CONFIG_KEYS`). The key contrast
+  with the pre-existing `/api/local-env-update` (orphaned — no client calls it,
+  a `src-tauri` leftover) is **persistence**: that route is `process.env`-only
+  and dies on the launchd/scheduled restart the operator backend runs under;
+  this one writes `config.db`.
+- Added to the traffic-log `skipRecord` list (config chatter, like its
+  siblings).
+- Green: 5 new tests in `local-api-server.test.mjs` (empty store →
+  `anyProviderConfigured:false`; PUT persists + trims + masks the secret in the
+  response + mirrors to `process.env` + durable in a re-read `config.db`; empty
+  value clears; non-LLM key → 403; Ollama-URL-alone flips
+  `anyProviderConfigured`). `config-store.test.mjs` 30/30 ·
+  `worldmonitor-local.test.mjs` 7/7 · `test:sidecar` `local-api-server` 75/76
+  (the one failure is still the pre-existing EADDRINUSE test) · `biome` clean
+  on touched files (the one pre-existing `let contentType` info at
+  `local-api-server.mjs:1747` is untouched, unrelated).
+- **Parts B + C are frontend** (`src/` dashboard modal + the chat/summarize
+  gating) — a separate pass.
 
 ### Session 56 — 2026-09-04
 

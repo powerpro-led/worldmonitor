@@ -1,0 +1,21 @@
+{
+  "//": "Backend-only manifest shipped INSIDE the release bundle as package.json (Local App Initiative D4). The standalone backend loads only (a) hand-maintained transpiled api/**/*.js and (b) self-contained esbuild bundles from build:sidecar-handlers — every other root dependency is frontend-only (Vite compiles it into dist/) or dev-only. These five are the sole bare imports that survive in files the Node process actually loads: server (local-api-server.mjs → @supabase/supabase-js), rate limiting (api/_rate-limit.js, api/oauth/* → @upstash/*), bootstrap waitUntil (api/bootstrap.js → @vercel/functions), R2 probe (api/_bootstrap-r2.js → aws4fetch). Regenerate the matching lockfile after any edit here: node scripts/build-backend-lockfile.mjs. Keep version in sync with the root package.json (asserted by that script).",
+  "name": "worldmonitor-local",
+  "private": true,
+  "version": "2.13.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "bin": {
+    "worldmonitor-local": "scripts/worldmonitor-local.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.1",
+    "@vercel/functions": "^3.7.5",
+    "aws4fetch": "^1.0.20"
+  }
+}

@@ -13,13 +13,13 @@ control panel, plus move production builds to CI.
 
 ## Status
 
-- **As of:** 2026-09-03 (session 53) — Phase 2 committed to `main` (not pushed — D12)
-- **Phase:** 0 done (v2.13.0 code) · 1 done (config store) · **2 done + committed** (control panel + browser sign-in) · **3 is next** · 4 not started
-- **Branch:** `main` — Phase 2 landed as 5 commits `f1a90be`..(docs). **Ahead of `origin/main`, not pushed** (D12: no push/tag/release until all four phases are coherent).
+- **As of:** 2026-09-04 (session 54) — Phase 2 committed to `main`; Phase 3 in progress (slim deps done)
+- **Phase:** 0 done (v2.13.0 code) · 1 done (config store) · 2 done + committed (control panel + browser sign-in) · **3 in progress — slim backend `package.json` DONE + verified; bundled-Node bootstrap + launcher next** · 4 not started
+- **Branch:** `main` — Phase 2 = 5 commits `f1a90be`..`ad77eb8`; Phase 3 slim-deps slice is the next commit. **Ahead of `origin/main`, not pushed** (D12: no push/tag/release until all four phases are coherent).
 - **No release** — tag or GitHub release — until all four phases are complete and coherent (**D12**). v2.13.0's code ships inside that eventual release.
-- **START HERE next session:** Phase 3 — backend-only `package.json` + `curl | sh` bootstrap + fetched Node + Desktop launcher. Checklist below.
-- **Build artifacts:** `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`) exist locally from the S51 verification build — gitignored, safe to delete/rebuild.
-- **Green (S52):** `tsc` · `typecheck:api` · `biome` (changed files, exit 0) · `test:sidecar` **226/226** (7 new) · `npm run build` (Model B blank env) + `build:sidecar-handlers` · live smoke against real `dist/` + `api/` (shim injection, first-run redirect, `/api/local-config` GET/POST validation, `/api/local-login` refusal, 401 without token).
+- **START HERE next session:** Phase 3 remaining — `scripts/release/install` (`curl | sh`) + `.ps1` bootstrap that fetches the D15-pinned Node into `~/.worldmonitor/app/runtime/`, repoint plist/.cmd/run at it, fix the `server/_shared/redis` bundle gap (note under Phase 3), Desktop launcher assets, `INSTALL.md` one-liner.
+- **Build artifacts:** `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`) rebuilt S54 with the slim manifest — gitignored, safe to delete/rebuild.
+- **Green (S54):** `tsc` 0 · `typecheck:api` 0 · `biome` (changed files, exit 0) · `test:sidecar` **226/226** · `build:backend-lockfile --check` clean · end-to-end: extract real `.tar.gz` → `npm ci --omit=dev --ignore-scripts` exit 0 (**39 pkgs / 19 MB / ~1 s**) → backend boots (70 routes) → `/api/sidecar-health` 200, `/api/health` + `/api/bootstrap` full-handler exec → `worldmonitor-local status` OK.
 
 ---
 
@@ -52,6 +52,7 @@ Target journey ("form-fill"):
 | D12 | **No release (tag or GitHub release) until all four phases are complete and coherent.** v2.13.0's code ships inside that eventual release, not as its own tag. | Operator: "release when full complete, not half." The S51 `v2.13.0` tag was created then deleted. | S51 |
 | D13 | **Config store = a SEPARATE `~/.worldmonitor/config.db`**, not a table in `local-cache.db`. Resolves OQ2. | `local-sync.mjs` `fs.renameSync`s a freshly-built `local-cache.db` over the old one every run ([local-sync.mjs:565](vscode-extension/sidecar/local-sync.mjs#L565)) — any table there is destroyed each sync. `config.db` sits with `session.json` / `local-api-token`, which nothing rewrites. | S51 |
 | D14 | **`loadConfigIntoEnv()` fills `process.env` for any allow-listed key not already non-empty** (`.env` / real env wins), run as the first statement after the import block — NOT `??=` on a `load-config.mjs` module, and NOT the first *import*. | ESM evaluates all of a file's static imports before its body; `local-api-server.mjs`'s imports (`_domain-config.mjs`, `session-file.mjs`) are env-free at eval, and every config consumer (`api/` handlers, sync workers) is `await import()`ed later — so a body-level call is early enough and clearer than an import side-effect. | S51 |
+| D15 | **Bundled Node = pinned to one EXACT version (`x.y.z`), and the download is SHA-256-verified against nodejs.org's published `SHASUMS256.txt` before extraction.** No "latest 22.x" float. Bumping the pin is a one-line constant edit per release. Pin ≥ 22.18 so runtime `.ts` type-stripping is on by default (see the `server/_shared/redis` note under Phase 3). Resolves OQ3. | A `curl \| sh` that fetches and runs a binary must be reproducible and integrity-checked; a bad upstream patch release shouldn't silently change every install. GPG-signature verification of SHASUMS is deferred (no gpg dependency in the bootstrap) — SHA-256 match over HTTPS is the bar. | S54 |
 
 ---
 
@@ -124,18 +125,21 @@ Target journey ("form-fill"):
 
 ### Phase 3 — One-command install + bundled Node + slim deps
 
-- [ ] Backend-only `package.json` — prune to what `local-api-server.mjs` + `local-sync.mjs` + `sync-listener.mjs` + `api/**` + `server/_shared/*` + `scripts/shared/sync-domains.mjs` actually import. Test a clean `npm ci --omit=dev --ignore-scripts` + full boot.
-- [ ] `build-release-bundle.mjs` — emit ONE universal tarball (no per-platform), stage the slim `package.json`
+- [x] **Backend-only `package.json` — DONE + verified S54.** `scripts/release/backend-package.json` (5 deps: `@supabase/supabase-js`, `@upstash/ratelimit`, `@upstash/redis`, `@vercel/functions`, `aws4fetch`) + generated `scripts/release/backend-package-lock.json` (`scripts/build-backend-lockfile.mjs` regenerates it; `--check` mode for CI; asserts version == root). `build-release-bundle.mjs` now stages this pair AS `package.json`/`package-lock.json` and no longer stages `patches/` (slim manifest has no `postinstall`). **Verified against the real shipped tarball:** `npm ci --omit=dev --ignore-scripts` = exit 0, **39 pkgs / 19 MB / ~1 s** (was 736 / ~1.2 GB / ~5 min); backend boots, 70 routes, `/api/sidecar-health` 200, `/api/health` + `/api/bootstrap` run their full handlers (incl. `@vercel/functions` `waitUntil`), `worldmonitor-local status` works. **Why the prune is safe:** the Node process only ever loads hand-maintained `api/**/*.js` (bare imports = those 5) + self-contained esbuild bundles; every other root dep is frontend-only (Vite → `dist/`) or dev-only. `react-native`/`expo-secure-store` etc. that appear inside bundled `@supabase/supabase-js` are dead RN-detection branches, not installed today either.
+- [x] `build-release-bundle.mjs` — stages the slim `package.json`/lock (S54). Still emits BOTH `.tar.gz` + `.zip` of one tree — the "ONE universal tarball, no per-platform" goal is already met (Node is fetched by the bootstrap, not bundled — D3 sub-option B); nothing further needed here for Phase 3.
 - [ ] `scripts/release/install` (the `curl | sh` bootstrap): detect OS/arch → download platform Node from nodejs.org → `~/.worldmonitor/app/runtime/` → download+extract the app tarball → `npm ci` with the bundled Node → register service (existing `worldmonitor-local install` logic) → drop Desktop launcher + icon → print the settings URL
 - [ ] `scripts/release/install.ps1` — the PowerShell mirror (`irm | iex` entry)
 - [ ] Point `worldmonitor-local.mjs` (plist / .cmd / run) at `~/.worldmonitor/app/runtime/bin/node` instead of system node
 - [ ] Desktop launcher assets — `.command` (mac) + `.lnk`→`.bat` (win) + an `.icns` / `.ico`
 - [ ] `INSTALL.md` — replace the manual steps with the one-liner
 
+**Found in S54 (pre-existing, not blocking the prune, fix during the installer slice):** the shipped bundle has **no `server/_shared/redis.js`** — the build excludes `.ts` and nothing compiles that tree — yet `local-api-server.mjs` does `await import('../../server/_shared/redis')` (the `runRedisPipeline` path). On Node ≥ 22.18 this only works because runtime `.ts` type-stripping is on by default AND `redis.ts` would need to be present — it is NOT, so that dynamic import throws `ERR_MODULE_NOT_FOUND` today; the sidecar's SQLite-mirror-first path masks it for most panels. Options: stage `server/_shared/*.ts` (relies on type-stripping ⇒ D15's ≥22.18 pin) OR add an esbuild pass for `server/_shared/redis.ts` → `.js`. The latter is cleaner. Revisit when wiring the bundled-Node bootstrap.
+
 ### Phase 4 — CI (GitHub Actions, production release)
 
 - [ ] `.github/workflows/release.yml` — trigger on `v*` tag push
   - [ ] `ubuntu-latest`, single job (no matrix — sub-option B)
+  - [ ] `npm run build:backend-lockfile:check` (fail the build on a stale `backend-package-lock.json`)
   - [ ] `npm ci` → `npm run build` (with `VITE_SUPABASE_URL='' VITE_SUPABASE_PUBLISHABLE_KEY=''`) → `build:sidecar-sebuf` → `build:sidecar-handlers` → `node scripts/build-release-bundle.mjs`
   - [ ] Build the `.vsix` (same workflow or a sibling job)
   - [ ] `gh release create $TAG` with tar.gz + zip + both .sha256 + .vsix + the `install` / `install.ps1` bootstrap scripts as release assets
@@ -148,13 +152,24 @@ Target journey ("form-fill"):
 
 - **OQ1** — Phase 1: during transition, does `install.sh` write BOTH `.env` and the SQLite `config`, or switch fully to SQLite? (Leaning: write both until Phase 2 ships, then SQLite-only + `.env` as override.)
 - **OQ2** — Phase 2: separate `config.db` vs a `config` table inside `local-cache.db`? (`local-cache.db` is rebuilt atomically by `local-sync.mjs` via a tmp-file swap — a `config` table there would be clobbered. Leaning: **separate `~/.worldmonitor/config.db`**.)
-- **OQ3** — Phase 3: nodejs.org download — pin to a specific Node version, or track "latest 22.x"? Checksum verification against the official SHASUMS?
+- **OQ3** — RESOLVED S54 → **D15**: exact-version pin (`x.y.z`, ≥ 22.18) + SHA-256 verification against nodejs.org `SHASUMS256.txt`. GPG-signature check deferred.
 - **OQ4** — RESOLVED S52: browser sign-in is the documented path for end users; `worldmonitor-local login` is kept for headless/server installs. Both call the same `beginGithubLogin()`.
 - **OQ5** — APP_DOMAIN (session 49 Phase 2 deferral) — fold into this initiative's config store, or keep baked? Cosmetic for a loopback dashboard.
 
 ---
 
 ## Session log
+
+### Session 54 — 2026-09-04
+
+- **OQ3 resolved → D15**: bundled Node = exact-version pin + SHA-256 verify against nodejs.org `SHASUMS256.txt`; pin ≥ 22.18 (default `.ts` type-stripping). GPG check deferred.
+- **Phase 3 slim-deps slice — done + verified** (not yet committed):
+  - New `scripts/release/backend-package.json` — 5 runtime deps only (`@supabase/supabase-js`, `@upstash/ratelimit`, `@upstash/redis`, `@vercel/functions`, `aws4fetch`). Derived by scanning every `.js/.mjs/.cjs` the backend actually loads for bare specifiers; the only survivors outside esbuild bundles are those 5.
+  - New `scripts/build-backend-lockfile.mjs` — regenerates `scripts/release/backend-package-lock.json` (temp-dir `npm install --package-lock-only`); `--check` for CI; asserts manifest version == root `package.json` version. Added `build:backend-lockfile[:check]` npm scripts.
+  - `scripts/build-release-bundle.mjs` — stages the slim pair AS `package.json`/`package-lock.json` (was: copy root pair); dropped `copyDir('patches')` (no `postinstall` in the slim manifest, `@nitric/sdk` isn't a backend dep); `BUNDLE_MANIFEST.txt` line added.
+  - Verified end-to-end against the actual rebuilt tarball — see Status "Green (S54)".
+- **Found (pre-existing, logged under Phase 3):** `server/_shared/redis.js` is never built/shipped but `local-api-server.mjs` dynamically imports it (`runRedisPipeline`) → `ERR_MODULE_NOT_FOUND`, masked by the SQLite-mirror-first path. Fix during the installer slice (prefer an esbuild pass for that one file).
+- **Next:** the `curl | sh` / `.ps1` bootstrap (fetch + verify D15 Node → `~/.worldmonitor/app/runtime/`, repoint plist/.cmd/run), Desktop launcher assets, `INSTALL.md` one-liner.
 
 ### Session 52 — 2026-09-03
 

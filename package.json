@@ -52,6 +52,8 @@
     "build": "npm run security:vite-env-secrets -- --strict-local && npm run build:crawlable-corpus && tsc && vite build",
     "build:sidecar-sebuf": "node scripts/build-sidecar-sebuf.mjs",
     "build:sidecar-handlers": "node scripts/build-sidecar-handlers.mjs",
+    "build:backend-lockfile": "node scripts/build-backend-lockfile.mjs",
+    "build:backend-lockfile:check": "node scripts/build-backend-lockfile.mjs --check",
     "build:full": "npm run security:vite-env-secrets -- --strict-local && npm run build:crawlable-corpus && cross-env-shell VITE_VARIANT=full \"tsc && vite build\"",
     "build:tech": "npm run security:vite-env-secrets -- --strict-local && cross-env-shell VITE_VARIANT=tech \"tsc && vite build\"",
     "build:finance": "npm run security:vite-env-secrets -- --strict-local && cross-env-shell VITE_VARIANT=finance \"tsc && vite build\"",

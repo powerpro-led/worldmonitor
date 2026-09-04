@@ -119,9 +119,10 @@ copyDir('server');
 copyDir('shared');
 // built frontend the backend serves over real HTTP for the extension iframe.
 copyDir('dist');
-// patch inputs — only consulted if the operator runs `npm ci` without
-// --ignore-scripts (install.sh uses --ignore-scripts, so normally unused).
-copyDir('patches');
+// NOTE: patches/ is deliberately NOT staged. The slim backend manifest
+// (scripts/release/backend-package.json) has no postinstall, so patch-package
+// never runs from the bundle, and the one patched package (@nitric/sdk) is not
+// a backend dependency at all.
 
 // sidecar runtime files ONLY (no local-api-server.test.mjs, no local-cache.db,
 // no operator-identity.json — a fresh machine seeds its own cache + identity).
@@ -168,9 +169,34 @@ cpSync(path.join(ROOT, 'scripts', 'release', 'SECURITY.md'), path.join(STAGE, 'S
 // org.env.example — the per-org config template (Model B). NOTE: never stage a
 // filled org.env / .env; the bundle must ship org-neutral.
 cpSync(path.join(ROOT, 'scripts', 'release', 'org.env.example'), path.join(STAGE, 'org.env.example'));
-for (const f of ['package.json', 'package-lock.json', '.env.example', 'LICENSE', 'CHANGELOG.md', 'INSTALL.md']) {
+for (const f of ['.env.example', 'LICENSE', 'CHANGELOG.md', 'INSTALL.md']) {
   cpSync(path.join(ROOT, f), path.join(STAGE, f));
 }
+
+// ── slim backend-only package.json + lockfile (Local App Initiative D4) ──
+// The bundle ships the compiled frontend in dist/, so the ~80 frontend/build
+// packages in the root manifest are dead weight at install time. The backend
+// process loads only hand-maintained api/**/*.js (bare imports: @upstash/*,
+// @vercel/functions, aws4fetch) and self-contained esbuild bundles, plus
+// @supabase/supabase-js from the sidecar. `npm ci --omit=dev` against this pair
+// drops from 736 pkgs / ~1.2 GB / ~5 min to 39 pkgs / ~19 MB / ~1 s.
+// Regenerate the lock after editing the manifest: node scripts/build-backend-lockfile.mjs
+// (CI runs `build-backend-lockfile.mjs --check` to catch a stale lock; kept out
+// of this script so an offline bundle build doesn't need npm registry metadata.)
+const backendManifest = JSON.parse(
+  readFileSync(path.join(ROOT, 'scripts', 'release', 'backend-package.json'), 'utf8'),
+);
+if (backendManifest.version !== VERSION) {
+  throw new Error(
+    `scripts/release/backend-package.json version (${backendManifest.version}) != ${VERSION} — bump it and re-run build-backend-lockfile.mjs`,
+  );
+}
+delete backendManifest['//'];
+writeFileSync(path.join(STAGE, 'package.json'), `${JSON.stringify(backendManifest, null, 2)}\n`);
+cpSync(
+  path.join(ROOT, 'scripts', 'release', 'backend-package-lock.json'),
+  path.join(STAGE, 'package-lock.json'),
+);
 // Guard: a real .env or org.env must never end up in the bundle.
 for (const leaked of ['.env', 'org.env']) {
   if (existsSync(path.join(STAGE, leaked))) {
@@ -196,6 +222,7 @@ writeFileSync(
     `built              ${new Date().toISOString()}`,
     `contents           ${fileCount} files, ${(totalBytes / 1e6).toFixed(1)} MB unpacked`,
     'node_modules       NOT included — the installer runs `npm ci --omit=dev --ignore-scripts`',
+    'package.json       slim backend-only manifest (5 deps → ~39 pkgs / ~19 MB); root frontend deps excluded',
     'install            macOS/Linux: ./install.sh   ·   Windows: .\\install.ps1',
     '',
   ].join('\n'),

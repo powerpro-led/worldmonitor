@@ -1,30 +1,27 @@
 # Local App Initiative — process log
 
-**Single source of truth** for the multi-part effort to turn `worldmonitor-local`
-(the standalone backend) into an app-like, one-command install with a self-service
-control panel, plus move production builds to CI.
+> **⚠️ DEMOTED (session 55).** `PLATFORM_ARCHITECTURE.md` is now the single
+> source of truth. This file is the **operator-client sub-track** — the thin
+> read-only local mirror each org's operators run. Its config model changed:
+> operators no longer configure keys (P2/P3/P11), so **Phase 2 is to be
+> reverted** (Workstream R there) and **`v2.13.0` is on hold** (P12). Phases
+> 0/1/3/4 carry forward; Phase 1's `config.db` is repurposed as the
+> `local-config` broker cache (Workstream 1). Read `PLATFORM_ARCHITECTURE.md`
+> first.
 
-> This file is the canonical tracker for this initiative. `TASKS.md` keeps its
-> numbered-block history; link here from the next `TASKS.md` block rather than
-> duplicating. Update the **Status** line and the **Session log** every working
-> session.
+**Original scope:** turn `worldmonitor-local` (the standalone backend) into an
+app-like, one-command install with a self-service control panel, plus move
+production builds to CI.
 
 ---
 
 ## Status
 
-- **As of:** 2026-09-04 (session 54) — **all four phases code-complete + committed, NOT pushed** (3 commits)
-- **Phase:** 0 done · 1 done · 2 done · 3 done · **4 done** (`release.yml`). D12 lifts once the pre-release checks below pass.
-- **Branch:** `main` — Phase 2 = `f1a90be`..`ad77eb8`; Phase 3 = `1ff78f2` + `3897f7c`; Phase 4 = the S54 CI commit. **Ahead of `origin/main`, not pushed** (D12).
-- **START HERE next session — pre-release checks, then D12 lifts:**
-  1. ~~`git push origin main`~~ — DONE (operator pushed after the S54 CI commit).
-  2. Fresh-user `wmtest` install — **run 1 done S54, found + fixed one release bug** (`/tmp` launchd log path → `EX_CONFIG` for any non-first user on a shared Mac; fix = per-user `~/.worldmonitor/local-api.log`, committed S54). **Re-run 2 pending** to confirm from clean state — brief + re-staged fixed bundle in `/Users/Shared/worldmonitor-wmtest/` (`BRIEF.md` RE-RUN note, `RESULTS-run1.md` = the finding, `RESULTS.md` = run-2 template).
-  3. `install.ps1` on real Windows hardware (standing gap since S48).
-  4. (optional) replace `scripts/release/assets/icon.png` with real artwork → re-run `make-placeholder-icons.mjs`.
-  5. `git tag -a v2.13.0 -m … && git push --tags` → `release.yml` fires → first real GitHub release. Watch the run (Linux archive branch of `build-release-bundle.mjs` is unverified until this).
-- **Known limitation (not a blocker):** fixed launchd label `com.worldmonitor.local-api` + fixed port `46123`. Fine across separate GUI login sessions; two backends running at once on one machine (e.g. a dev backend + a Fast-User-Switching test session simultaneously) collide on the port. Per-user port derivation would ripple into the frozen extension's hardcoded `:46123` + MCP config — deferred.
-- **Build artifacts:** `release/worldmonitor-local-2.13.0.*` rebuilt S54 — gitignored, safe to delete/rebuild.
-- **Green (S54):** `tsc` 0 · `typecheck:api` 0 · `biome` changed-files exit 0 (2 pre-existing non-error findings in `local-api-server.mjs`, unrelated) · `test:sidecar` **226/226** · `build:backend-lockfile --check` clean · markdownlint clean · `release.yml` valid YAML · **bootstrap end-to-end** (macOS): real Node `v22.23.2` fetch+SHA256+extract → `setup.sh` on bundled Node → `npm ci` 39 pkgs → `.env`/`config.db` seeded → launcher built → backend boots on the bundled runtime; 2nd run skips the Node download; `server/_shared/redis.js` ships + resolves.
+- **As of:** 2026-09-04 (session 55) — **superseded by `PLATFORM_ARCHITECTURE.md`.** Install mechanics done + tested; config model being replaced.
+- **`main` == `origin/main` @ `07c280c`.** Phases 0/1/3/4 landed (`c379806` · `4f7d4f3`+`6d29490` · `1ff78f2`+`3897f7c` · CI commit + `07c280c` log-path fix). Phase 2 = `f1a90be`..`ad77eb8` — **pending revert** (Workstream R).
+- **`v2.13.0` NOT tagged — on hold** (P12): the bundle's config UX (`settings.html` Backend section, `org.env` with Upstash creds, `/api/local-config`) is being replaced. Tag after Platform Workstreams 1–4 + R.
+- **Verified + still valid** (carries forward): the `curl\|sh` / `irm` bootstrap, bundled Node `v22.23.2` (SHA-256 vs nodejs.org), `setup.{sh,ps1}`, `nodeBin()` → bundled runtime, `server/_shared/redis.js` esbuild-into-stage, `release.yml`, `build-backend-lockfile`, slim `backend-package.json` (39 pkgs). wmtest run 2 clean (`/Users/Shared/worldmonitor-wmtest/RESULTS.md`). `install.ps1` still unrun on real Windows.
+- **Known limitation** (now tracked as PLATFORM_ARCHITECTURE Workstream 7 / OQ): fixed launchd label + port `46123` → two backends on one machine collide.
 
 ---
 

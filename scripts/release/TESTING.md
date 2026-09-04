@@ -15,8 +15,8 @@ copies a fresh `.vsix` from `vscode-extension/`.
 | Tier | Isolation | Effort | Use when |
 | --- | --- | --- | --- |
 | **A. Clean-dir extract** | a throwaway directory, reuses your Node | ~2 min + npm ci | every build, always |
-| **B. Fresh macOS user account** | separate `$HOME`, own launchd domain, own Node | ~20 min | before sharing a release link; when `worldmonitor-local.mjs` / `install.sh` changed |
-| **C. Windows** | fresh account or machine | ~20 min | when the `IS_WIN` branch / `install.ps1` changed |
+| **B. Fresh macOS user account** | separate `$HOME`, own launchd domain, own Node | ~20 min | before sharing a release link; when `worldmonitor-local.mjs` / `setup.sh` changed |
+| **C. Windows** | fresh account or machine | ~20 min | when the `IS_WIN` branch / `setup.ps1` changed |
 | **D. VM** | full guest OS | 30–60 min | new OS/arch support, or first external hand-off |
 
 Tier A is the baseline gate. Tier B/C/D add fidelity for the parts A can't
@@ -77,7 +77,7 @@ Highest fidelity without a VM. Two gotchas:
 
 1. **launchd bootstrap needs a real GUI session.** `launchctl bootstrap
    gui/<uid> …` only works when `<uid>` has its own active Aqua login.
-   `sudo -u <user> ./install.sh` does the `npm ci` + `.env` but the
+   `sudo -u <user> ./setup.sh` does the `npm ci` + `.env` but the
    `worldmonitor-local install` step fails with *"Could not find domain for
    gui/<uid>"*. You must actually **log into the account** — Fast User Switching
    is enough (both sessions stay live).
@@ -118,7 +118,7 @@ mkdir -p ~/Applications
 tar -xzf /Users/Shared/worldmonitor-local-<version>.tar.gz -C ~/Applications
 cd ~/Applications/worldmonitor-local-<version>
 xattr -dr com.apple.quarantine .          # clear Gatekeeper quarantine if the copy carried it
-./install.sh                               # answer the Supabase + Upstash prompts
+./setup.sh                               # answer the Supabase + Upstash prompts
 node scripts/worldmonitor-local.mjs login  # GitHub OAuth; needs 127.0.0.1:46124/callback allowlisted in Supabase
 ```
 
@@ -152,8 +152,8 @@ so `$env:USERPROFILE\.worldmonitor\` and PATH are clean.
    (e.g. `%USERPROFILE%\worldmonitor\`).
 3. PowerShell, inside that folder:
    ```powershell
-   .\install.ps1
-   # if blocked:  powershell -ExecutionPolicy Bypass -File .\install.ps1
+   .\setup.ps1
+   # if blocked:  powershell -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 4. `node scripts/worldmonitor-local.mjs login`
 5. VS Code → **WorldMonitor: Open Local Dashboard**.
@@ -197,7 +197,7 @@ cd - && rm -rf /tmp/relcheck
 | `/api/mcp` `tools/list` | A | ~41 tools |
 | backend log | A | no `ERR_MODULE_NOT_FOUND` |
 | `local-sync` | A | "N keys synced" for every prefix |
-| `install.sh` / `install.ps1` prompt flow | B / C | writes a valid `.env`, no crash |
+| `setup.sh` / `setup.ps1` prompt flow | B / C | writes a valid `.env`, no crash |
 | service registration | B / C | `status` shows service + backend up |
 | `login` from zero | B / C | `whoami` shows the GitHub identity |
 | survives logout/reboot | B / C | backend back up on its own |

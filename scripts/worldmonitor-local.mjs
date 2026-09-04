@@ -67,6 +67,17 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 
 const WM_DIR = path.join(os.homedir(), '.worldmonitor');
+
+// The one-command installer (scripts/release/install) fetches a pinned Node
+// build into ~/.worldmonitor/runtime/ (D15) so a fresh machine needs no system
+// Node. Prefer it for the long-lived service; fall back to whatever node is
+// running this CLI when there's no bundled runtime (from-source / dev installs).
+const RUNTIME_NODE = IS_WIN
+  ? path.join(WM_DIR, 'runtime', 'node.exe')
+  : path.join(WM_DIR, 'runtime', 'bin', 'node');
+function nodeBin() {
+  return existsSync(RUNTIME_NODE) ? RUNTIME_NODE : process.execPath;
+}
 const TOKEN_FILE = path.join(WM_DIR, 'local-api-token');
 const SESSION_FILE = operatorSessionFilePath();
 
@@ -152,7 +163,7 @@ function launchdState() {
 }
 
 function writePlist(port) {
-  const nodeBin = process.execPath;
+  const node = nodeBin();
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -161,7 +172,7 @@ function writePlist(port) {
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${nodeBin}</string>
+    <string>${node}</string>
     <string>--env-file-if-exists=${DOTENV_PATH}</string>
     <string>${SERVER_SCRIPT}</string>
   </array>
@@ -237,7 +248,7 @@ function execFileSyncSafe(cmd, args) {
 }
 
 function writeWinTaskFiles(port) {
-  const nodeBin = process.execPath;
+  const node = nodeBin();
   // .cmd — the actual launch, env matches writePlist()'s EnvironmentVariables.
   const cmd = [
     '@echo off',
@@ -246,7 +257,7 @@ function writeWinTaskFiles(port) {
     `set "LOCAL_API_PORT=${port}"`,
     `set "LOCAL_API_RESOURCE_DIR=${REPO_ROOT}"`,
     `set "LOCAL_SQLITE_PATH=${SQLITE_PATH}"`,
-    `"${nodeBin}" "--env-file-if-exists=${DOTENV_PATH}" "${SERVER_SCRIPT}" >> "${LOG}" 2>&1`,
+    `"${node}" "--env-file-if-exists=${DOTENV_PATH}" "${SERVER_SCRIPT}" >> "${LOG}" 2>&1`,
     '',
   ].join('\r\n');
   // .vbs — run the .cmd with no visible window (style 0) and WAIT (True): the
@@ -375,7 +386,7 @@ async function cmdInstall() {
     schtasks(['/run', '/tn', WIN_TASK_NAME], { check: false });
     ok('');
     ok(`installed Scheduled Task "${WIN_TASK_NAME}"`);
-    ok(`  backend:  ${process.execPath} ${SERVER_SCRIPT}`);
+    ok(`  backend:  ${nodeBin()} ${SERVER_SCRIPT}`);
     ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
     ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);
     ok(`  log:      ${LOG}`);
@@ -399,7 +410,7 @@ async function cmdInstall() {
 
   ok('');
   ok(`installed ${LABEL}`);
-  ok(`  backend:  ${process.execPath} ${SERVER_SCRIPT}`);
+  ok(`  backend:  ${nodeBin()} ${SERVER_SCRIPT}`);
   ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
   ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);
   ok(`  log:      ${LOG}`);
@@ -424,7 +435,7 @@ async function cmdRun() {
   }
 
   const child = spawn(
-    process.execPath,
+    nodeBin(),
     [`--env-file-if-exists=${DOTENV_PATH}`, SERVER_SCRIPT],
     {
       cwd: REPO_ROOT,
@@ -535,6 +546,10 @@ async function cmdStatus() {
   } catch { /* down */ }
 
   ok(`backend    ${health ? `up   127.0.0.1:${port}  (mode ${health.mode})` : `DOWN 127.0.0.1:${port}`}`);
+  const usingRuntime = existsSync(RUNTIME_NODE);
+  let nodeVer = '';
+  try { nodeVer = execFileSync(nodeBin(), ['-v'], { encoding: 'utf-8' }).trim(); } catch { /* ignore */ }
+  ok(`runtime    ${usingRuntime ? 'bundled' : 'system'} node ${nodeVer}  ${nodeBin()}`);
   if (IS_MAC) ok(`launchd    ${launchdState()}  (${LABEL})`);
   if (IS_WIN) ok(`task       ${winTaskState()}  (${WIN_TASK_NAME})`);
   ok(`token      ${token ? `set   fp ${fingerprint(token)}   ${TOKEN_FILE}` : 'MISSING — run `worldmonitor-local install`'}`);

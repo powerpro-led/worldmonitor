@@ -984,9 +984,12 @@ const LOCAL_MCP_DEPS = {
     return null;
   },
   async redisPipeline(commands) {
-    // No extension — same bundler-resolution convention as the sidecar-cache
-    // dynamic import in api/_upstash-json.js.
-    const { runRedisPipeline } = await import('../../server/_shared/redis');
+    // Explicit .js: this file is copied verbatim into the release bundle (not
+    // esbuild-bundled), so Node's ESM loader resolves the specifier literally.
+    // build-release-bundle.mjs compiles server/_shared/redis.ts → redis.js into
+    // the bundle for this. (env_key MCP contexts never reach this path, but keep
+    // it wired for correctness — see the LOCAL_MCP_DEPS comment above.)
+    const { runRedisPipeline } = await import('../../server/_shared/redis.js');
     return runRedisPipeline(commands);
   },
 };

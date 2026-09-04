@@ -1,168 +1,127 @@
 <#
-  worldmonitor-local installer (Windows)
+  worldmonitor-local — one-command installer (Windows)
 
-  Run this from inside the extracted bundle folder, in PowerShell:
+      irm https://github.com/powerpro-led/worldmonitor/releases/latest/download/install.ps1 | iex
 
-      .\install.ps1                       # uses .\org.env if present, else prompts
-      .\install.ps1 -Config path\to\org.env
+  With nothing pre-installed:
+    1. fetches a pinned Node build from nodejs.org into %USERPROFILE%\.worldmonitor\runtime\
+       (SHA-256-verified against the official SHASUMS256.txt)
+    2. downloads + verifies the release bundle into %USERPROFILE%\.worldmonitor\app\
+       (keeps an existing .env across upgrades)
+    3. runs the bundle's setup.ps1 with that Node — npm ci, .env, config seed,
+       per-user Scheduled Task, VS Code .vsix
+    4. drops a Desktop launcher that opens the backend control panel
 
-  If PowerShell blocks the script:
-      powershell -ExecutionPolicy Bypass -File .\install.ps1
-
-  The bundle is org-neutral: it carries no Supabase/Upstash values. Your org
-  supplies them in an org.env file (KEY=value lines) — drop it next to this
-  script as org.env, pass -Config, or set $env:WM_ORG_ENV. With none of those,
-  the installer prompts for the two required Supabase values.
-
-  It installs production npm deps, writes .env, and registers a per-user
-  Scheduled Task (WorldMonitorLocal) that starts the backend at logon. No
-  administrator rights required. This folder becomes the permanent install
-  location — do NOT move it afterwards; if you must, move it first and re-run.
+  Params (optional):
+    -Config <org.env>      org config file (forwarded to setup.ps1)
+    -AppVersion <x.y.z>    install a specific release instead of the pinned one
+  Offline: set $env:WM_NODE_TARBALL / $env:WM_APP_ZIP to local files.
 #>
 
-param([string]$Config)
+param(
+  [string]$Config,
+  [string]$AppVersion = '2.13.0'
+)
 
 $ErrorActionPreference = 'Stop'
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
 
-$OrgEnv = $Config
-if (-not $OrgEnv) { $OrgEnv = $env:WM_ORG_ENV }
-if (-not $OrgEnv -and (Test-Path (Join-Path $ScriptDir 'org.env'))) { $OrgEnv = Join-Path $ScriptDir 'org.env' }
+# ── pinned versions (D15 — bump per release) ─────────────────────────────
+$NodeVersion = 'v22.23.2'
+$GhRepo = 'powerpro-led/worldmonitor'
+
+$WmDir = Join-Path $env:USERPROFILE '.worldmonitor'
+$RuntimeDir = Join-Path $WmDir 'runtime'
+$AppDir = Join-Path $WmDir 'app'
 
 function Say  ($m) { Write-Host "`n$m" -ForegroundColor Cyan }
 function Info ($m) { Write-Host "  $m" }
 function Die  ($m) { Write-Host "`nerror: $m" -ForegroundColor Red; exit 1 }
 
-# --- preflight -----------------------------------------------------------
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Die "Node.js not found. Install Node >= 22.5.0 (https://nodejs.org) and re-run."
-}
-$nodeVer = (& node -p "process.versions.node")
-$maj = [int]($nodeVer.Split('.')[0]); $min = [int]($nodeVer.Split('.')[1])
-if ($maj -lt 22 -or ($maj -eq 22 -and $min -lt 5)) {
-  Die "Node $nodeVer is too old — the backend uses the built-in node:sqlite (stable since 22.5.0). Upgrade and re-run."
-}
+if ([Environment]::Is64BitOperatingSystem) {
+  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+} else { Die '32-bit Windows is not supported.' }
+$nodePlat = "win-$arch"
 
-Say "worldmonitor-local installer (Windows)"
-Info "install location: $ScriptDir"
-Info "node:            v$nodeVer"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wm-install-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+  Say "worldmonitor-local installer (Windows)"
+  Info "platform:  $nodePlat"
+  Info "node:      $NodeVersion   ->  $RuntimeDir"
+  Info "app:       v$AppVersion   ->  $AppDir"
 
-# --- 1. production dependencies ---------------------------------------
-# --ignore-scripts: the only postinstall is patch-package, a devDependency
-# that patches @nitric/sdk, which the standalone backend never loads.
-Say "Installing production dependencies (npm ci --omit=dev --ignore-scripts)..."
-& npm ci --omit=dev --ignore-scripts
-if ($LASTEXITCODE -ne 0) { Die "npm ci failed." }
-
-# --- 2. .env --------------------------------------------------------
-if (Test-Path .env) {
-  Say ".env already exists — keeping it. Delete it and re-run to reconfigure."
-} elseif ($OrgEnv) {
-  if (-not (Test-Path $OrgEnv)) { Die "config file not found: $OrgEnv" }
-  Say "Configuring .env from $OrgEnv"
-  $orgLines = Get-Content $OrgEnv | Where-Object { $_ -notmatch '^\s*(#|LOCAL_API_MODE=|$)' }
-  if (-not ($orgLines -match '^\s*VITE_SUPABASE_URL=..*'))            { Die "$OrgEnv is missing VITE_SUPABASE_URL" }
-  if (-not ($orgLines -match '^\s*VITE_SUPABASE_PUBLISHABLE_KEY=..*')) { Die "$OrgEnv is missing VITE_SUPABASE_PUBLISHABLE_KEY" }
-  $out = @(
-    "# Generated by install.ps1 on $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) from $OrgEnv"
-    "# AI summary panels: add OPENROUTER_API_KEY=... here yourself if you want them."
-    "LOCAL_API_MODE=tauri-sidecar"
-  ) + $orgLines
-  if (-not ($orgLines -match '^\s*SUPABASE_URL=')) {
-    $out += ($orgLines | Where-Object { $_ -match '^\s*VITE_SUPABASE_URL=' } | ForEach-Object { $_ -replace '^\s*VITE_', '' })
-  }
-  Set-Content -Path .env -Value $out -Encoding utf8
-  Info "wrote $ScriptDir\.env"
-} else {
-  Say "Configuring .env"
-  Info "No org.env found (drop one next to this script, or pass -Config)."
-  Info "Two values are required (your org's Supabase project)."
-  Info "The rest are optional — press Enter to skip."
-  Write-Host ""
-
-  function PromptRequired ($label) {
-    do { $v = Read-Host "  $label" } while ([string]::IsNullOrWhiteSpace($v))
-    return $v
-  }
-  function PromptOptional ($label) {
-    $v = Read-Host "  $label (optional)"
-    return $v
-  }
-
-  $supaUrl = PromptRequired 'Supabase URL  (https://xxxx.supabase.co)'
-  $supaKey = PromptRequired 'Supabase publishable/anon key'
-  Write-Host ""
-  Info "Upstash Redis keeps the local cache fresh. Without it the backend still"
-  Info "serves whatever is already cached, but nothing refreshes it."
-  Info "Only the READ-ONLY token is asked for - a local instance never needs, and"
-  Info "should never hold, a write credential to the shared store."
-  $upUrl = PromptOptional 'Upstash Redis REST URL'
-  $upRo = ''
-  if (-not [string]::IsNullOrWhiteSpace($upUrl)) {
-    $upRo = PromptOptional '  Upstash read-only token'
-  }
-
-  $lines = @(
-    "# Generated by install.ps1 on $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))"
-    "# See .env.example for every supported key."
-    "# AI summary panels: add OPENROUTER_API_KEY=... here yourself if you want them."
-    "LOCAL_API_MODE=tauri-sidecar"
-    "VITE_SUPABASE_URL=$supaUrl"
-    "SUPABASE_URL=$supaUrl"
-    "VITE_SUPABASE_PUBLISHABLE_KEY=$supaKey"
-  )
-  if (-not [string]::IsNullOrWhiteSpace($upUrl)) { $lines += "UPSTASH_REDIS_REST_URL=$upUrl" }
-  if (-not [string]::IsNullOrWhiteSpace($upRo))  { $lines += "UPSTASH_REDIS_REST_READONLY_TOKEN=$upRo" }
-  Set-Content -Path .env -Value $lines -Encoding utf8
-  Info "wrote $ScriptDir\.env"
-}
-
-# --- 2b. seed ~/.worldmonitor/config.db ---------------------------
-# .env stays the primary source; config.db is the same values in a store the
-# in-app settings panel can edit later. Only allow-listed keys are copied.
-if (Test-Path .env) {
-  & node scripts/worldmonitor-local.mjs config import .env
-  if ($LASTEXITCODE -ne 0) { Info "note: could not seed config.db (non-fatal; .env is still authoritative)" }
-}
-
-# --- 3. Scheduled Task ----------------------------------------------
-Say "Registering the Scheduled Task..."
-& node scripts/worldmonitor-local.mjs install
-if ($LASTEXITCODE -ne 0) { Die "worldmonitor-local install failed." }
-
-Say "Status"
-& node scripts/worldmonitor-local.mjs status
-
-# --- 4. VS Code extension -----------------------------------------
-$vsix = Get-ChildItem -Path $ScriptDir -Filter *.vsix | Select-Object -First 1
-if ($vsix) {
-  if (Get-Command code -ErrorAction SilentlyContinue) {
-    Say "Installing the VS Code extension"
-    & code --install-extension $vsix.FullName --force
+  # ── 1. Node runtime ──────────────────────────────────────────────────
+  $runtimeNode = Join-Path $RuntimeDir 'node.exe'
+  $have = if (Test-Path $runtimeNode) { (& $runtimeNode -v) } else { '' }
+  if ($have -eq $NodeVersion) {
+    Say "Node $NodeVersion already present - skipping download."
   } else {
-    Say "VS Code extension"
-    Info "'code' CLI not on PATH. Install it manually:"
-    Info "  VS Code -> Extensions -> ... -> Install from VSIX... -> $($vsix.FullName)"
+    Say "Fetching Node $NodeVersion..."
+    $nodeZip = "node-$NodeVersion-$nodePlat.zip"
+    $zipPath = Join-Path $tmp $nodeZip
+    if ($env:WM_NODE_TARBALL) {
+      Copy-Item $env:WM_NODE_TARBALL $zipPath
+      Info "using local $($env:WM_NODE_TARBALL) (checksum skipped)"
+    } else {
+      Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$NodeVersion/$nodeZip" -OutFile $zipPath
+      $sums = (Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$NodeVersion/SHASUMS256.txt").Content
+      $want = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($nodeZip) + '$' })
+      if (-not $want) { Die "no SHASUMS entry for $nodeZip" }
+      $want = ($want -split '\s+')[0].ToLower()
+      $got = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+      if ($got -ne $want) { Die "Node checksum mismatch`n  want $want`n  got  $got" }
+      Info "checksum OK"
+    }
+    if (Test-Path $RuntimeDir) { Remove-Item -Recurse -Force $RuntimeDir }
+    $extract = Join-Path $tmp 'node-extract'
+    Expand-Archive -Path $zipPath -DestinationPath $extract -Force
+    # the zip has one top-level node-vX-win-arch\ dir — flatten it into RuntimeDir
+    $inner = Get-ChildItem -Directory $extract | Select-Object -First 1
+    Move-Item $inner.FullName $RuntimeDir
+    Info "installed $(& $runtimeNode -v)"
   }
+  $env:PATH = "$RuntimeDir;$env:PATH"
+
+  # ── 2. app bundle ───────────────────────────────────────────────────
+  Say "Fetching worldmonitor-local v$AppVersion..."
+  $appZip = "worldmonitor-local-$AppVersion.zip"
+  $appZipPath = Join-Path $tmp $appZip
+  if ($env:WM_APP_ZIP) {
+    Copy-Item $env:WM_APP_ZIP $appZipPath
+    Info "using local $($env:WM_APP_ZIP) (checksum skipped)"
+  } else {
+    $base = "https://github.com/$GhRepo/releases/download/v$AppVersion"
+    Invoke-WebRequest -UseBasicParsing "$base/$appZip" -OutFile $appZipPath
+    $wantLine = (Invoke-WebRequest -UseBasicParsing "$base/$appZip.sha256").Content
+    $want = ($wantLine -split '\s+')[0].ToLower()
+    $got = (Get-FileHash $appZipPath -Algorithm SHA256).Hash.ToLower()
+    if ($got -ne $want) { Die "bundle checksum mismatch" }
+    Info "checksum OK"
+  }
+
+  $savedEnv = $null
+  if (Test-Path (Join-Path $AppDir '.env')) {
+    $savedEnv = Join-Path $tmp 'saved.env'
+    Copy-Item (Join-Path $AppDir '.env') $savedEnv
+    Info "kept your existing .env"
+  }
+  if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
+  $appExtract = Join-Path $tmp 'app-extract'
+  Expand-Archive -Path $appZipPath -DestinationPath $appExtract -Force
+  $innerApp = Get-ChildItem -Directory $appExtract | Select-Object -First 1
+  Move-Item $innerApp.FullName $AppDir
+  if ($savedEnv) { Copy-Item $savedEnv (Join-Path $AppDir '.env') -Force }
+
+  # ── 3. hand off to the in-bundle setup ────────────────────────────
+  Say "Running setup..."
+  Push-Location $AppDir
+  try {
+    if ($Config) { .\setup.ps1 -Config $Config } else { .\setup.ps1 }
+  } finally { Pop-Location }
+
+  Say "Installed."
+  Info "Control panel:  http://127.0.0.1:46123/settings.html"
+  Info "A Desktop launcher (WorldMonitor.url) was added."
+} finally {
+  Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
-
-# --- done ---------------------------------------------------------
-Say "Done."
-@"
-  Next steps:
-
-  1. Sign in (for your personalised Latest Brief):
-       node scripts/worldmonitor-local.mjs login
-     One-time operator setup: the Supabase project must allowlist
-       http://127.0.0.1:46124/callback
-     under Auth -> URL Configuration -> Redirect URLs.
-
-  2. In VS Code, run the command:
-       WorldMonitor: Open Local Dashboard
-
-  Manage the backend:
-     node scripts/worldmonitor-local.mjs status
-     node scripts/worldmonitor-local.mjs restart
-     node scripts/worldmonitor-local.mjs uninstall
-"@ | Write-Host

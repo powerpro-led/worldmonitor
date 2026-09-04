@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# worldmonitor-local — one-command installer (macOS / Linux)
+#
+#     curl -fsSL https://github.com/powerpro-led/worldmonitor/releases/latest/download/install | sh
+#
+# What it does, with nothing pre-installed but curl + tar:
+#   1. fetches a pinned Node build from nodejs.org into ~/.worldmonitor/runtime/
+#      (SHA-256-verified against the official SHASUMS256.txt)
+#   2. downloads + verifies the worldmonitor-local release bundle into
+#      ~/.worldmonitor/app/  (keeps an existing .env across upgrades)
+#   3. runs the bundle's setup.sh with that Node — npm ci, .env, config seed,
+#      launchd/systemd-user service, VS Code .vsix
+#   4. drops a Desktop launcher that opens the backend control panel
+#
+# Flags (all optional) are forwarded to setup.sh, plus:
+#   --config <org.env>     org config file (also honoured by setup.sh)
+#   --app-version <x.y.z>  install a specific release instead of the pinned one
+#
+# Offline / air-gapped: point these at local files and no download happens.
+#   WM_NODE_TARBALL=/path/node-v22.23.2-darwin-arm64.tar.gz
+#   WM_APP_TARBALL=/path/worldmonitor-local-2.13.0.tar.gz
+
+set -euo pipefail
+
+# ── pinned versions (D15 — bump per release; Phase 4 CI stamps APP_VERSION) ──
+NODE_VERSION="v22.23.2"
+APP_VERSION="2.13.0"
+GH_REPO="powerpro-led/worldmonitor"
+
+WM_DIR="$HOME/.worldmonitor"
+RUNTIME_DIR="$WM_DIR/runtime"
+APP_DIR="$WM_DIR/app"
+
+say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
+info() { printf '  %s\n' "$*"; }
+die()  { printf '\n\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# ── args ───────────────────────────────────────────────────────────────────
+FORWARD=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --app-version) APP_VERSION="${2:?}"; shift 2 ;;
+    --app-version=*) APP_VERSION="${1#--app-version=}"; shift ;;
+    *) FORWARD+=("$1"); shift ;;
+  esac
+done
+
+# ── preflight ──────────────────────────────────────────────────────────────
+OS="$(uname -s)"
+case "$OS" in
+  Darwin) NODE_OS="darwin" ;;
+  Linux)  NODE_OS="linux" ;;
+  *) die "unsupported OS: $OS (macOS and Linux only; Windows uses install.ps1)" ;;
+esac
+case "$(uname -m)" in
+  arm64|aarch64) NODE_ARCH="arm64" ;;
+  x86_64|amd64)  NODE_ARCH="x64" ;;
+  *) die "unsupported CPU: $(uname -m)" ;;
+esac
+NODE_PLAT="${NODE_OS}-${NODE_ARCH}"
+
+command -v curl >/dev/null 2>&1 || die "curl is required."
+command -v tar  >/dev/null 2>&1 || die "tar is required."
+if command -v shasum >/dev/null 2>&1; then
+  SHA_CHECK() { shasum -a 256 -c -; }
+elif command -v sha256sum >/dev/null 2>&1; then
+  SHA_CHECK() { sha256sum -c -; }
+else
+  die "need shasum or sha256sum for checksum verification."
+fi
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/wm-install.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+say "worldmonitor-local installer"
+info "platform:  $NODE_PLAT"
+info "node:      $NODE_VERSION   →  $RUNTIME_DIR"
+info "app:       v$APP_VERSION   →  $APP_DIR"
+
+# ── 1. Node runtime ───────────────────────────────────────────────────────
+if [ "$("$RUNTIME_DIR/bin/node" -v 2>/dev/null || true)" = "$NODE_VERSION" ]; then
+  say "Node $NODE_VERSION already present — skipping download."
+else
+  say "Fetching Node $NODE_VERSION…"
+  NODE_TGZ="node-${NODE_VERSION}-${NODE_PLAT}.tar.gz"
+  if [ -n "${WM_NODE_TARBALL:-}" ]; then
+    [ -f "$WM_NODE_TARBALL" ] || die "WM_NODE_TARBALL not found: $WM_NODE_TARBALL"
+    cp "$WM_NODE_TARBALL" "$TMP/$NODE_TGZ"
+    info "using local $WM_NODE_TARBALL (checksum skipped)"
+  else
+    curl -fsSL -o "$TMP/$NODE_TGZ"      "https://nodejs.org/dist/${NODE_VERSION}/${NODE_TGZ}"
+    curl -fsSL -o "$TMP/SHASUMS256.txt" "https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt"
+    ( cd "$TMP" && grep " $NODE_TGZ\$" SHASUMS256.txt | SHA_CHECK ) \
+      || die "Node checksum verification failed."
+    info "checksum OK"
+  fi
+  rm -rf "$RUNTIME_DIR"
+  mkdir -p "$RUNTIME_DIR"
+  tar -xzf "$TMP/$NODE_TGZ" -C "$RUNTIME_DIR" --strip-components=1
+  info "installed $("$RUNTIME_DIR/bin/node" -v)"
+fi
+export PATH="$RUNTIME_DIR/bin:$PATH"
+
+# ── 2. app bundle ────────────────────────────────────────────────────────
+say "Fetching worldmonitor-local v$APP_VERSION…"
+APP_TGZ="worldmonitor-local-${APP_VERSION}.tar.gz"
+if [ -n "${WM_APP_TARBALL:-}" ]; then
+  [ -f "$WM_APP_TARBALL" ] || die "WM_APP_TARBALL not found: $WM_APP_TARBALL"
+  cp "$WM_APP_TARBALL" "$TMP/$APP_TGZ"
+  info "using local $WM_APP_TARBALL (checksum skipped)"
+else
+  BASE="https://github.com/${GH_REPO}/releases/download/v${APP_VERSION}"
+  curl -fsSL -o "$TMP/$APP_TGZ"         "$BASE/$APP_TGZ"
+  curl -fsSL -o "$TMP/$APP_TGZ.sha256"  "$BASE/$APP_TGZ.sha256"
+  ( cd "$TMP" && SHA_CHECK < "$APP_TGZ.sha256" ) || die "bundle checksum verification failed."
+  info "checksum OK"
+fi
+
+# preserve an existing .env across a re-install / upgrade
+SAVED_ENV=""
+if [ -f "$APP_DIR/.env" ]; then
+  SAVED_ENV="$TMP/saved.env"
+  cp "$APP_DIR/.env" "$SAVED_ENV"
+  info "kept your existing .env"
+fi
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR"
+tar -xzf "$TMP/$APP_TGZ" -C "$APP_DIR" --strip-components=1
+[ -n "$SAVED_ENV" ] && cp "$SAVED_ENV" "$APP_DIR/.env" && chmod 600 "$APP_DIR/.env"
+
+# ── 3. hand off to the in-bundle setup ─────────────────────────────────
+say "Running setup…"
+cd "$APP_DIR"
+chmod +x setup.sh
+./setup.sh ${FORWARD[@]+"${FORWARD[@]}"}
+
+say "Installed."
+info "Control panel:  http://127.0.0.1:46123/settings.html"
+info "A Desktop launcher was added — double-click it to open the panel."

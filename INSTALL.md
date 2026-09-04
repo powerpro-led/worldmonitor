@@ -1,113 +1,74 @@
 # Installing WorldMonitor Local
 
-This is the **download-and-install** path: a release bundle carries the built
-dashboard, the standalone backend, and the VS Code extension. You do **not**
-need the monorepo or a build toolchain — just Node and npm.
+The **standalone backend** (data layer + REST + local MCP) that the VS Code
+dashboard extension talks to on `127.0.0.1:46123`. One command installs it,
+including its own private copy of Node — you do **not** need the monorepo, a
+build toolchain, or a system Node.
 
 For the from-source developer setup, see [`vscode-extension/README.md`](vscode-extension/README.md).
 
-## Requirements
+## One-command install
 
-- **macOS** (background service = launchd LaunchAgent) or **Windows 10/11**
-  (background service = per-user Scheduled Task at logon, no admin rights)
-- Node.js **>= 22.5.0** and npm — the backend uses the built-in `node:sqlite`,
-  stable since 22.5.0 (`node -v` to check; install from <https://nodejs.org>)
-- VS Code (to view the dashboard)
-- An **`org.env`** file from your organisation — the bundle ships with no
-  Supabase/Upstash values baked in. It contains at least `VITE_SUPABASE_URL` +
-  `VITE_SUPABASE_PUBLISHABLE_KEY` (both public), and optionally the Upstash REST
-  URL + **read-only** token for a self-refreshing cache. See
-  [`org.env.example`](scripts/release/org.env.example) for the format. If you
-  don't have one, `install.sh` will prompt for the two required Supabase values.
-- AI summary panels need an OpenRouter key. Add it in the backend control
-  panel after install (`http://127.0.0.1:46123/settings.html` → **Backend**), or
-  put `OPENROUTER_API_KEY=…` in `.env` yourself. The org's shared key is never
-  distributed.
-
-See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and why
-it's safe.
-
-## Install — macOS
-
-1. Download `worldmonitor-local-<version>.tar.gz` from the
-   [Releases page](https://github.com/powerpro-led/worldmonitor/releases).
-
-2. (Optional) verify it against the published `.sha256`:
-
-   ```sh
-   shasum -a 256 -c worldmonitor-local-<version>.tar.gz.sha256
-   ```
-
-3. Extract it somewhere permanent (`~/Applications/`, `~/worldmonitor/`, …).
-   **The extracted folder is the install location — don't move it afterwards.**
-
-   ```sh
-   mkdir -p ~/Applications && tar -xzf worldmonitor-local-<version>.tar.gz -C ~/Applications
-   cd ~/Applications/worldmonitor-local-<version>
-   ```
-
-4. Put your org's `org.env` next to `install.sh` (or pass `--config <path>`),
-   then run the installer:
-
-   ```sh
-   cp /path/to/org.env .        # or: ./install.sh --config /path/to/org.env
-   ./install.sh
-   ```
-
-   With no `org.env` it falls back to prompting for the two Supabase values.
-
-   It runs `npm ci --omit=dev --ignore-scripts`, writes a minimal `.env` (0600)
-   from your answers, registers the `com.worldmonitor.local-api` launchd service
-   (starts at login, restarts on crash), and installs the `.vsix` if the `code`
-   CLI is on your PATH.
-
-5. Sign in (step below, same on both platforms).
-
-## Install — Windows
-
-1. Download `worldmonitor-local-<version>.zip` from the
-   [Releases page](https://github.com/powerpro-led/worldmonitor/releases).
-
-2. (Optional) verify it in PowerShell:
-
-   ```powershell
-   (Get-FileHash worldmonitor-local-<version>.zip -Algorithm SHA256).Hash.ToLower()
-   # compare against worldmonitor-local-<version>.zip.sha256
-   ```
-
-3. Extract it somewhere permanent (e.g. `%USERPROFILE%\worldmonitor\`).
-   **The extracted folder is the install location — don't move it afterwards.**
-
-4. Put your org's `org.env` in the extracted folder (or pass `-Config <path>`),
-   then in PowerShell from inside it:
-
-   ```powershell
-   .\install.ps1
-   # or:  .\install.ps1 -Config C:\path\to\org.env
-   # if PowerShell blocks it:
-   powershell -ExecutionPolicy Bypass -File .\install.ps1
-   ```
-
-   With no `org.env` it falls back to prompting for the two Supabase values.
-
-   It runs `npm ci --omit=dev --ignore-scripts`, writes a minimal `.env` from
-   your answers, registers the **`WorldMonitorLocal`** Scheduled Task (starts at
-   logon, restarts on failure), and installs the `.vsix` if `code` is on PATH.
-
-5. Sign in (below).
-
-## Sign in (both platforms)
-
-Open the backend control panel at **`http://127.0.0.1:46123/settings.html`**,
-go to the **Backend** section, and click **Sign in with GitHub**. The same page
-is where you set the OpenRouter / Upstash / Supabase values; saving them
-restarts the backend automatically. A fresh install with no Supabase configured
-redirects the dashboard here on first open.
-
-Headless / server installs with no browser can still use the CLI:
+**macOS / Linux**
 
 ```sh
-node scripts/worldmonitor-local.mjs login
+curl -fsSL https://github.com/powerpro-led/worldmonitor/releases/latest/download/install | sh
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://github.com/powerpro-led/worldmonitor/releases/latest/download/install.ps1 | iex
+```
+
+That script:
+
+1. fetches a pinned Node build from nodejs.org into `~/.worldmonitor/runtime/`,
+   verified against the official `SHASUMS256.txt`;
+2. downloads + checksum-verifies the release bundle into `~/.worldmonitor/app/`
+   (an existing `.env` is kept across upgrades);
+3. installs the ~40 backend npm packages, writes `.env`, seeds
+   `~/.worldmonitor/config.db`, registers the background service
+   (launchd `LaunchAgent` on macOS · per-user Scheduled Task on Windows, no
+   admin rights), and installs the `.vsix` if the `code` CLI is on `PATH`;
+4. drops a **WorldMonitor** launcher on your Desktop that opens the control
+   panel.
+
+### Options
+
+```sh
+curl -fsSL …/install | sh -s -- --config /path/to/org.env      # pre-seed org config
+curl -fsSL …/install | sh -s -- --app-version 2.13.0            # pin a specific release
+```
+
+`--config <org.env>` takes a `KEY=value` file with at least `VITE_SUPABASE_URL`
+and `VITE_SUPABASE_PUBLISHABLE_KEY` (both public), plus optionally the Upstash
+REST URL and **read-only** token for a self-refreshing cache. See
+[`org.env.example`](scripts/release/org.env.example). Without it — and without a
+browser to use the control panel — the manual path below prompts for the two
+Supabase values.
+
+**Offline / air-gapped:** point `WM_NODE_TARBALL` / `WM_APP_TARBALL`
+(`WM_APP_ZIP` on Windows) at local files and nothing is downloaded.
+
+## First run — configure & sign in
+
+Open the control panel at **`http://127.0.0.1:46123/settings.html`** (or
+double-click the Desktop launcher), go to the **Backend** section:
+
+- paste the Supabase URL + publishable key (skip if an `org.env` pre-seeded
+  them), add the OpenRouter key for AI summary panels and the Upstash
+  read-only URL/token for a self-refreshing cache — **Save** restarts the
+  backend for you;
+- click **Sign in with GitHub** for your personalised Latest Brief.
+
+A fresh install with no Supabase configured redirects the dashboard here on
+first open.
+
+**Headless / no browser:** sign in from the terminal instead —
+
+```sh
+node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs login
 ```
 
 One-time operator setup: the Supabase project must allowlist
@@ -115,28 +76,22 @@ One-time operator setup: the Supabase project must allowlist
 URLs**. Your GitHub account must be in the allow-listed org (org membership is
 the invite).
 
-Then, in VS Code, run **WorldMonitor: Open Local Dashboard** from the command
-palette.
+Then, in VS Code, run **WorldMonitor: Open Local Dashboard**.
 
 ## Managing the backend
 
 ```sh
-node scripts/worldmonitor-local.mjs status      # backend / service / token / identity
+cd ~/.worldmonitor/app
+node scripts/worldmonitor-local.mjs status      # backend / runtime / service / token / identity
 node scripts/worldmonitor-local.mjs restart     # kick the service (after an upgrade)
 node scripts/worldmonitor-local.mjs config list # stored config (~/.worldmonitor/config.db)
 node scripts/worldmonitor-local.mjs logout      # drop the stored session
 node scripts/worldmonitor-local.mjs uninstall   # remove the service (keeps ~/.worldmonitor/)
 ```
 
-The installer copies your Supabase / Upstash-read-only values into
-`~/.worldmonitor/config.db` as well as `.env`. `.env` stays authoritative (the
-service loads it with `node --env-file`); `config.db` is the same values in a
-store the backend can manage — `config set <KEY> <VALUE>` / `config unset` /
-`config import <file>`. After changing either, `restart`.
-
-Or manage it from the browser: **`http://127.0.0.1:46123/settings.html`** →
-**Backend** shows the current config (secrets masked), operator identity, and a
-Restart button. Saving a config change there restarts the backend for you.
+`.env` (in `~/.worldmonitor/app/`) stays authoritative — the service loads it
+with `node --env-file`; `config.db` holds the same allow-listed values in a
+store the control panel can edit. After changing either, `restart`.
 
 The service listens on `127.0.0.1:46123` — REST for the dashboard, the control
 panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Logs:
@@ -145,22 +100,39 @@ panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Logs:
 
 ## Upgrading
 
-1. Extract the new bundle to a **new** folder next to the old one.
-2. `cd` into it and run the installer (`./install.sh` or `.\install.ps1`) — it
-   re-points the service at the new folder and reuses your existing
-   `~/.worldmonitor/` token and session. Copy your old `.env` over to skip the
-   prompts.
-3. `node scripts/worldmonitor-local.mjs restart`
-4. Once the dashboard looks healthy, delete the old folder.
+Re-run the one-command installer. It re-fetches the bundle into
+`~/.worldmonitor/app/`, keeps your `.env`, re-points the service, and skips the
+Node download if the pinned version is already in `~/.worldmonitor/runtime/`.
+Then `node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs restart`.
+
+## Manual / offline install (no bootstrap)
+
+Download `worldmonitor-local-<version>.tar.gz` (or `.zip`) from the
+[Releases page](https://github.com/powerpro-led/worldmonitor/releases), verify
+it against the published `.sha256`, extract it somewhere permanent, then from
+inside the extracted folder:
+
+```sh
+./setup.sh                       # macOS/Linux   (or: ./setup.sh --config /path/to/org.env)
+.\setup.ps1                      # Windows
+```
+
+This needs a system Node **≥ 22.5.0** on `PATH` (it uses
+`~/.worldmonitor/runtime/` if the bootstrap put one there, otherwise system
+Node). It does everything the bootstrap's step 3 does. Set `WM_SKIP_SERVICE=1`
+to install deps + `.env` only and wire your own supervisor.
+
+See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and
+why it's safe.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Dashboard panels stay empty | `status` shows `backend up`? Without the Upstash URL + read-only token nothing refreshes the cache — add them to `.env` and `restart`. |
+| Dashboard panels stay empty | `status` shows `backend up`? Without the Upstash URL + read-only token nothing refreshes the cache — set them in the control panel and it restarts for you. |
 | Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
-| "Brief service unavailable" | You haven't run `login`, or the session expired — run `login` again. |
-| Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and needs to be up first. |
-| `login` fails after GitHub consent | Your account isn't in the allow-listed org, or the `127.0.0.1:46124/callback` redirect URL isn't allowlisted in Supabase. |
-| Windows: `status` shows `task  Ready` but `backend DOWN` | The task ran but node exited — check `%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |
-| Windows: `install.ps1` won't run | `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
+| "Brief service unavailable" | You haven't signed in, or the session expired — sign in again (control panel or `login`). |
+| Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
+| `login` fails after GitHub consent | Your account isn't in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
+| Windows: `status` shows `task Ready` but `backend DOWN` | The task ran but node exited — check `%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |
+| Bootstrap can't reach nodejs.org / GitHub | Use the offline vars (`WM_NODE_TARBALL` / `WM_APP_TARBALL`) or the manual `setup.sh` path. |

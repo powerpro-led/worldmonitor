@@ -36,6 +36,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build as esbuild } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -115,6 +116,23 @@ copyDir('api');
 // server/: _shared/* helpers imported on demand by api handlers. gateway.ts is
 // the nitric entrypoint — never reached by the sidecar; .ts is excluded anyway.
 copyDir('server');
+
+// server/_shared/redis.ts is dynamically imported at runtime by
+// local-api-server.mjs (the runRedisPipeline path), but the .ts is stripped
+// from the bundle above and no other build step compiles that tree — so a
+// shipped bundle would throw ERR_MODULE_NOT_FOUND on that path. Emit a
+// self-contained ESM .js straight into the stage (it bundles sidecar-cache +
+// node:sqlite inline; ~42 KB, zero node_modules). Sidecar-only — the cloud/edge
+// path uses redis.ts directly and never loads this file.
+await esbuild({
+  entryPoints: [path.join(ROOT, 'server', '_shared', 'redis.ts')],
+  outfile: path.join(STAGE, 'server', '_shared', 'redis.js'),
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'node20',
+  treeShaking: true,
+});
 // shared/: .js/.cjs/.json reference data. The .ts twins are dev-only and skipped.
 copyDir('shared');
 // built frontend the backend serves over real HTTP for the extension iframe.
@@ -159,13 +177,21 @@ cpSync(
   path.join(STAGE, 'scripts', 'shared', 'sync-domains.mjs'),
 );
 
-// the extension artifact + installers + docs at the bundle root
+// the extension artifact + in-bundle setup scripts + docs at the bundle root.
+// (The `curl | sh` bootstrap — scripts/release/install{,.ps1} — is a release-
+// page asset, not staged here: it runs BEFORE the bundle exists. It's copied
+// to release/ below for Phase 4's `gh release create`.)
 cpSync(path.join(ROOT, 'vscode-extension', VSIX), path.join(STAGE, VSIX));
-cpSync(path.join(ROOT, 'scripts', 'release', 'install.sh'), path.join(STAGE, 'install.sh'));
-chmodSync(path.join(STAGE, 'install.sh'), 0o755);
-cpSync(path.join(ROOT, 'scripts', 'release', 'install.ps1'), path.join(STAGE, 'install.ps1'));
+cpSync(path.join(ROOT, 'scripts', 'release', 'setup.sh'), path.join(STAGE, 'setup.sh'));
+chmodSync(path.join(STAGE, 'setup.sh'), 0o755);
+cpSync(path.join(ROOT, 'scripts', 'release', 'setup.ps1'), path.join(STAGE, 'setup.ps1'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'TESTING.md'), path.join(STAGE, 'TESTING.md'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'SECURITY.md'), path.join(STAGE, 'SECURITY.md'));
+// Desktop-launcher icons (setup.sh / setup.ps1 build the launcher from these).
+mkdirSync(path.join(STAGE, 'assets'), { recursive: true });
+for (const f of ['icon.icns', 'icon.ico']) {
+  cpSync(path.join(ROOT, 'scripts', 'release', 'assets', f), path.join(STAGE, 'assets', f));
+}
 // org.env.example — the per-org config template (Model B). NOTE: never stage a
 // filled org.env / .env; the bundle must ship org-neutral.
 cpSync(path.join(ROOT, 'scripts', 'release', 'org.env.example'), path.join(STAGE, 'org.env.example'));
@@ -221,12 +247,21 @@ writeFileSync(
     `extension          ${extPkg.name}@${extPkg.version}`,
     `built              ${new Date().toISOString()}`,
     `contents           ${fileCount} files, ${(totalBytes / 1e6).toFixed(1)} MB unpacked`,
-    'node_modules       NOT included — the installer runs `npm ci --omit=dev --ignore-scripts`',
+    'node_modules       NOT included — setup runs `npm ci --omit=dev --ignore-scripts`',
     'package.json       slim backend-only manifest (5 deps → ~39 pkgs / ~19 MB); root frontend deps excluded',
-    'install            macOS/Linux: ./install.sh   ·   Windows: .\\install.ps1',
+    'one-command        curl -fsSL <release>/install | sh   ·   irm <release>/install.ps1 | iex',
+    'manual setup       macOS/Linux: ./setup.sh   ·   Windows: .\\setup.ps1',
     '',
   ].join('\n'),
 );
+
+// The `curl | sh` bootstrap scripts are release-page assets (they run before a
+// bundle exists). Copy them next to the archives so Phase 4's `gh release
+// create` — and local testing — can pick them up.
+for (const f of ['install', 'install.ps1']) {
+  cpSync(path.join(ROOT, 'scripts', 'release', f), path.join(OUT_DIR, f));
+}
+chmodSync(path.join(OUT_DIR, 'install'), 0o755);
 
 // ── 5. archives + checksums ───────────────────────────────────────────
 const archives = [`${NAME}.tar.gz`, `${NAME}.zip`];
@@ -247,4 +282,5 @@ console.log('');
 shaLines.forEach((l) => console.log(l));
 console.log('\nnext:  gh release create v' + VERSION
   + `\n         ${archives.map((a) => `release/${a} release/${a}.sha256`).join(' \\\n         ')} \\`
+  + `\n         release/install release/install.ps1 \\`
   + `\n         vscode-extension/${VSIX} --title "v${VERSION}" --notes-file <notes>`);

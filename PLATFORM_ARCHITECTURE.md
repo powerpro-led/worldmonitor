@@ -13,14 +13,14 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstreams 4 (denylist mirror) + 2 (vendor the bridge) shipped; OQ-P6 resolved (P14).** Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **As of:** 2026-09-04 (session 57) — **Workstreams 4 (denylist mirror) + 2 (vendor the bridge) shipped; OQ-P6 resolved (P14); Workstream 7's `list-feed-digest` seeder shipped** (`scripts/seed-news-digest.mjs` + scheduler `*/10` + sidecar warm-ping removed). Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
 - **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
 - **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. One item stays open: **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` disagree). **OQ-P6 RESOLVED S57** — see P14 + the resolved-questions section.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
-- **START HERE: Workstream 7's `list-feed-digest` seeder** (unblocked, 7's longest pole). Everything else waits on Workstream 5 (deploy pipeline).
-- **Decisions needed from the operator before Workstream 5:** OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). Neither blocks the 7-seeder.
-- **Recommended order (S56):** ~~R → 1 → 4 → 2~~ (done) → (7-seeder) → 5 → 3 → 6 → rest of 7.
+- **START HERE: Workstream 5 (deploy pipeline)** — everything remaining waits on it. Its two operator-gated blockers are unchanged: **OQ-P7** and a review of **P13**.
+- **Decisions needed from the operator before Workstream 5:** OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation).
+- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder)~~ (done) → 5 → 3 → 6 → rest of 7.
 
 ---
 
@@ -204,7 +204,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 - [ ] Cameras: delete (P7) — includes `server/worldmonitor/webcam/v1/get-webcam-image.ts`, one of the 22.
 - [ ] **Decompose `ais-relay.cjs` (P14 Phase 2).** 28 `startBootSeedLoop` seed/warm-ping loops → `gcp/scheduler/main.ts` `CADENCES` entries (map each against what's already registered/shadowed there first — the file already lists several as "ais-relay backup"). Extract the ~150-line AIS WS core → the shared ingest service. Extract the Telegram MTProto poller → scheduled `--once` + Redis lock. `tauri-sidecar` `telegram-feed` / `gpsjam` routes become mirror reads. End state: the per-org deploy has 0 pinned instances.
-- [ ] **`list-feed-digest` seeder — its own item, not a bullet in an audit** (S56). It has *no seeder at all*: it read-through-caches a live ~190-feed RSS crawl, which is the only reason the startup warm-ping at `local-api-server.mjs` ~line 2769 exists. "Move server-side" here means writing a **new seeder + schedule + Upstash key family**, not relocating existing code. Longest pole in this workstream; **unblocked today**, start it early.
+- [x] **DONE S57 — `list-feed-digest` seeder.** `scripts/seed-news-digest.mjs`: a nixpacks-root-scripts warm-ping job (NOT a re-implementation — `scripts/` can't import `server/` and `buildDigest` isn't exported). It HTTP-pings `/api/news/v1/list-feed-digest?variant=&lang=` per `(variant, lang)` pair (env `NEWS_DIGEST_SEED_VARIANTS`=`full`, `NEWS_DIGEST_SEED_LANGS`=`en,zh`; `en` first so `zh` reuses the warmed `rss:feed:v8:*` per-feed caches) — the RPC runs `buildDigest`, `setCachedJson`s `news:digest:v1:<variant>:<lang>` (which also fires the mirror notify) and stamps a fresh `generatedAt` (what the panels read for freshness, so no `seed-meta:` write here). Registered in `railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` at **`*/10 * * * *`** — a hard constraint, not an inference: must stay under `list-feed-digest.ts`'s 900s `news:digest:v1` TTL or the cold-hole bug returns. `classifyKey('news:digest:v1:*')` was already `'mirror'` — no W4 change. Exit-code policy: 0 on any success (partial failure self-heals next tick), 1 only if every ping fails. Unit test: `tests/seed-news-digest.test.mjs` (10 cases). **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed** — it was already inert whenever `WS_RELAY_URL` was unset (`/api/news/v1/` is `cloudPreferred` then), i.e. in exactly the config the pivot backend runs; the digest now arrives over the mirror.
 - [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
 - [ ] `cloudFallback` — with a real per-org cloud origin now existing, decide whether operator backends may use it (probably still off; a miss = "not synced yet").
 
@@ -330,6 +330,58 @@ steps. **No code — doc only.**
   pins when W3's login wiring lands) and a discovery/JWKS smoke check.
 - **No local gate** — `tsconfig` covers only `src/`, `lint` doesn't include
   `supabase/`, no `deno` here. Unrun until W5, exactly like `local-config`.
+
+**Then Workstream 7's `list-feed-digest` seeder shipped** — the one RPC in the
+pipeline with no producer.
+
+- `list-feed-digest.ts` lazily read-through-caches a ~190-feed RSS crawl under
+  `news:digest:v1:<variant>:<lang>` (TTL 900s, written by its own
+  `cachedFetchJson`). Cold/expired key → the first dashboard request eats the
+  crawl and regional-news panels show "unavailable" until a background rebuild
+  lands. Under P2 the operator backend does no fetching, so the key family
+  needs a server-side producer + the mirror.
+- **Not a re-implementation.** `scripts/` cannot import `server/`
+  (`tests/nixpacks-seeder-import-graph.test.mjs` enforces it) and `buildDigest`
+  isn't exported. `scripts/seed-news-digest.mjs` HTTP-pings the worker's own
+  `/api/news/v1/list-feed-digest` per `(variant, lang)` — the same warm path
+  `seed-insights.warmDigestCache` / `ais-relay` already use. The RPC does the
+  build, `setCachedJson` writes the key **and** fires the fast-path mirror
+  notify (`isMirroredKey('news:digest:v1:…')` → true), and stamps a fresh
+  `generatedAt` (the panels' freshness signal — so no `seed-meta:` write).
+- Config: env `NEWS_DIGEST_SEED_VARIANTS` (default `full`),
+  `NEWS_DIGEST_SEED_LANGS` (default `en,zh` — the only langs any caller sends
+  and the only two with a materially distinct feed set). `en` pings first so
+  the `zh` run reuses the hour-cached `rss:feed:v8:*` per-feed entries.
+- **Cadence `*/10 * * * *`** in `railway-services.json` + `gcp/scheduler/main.ts`
+  `CADENCES`. This is a hard constraint, not a TTL inference: it MUST stay
+  below the 900s (15min) `news:digest:v1` cache TTL or the key expires between
+  runs and the cold-hole returns — which is exactly what today's
+  `seed-insights` side-effect (30min cadence) suffers. `*/10` leaves a 5min
+  margin.
+- Exit code: 0 on any success (a partial failure self-heals next tick and must
+  not wedge the cron), 1 only when every ping fails (a real outage worth
+  surfacing to scheduler alerting).
+- **`classifyKey('news:digest:v1:*')` was already `'mirror'`** — no Workstream
+  4 change. Side keys `buildDigest` writes stay correctly classified:
+  `story:*` + `digest:accumulator:*` denied (the 69% bloat), `news:coverage-
+  ledger:v1:*` mirrored (tiny, harmless).
+- **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed.**
+  It was already inert whenever `WS_RELAY_URL` is unset — `/api/news/v1/` is
+  `cloudPreferred` then and `isCloudPreferred()` short-circuited it — i.e. in
+  exactly the configuration the pivot operator backend runs in. The digest now
+  arrives over the mirror and the sidecar serves it from SQLite with no crawl.
+- Green: new `tests/seed-news-digest.test.mjs` 10/10 · `biome` clean on all
+  touched files (one pre-existing `noConstAssign`-adjacent `let` *info* at
+  `local-api-server.mjs:1740`, untouched, unrelated) · `test:sidecar`
+  `local-api-server.test.mjs` **53/54** (the one failure is still the
+  pre-existing EADDRINUSE test) · the registry-coverage + scheduler-cadence +
+  nixpacks-import-graph guardrails pass for `seed-news-digest` (2 failures in
+  that run — `seed-research` import graph, `Dockerfile.* CMD` coverage —
+  **pre-exist on a clean tree**, unrelated; this change in fact clears 2 other
+  pre-existing failures by registering + scheduling the new seeder).
+- **Not done here:** widening `NEWS_DIGEST_SEED_LANGS` per org (one env change),
+  and whether `seed-insights` should drop its own `warmDigestCache` fallback
+  now that the key is always warm (left as a harmless fallback).
 
 ### Session 56 — 2026-09-04
 

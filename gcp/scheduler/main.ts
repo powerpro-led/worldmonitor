@@ -227,6 +227,21 @@ const CADENCES: Record<string, Cadence> = {
   // exact basename as a seed-command shape).
   // ──────────────────────────────────────────────────────────────────────
   'fetch-gpsjam': { kind: 'every', rate: '1 days' },
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-09-04 (session 57) — PLATFORM_ARCHITECTURE.md Workstream 7.
+  // server/worldmonitor/news/v1/list-feed-digest.ts had NO seeder: it lazily
+  // read-through-caches a ~190-feed RSS crawl under `news:digest:v1:<variant>:
+  // <lang>` (TTL 900s), so a cold/expired key means the first dashboard
+  // request eats the crawl and regional-news panels show "unavailable" until a
+  // background rebuild lands. Under P2 the operator local backend does no
+  // fetching, so this key family must be produced server-side and mirrored.
+  // scripts/seed-news-digest.mjs HTTP-pings the RPC per (variant, lang) — the
+  // RPC does the build + setCachedJson (which fires the mirror notify).
+  // Cadence is a hard constraint, NOT an inference: it must stay BELOW
+  // list-feed-digest.ts's 900s (15min) cache TTL or the key expires between
+  // runs and the cold-hole bug returns. */10 leaves a 5min margin.
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-news-digest': { kind: 'cron', expr: '*/10 * * * *' },
 };
 
 /**

@@ -544,5 +544,14 @@
     "deployMode": "nixpacks-root-scripts",
     "service": "fetch-gpsjam",
     "documentedAt": "TASKS.md \u2014 fortieth session: scheduled nowhere; any Redis reset wiped intelligence:gpsjam:v2 and /api/gpsjam 503'd until a manual re-run. Cadence 'daily' from the script header (REDIS_TTL 48h = 2\u00d7 daily)"
+  },
+  {
+    "entry": "scripts/seed-news-digest.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-news-digest",
+    "requiredEnv": [
+      "APP_DOMAIN"
+    ],
+    "documentedAt": "scripts/seed-news-digest.mjs (header docblock declares */10 cron) + PLATFORM_ARCHITECTURE.md Workstream 7 \u2014 list-feed-digest had no seeder; warms news:digest:v1:<variant>:<lang> so the operator mirror carries it"
   }
 ]

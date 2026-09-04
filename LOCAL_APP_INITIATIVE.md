@@ -13,14 +13,17 @@ control panel, plus move production builds to CI.
 
 ## Status
 
-- **As of:** 2026-09-04 (session 54) — Phase 2 committed; **Phase 3 code-complete + verified** (2 commits, not pushed)
-- **Phase:** 0 done · 1 done · 2 done + committed · **3 done — slim deps + `curl\|sh`/`irm` bootstrap + bundled Node + Desktop launcher + INSTALL.md, all verified except Windows-on-hardware** · **4 (CI) is the only phase left**
-- **Branch:** `main` — Phase 2 = `f1a90be`..`ad77eb8`; Phase 3 = `1ff78f2` (slim deps) + the S54 bootstrap commit. **Ahead of `origin/main`, not pushed** (D12).
-- **No release** — tag or GitHub release — until all four phases are complete and coherent (**D12**). v2.13.0's code ships inside that eventual release.
-- **START HERE next session:** **Phase 4 only** — `.github/workflows/release.yml` (tag-triggered, single `ubuntu-latest`, no matrix, only `GITHUB_TOKEN`): `npm ci` → blank-env `npm run build` → `build:sidecar-sebuf` → `build:sidecar-handlers` → `build:backend-lockfile:check` → `build-release-bundle.mjs` → `.vsix` → `gh release create` with tar.gz + zip + both `.sha256` + `.vsix` + `install` + `install.ps1`. Then D12 lifts.
-- **Open before release:** run the fresh-user `wmtest` install (the real `curl\|sh` once a v2.13.0 release exists, or via `WM_APP_TARBALL`); run `install.ps1` on real Windows.
-- **Build artifacts:** `release/worldmonitor-local-2.13.0.{tar.gz,zip}` (+ `.sha256`, + `install`/`install.ps1`) rebuilt S54 — gitignored, safe to delete/rebuild.
-- **Green (S54):** `tsc` 0 · `typecheck:api` 0 · `biome` changed-files exit 0 (2 pre-existing non-error findings in `local-api-server.mjs`, unrelated) · `test:sidecar` **226/226** · `build:backend-lockfile --check` clean · markdownlint clean · **bootstrap end-to-end**: real Node `v22.23.2` fetch+SHA256+extract → `setup.sh` on bundled Node → `npm ci` 39 pkgs → `.env`/`config.db` seeded → launcher built → backend boots on the bundled runtime (`status` shows `runtime bundled node v22.23.2`); 2nd run skips the Node download; `server/_shared/redis.js` ships + resolves.
+- **As of:** 2026-09-04 (session 54) — **all four phases code-complete + committed, NOT pushed** (3 commits)
+- **Phase:** 0 done · 1 done · 2 done · 3 done · **4 done** (`release.yml`). D12 lifts once the pre-release checks below pass.
+- **Branch:** `main` — Phase 2 = `f1a90be`..`ad77eb8`; Phase 3 = `1ff78f2` + `3897f7c`; Phase 4 = the S54 CI commit. **Ahead of `origin/main`, not pushed** (D12).
+- **START HERE next session — pre-release checks, then D12 lifts:**
+  1. `git push origin main` (finally — the whole initiative is coherent).
+  2. Fresh-user `wmtest` install (Fast User Switching): run `scripts/release/install` with `WM_APP_TARBALL` pointing at the local bundle (no GitHub release exists yet) — the deferred Phase 1+3 end-to-end.
+  3. `install.ps1` on real Windows hardware (standing gap since S48).
+  4. (optional) replace `scripts/release/assets/icon.png` with real artwork → re-run `make-placeholder-icons.mjs`.
+  5. `git tag -a v2.13.0 -m … && git push --tags` → `release.yml` fires → first real GitHub release. Watch the run (Linux archive branch of `build-release-bundle.mjs` is unverified until this).
+- **Build artifacts:** `release/worldmonitor-local-2.13.0.*` rebuilt S54 — gitignored, safe to delete/rebuild.
+- **Green (S54):** `tsc` 0 · `typecheck:api` 0 · `biome` changed-files exit 0 (2 pre-existing non-error findings in `local-api-server.mjs`, unrelated) · `test:sidecar` **226/226** · `build:backend-lockfile --check` clean · markdownlint clean · `release.yml` valid YAML · **bootstrap end-to-end** (macOS): real Node `v22.23.2` fetch+SHA256+extract → `setup.sh` on bundled Node → `npm ci` 39 pkgs → `.env`/`config.db` seeded → launcher built → backend boots on the bundled runtime; 2nd run skips the Node download; `server/_shared/redis.js` ships + resolves.
 
 ---
 
@@ -141,14 +144,11 @@ Target journey ("form-fill"):
 
 ### Phase 4 — CI (GitHub Actions, production release)
 
-- [ ] `.github/workflows/release.yml` — trigger on `v*` tag push
-  - [ ] `ubuntu-latest`, single job (no matrix — sub-option B)
-  - [ ] `npm run build:backend-lockfile:check` (fail the build on a stale `backend-package-lock.json`)
-  - [ ] `npm ci` → `npm run build` (with `VITE_SUPABASE_URL='' VITE_SUPABASE_PUBLISHABLE_KEY=''`) → `build:sidecar-sebuf` → `build:sidecar-handlers` → `node scripts/build-release-bundle.mjs`
-  - [ ] Build the `.vsix` (same workflow or a sibling job)
-  - [ ] `gh release create $TAG` with tar.gz + zip + both .sha256 + .vsix + the `install` / `install.ps1` bootstrap scripts as release assets
-  - [ ] Only `GITHUB_TOKEN` — no repo secrets (Model B builds `dist/` blank)
-- [ ] Document: local `build-release-bundle.mjs` = dev/test only; tag push = production
+- [x] **`.github/workflows/release.yml` — DONE S54.** `on: push: tags: ['v*']`, `permissions: contents: write`, single `ubuntu-latest` job, `node-version: '24'` + `cache: npm` (matches the repo's other workflows; pinned action SHAs). Steps: assert `${GITHUB_REF_NAME#v}` == `package.json` version → `npm ci` → `npm run build:backend-lockfile:check` → `node scripts/build-release-bundle.mjs` (does the blank-env `npm run build` + both sidecar esbuild passes + `.vsix` + staging + archives itself — no separate build steps needed) → `gh release create $TAG --generate-notes` with `tar.gz` + `zip` + both `.sha256` + `install` + `install.ps1` + `.vsix`. Only `github.token`.
+  - `build-release-bundle.mjs` made cross-platform for this: `ditto`→`zip -r -q -X` and `shasum`→`sha256sum` on non-darwin; stamps the build's version into the `release/install{,.ps1}` copies so the published bootstrap fetches the matching bundle. **The Linux archive branch is unverified until the first CI run** (dev machine is macOS; the `zip`/`sha256sum` invocations were checked in isolation).
+- [x] Document: local `build-release-bundle.mjs` = dev/test only; tag push = production — header comment in `release.yml` + `INSTALL.md` "Manual / offline install".
+
+**Phase 4 done. D12 now lifts** once the pre-release checks pass — see Status.
 
 ---
 
@@ -165,6 +165,12 @@ Target journey ("form-fill"):
 ## Session log
 
 ### Session 54 — 2026-09-04
+
+**Part 3 — Phase 4 (CI):**
+
+- `.github/workflows/release.yml` — tag-triggered (`v*`), single `ubuntu-latest`, `contents: write`, only `github.token`. Tag/version assertion → `npm ci` → `build:backend-lockfile:check` → `build-release-bundle.mjs` (self-contained: blank-env build + sidecar passes + `.vsix` + archives) → `gh release create --generate-notes` with tar.gz + zip + both `.sha256` + `install` + `install.ps1` + `.vsix`.
+- `build-release-bundle.mjs` made cross-platform: `ditto`→`zip -r -q -X`, `shasum`→`sha256sum` on non-darwin; stamps this build's version into the `release/install{,.ps1}` copies. Linux archive branch checked in isolation, not through the script (dev machine is macOS).
+- **All four phases now code-complete + committed (3 commits, unpushed). D12 lifts after the pre-release checks in Status.**
 
 **Part 2 — rest of Phase 3 (bootstrap + bundled Node + launcher):**
 

@@ -1,0 +1,71 @@
+name: Release
+
+# Publishes a worldmonitor-local release when a v* tag is pushed. This is the
+# ONLY production path — `node scripts/build-release-bundle.mjs` locally is
+# dev/test only (see LOCAL_APP_INITIATIVE.md Phase 4 / D10).
+#
+# Model B ⇒ no repo secrets: `dist/` is built with blank VITE_SUPABASE_* and the
+# standalone backend injects window.__WM_RUNTIME_CONFIG from its own .env at
+# runtime. Sub-option B ⇒ no build matrix: Node is fetched on the user's machine
+# by the bootstrap, so one ubuntu-latest job produces one universal bundle.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # gh release create
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Backend lockfile is in sync
+        run: npm run build:backend-lockfile:check
+
+      # Builds dist/ (blank Supabase env, handled inside the script), the two
+      # sidecar esbuild passes, the .vsix, stages the tree, and emits
+      # release/<name>.{tar.gz,zip}(+.sha256) plus release/install{,.ps1}.
+      - name: Build release bundle
+        run: node scripts/build-release-bundle.mjs
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="worldmonitor-local-$VERSION"
+          VSIX="$(ls vscode-extension/*.vsix)"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            "release/$NAME.tar.gz" \
+            "release/$NAME.tar.gz.sha256" \
+            "release/$NAME.zip" \
+            "release/$NAME.zip.sha256" \
+            "release/install" \
+            "release/install.ps1" \
+            "$VSIX"

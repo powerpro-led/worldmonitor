@@ -256,23 +256,37 @@ writeFileSync(
 );
 
 // The `curl | sh` bootstrap scripts are release-page assets (they run before a
-// bundle exists). Copy them next to the archives so Phase 4's `gh release
-// create` — and local testing — can pick them up.
-for (const f of ['install', 'install.ps1']) {
-  cpSync(path.join(ROOT, 'scripts', 'release', f), path.join(OUT_DIR, f));
+// bundle exists). Copy them next to the archives — stamping this build's
+// version so the published `install` fetches the matching bundle — so Phase 4's
+// `gh release create` (and local testing) can pick them up.
+{
+  const sh = readFileSync(path.join(ROOT, 'scripts', 'release', 'install'), 'utf8')
+    .replace(/^APP_VERSION="[^"]*"/m, `APP_VERSION="${VERSION}"`);
+  writeFileSync(path.join(OUT_DIR, 'install'), sh);
+  chmodSync(path.join(OUT_DIR, 'install'), 0o755);
+  const ps = readFileSync(path.join(ROOT, 'scripts', 'release', 'install.ps1'), 'utf8')
+    .replace(/(\[string\]\$AppVersion\s*=\s*)'[^']*'/, `$1'${VERSION}'`);
+  writeFileSync(path.join(OUT_DIR, 'install.ps1'), ps);
 }
-chmodSync(path.join(OUT_DIR, 'install'), 0o755);
 
 // ── 5. archives + checksums ───────────────────────────────────────────
+// Cross-platform: the local dev path is macOS, Phase 4 CI runs on ubuntu.
 const archives = [`${NAME}.tar.gz`, `${NAME}.zip`];
 run('tar', ['-czf', path.join(OUT_DIR, archives[0]), '-C', OUT_DIR, NAME]);
-// --norsrc/--noextattr/--noqtn: no __MACOSX or ._ sidecar entries in the zip.
-run('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--keepParent', STAGE, path.join(OUT_DIR, archives[1])]);
+if (process.platform === 'darwin') {
+  // --norsrc/--noextattr/--noqtn: no __MACOSX or ._ sidecar entries.
+  run('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noqtn', '--keepParent', STAGE, path.join(OUT_DIR, archives[1])]);
+} else {
+  // -X: no extra file attributes / uid-gid. Run from OUT_DIR so the archive
+  // carries the `${NAME}/` prefix (ditto --keepParent equivalent).
+  run('zip', ['-r', '-q', '-X', archives[1], NAME], { cwd: OUT_DIR });
+}
 
+const shaCmd = process.platform === 'darwin' ? ['shasum', '-a', '256'] : ['sha256sum'];
 console.log('\n─────────────────────────────────────────────');
 const shaLines = [];
 for (const a of archives) {
-  const sum = execFileSync('shasum', ['-a', '256', a], { cwd: OUT_DIR }).toString();
+  const sum = execFileSync(shaCmd[0], [...shaCmd.slice(1), a], { cwd: OUT_DIR }).toString();
   writeFileSync(path.join(OUT_DIR, `${a}.sha256`), sum);
   const bytes = statSync(path.join(OUT_DIR, a)).size;
   console.log(`  release/${a}   (${(bytes / 1e6).toFixed(1)} MB)`);

@@ -92,7 +92,10 @@ test('no-ops on a missing/empty/invalid command list', async () => {
   await notifyMirroredWrites(URL, TOKEN, undefined);
   await notifyMirroredWrites(URL, TOKEN, []);
   await notifyMirroredWrites(URL, TOKEN, [['GET', 'economic:x'], ['SET', 'economic:y']]); // SET too short
-  await notifyMirroredWrites(URL, TOKEN, [['SET', 'not-a-mirrored-prefix:v1', '{}']]);
+  // classifyKey() is default-allow now, so "not a mirrored prefix" must be a
+  // genuinely DENIED key (bookkeeping), not just an unknown one.
+  await notifyMirroredWrites(URL, TOKEN, [['SET', 'seed-meta:economic:y', '{}']]);
+  await notifyMirroredWrites(URL, TOKEN, [['SET', 'story:alias:v1', '{}']]);
 
   assert.equal(called, 0, 'nothing mirrored → no Redis traffic');
 });

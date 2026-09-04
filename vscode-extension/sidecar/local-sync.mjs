@@ -28,17 +28,18 @@
  *     picking `node:sqlite` over `better-sqlite3` below for the same
  *     reason.
  *
- * Domain scope, verified live against the real store (SCAN + TYPE + value
- * sampling, 2026-08-07) rather than guessed: every prefix in SYNC_PREFIXES
- * below was hand-checked to hold real, structured, display-worthy JSON.
- * Deliberately excluded (confirmed internal bookkeeping, zero display
- * value): `story:*` (alias/peak/sources/track — pure news-dedup tracking,
- * no article content, ~69% of all keys),
+ * Domain scope is a DENYLIST now, not the old SYNC_PREFIXES allowlist
+ * (platform pivot, Workstream 4 / PLATFORM_ARCHITECTURE.md P6). This scan
+ * walks the WHOLE keyspace (`SCAN MATCH *`) and mirrors every key that
+ * scripts/shared/sync-domains.mjs's classifyKey() does not mark 'deny' —
+ * so a freshly-seeded domain lands in the mirror with zero change here.
+ * Denied (confirmed internal bookkeeping / credentials / live queues, zero
+ * display value): `story:*` (~69% of all keys, pure news-dedup tracking),
  * `seed-meta:*`/`seed-routes:*`/`seed-activated:*` (sync-job bookkeeping),
- * `baseline:*` (internal statistical accumulator state), `digest:*`
- * (internal notification accumulator), `cache:*`/`health:*`/`temporal:*`/
- * `wm-smoke-test:*`/`wm:*` (tiny, internal/test), `news:*` (only
- * ingestion-ledger metadata — counts/drops — not article content).
+ * `baseline:*`, `digest:*`, `cache:*`, `health:*`, `temporal:*`, `sync:*`,
+ * `rl:*`, `llm:*`, `wm:*`, `*smoke-test:*`, `*:token`/`*:oauth:*`
+ * (credentials), and `forecast:simulation-task*` (a live worker queue under
+ * an otherwise-mirrored prefix). See that module for the full rationale.
  *
  * Every key is read with the one command that's actually correct for its
  * real Redis type (`ZRANGE ... WITHSCORES` for zsets, `HGETALL` for
@@ -114,7 +115,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SYNC_PREFIXES } from '../../scripts/shared/sync-domains.mjs';
+import { classifyKey } from '../../scripts/shared/sync-domains.mjs';
 import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,15 +155,20 @@ const WATCHDOG_MS = 15 * 60_000;
 
 const SCAN_COUNT = 1_000;
 
-// SYNC_PREFIXES moved to scripts/shared/sync-domains.mjs 2026-08-23 (imported
-// above) so the fast-path write-side push nudge (notifyChange() in
-// scripts/_seed-utils.mjs) and this full-rescan reader agree on exactly what
-// "mirrored" means — see that file for the full per-prefix rationale
-// (verified live against real Redis keys, not guessed) and why this list is
-// duplicated, not shared, on the RPC-handler write side.
+// classifyKey() lives in scripts/shared/sync-domains.mjs so this full-rescan
+// reader and the fast-path write-side push nudge (notifyChange() in
+// scripts/_seed-utils.mjs, notifyKeyChanged() in server/_shared/sync-notify.ts)
+// agree on exactly what "mirrored" means. See that file for the denylist
+// rationale (verified live against real Redis keys) and the three-state model.
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */
 const PIPELINE_CHUNK = 100;
+
+// Read+write the admitted keys in bounded batches rather than one pass over
+// the whole keyspace: keeps each SQLite write transaction short (a
+// multi-second one blocks the sidecar's read-only opener — see
+// openDatabase()) and bounds how many values are buffered in memory at once.
+const SYNC_WRITE_BATCH = 1_000;
 
 /**
  * The one pipeline method that correctly reads each type — no fallback chain.
@@ -312,8 +318,12 @@ async function attachTypes(redis, keys) {
   return entries;
 }
 
-/** Returns [{key, type}, ...] whether or not the server implements WITHTYPE. */
-async function scanAllKeysWithType(redis, prefix) {
+/**
+ * Returns [{key, type}, ...] whether or not the server implements WITHTYPE.
+ * `match` defaults to '*' — the denylist model scans the whole keyspace once
+ * and classifies each key, rather than one scoped scan per allowlisted prefix.
+ */
+async function scanAllKeysWithType(redis, match = '*') {
   const entries = [];
   const untyped = [];
   let cursor = '0';
@@ -321,9 +331,9 @@ async function scanAllKeysWithType(redis, prefix) {
   do {
     const [nextCursor, batch] = await withTimeoutRetry(
       () => (supportsWithType
-        ? redis.scan(cursor, { match: `${prefix}*`, count: SCAN_COUNT, withType: true })
-        : redis.scan(cursor, { match: `${prefix}*`, count: SCAN_COUNT })),
-      `SCAN ${prefix}* page ${page}`,
+        ? redis.scan(cursor, { match, count: SCAN_COUNT, withType: true })
+        : redis.scan(cursor, { match, count: SCAN_COUNT })),
+      `SCAN ${match} page ${page}`,
     );
     cursor = nextCursor;
     if (supportsWithType) entries.push(...batch);
@@ -477,7 +487,7 @@ async function main() {
       : '[local-sync] no operator identity recorded yet — mirroring brief:llm:* only, no user-scoped briefs. '
         + 'Open the dashboard once (any authenticated request) and the next sync will pick it up.',
   );
-  console.log(`[local-sync] pulling prefixes: ${SYNC_PREFIXES.join(', ')}`);
+  console.log('[local-sync] denylist model — scanning the full keyspace (see scripts/shared/sync-domains.mjs)');
 
   const db = openDatabase();
   const insert = db.prepare('INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?)');
@@ -501,19 +511,37 @@ async function main() {
     // table is always exactly what Redis held as of this run. No DELETE
     // needed: openDatabase() started from an empty scratch file.
 
-    for (const prefix of SYNC_PREFIXES) {
-      const scanned = await scanAllKeysWithType(redis, prefix);
-      const entries = scanned.filter((entry) => keepKey(entry.key));
-      const skipped = scanned.length - entries.length;
-      if (skipped > 0) {
-        console.log(OPERATOR_USER_ID
-            ? `[local-sync]   ${prefix}* -> skipped ${skipped} key(s) belonging to another user`
-            : `[local-sync]   ${prefix}* -> skipped ${skipped} user-scoped key(s) (no operator identity yet)`);
-      }
-      totalFound += entries.length;
-      console.log(`[local-sync]   ${prefix}* -> ${entries.length} keys found`);
+    const scanned = await scanAllKeysWithType(redis);
 
-      const values = await readValues(redis, entries);
+    // Denylist admission: keep everything classifyKey() does not mark 'deny',
+    // then let keepKey() scope the one user-filtered prefix (brief:) to this
+    // operator. 'mirror' and 'mirror-filtered' both flow through here — the
+    // difference between them only matters on the fast-path push, which this
+    // rescan is not.
+    let deniedCount = 0;
+    const admitted = scanned.filter((entry) => {
+      if (classifyKey(entry.key) === 'deny') { deniedCount++; return false; }
+      return true;
+    });
+    const entries = admitted.filter((entry) => keepKey(entry.key));
+    const userSkipped = admitted.length - entries.length;
+    totalFound = entries.length;
+
+    console.log(
+      `[local-sync]   ${scanned.length} keys scanned -> ${deniedCount} denied, `
+      + (userSkipped > 0
+        ? (OPERATOR_USER_ID
+            ? `${userSkipped} another user's, `
+            : `${userSkipped} user-scoped (no operator identity yet), `)
+        : '')
+      + `${entries.length} to mirror`,
+    );
+
+    // Read + write in bounded batches (see SYNC_WRITE_BATCH) rather than one
+    // pass over every admitted key.
+    for (let i = 0; i < entries.length; i += SYNC_WRITE_BATCH) {
+      const batch = entries.slice(i, i + SYNC_WRITE_BATCH);
+      const values = await readValues(redis, batch);
 
       db.exec('BEGIN');
       for (const [key, { value, type }] of values) {

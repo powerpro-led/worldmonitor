@@ -299,7 +299,7 @@ for (const f of SIDECAR_FILES) {
 
 // the CLI (single file — its only repo import is the sidecar session-file.mjs
 // copied above) plus scripts/shared/sync-domains.mjs, the ONLY scripts/ file
-// the sidecar imports (local-sync.mjs + sync-listener.mjs, for SYNC_PREFIXES /
+// the sidecar imports (local-sync.mjs + sync-listener.mjs, for classifyKey /
 // isMirroredKey — it is self-contained, no further imports).
 mkdirSync(path.join(STAGE, 'scripts', 'shared'), { recursive: true });
 cpSync(

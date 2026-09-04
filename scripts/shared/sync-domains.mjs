@@ -1,14 +1,15 @@
 /**
- * Canonical "this key belongs to the operator local-mirror" allowlist.
+ * Canonical "does this key belong in the operator local-mirror" classifier.
  *
  * Single source of truth for TWO independent concerns that must never drift
  * apart:
  *   - the READ side: vscode-extension/sidecar/local-sync.mjs's periodic full
- *     rescan, which imports SYNC_PREFIXES from here instead of defining its
- *     own copy (moved here 2026-08-23 — this is the exact list, with its
- *     exact original commentary, that used to live inline in that file).
- *   - the WRITE side: scripts/_seed-utils.mjs's notifyChange() (the fast-path
- *     push nudge fired after a real write lands), gated on the same list so
+ *     rescan, which SCANs the whole keyspace and keeps every key
+ *     classifyKey() does not mark 'deny' (then applies keepKey() for the one
+ *     user-scoped prefix — see 'mirror-filtered' below).
+ *   - the WRITE side: scripts/_seed-utils.mjs's notifyChange() and
+ *     server/_shared/sync-notify.ts's notifyKeyChanged() (the fast-path push
+ *     nudge fired after a real write lands), both gated on isMirroredKey() so
  *     a key the rescan would never mirror doesn't get pushed either.
  *
  * server/_shared/sync-notify.ts (the RPC-handler write-side twin, used by
@@ -18,188 +19,179 @@
  * simulation-queue.ts already use). An earlier version hand-duplicated the
  * list on the incorrect claim that no such path existed, and it drifted
  * once; the import removed that risk class (2026-08-23).
+ *
+ * ---------------------------------------------------------------------------
+ * DENYLIST, not allowlist (platform pivot, Workstream 4 / PLATFORM_ARCHITECTURE.md P6).
+ *
+ * This module used to export a ~55-entry SYNC_PREFIXES allowlist. Every new
+ * seeded domain had to be added to it by hand, and the failure mode when
+ * someone forgot was silent — a panel with live data in the browser and a
+ * permanently empty box in the VS Code mirror (the "theater-posture: was
+ * never mirrored" class of bug, hit ~20 times). The model is now inverted:
+ * a key is mirrored UNLESS it matches a deny rule below, so a fresh data
+ * prefix mirrors with zero code change.
+ *
+ * THREE states, not two:
+ *   'deny'            — never mirrored, never pushed. Credentials, live
+ *                       worker queues, infra/bookkeeping, probes.
+ *   'mirror'          — mirrored wholesale by the rescan; pushed on the
+ *                       fast path. The default for anything not denied.
+ *   'mirror-filtered' — mirrored by the rescan but only after keepKey()
+ *                       scopes it to THIS operator; NEVER pushed on the fast
+ *                       path, because sync:notify is one global channel with
+ *                       no per-recipient filtering (the session-39 leak fix).
+ *                       Only `brief:` (minus the shared `brief:llm:` subtree)
+ *                       is in this state.
+ * ---------------------------------------------------------------------------
  */
 
-/** Domain scope — see the per-prefix comments below for how this list was chosen. */
-export const SYNC_PREFIXES = [
-  'resilience:',
-  'intelligence:',
-  'energy:',
-  'supply_chain:',
-  'market:',
-  'economic:',
-  'climate:',
-  'portwatch:',
-  'risk:',
-  'rss:',
-  'forecast:',
-  // Both spellings needed — get-theater-posture.ts's own live/backup keys
-  // use a hyphen ('theater-posture:sebuf:v1'/':backup:v1') but its stale
-  // key uses an underscore ('theater_posture:sebuf:stale:v1'). Missing
-  // from this list entirely until found live: the Strategic Posture panel
-  // read empty theaters forever in the VS Code sidecar, no error, because
-  // the key it needs was never mirrored down from Upstash to begin with —
-  // not a bug in the panel or the RPC handler, just an absent prefix here.
-  'theater-posture:',
-  'theater_posture:',
-  // LLM OUTPUT — the most expensive rows in the store to regenerate, and the
-  // whole point of a shared cache: both are keyed by a CONTENT hash (see
-  // src/utils/summary-cache-key.ts, "the canonical cache-key builder shared by
-  // both client and server"), so two operators reading the same article derive
-  // the same key and ONE model call can serve everyone. Omitted until
-  // 2026-08-20, which meant every operator silently re-paid for identical
-  // summaries and classifications — same failure mode as the theater-posture:
-  // note above, but costing money rather than showing a blank panel.
-  'summary:',
-  // Was listed as an exclusion above ("ML/log metadata"). That was wrong:
-  // classify:sebuf:v6:<hash> holds the cached LLM verdict itself
-  // ({level, category, timestamp}, CLASSIFY_CACHE_TTL = 86400), which drives
-  // panel alert levels — and /api/intelligence/v1/classify-event is one of the
-  // LLM-spend-quota'd paths, so a miss costs a real model call.
-  'classify:',
+/**
+ * Prefixes denied outright. Split into groups purely for the rationale; the
+ * check is a flat startsWith() over all of them.
+ *
+ * Each entry was classified by READING its keys against the real store, not
+ * by its name — the block that used to sit at the foot of SYNC_PREFIXES
+ * headed "DELIBERATELY EXCLUDED, verified by reading the keys."
+ */
+const DENY_PREFIXES = [
+  // News-dedup + tracking. `story:` alone is ~69% of all keys in the shared
+  // store and carries no article content — the single largest bloat item.
+  'story:',
 
-  // ---------------------------------------------------------------------
-  // Added 2026-08-21 after auditing EVERY prefix in Redis against every
-  // server/worldmonitor/*/v1/*.ts handler, rather than adding prefixes one
-  // panel-complaint at a time. 19 domains were reading at least one prefix
-  // that was never mirrored, so those panels had data in the browser (live
-  // Redis) and nothing in the VS Code sidecar (mirror only) — the same
-  // silent failure as the theater-posture: note above, 19 times over.
-  //
-  // Each prefix below was classified by READING its keys, not by its name.
-  // That distinction is load-bearing: `acled:` looks like a data prefix and
-  // is deliberately absent, because its only key is `acled:oauth:token` — a
-  // credential, which mirroring would copy onto the operator's laptop and
-  // defeat the read-only-token rationale in assertEnv(). See the exclusion
-  // list at the bottom of this comment block.
-  // ---------------------------------------------------------------------
+  // Notification / eventing / lock bookkeeping.
+  'wm:', // notification dedup, an events queue, locks
+  'digest:', // notification accumulator + last-run marker
+  'baseline:', // internal statistical accumulator state
 
-  // Trade + customs. `trade:flows:v1:*` (256) and `trade:tariffs:v1:*` (159)
-  // are per-country composed keys; the singular `trade:restrictions:v1`,
-  // `trade:barriers:v1` and `trade:customs-revenue:v1` back the tariff and
-  // trade-policy panels. `comtrade:` holds bilateral flows and is read by
-  // BOTH the trade and supply-chain domains — which is why supply-chain was
-  // partially populated rather than blank: its own `supply_chain:` keys were
-  // already mirrored, only its comtrade half was missing.
-  'trade:',
-  'comtrade:',
-  // `supply-chain:exposure:{iso2}:{hs2}:v1` (HYPHEN — distinct from the
-  // underscored `supply_chain:` prefix above) is the ONE hyphen-spelled
-  // supply-chain family that has a scheduled batch seeder
-  // (seed-hs2-chokepoint-exposure.mjs) pre-warming ~174×N per-country/HS2
-  // rows. Absent here it was mirrored nowhere, so the premium Country
-  // Chokepoint Index panel had to recompute every cell from `comtrade:` on
-  // first open in the sidecar. The other hyphen `supply-chain:*` families
-  // (cost-shock, sector-dep, route-explorer-lane, route-impact) are
-  // deliberately NOT included — they are request-varying, auth-gated,
-  // per-selection read-through caches with no seeder, same class as the
-  // excluded `cache:`/`story:` prefixes below.
-  'supply-chain:exposure:',
+  // Upstream-fetch scratch (abuseipdb lookups, cyber first-seen markers, ...).
+  'cache:',
 
-  // Security / conflict / defence.
-  'conflict:',
-  'unrest:',
-  'displacement:',
-  'military:',
-  'usni-fleet:',
-  'patents:',
-  'cyber:',
+  // Sync-job bookkeeping written by the seed pipeline itself.
+  'seed-meta:',
+  'seed-routes:',
+  'seed-activated:',
+  'seed-lock:',
+  'seed-webcams:', // cameras are being removed entirely (P7) — deny regardless
 
-  // Physical world + hazards.
-  'natural:',
-  'seismology:',
-  'radiation:',
-  'thermal:',
-  'weather:',
-  'aviation:',
-  'infra:',
+  // The real-time-sync plumbing itself. `sync:changelog` is a live stream
+  // key SCAN returns; `sync:notify` is the pub/sub channel; a cursor may be
+  // parked here too. Default-allow would mirror the changelog into every
+  // operator's cache — this prefix is the clearest example of why the
+  // denylist inversion needs an explicit audit rather than just the P6
+  // shape patterns.
+  'sync:',
 
-  // Economic / markets not already covered by economic: and market:.
-  'bls:',
-  'insider:',
-  'regulatory:',
+  // Infrastructure, health, probes, rate limiting.
+  'health:',
+  'rate:', // P6 shape pattern — kept even though the live keys use `rl:`
+  'rl:', // the ACTUAL @upstash/ratelimit prefix (rl:, rl:ep, rl:scope, rl:apikey:*)
+  'llm:', // LLM spend / daily-usage meters (NOTE: the LLM *output* caches
+  //          summary:* and classify:* are NOT here — they are the whole
+  //          point of a shared mirror and stay 'mirror')
+  'relay:',
+  'cf:',
+  'shared:',
+  'ci-sebuf:',
+  'wm-smoke-test:',
+  'temporal:',
 
-  // Analysis, research and editorial output.
-  'correlation:',
-  'research:',
-  'news:',
-  'intel:',
-  'prediction:',
+  // Preview/dev-deploy-prefixed keys. Largely moot now that each org has its
+  // own Upstash DB, but harmless to keep and correct if a shared DB is ever
+  // used again (redis.ts ~line 475 relies on exactly this rejection).
+  'preview:',
 
-  // Both spellings exist, exactly like theater-posture:/theater_posture:
-  // above. Confirmed live in Redis, one key each — do not "tidy" one away.
-  'positive-events:',
-  'positive_events:',
+  // Credential. Its only key is `acled:oauth:token`, also caught by the
+  // `:oauth:` shape rule below — listed explicitly so the intent is legible.
+  'acled:',
 
-  // The ONLY user-scoped prefix here, and therefore the only one that is
-  // filtered rather than mirrored wholesale — see local-sync.mjs's keepKey().
-  // Blanket `brief:*` would copy every user's brief content onto one laptop,
-  // which contradicts the read-only-token rationale in assertEnv().
-  'brief:',
-
-  // DELIBERATELY EXCLUDED, verified by reading the keys:
-  //   acled:        -> `acled:oauth:token`, a CREDENTIAL.
-  //   wm:           -> notification dedup, an events queue and locks.
-  //   story:        -> ~18.4k news-dedup tracking keys, no article content.
-  //   cache:        -> upstream fetch scratch (abuseipdb, cyber first-seen).
-  //   digest:       -> notification accumulator + last-run marker.
-  //   baseline:     -> internal statistical accumulator state.
-  //   seed-meta:, seed-routes:, seed-activated:  -> sync-job bookkeeping.
-  //   health:, rate:, llm:, relay:, cf:, shared:, ci-sebuf:, *smoke-test:
-  //                 -> infrastructure and probes.
+  // Session-pattern shapes as prefixes (the suffix/substring shapes are
+  // handled separately below).
+  'session:',
+  'idempotency:',
+  'ratelimit:',
+  'lock:',
 ];
 
 /**
- * Narrow exclusions WITHIN an otherwise-mirrored prefix — for keys that are
- * internal implementation bookkeeping, not display data, but happen to fall
- * under a broad prefix that's legitimately mirrored for other reasons.
+ * Shape patterns — a key is denied if it ENDS WITH any of these, regardless
+ * of domain. Catches credentials and pagination/sync bookkeeping that live
+ * under an otherwise-mirrored prefix.
+ */
+const DENY_SUFFIXES = [':token', ':secret', ':cursor'];
+
+/**
+ * Shape patterns — a key is denied if it CONTAINS any of these anywhere.
+ * `:oauth:` catches `<provider>:oauth:token` / `:oauth:refresh`; `smoke-test:`
+ * catches both `wm-smoke-test:` and `wm:smoke-test:` variants.
+ */
+const DENY_SUBSTRINGS = [':oauth:', 'smoke-test:'];
+
+/**
+ * Narrow exclusions WITHIN an otherwise-mirrored prefix — keys that are
+ * internal implementation bookkeeping, not display data, but fall under a
+ * broad prefix that is legitimately mirrored for other reasons.
  *
  * `forecast:simulation-task*` (server/_shared/_simulation-queue-constants.mjs
  * / scripts/_simulation-queue-constants.mjs's SIMULATION_TASK_KEY_PREFIX +
  * SIMULATION_TASK_QUEUE_KEY) is a live worker task queue — the ZSET the
  * simulation worker ZRANGEs to discover pending runs — not a result an
- * operator dashboard shows. Same class as already-excluded `seed-lock:`.
- * Found 2026-08-23 via tests/simulation-queue-parity.test.mts: the write-side
- * notify hook (this list's WRITE-side consumer) would have fired for these
- * keys because `forecast:` is broad, but only from the TS write path
- * (runRedisPipeline), not the .mjs seeder's raw redisCommand() calls for the
- * exact same key — a real behavioral asymmetry the notify instrumentation
- * surfaced that a plain full-rescan SCAN never would have (it would have
- * silently mirrored live queue state onto every operator's laptop either
- * way, just never asymmetrically).
+ * operator dashboard shows. `forecast:` reads as data, so no shape pattern
+ * catches it; it was added here 2026-08-23 after prefix reasoning failed on
+ * it once already (tests/simulation-queue-parity.test.mts broke). Carry it
+ * across the allowlist→denylist inversion verbatim — the inversion does not
+ * change the fact that `forecast:` display data IS wanted and this one
+ * sub-family is NOT.
  */
 const MIRROR_EXCLUDED_PREFIXES = ['forecast:simulation-task'];
 
 /**
- * `brief:` is the one user-scoped prefix in SYNC_PREFIXES (see local-sync.mjs's
- * keepKey(), which filters it to the current operator's own userId during the
- * full rescan — the ONLY reason that prefix is safe to mirror at all). The
- * real-time push has no equivalent per-recipient filtering: `sync:notify` is
- * one global Redis Pub/Sub channel every operator's sidecar subscribes to
- * identically, so there is no publish-time way to say "only User A's laptop
- * should get this." A `brief:<userId>:<slot>` key must therefore NEVER be
- * pushed this way — real-time freshness for that one narrow case is
- * sacrificed in favor of correctness, and it falls back to the full rescan
- * (which DOES apply keepKey() correctly) instead. `brief:llm:*` is shared,
- * non-user-scoped LLM output (see shouldEnvelopeKey's own bare/enveloped
- * split in _seed-utils.mjs) and stays safe to push to everyone.
- *
- * Found via a multi-agent code review after the initial implementation —
- * isMirroredKey() previously only checked the broad `brief:` prefix, which
- * is true for every user's key, not just the reader's own. Fixed here
- * rather than in the listener, so both write-side gates (this file's own
- * notifyChange() and server/_shared/sync-notify.ts's notifyKeyChanged())
- * refuse to publish it in the first place — the listener's own isMirroredKey
- * check is real, but only defense in depth, not the primary control.
+ * `brief:` is the one user-scoped prefix. Its keys come in three shapes and
+ * exactly one subtree is shared:
+ *   brief:llm:description:<hash>  — shared LLM output, safe for everyone
+ *   brief:latest:<userId>         — pointer, user-scoped
+ *   brief:<userId>:<slot>         — brief content, user-scoped
+ * The shared subtree is 'mirror'; everything else under `brief:` is
+ * 'mirror-filtered' — the rescan keeps it but only after local-sync.mjs's
+ * keepKey() narrows it to the current operator's own userId, and the
+ * fast-path push skips it entirely (sync:notify has no per-recipient
+ * filtering — a `brief:<otherUser>:*` row pushed there lands in EVERY
+ * operator's mirror, which is the session-39 leak this split prevents).
  */
-function isUserScopedBriefKey(key) {
-  return key.startsWith('brief:') && !key.startsWith('brief:llm:');
+function isSharedBriefKey(key) {
+  return key.startsWith('brief:llm:');
+}
+function isBriefKey(key) {
+  return key.startsWith('brief:');
 }
 
-/** True if `key` falls under any mirrored prefix — the shared write/read gate. */
+/**
+ * @param {unknown} key
+ * @returns {'deny' | 'mirror' | 'mirror-filtered'}
+ */
+export function classifyKey(key) {
+  if (typeof key !== 'string' || key.length === 0) return 'deny';
+
+  if (DENY_PREFIXES.some((p) => key.startsWith(p))) return 'deny';
+  if (DENY_SUFFIXES.some((s) => key.endsWith(s))) return 'deny';
+  if (DENY_SUBSTRINGS.some((s) => key.includes(s))) return 'deny';
+  if (MIRROR_EXCLUDED_PREFIXES.some((p) => key.startsWith(p))) return 'deny';
+
+  if (isBriefKey(key)) return isSharedBriefKey(key) ? 'mirror' : 'mirror-filtered';
+
+  return 'mirror';
+}
+
+/**
+ * True only for keys that are safe to push on the fast path — i.e. exactly
+ * the 'mirror' state. 'deny' and 'mirror-filtered' both return false: the
+ * former is never mirrored at all, the latter reaches the local mirror only
+ * via the rescan + keepKey(), never via the global sync:notify channel.
+ *
+ * This is the gate every write-side notify and the listener's own
+ * defense-in-depth check call. Its contract is unchanged from the
+ * allowlist era: `brief:llm:*` pushes, `brief:<uid>:*` does not, credentials
+ * and bookkeeping do not.
+ */
 export function isMirroredKey(key) {
-  if (typeof key !== 'string') return false;
-  if (isUserScopedBriefKey(key)) return false;
-  if (MIRROR_EXCLUDED_PREFIXES.some((prefix) => key.startsWith(prefix))) return false;
-  return SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
+  return classifyKey(key) === 'mirror';
 }

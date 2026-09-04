@@ -3,5 +3,6 @@
 // the shim is a flat const/function export module — same pattern as
 // scripts/_simulation-queue-constants.d.mts.
 
-export const SYNC_PREFIXES: readonly string[];
+export type KeyMirrorClass = 'deny' | 'mirror' | 'mirror-filtered';
+export function classifyKey(key: unknown): KeyMirrorClass;
 export function isMirroredKey(key: string): boolean;

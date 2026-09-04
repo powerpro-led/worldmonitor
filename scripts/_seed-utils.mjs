@@ -336,7 +336,7 @@ async function redisDel(url, token, key) {
 // Local operator real-time sync — fast-path push, WRITE side.
 //
 // After a real write to a mirrored key lands (see scripts/shared/sync-domains.mjs
-// for the allowlist), best-effort PUBLISH the new value to every operator's
+// for classifyKey()'s denylist), best-effort PUBLISH the new value to every operator's
 // sidecar listener (vscode-extension/sidecar's sync-listener.mjs) and XADD a
 // small pointer to a changelog stream so a sidecar that was offline/asleep can
 // cheaply catch up on exactly what it missed instead of re-scanning everything.

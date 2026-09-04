@@ -13,14 +13,14 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 56) — architecture reviewed, then **Workstreams R and 1 shipped**.
-- **Prior work state:** `main` @ `f09915f`. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`). `v2.13.0` **not tagged**, on hold (P12).
+- **As of:** 2026-09-04 (session 57) — **Workstream 4 (denylist mirror) shipped.** Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57). `v2.13.0` **not tagged**, on hold (P12).
 - **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6 below. Two items re-opened as **OQ-P6** (Cloud Run vs. persistent sockets — a cost decision OQ-P1 closed prematurely) and **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` currently disagree).
 - **OQ-P1–5 resolved S55** (OQ-P1 partially re-opened as OQ-P6): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
-- **START HERE: Workstream 4** (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
-- **Decisions needed from the operator before Workstream 5:** OQ-P6, OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). None blocks 4, 2, or the 7-seeder.
-- **Recommended order (S56):** R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7. Workstream 4 lands before any tagging: P12's hold is about config UX, and 4 changes what data reaches a laptop.
+- **START HERE: Workstream 2** (vendor the bridge — a pure file copy) ∥ **Workstream 7's `list-feed-digest` seeder** (unblocked, 7's longest pole). Everything else waits on Workstream 5 (deploy pipeline).
+- **Decisions needed from the operator before Workstream 5:** OQ-P6, OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). None blocks 2 or the 7-seeder.
+- **Recommended order (S56):** ~~R → 1 → 4~~ (done) → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7.
 
 ---
 
@@ -128,9 +128,11 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 4 — denylist mirror
 
-- [ ] Replace `SYNC_PREFIXES` (the allowlist in `scripts/shared/sync-domains.mjs`) with a **three-state** classifier (P6): `classifyKey(key) → 'deny' | 'mirror' | 'mirror-filtered'`. A two-state `isMirrorableKey()` silently loses the `brief:` case below.
-- [ ] `local-sync.mjs` full-rescan + `sync-listener.mjs` fast-path both consult it. `mirror-filtered` = rescan applies `keepKey()`; the fast path **never** pushes it (`sync:notify` is one global channel with no per-recipient filtering — the session-39 leak fix).
-- [ ] Regression test: a fresh data prefix mirrors with no code change; a `brief:<other-uid>:*` / `*:token` / `forecast:simulation-task*` key never lands in the local mirror; the operator's **own** `brief:<uid>:*` still does.
+- [x] **DONE S57.** `SYNC_PREFIXES` removed from `scripts/shared/sync-domains.mjs`; replaced by a **three-state** `classifyKey(key) → 'deny' | 'mirror' | 'mirror-filtered'` (P6). `isMirroredKey()` kept as a thin `classifyKey(key) === 'mirror'` wrapper so every push-path consumer's contract is byte-for-byte unchanged.
+- [x] **DONE S57.** `local-sync.mjs` full-rescan now does ONE `SCAN MATCH *` over the whole keyspace, drops `classifyKey === 'deny'`, then runs the existing `keepKey()` per-key (which is the `mirror-filtered` behaviour — it scopes `brief:` to this operator). Read+write batched (`SYNC_WRITE_BATCH = 1000`) so the full-keyspace scan doesn't hold one multi-second SQLite write txn. `sync-listener.mjs` fast-path unchanged — its `isMirroredKey()` gate already refuses `deny` + `mirror-filtered`.
+- [x] **DONE S57.** Regression tests rewritten (`tests/sync-domains.test.mjs`): a brand-new prefix → `mirror` with no code change; `brief:<other-uid>` → `mirror-filtered` (never pushed); `*:token` / `*:oauth:*` / `forecast:simulation-task*` → `deny`; `brief:llm:*` still `mirror`. `tests/seed-utils-notify-mirrored-writes.test.mjs` fixture swapped (an unknown prefix is now mirrored-by-default — the "not mirrored" case must use a genuinely denied key).
+- [x] **DONE S57 — denylist contents.** P6's shape patterns + the documented "DELIBERATELY EXCLUDED" block + **two prefixes the P6 table missed, found by auditing the live key surface:** `sync:` (`sync:changelog` is a real stream key SCAN returns) and `rl:` (the actual `@upstash/ratelimit` prefix — P6 guessed `ratelimit:`/`rate:`, kept both). `forecast:simulation-task` carried across verbatim from the old `MIRROR_EXCLUDED_PREFIXES`.
+- [x] **DONE S57 — verification.** `sync-domains` + `sync-listener` + `seed-utils-notify` suites deterministic-green (62/62). `test:sidecar` at its exact pre-existing baseline (237/238 — the EADDRINUSE test). `tsc` / `typecheck:api` / `biome` clean. `test:data` fail-count is within its own run-to-run noise band (88↔94, 36 cancelled under `--test-concurrency=16`); no sync/mirror test among the failures, and the one name that diffed (`readBootstrapTierObject`, unrelated R2 domain) passes in isolation.
 
 > **S56 — the S55 shape patterns are materially incomplete.** `sync-domains.mjs`
 > ends its allowlist with a block headed *"DELIBERATELY EXCLUDED, verified by
@@ -253,6 +255,60 @@ the interval and say so in the panel.
 ---
 
 ## Session log
+
+### Session 57 — 2026-09-04
+
+**Workstream 4 shipped** — the mirror's allowlist→denylist inversion (P6).
+
+- `scripts/shared/sync-domains.mjs` rewritten: `SYNC_PREFIXES` (the ~55-entry
+  allowlist) **removed**; new `classifyKey(key) → 'deny' | 'mirror' |
+  'mirror-filtered'`, default-allow. `isMirroredKey()` is now
+  `classifyKey(key) === 'mirror'` — a thin wrapper, so the four push-path
+  consumers (`_seed-utils.mjs` `notifyChange`/`notifyMirroredWrites`,
+  `sync-notify.ts` `notifyKeyChanged`/`notifyPipelineWrites`,
+  `sync-listener.mjs` `applyChange`) need **zero logic change**. `.d.mts`
+  updated (`classifyKey` + `KeyMirrorClass`, drop `SYNC_PREFIXES`).
+- `local-sync.mjs` full-rescan: was N scoped `SCAN MATCH <prefix>*` passes,
+  now ONE `SCAN MATCH *` over the whole keyspace → drop `deny` → existing
+  `keepKey()` per-key (that IS the `mirror-filtered` behaviour — it scopes
+  `brief:` to this operator). Read+write now batched (`SYNC_WRITE_BATCH =
+  1000`) so a full-keyspace scan doesn't hold one multi-second SQLite write
+  transaction (which blocks the sidecar's read-only opener). At 6h cadence +
+  per-org DBs, scanning past `story:` (~69% of keys) is an accepted cost.
+- **Three states, and why the split is load-bearing:** `brief:llm:*` (shared
+  LLM output) → `mirror`, pushed to everyone; every other `brief:` key →
+  `mirror-filtered`, reaches a mirror ONLY via rescan+`keepKey()`, never via
+  the global `sync:notify` channel (no per-recipient filtering — the
+  session-39 leak). `api/latest-brief.js` still reads the operator's own
+  brief through the mirror — a blanket `brief:` deny would have been a
+  regression, as P6 warned.
+- **Denylist contents:** P6's shape patterns (`*:token`, `*:secret`,
+  `*:oauth:*`, `*:cursor`, `session:`, `idempotency:`, `ratelimit:`,
+  `lock:`) + the whole documented "DELIBERATELY EXCLUDED" block (`story:`,
+  `wm:`, `cache:`, `digest:`, `baseline:`, `seed-{meta,routes,activated,lock,
+  webcams}:`, `health:`, `relay:`, `cf:`, `shared:`, `ci-sebuf:`,
+  `*smoke-test:`, `temporal:`, `preview:`, `acled:`) + `forecast:simulation-task`
+  carried verbatim from `MIRROR_EXCLUDED_PREFIXES`.
+- **Two prefixes the P6 table missed, found by auditing the live key
+  surface** — this is the value of the inversion forcing a real audit:
+  - `sync:` — `sync:changelog` is a real Redis stream key SCAN returns.
+    Default-allow would mirror the sync changelog into every operator's
+    cache.
+  - `rl:` — the ACTUAL `@upstash/ratelimit` prefix (`rl:`, `rl:ep`,
+    `rl:scope`, `rl:apikey:*`). P6's table guessed `ratelimit:` / `rate:`,
+    neither of which the code emits. Kept all three.
+- **`news:` stays mirrored.** The two files disagreed in comments —
+  `sync-domains.mjs`'s allowlist had `news:`, `local-sync.mjs`'s header said
+  it was excluded. The allowlist's actual behaviour won; the denylist
+  preserves it (not denied).
+- Green: `tsc` 0 · `typecheck:api` 0 · `biome` 0 · `sync-domains` +
+  `sync-listener` + `seed-utils-notify` suites **62/62** · `test:sidecar`
+  **238 / 237 pass** (the sole failure is still the pre-existing EADDRINUSE
+  test). `test:data`'s fail-count moves within its own noise band (88↔94, 36
+  cancelled at `--test-concurrency=16`); the one diffing name
+  (`readBootstrapTierObject`, unrelated R2 domain) passes run in isolation.
+- **Not done in W4:** the pre-existing `noConstAssign` lint error at
+  `seed-digest-notifications.mjs:2223` — still untaken, still out of scope.
 
 ### Session 56 — 2026-09-04
 

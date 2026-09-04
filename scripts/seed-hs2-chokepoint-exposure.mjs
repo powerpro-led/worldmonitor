@@ -337,9 +337,9 @@ export async function main() {
     }
 
     // Nudge the real-time sync listener for the supply-chain:exposure:* keys
-    // just written (seed-meta:* self-filters). Requires the matching
-    // 'supply-chain:exposure:' entry in SYNC_PREFIXES — added alongside this
-    // (data-pipeline review #4).
+    // just written (seed-meta:* self-filters via classifyKey()'s denylist).
+    // Since Workstream 4's allowlist→denylist flip this prefix mirrors by
+    // default — no entry to keep in sync any more (data-pipeline review #4).
     const { url, token } = getRedisCredentials();
     await notifyMirroredWrites(url, token, commands);
 

@@ -13,12 +13,13 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 56) — architecture reviewed against the codebase, then **Workstream R shipped**. First code of the pivot.
-- **Prior work state:** `main` @ `d39344f`. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel is now REVERTED** (Workstream R, `d39344f`). `v2.13.0` **not tagged**, on hold (P12).
+- **As of:** 2026-09-04 (session 56) — architecture reviewed, then **Workstreams R and 1 shipped**.
+- **Prior work state:** `main` @ `f09915f`. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`). `v2.13.0` **not tagged**, on hold (P12).
+- **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6 below. Two items re-opened as **OQ-P6** (Cloud Run vs. persistent sockets — a cost decision OQ-P1 closed prematurely) and **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` currently disagree).
 - **OQ-P1–5 resolved S55** (OQ-P1 partially re-opened as OQ-P6): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
-- **START HERE: Workstream 1** (`local-config` edge fn + `pipeline_config`) — R is done, so the `/api/local-config` route name is free. Then Workstream 4 (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
-- **Decisions needed from the operator before Workstream 5:** OQ-P6 and OQ-P7. Neither blocks 1, 2, 4, or the 7-seeder.
+- **START HERE: Workstream 4** (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
+- **Decisions needed from the operator before Workstream 5:** OQ-P6, OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). None blocks 4, 2, or the 7-seeder.
 - **Recommended order (S56):** R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7. Workstream 4 lands before any tagging: P12's hold is about config UX, and 4 changes what data reaches a laptop.
 
 ---
@@ -60,6 +61,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 | **P9** | **`github-identity-bridge` = vendored copy per repo.** Copy `index.ts` + `register-provider.ts` + `fn_link_bridge_identity_if_needed.sql` into `worldmonitor/supabase/functions/github-identity-bridge/` (+ a migration). The multi-org deploy workflow deploys it to each tenant's Supabase project. Header comment marks `platform/tools/supabase/functions/github-identity-bridge` as upstream to sync from. **Revisit** (extract to a dedicated repo, both consumers pin a tag) only if the bridge starts changing more than ~quarterly. | The bridge is generic, env-parameterized, done ("live and verified", one bug fixed), and frozen. A shared repo + versioning + a Supabase-function consumption mechanism for a ~300-line stable file is speculative infra. Self-contained source keeps the deploy workflow a plain `supabase functions deploy` with no cross-repo checkout / submodule / PAT. It is inherently **per-tenant-project** anyway (issuer URL, per-project service-role key for identity pre-linking, registered in each project's auth config) — a single shared deployment is not an option. | S55 |
 | **P10** | **Deploy = GitHub Actions `workflow_dispatch(org)` + per-org GH Environments.** One Environment per tenant holding our GCP creds scoped to that project, Pulumi token, that org's Supabase service key + ref, that org's Upstash write URL+token, domain. Non-secret per-org bits (region, variant, domain) in `deploy/orgs/<org>.yml`. | Environments give per-tenant secret isolation + required-reviewer gating for free. | S55 |
 | **P11** | **`org.env` shrinks to two public values** — the org's `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`. That's the irreducible bootstrap: a fresh operator backend must know *which* org's Supabase to authenticate against before it can call `local-config`. No Upstash creds, no data-source keys in it anymore. | Everything else is brokered post-login. | S55 |
+| **P13** | **Revocation = ban or delete the operator's Supabase user.** The `local-config` broker verifies via service role, on every call, that the caller still exists and is not banned; the local backend drops its cached credential on a 401/403. **⚠ Decided during Workstream 1's implementation, not in the S55 design conversation — review it.** | P4 promises that removing someone "propagates within the hour", but nothing in the design actually changed when access was withdrawn: `worldmonitor-org-gate` is a **before-user-created** hook, so it runs once at signup and dropping someone from the GitHub org never touches their Supabase user. A broker checking only "is this JWT valid?" would revoke nobody and the hourly re-fetch would be decorative. Alternatives rejected: re-checking live GitHub membership needs a stored GitHub token or a per-org PAT we don't have; an `org_members` table contradicts OQ-P3's explicit no-extra-tables stance for the admin flag. Membership itself needs no check — each org has its own project, so holding a live user in it *is* membership. | S56 |
 | **P12** | **`v2.13.0` stays untagged, on hold.** The install mechanics (bundled Node, `curl\|sh`, service, CI) are done and tested, but the config UX the bundle currently ships (`settings.html` Backend section, `org.env` with Upstash creds, `/api/local-config`) is being replaced. Tag only after Workstreams 1–4 + R land. | Don't ship a dead-on-arrival config flow. Supersedes D12's "all four phases cohere" gate. | S55 |
 
 ---
@@ -97,18 +99,18 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 1 — config broker (`local-config` edge fn + `pipeline_config`)
 
-- [ ] `worldmonitor/supabase/functions/local-config/index.ts` — `verify_jwt: true`; read user from JWT; confirm org membership; return `{ upstashUrl, upstashReadonlyToken, appDomain }` from function secrets.
-- [ ] `worldmonitor/supabase/migrations/*_pipeline_config.sql` — `pipeline_config(key text primary key, value text, updated_at timestamptz)`; RLS: `select/insert/update` when `(auth.jwt() -> 'app_metadata' ->> 'wm_admin')::boolean` (OQ-P3); service-role bypass for the worker.
-- [ ] Local backend: `config.db` becomes a **cache** of the broker response, hourly refetch (repurposes Phase 1's `config-store.mjs` / `loadConfigIntoEnv()`); on `SIGNED_OUT` or a 401 from the broker, drop the cache.
-- [ ] `worldmonitor-local.mjs login` / `beginGithubLogin()` → after session, immediately call `local-config` and seed the cache.
+- [x] **DONE S56 (`f09915f`).** `supabase/functions/local-config/index.ts` — `verify_jwt: true`; read user from JWT; confirm org membership; return `{ upstashUrl, upstashReadonlyToken, appDomain }` from function secrets.
+- [x] **DONE S56.** `supabase/migrations/20260904120000_pipeline_config.sql` — `pipeline_config(key text primary key, value text, updated_at timestamptz)`; RLS: `select/insert/update` when `(auth.jwt() -> 'app_metadata' ->> 'wm_admin')::boolean` (OQ-P3); service-role bypass for the worker.
+- [x] **DONE S56.** Local backend: `config.db` becomes a **cache** of the broker response, hourly refetch (repurposes Phase 1's `config-store.mjs` / `loadConfigIntoEnv()`); on `SIGNED_OUT` or a 401 from the broker, drop the cache.
+- [x] **DONE S56.** `worldmonitor-local.mjs login` → after session, immediately call `local-config` and seed the cache.
 
 > **S56 review — `config-store.mjs` repurposes cleanly; no Phase-2 entanglement.**
 > It is Phase-1 code, imports nothing from the control plane, and
 > `worldmonitor-local.mjs` already imports it independently. `loadConfigIntoEnv()`
 > (~line 96) is the right seam. Two required changes, both easy to miss:
 
-- [ ] **Add a TTL notion.** The `config` table is `{key, value, updated_at}` with no concept of "brokered, expires hourly." Simplest is a reserved `_broker_fetched_at` row rather than a schema change.
-- [ ] **Invert precedence for brokered keys.** `loadConfigIntoEnv()` line ~100 is `if (env[key]) continue` — *`.env` always wins*. An operator upgrading from a v2.12/2.13 install still has `UPSTASH_REDIS_REST_READONLY_TOKEN` in their `.env`, which would **shadow the broker's token forever and silently defeat revocation** (the whole point of P4's hourly refetch). Brokered keys need an explicit override, plus an upgrade step that strips them from `.env`.
+- [x] **DONE S56.** **Add a TTL notion.** The `config` table is `{key, value, updated_at}` with no concept of "brokered, expires hourly." Simplest is a reserved `_broker_fetched_at` row rather than a schema change.
+- [x] **DONE S56.** **Invert precedence for brokered keys.** `loadConfigIntoEnv()` line ~100 is `if (env[key]) continue` — *`.env` always wins*. An operator upgrading from a v2.12/2.13 install still has `UPSTASH_REDIS_REST_READONLY_TOKEN` in their `.env`, which would **shadow the broker's token forever and silently defeat revocation** (the whole point of P4's hourly refetch). Brokered keys need an explicit override, plus an upgrade step that strips them from `.env`.
 
 ### Workstream 2 — vendor `github-identity-bridge` (P9)
 
@@ -319,6 +321,45 @@ Recommended: **R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 
 - **One pre-existing failure, NOT from this work:** `service-status reports bound
   fallback port after EADDRINUSE recovery` fails identically at HEAD with these
   changes stashed. The port-fallback code itself is intact. Untriaged.
+**Then Workstream 1 shipped (`f09915f`)** — the config broker, +19 tests.
+
+- New `supabase/` tree (the repo had none): `functions/local-config/` and
+  `migrations/20260904120000_pipeline_config.sql`.
+- **P13 was decided here**, because implementing P4 exposed that revocation had
+  no mechanism at all. See the decisions table — it needs your review.
+- **Failure policy is the core of the client design.** 401/403 drops the cache;
+  network/5xx/timeout KEEPS it and retries. A Supabase outage must not wipe
+  every operator's mirror simultaneously — stale-but-authorised beats empty. A
+  200 missing a field counts as unavailable for the same reason: a broken
+  deploy must not be able to blank a working cache.
+- The TTL went in a separate `meta` table, not the reserved `config` row the
+  review suggested: `readAllConfig()`/`loadConfigIntoEnv()` iterate `config`
+  wholesale and treat every row as an env var, so a magic row would need
+  filtering at each of those sites and every future one, and one missed filter
+  would export it into the process environment.
+- A refresh changing `UPSTASH_REDIS_REST_URL`/`APP_DOMAIN` warns to restart
+  (captured at module load for the allowlists); a token rotation does not
+  (`redis.ts` reads it per call). No auto-restart — that is the control-plane
+  machinery R just removed.
+- Two existing session-refresh tests were adjusted, not weakened: their fake
+  Supabase answers every path, so a startup broker call counted as a GoTrue
+  hit. Scoped to `/auth/` so they assert what their own messages claim.
+- **The migration was actually executed**, in a throwaway postgres container
+  (removed after): applied, re-applied twice for idempotency, `wm_is_admin()`
+  checked across five JWT shapes — a garbage value returns false rather than
+  raising, which is why it compares text instead of casting to boolean — and
+  RLS proven to block a non-admin's select and insert while admitting an admin.
+- That exercise produced one real change: **`pipeline_config_worker_read`**.
+  Supabase's `service_role` has `BYPASSRLS`, so it is redundant today; without
+  it, if that attribute ever changed, the worker would read **zero keys** and
+  the pipeline would run unauthenticated against every data source, silently.
+  Proven to hold with `bypassrls` removed.
+- Green: `tsc` 0 · `typecheck:api` 0 · `biome` 0 · `test:sidecar` **238 / 237
+  pass**; the sole failure is still the pre-existing EADDRINUSE test.
+- **Coverage gap to close in Workstream 5:** the edge function has no local
+  gate whatsoever — `tsconfig.json` includes only `src/`, and `deno` is not
+  installed here. It is unrun.
+
 - **Second pre-existing finding, untouched:** `npm run lint` reports one *error* —
   `scripts/seed-digest-notifications.mjs:2223` `lint/correctness/noConstAssign`.
   ESM is strict mode, so that assignment throws `TypeError` at runtime if the

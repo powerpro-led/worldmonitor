@@ -13,11 +13,12 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 56) — architecture **reviewed against the codebase**. Still doc-only, nothing built.
-- **Prior work state:** `main` @ `de5a7fb` (2 doc commits ahead of `origin/main` @ `07c280c` — **unpushed**; Local App Initiative Phases 0/1/3/4 complete + tested; Phase 2's loopback control panel **to be reverted** — Workstream R). `v2.13.0` **not tagged**, on hold (P12).
+- **As of:** 2026-09-04 (session 56) — architecture reviewed against the codebase, then **Workstream R shipped**. First code of the pivot.
+- **Prior work state:** `main` @ `d39344f`. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel is now REVERTED** (Workstream R, `d39344f`). `v2.13.0` **not tagged**, on hold (P12).
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6 below. Two items re-opened as **OQ-P6** (Cloud Run vs. persistent sockets — a cost decision OQ-P1 closed prematurely) and **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` currently disagree).
 - **OQ-P1–5 resolved S55** (OQ-P1 partially re-opened as OQ-P6): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
-- **START HERE:** Workstream R (revert Phase 2) → Workstream 1 (`local-config` edge fn + `pipeline_config`) → Workstream 4 (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
+- **START HERE: Workstream 1** (`local-config` edge fn + `pipeline_config`) — R is done, so the `/api/local-config` route name is free. Then Workstream 4 (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
+- **Decisions needed from the operator before Workstream 5:** OQ-P6 and OQ-P7. Neither blocks 1, 2, 4, or the 7-seeder.
 - **Recommended order (S56):** R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7. Workstream 4 lands before any tagging: P12's hold is about config UX, and 4 changes what data reaches a laptop.
 
 ---
@@ -89,10 +90,10 @@ data-source fetching and holds no data-source keys — it is a read replica.
 > to: `local-login.mjs` imports only `node:http` + `session-file.mjs`, zero coupling
 > to the control plane, and Workstream 1 step 4 actively wants it.
 
-- [ ] Revert / neutralize **`ed3c281`, `e30f1cd`, `6ba93d2`** only (keep `ad77eb8`'s doc structure). Specifically: remove `handleLocalControlPlane()` (`/api/local-config`, `/api/local-login|logout|restart`), `buildLocalControlPanelShim()`, `buildFirstRunRedirectShim()`, the `settings-main.ts` **Backend** section + its `window.__WM_LOCAL_CONTROL_PANEL` gate.
-- [ ] **Leave `f1a90be` entirely in place** — including its one-line `SIDECAR_FILES` addition in `build-release-bundle.mjs`, which must keep staging `local-login.mjs`. Operators still sign in; just not through a "control panel."
-- [ ] **Drop `settings.html` from the operator bundle entirely** (OQ-P4) — **as a post-copy prune**, not a build variant. S56: there is no operator build to remove it from. `vite.config.ts` (~line 1032) has ONE unconditional rollup `input: { main, settings }`, and `build-release-bundle.mjs` never names `settings` — it does `copyDir('dist')` wholesale (~line 139). Workstream 6 needs `settings.html` in the *cloud* build from that same `dist/`, so forking the Vite build for one file is the wrong trade. Delete `settings.html` + its entry chunk from the **staged** `dist/` in `build-release-bundle.mjs`. The LLM-key modal lives in `dashboard.html` (Workstream 3).
-- [ ] `test:sidecar` — drop the 7 Phase-2 tests (`local-api-server.test.mjs` ~2414–2588: four `/api/local-config`, one `/api/local-login`, plus the control-panel-shim and first-run-redirect tests), keep the rest green.
+- [x] **DONE S56 (`d39344f`).** Revert / neutralize **`ed3c281`, `e30f1cd`, `6ba93d2`** only (keep `ad77eb8`'s doc structure). Specifically: remove `handleLocalControlPlane()` (`/api/local-config`, `/api/local-login|logout|restart`), `buildLocalControlPanelShim()`, `buildFirstRunRedirectShim()`, the `settings-main.ts` **Backend** section + its `window.__WM_LOCAL_CONTROL_PANEL` gate.
+- [x] **DONE S56.** **Leave `f1a90be` entirely in place** — including its one-line `SIDECAR_FILES` addition in `build-release-bundle.mjs`, which must keep staging `local-login.mjs`. Operators still sign in; just not through a "control panel."
+- [x] **DONE S56.** **Drop `settings.html` from the operator bundle entirely** (OQ-P4) — **as a post-copy prune**, not a build variant. S56: there is no operator build to remove it from. `vite.config.ts` (~line 1032) has ONE unconditional rollup `input: { main, settings }`, and `build-release-bundle.mjs` never names `settings` — it does `copyDir('dist')` wholesale (~line 139). Workstream 6 needs `settings.html` in the *cloud* build from that same `dist/`, so forking the Vite build for one file is the wrong trade. Delete `settings.html` + its entry chunk from the **staged** `dist/` in `build-release-bundle.mjs`. The LLM-key modal lives in `dashboard.html` (Workstream 3).
+- [x] **DONE S56** — 219 tests, 218 pass; the one failure (EADDRINUSE fallback) is pre-existing, verified at HEAD. `test:sidecar` — drop the 7 Phase-2 tests (`local-api-server.test.mjs` ~2414–2588: four `/api/local-config`, one `/api/local-login`, plus the control-panel-shim and first-run-redirect tests), keep the rest green.
 
 ### Workstream 1 — config broker (`local-config` edge fn + `pipeline_config`)
 
@@ -292,6 +293,37 @@ Corrections:
 Workstream ordering confirmed, with one addition: start Workstream 7's
 `list-feed-digest` seeder early — it is unblocked today and is 7's longest pole.
 Recommended: **R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7.**
+
+**Then Workstream R shipped (`d39344f`)** — the pivot's first code.
+
+- Reverted `ed3c281` + `e30f1cd` + `6ba93d2`, all cleanly (`local-api-server.mjs`
+  auto-merged around `3897f7c`). `f1a90be` deliberately left in place.
+- Both stale "shared by two callers" comments on `beginGithubLogin()` updated,
+  and the reason the module stays factored out recorded in its header, so
+  Workstream 1 re-adds a caller rather than re-extracting the flow.
+- `settings.html` pruned from the operator bundle as a post-copy step.
+  **The prune resolves its targets by a fixpoint over the real chunk graph.**
+  An HTML-level subtraction — the obvious implementation — was measured wrong on
+  this `dist/`: it classified `ollama-models-*.js` (dynamically imported by the
+  dashboard entry `main-*.js` and by `panels-risk-*.js`) and
+  `settings-persistence-*.js` as settings-exclusive, because a built HTML lists
+  only *static* imports. Pruning either ships a dashboard that 404s on a dynamic
+  import at runtime in an operator's webview, with nothing failing at build time.
+  The fixpoint narrows 4 candidates to the correct 2.
+- `dist/sw.js`'s Workbox precache manifest is rewritten to match — required, not
+  tidiness: `precacheAndRoute()` fails the whole SW install on any 404, silently.
+  The rewrite throws if an expected entry is missing, so a manifest shape change
+  is a loud build failure.
+- Green: `tsc` 0 · `typecheck:api` 0 · `biome` (changed files) 0 · `test:sidecar`
+  **219 tests / 218 pass** (226 − the 7 dropped, exactly as predicted).
+- **One pre-existing failure, NOT from this work:** `service-status reports bound
+  fallback port after EADDRINUSE recovery` fails identically at HEAD with these
+  changes stashed. The port-fallback code itself is intact. Untriaged.
+- **Second pre-existing finding, untouched:** `npm run lint` reports one *error* —
+  `scripts/seed-digest-notifications.mjs:2223` `lint/correctness/noConstAssign`.
+  ESM is strict mode, so that assignment throws `TypeError` at runtime if the
+  line is reached. In a production seeder. Last touched in `5b746bc`; left alone
+  as out of scope for R, but worth its own fix.
 
 ### Session 55 — 2026-09-04
 

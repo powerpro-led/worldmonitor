@@ -13,10 +13,12 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 55) — architecture + all sub-questions agreed. Doc-only, nothing built.
-- **Prior work state:** `main` @ `d623924` (== `origin/main` after the operator pushes; Local App Initiative Phases 0/1/3/4 complete + tested; Phase 2's loopback control panel **to be reverted** — Workstream R). `v2.13.0` **not tagged**, on hold (P12).
-- **All OQ-P1–5 resolved S55:** Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
-- **START HERE:** Workstream 1 (`local-config` edge fn + `pipeline_config`) + Workstream R (revert Phase 2) are unblocked. Workstream 4 (denylist mirror) is also standalone. Everything else waits on Workstream 5 (deploy pipeline).
+- **As of:** 2026-09-04 (session 56) — architecture **reviewed against the codebase**. Still doc-only, nothing built.
+- **Prior work state:** `main` @ `de5a7fb` (2 doc commits ahead of `origin/main` @ `07c280c` — **unpushed**; Local App Initiative Phases 0/1/3/4 complete + tested; Phase 2's loopback control panel **to be reverted** — Workstream R). `v2.13.0` **not tagged**, on hold (P12).
+- **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6 below. Two items re-opened as **OQ-P6** (Cloud Run vs. persistent sockets — a cost decision OQ-P1 closed prematurely) and **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` currently disagree).
+- **OQ-P1–5 resolved S55** (OQ-P1 partially re-opened as OQ-P6): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
+- **START HERE:** Workstream R (revert Phase 2) → Workstream 1 (`local-config` edge fn + `pipeline_config`) → Workstream 4 (denylist mirror). Workstream 2 (vendor the bridge) and Workstream 7's `list-feed-digest` seeder are also unblocked and can run in parallel. Everything else waits on Workstream 5 (deploy pipeline).
+- **Recommended order (S56):** R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7. Workstream 4 lands before any tagging: P12's hold is about config UX, and 4 changes what data reaches a laptop.
 
 ---
 
@@ -51,9 +53,9 @@ data-source fetching and holds no data-source keys — it is a read replica.
 | **P3** | **Two-tier keys.** (a) **Org-admin tier** — the ~26 data-source keys (ACLED, FRED, Finnhub, AISStream, FIRMS, Brave/Exa/SerpAPI, …). Set once by an org admin in the cloud admin panel, stored in that org's Supabase, read only by that org's **worker**. (b) **Per-operator tier** — the LLM key (`OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_*`) only, set in a dashboard settings modal, powers on-demand chat/summaries that can't be pre-seeded. | Operators go from ~27 keys to 1. The scary "Backend control panel" disappears. | S55 |
 | **P4** | **Config broker.** A per-org `local-config` Supabase Edge Function (`verify_jwt: true`) returns that org's Upstash **read-only** URL+token + `APP_DOMAIN` to authenticated org members. The local backend caches it in `~/.worldmonitor/config.db` and **re-fetches hourly** (so removing someone from the org propagates within the hour). **One shared read-only token per org**, not per-user. | Upstash REST has no SSO / JWT federation and no API to mint scoped tokens. Per-user Upstash ACL users are possible (paid tier) but buy only revocation granularity on read-only access to non-sensitive shared data — not worth the lifecycle. | S55 |
 | **P5** | **Admin panel is colocated with the worker, not a separate release.** `settings.html` + a write route ship inside the org's GCP deploy (same Vite build), gated to that org's admin GitHub logins. It writes the 26 keys to that org's Supabase (`pipeline_config` table, RLS = admins). NOT bundled with the operator local backend; NOT its own downloadable artifact. | The admin already runs the full repo as the worker host — the panel rides along. | S55 |
-| **P6** | **Mirror = denylist, not the `SYNC_PREFIXES` allowlist.** Mirror every Upstash key **except** `*:token`, `*:secret`, `*:oauth:*`, `brief:*` (per-user), `ratelimit:*`, `lock:*`, `idempotency:*`, `session:*`, `*:cursor` (final list TBD in Workstream 4). | Kills "panel X broke because nobody added the prefix" without copying org secrets or other operators' personal briefs onto laptops (the session-39 `brief:` leak class). | S55 |
+| **P6** | **Mirror = denylist, not the `SYNC_PREFIXES` allowlist — with THREE states, not two** (corrected S56): `deny` / `mirror` / `mirror-filtered`. Deny = the shape patterns (`*:token`, `*:secret`, `*:oauth:*`, `ratelimit:*`, `lock:*`, `idempotency:*`, `session:*`, `*:cursor`) **plus the whole "DELIBERATELY EXCLUDED, verified by reading the keys" block already documented at the foot of `SYNC_PREFIXES`** — see Workstream 4 for the enumerated list, which the S55 shape patterns did **not** cover. `brief:` is **mirror-filtered**, NOT denied. | Kills "panel X broke because nobody added the prefix" without copying org secrets, live worker queues, or other operators' personal briefs onto laptops (the session-39 `brief:` leak class). **S56 correction:** a blanket `brief:*` deny is a functional regression — `local-sync.mjs`'s `keepKey()` deliberately mirrors the operator's *own* `brief:<uid>:*` (+ shared `brief:llm:*`), and `api/latest-brief.js` reads that key through the mirror. Deny it wholesale and Latest Brief is permanently empty locally. | S55, corrected S56 |
 | **P7** | **Cameras removed entirely** — `PinnedWebcamsPanel`, `api/webcam`, `list-webcams`, webcam sync keys. Not wanted. | Operator's call. | S55 |
-| **P8** | **Live streams → worker-buffered.** Telegram / AIS / gpsjam: the **worker** holds the upstream socket and republishes a rolling window (last N messages / last known positions) into Upstash; `sync-listener` pushes it to local. ~30–60s staleness accepted. Metadata (channel list, AIS regions) mirrors like any other key. | "Upstash is the single source of truth" — consistency over sub-minute latency. | S55 |
+| **P8** | **Live streams → worker-buffered.** Telegram / AIS / gpsjam: the **worker** holds the upstream socket and republishes a rolling window (last N messages / last known positions) into Upstash; `sync-listener` pushes it to local. ~30–60s staleness accepted. Metadata (channel list, AIS regions) mirrors like any other key. **⚠ Conflicts with OQ-P1's scale-to-zero Cloud Run — see OQ-P6.** A process holding a persistent socket cannot scale to zero; `nitric.gcp.yaml` already carries a standing TODO saying exactly this for the 6 long-running services. | "Upstash is the single source of truth" — consistency over sub-minute latency. | S55, flagged S56 |
 | **P9** | **`github-identity-bridge` = vendored copy per repo.** Copy `index.ts` + `register-provider.ts` + `fn_link_bridge_identity_if_needed.sql` into `worldmonitor/supabase/functions/github-identity-bridge/` (+ a migration). The multi-org deploy workflow deploys it to each tenant's Supabase project. Header comment marks `platform/tools/supabase/functions/github-identity-bridge` as upstream to sync from. **Revisit** (extract to a dedicated repo, both consumers pin a tag) only if the bridge starts changing more than ~quarterly. | The bridge is generic, env-parameterized, done ("live and verified", one bug fixed), and frozen. A shared repo + versioning + a Supabase-function consumption mechanism for a ~300-line stable file is speculative infra. Self-contained source keeps the deploy workflow a plain `supabase functions deploy` with no cross-repo checkout / submodule / PAT. It is inherently **per-tenant-project** anyway (issuer URL, per-project service-role key for identity pre-linking, registered in each project's auth config) — a single shared deployment is not an option. | S55 |
 | **P10** | **Deploy = GitHub Actions `workflow_dispatch(org)` + per-org GH Environments.** One Environment per tenant holding our GCP creds scoped to that project, Pulumi token, that org's Supabase service key + ref, that org's Upstash write URL+token, domain. Non-secret per-org bits (region, variant, domain) in `deploy/orgs/<org>.yml`. | Environments give per-tenant secret isolation + required-reviewer gating for free. | S55 |
 | **P11** | **`org.env` shrinks to two public values** — the org's `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`. That's the irreducible bootstrap: a fresh operator backend must know *which* org's Supabase to authenticate against before it can call `local-config`. No Upstash creds, no data-source keys in it anymore. | Everything else is brokered post-login. | S55 |
@@ -79,10 +81,18 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream R — revert the per-operator control panel (Phase 2)
 
-- [ ] Revert / neutralize `f1a90be`, `ed3c281`, `e30f1cd`, `6ba93d2` (keep `ad77eb8`'s doc structure). Specifically: remove `handleLocalControlPlane()` (`/api/local-config`, `/api/local-login|logout|restart`), `buildLocalControlPanelShim()`, `buildFirstRunRedirectShim()`, the `settings-main.ts` **Backend** section + its `window.__WM_LOCAL_CONTROL_PANEL` gate.
-- [ ] **Keep** `beginGithubLogin()` (`local-login.mjs`) — operators still sign in; just not through a "control panel."
-- [ ] **Drop `settings.html` from the operator bundle entirely** (OQ-P4). Remove it from `build-release-bundle.mjs` staging + `vite.config.ts` operator build. The LLM-key modal lives in `dashboard.html` (Workstream 3).
-- [ ] `test:sidecar` — drop the 7 Phase-2 tests, keep the rest green.
+> **S56 correction — the revert boundary is 3 commits, not 4.** `f1a90be` is the
+> commit that *created* `beginGithubLogin()`: its diff moves the PKCE flow OUT of
+> `worldmonitor-local.mjs`'s `cmdLogin` and INTO `vscode-extension/sidecar/local-login.mjs`.
+> Reverting it deletes that file and re-inlines ~60 lines back into the CLI — so
+> "revert `f1a90be`, keep `beginGithubLogin()`" cannot both happen. It doesn't need
+> to: `local-login.mjs` imports only `node:http` + `session-file.mjs`, zero coupling
+> to the control plane, and Workstream 1 step 4 actively wants it.
+
+- [ ] Revert / neutralize **`ed3c281`, `e30f1cd`, `6ba93d2`** only (keep `ad77eb8`'s doc structure). Specifically: remove `handleLocalControlPlane()` (`/api/local-config`, `/api/local-login|logout|restart`), `buildLocalControlPanelShim()`, `buildFirstRunRedirectShim()`, the `settings-main.ts` **Backend** section + its `window.__WM_LOCAL_CONTROL_PANEL` gate.
+- [ ] **Leave `f1a90be` entirely in place** — including its one-line `SIDECAR_FILES` addition in `build-release-bundle.mjs`, which must keep staging `local-login.mjs`. Operators still sign in; just not through a "control panel."
+- [ ] **Drop `settings.html` from the operator bundle entirely** (OQ-P4) — **as a post-copy prune**, not a build variant. S56: there is no operator build to remove it from. `vite.config.ts` (~line 1032) has ONE unconditional rollup `input: { main, settings }`, and `build-release-bundle.mjs` never names `settings` — it does `copyDir('dist')` wholesale (~line 139). Workstream 6 needs `settings.html` in the *cloud* build from that same `dist/`, so forking the Vite build for one file is the wrong trade. Delete `settings.html` + its entry chunk from the **staged** `dist/` in `build-release-bundle.mjs`. The LLM-key modal lives in `dashboard.html` (Workstream 3).
+- [ ] `test:sidecar` — drop the 7 Phase-2 tests (`local-api-server.test.mjs` ~2414–2588: four `/api/local-config`, one `/api/local-login`, plus the control-panel-shim and first-run-redirect tests), keep the rest green.
 
 ### Workstream 1 — config broker (`local-config` edge fn + `pipeline_config`)
 
@@ -91,9 +101,19 @@ data-source fetching and holds no data-source keys — it is a read replica.
 - [ ] Local backend: `config.db` becomes a **cache** of the broker response, hourly refetch (repurposes Phase 1's `config-store.mjs` / `loadConfigIntoEnv()`); on `SIGNED_OUT` or a 401 from the broker, drop the cache.
 - [ ] `worldmonitor-local.mjs login` / `beginGithubLogin()` → after session, immediately call `local-config` and seed the cache.
 
+> **S56 review — `config-store.mjs` repurposes cleanly; no Phase-2 entanglement.**
+> It is Phase-1 code, imports nothing from the control plane, and
+> `worldmonitor-local.mjs` already imports it independently. `loadConfigIntoEnv()`
+> (~line 96) is the right seam. Two required changes, both easy to miss:
+
+- [ ] **Add a TTL notion.** The `config` table is `{key, value, updated_at}` with no concept of "brokered, expires hourly." Simplest is a reserved `_broker_fetched_at` row rather than a schema change.
+- [ ] **Invert precedence for brokered keys.** `loadConfigIntoEnv()` line ~100 is `if (env[key]) continue` — *`.env` always wins*. An operator upgrading from a v2.12/2.13 install still has `UPSTASH_REDIS_REST_READONLY_TOKEN` in their `.env`, which would **shadow the broker's token forever and silently defeat revocation** (the whole point of P4's hourly refetch). Brokered keys need an explicit override, plus an upgrade step that strips them from `.env`.
+
 ### Workstream 2 — vendor `github-identity-bridge` (P9)
 
-- [ ] Copy `index.ts` + `register-provider.ts` + `fn_link_bridge_identity_if_needed.sql` into `worldmonitor/supabase/`, with the "upstream = platform @ <sha>" header.
+- [ ] Copy **four** files into `worldmonitor/supabase/`, with the "upstream = platform @ &lt;sha&gt;" header. **S56 path correction** — they are not all in one place:
+  - `platform/tools/supabase/functions/github-identity-bridge/{index.ts, register-provider.ts, deno.json}` (`deno.json` was missed in the S55 list)
+  - `platform/tools/supabase/schemas/public/fn_link_bridge_identity_if_needed.sql` (**not** alongside the function)
 - [ ] Per-project provisioning steps documented + scripted for Workstream 5 (generate RSA keypair, set 5 function secrets, `functions deploy --no-verify-jwt`, `db push`, `deno run register-provider`).
 
 ### Workstream 3 — per-operator LLM key modal (in `dashboard.html`, OQ-P4)
@@ -105,13 +125,39 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 4 — denylist mirror
 
-- [ ] Replace `SYNC_PREFIXES` (the allowlist in `scripts/shared/sync-domains.mjs`) with a denylist: `isMirrorableKey(key)` returns true unless it matches a deny pattern (P6 list — finalize by auditing live Upstash keys, as session 43 did, but inverted).
-- [ ] `local-sync.mjs` full-rescan + `sync-listener.mjs` fast-path both consult it.
-- [ ] Regression test: a fresh data prefix mirrors with no code change; a `brief:<uid>:*` / `*:token` key never lands in the local mirror.
+- [ ] Replace `SYNC_PREFIXES` (the allowlist in `scripts/shared/sync-domains.mjs`) with a **three-state** classifier (P6): `classifyKey(key) → 'deny' | 'mirror' | 'mirror-filtered'`. A two-state `isMirrorableKey()` silently loses the `brief:` case below.
+- [ ] `local-sync.mjs` full-rescan + `sync-listener.mjs` fast-path both consult it. `mirror-filtered` = rescan applies `keepKey()`; the fast path **never** pushes it (`sync:notify` is one global channel with no per-recipient filtering — the session-39 leak fix).
+- [ ] Regression test: a fresh data prefix mirrors with no code change; a `brief:<other-uid>:*` / `*:token` / `forecast:simulation-task*` key never lands in the local mirror; the operator's **own** `brief:<uid>:*` still does.
+
+> **S56 — the S55 shape patterns are materially incomplete.** `sync-domains.mjs`
+> ends its allowlist with a block headed *"DELIBERATELY EXCLUDED, verified by
+> reading the keys."* Inverting to a denylist makes that block load-bearing, and
+> P6's shape patterns do not cover it. The deny list must be the shapes **plus**:
+
+| Deny | Why | Covered by an S55 shape pattern? |
+|---|---|---|
+| `story:` | ~18.4k news-dedup tracking keys, no article content | ✗ — **largest single bloat item** |
+| `wm:` | notification dedup, events queue, locks | ✗ (`lock:*` does not match `wm:`) |
+| `cache:` | upstream fetch scratch (abuseipdb, cyber first-seen) | ✗ |
+| `digest:` | notification accumulator + last-run marker | ✗ |
+| `baseline:` | internal statistical accumulator state | ✗ |
+| `seed-meta:`, `seed-routes:`, `seed-activated:` | sync-job bookkeeping | ✗ |
+| `health:`, `rate:`, `llm:`, `relay:`, `cf:`, `shared:`, `ci-sebuf:`, `*smoke-test:` | infrastructure and probes | partial (`ratelimit:*` ≠ `rate:`) |
+| `forecast:simulation-task*` | **live worker task ZSET** the simulation worker ZRANGEs | ✗ — see below |
+| `preview:<sha>:*` | preview-deploy-prefixed keys (`redis.ts` ~line 487) | ✗ (likely moot with per-org DBs — confirm) |
+| `acled:oauth:token` | credential | ✓ (`*:oauth:*`) |
+
+> **`forecast:simulation-task*` is the dangerous one.** It is a *running queue*
+> living under a legitimately-mirrored prefix, and shape-based patterns will not
+> catch it — `forecast:` reads as data. It currently survives only because it sits
+> in a separate `MIRROR_EXCLUDED_PREFIXES` list, added after prefix reasoning
+> failed on it once already (2026-08-23). Carry that list across verbatim.
 
 ### Workstream 5 — multi-org deploy pipeline
 
 - [ ] `deploy/orgs/<org>.yml` — non-secret per-org config (domain, GCP region, variant, Supabase project ref).
+- [ ] **Generate `nitric.<org>.yaml` from `deploy/orgs/<org>.yml` at deploy time** (S56 gap). `nitric.gcp.yaml` hardcodes `gcp-project-id: apps-453107` and `region: us-central1`; Nitric selects a stack by *filename*, and `nitric-deploy.yml` already exposes a `stack-name` input — so the lever exists, but nothing currently feeds it from the per-org config. Without this step `deploy-org.yml` deploys every org into `apps-453107`.
+- [ ] **Resolve OQ-P7 before writing the workflow.** `nitric-deploy.yml` today takes one `PRODUCTION_ENV_FILE` repo secret holding "Upstash, Supabase, provider API keys" — i.e. the 26 keys at *deploy time* — while P3 puts them in Supabase `pipeline_config`, edited live by an org admin. Those are two different homes for the same keys.
 - [ ] GH Actions Environment per org — GCP creds (scoped to that project), Pulumi token, `SUPABASE_ACCESS_TOKEN` + project ref + DB password, Upstash write URL+token.
 - [ ] `worldmonitor/supabase/` set up for the **Supabase CLI** (OQ-P2): `supabase/config.toml`, `supabase/migrations/*.sql` (`pipeline_config` + RLS + `fn_link_bridge_identity_if_needed`), `supabase/functions/{local-config,github-identity-bridge}/`.
 - [ ] `.github/workflows/deploy-org.yml` — `workflow_dispatch(org)` → select Environment → `supabase link` → `supabase db push` → `supabase functions deploy --no-verify-jwt` (both fns) → set function secrets → `deno run register-provider.ts` → configure the org-gate auth hook → deploy the worker + admin panel to **Cloud Run** (OQ-P1) via `nitric up` / Pulumi (grow `nitric-deploy.yml`).
@@ -125,16 +171,38 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 7 — worker: absorb the direct fetches
 
-- [ ] Cameras: delete (P7).
-- [ ] Telegram / AIS / gpsjam: worker holds the socket, writes a rolling window to Upstash (P8); local `tauri-sidecar` routes become mirror reads.
-- [ ] Audit remaining `tauri-sidecar`-mode direct fetches (`local-api-server.mjs` line ~2718 relay list, RSS digest, climate/Open-Meteo, threat-intel) → move server-side or accept degraded-offline, case by case.
+> **S56 — better bounded than S55 implied, and the S55 pointer was wrong.**
+> `local-api-server.mjs` ~line 2718 is an **SSRF allowlist for `RELAY_URL`**, not a
+> route relay list. The real "does not work locally" list is `cloudPreferredPrefixes`
+> at ~line 769, whose own comment says why: *"The sidecar lacks WS_RELAY_URL and
+> seeded Redis data. These routes return 200-with-empty-data locally."* Under P2
+> (`cloudFallback` off) that set is exactly what breaks, so **it is this
+> workstream's actual worklist**:
+>
+> ```
+> /api/market/v1/  /api/economic/v1/  /api/infrastructure/v1/
+> /api/news/v1/    /api/research/v1/  /api/military/v1/   + /api/bootstrap
+> ```
+>
+> The direct-fetch surface itself is small and enumerable: **22 RPC handlers + 9
+> shared modules make outbound `https://` calls, out of 276 handler files under
+> `server/worldmonitor/`** (~8%). Also worth knowing before touching this: in
+> `tauri-sidecar` mode `setCachedJson()` already does NOT write to Upstash —
+> `redis.ts` ~line 212 redirects it to an in-process memory cache. The local
+> backend is already a read replica *for writes*; only the compute is still local,
+> so P2's delta is smaller than it reads.
+
+- [ ] Cameras: delete (P7) — includes `server/worldmonitor/webcam/v1/get-webcam-image.ts`, one of the 22.
+- [ ] Telegram / AIS / gpsjam: worker holds the socket, writes a rolling window to Upstash (P8); local `tauri-sidecar` routes become mirror reads. **Blocked on OQ-P6.**
+- [ ] **`list-feed-digest` seeder — its own item, not a bullet in an audit** (S56). It has *no seeder at all*: it read-through-caches a live ~190-feed RSS crawl, which is the only reason the startup warm-ping at `local-api-server.mjs` ~line 2769 exists. "Move server-side" here means writing a **new seeder + schedule + Upstash key family**, not relocating existing code. Longest pole in this workstream; **unblocked today**, start it early.
+- [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
 - [ ] `cloudFallback` — with a real per-org cloud origin now existing, decide whether operator backends may use it (probably still off; a miss = "not synced yet").
 
 ---
 
 ## Resolved sub-questions (session 55)
 
-- **OQ-P1 → RESOLVED: Cloud Run.** Per-org worker on Cloud Run (scale-to-zero; scheduled pipeline runs via Cloud Scheduler → HTTP trigger). Not GKE, not an always-on VM. `nitric.yaml` provider = GCP/Cloud Run.
+- **OQ-P1 → RESOLVED for the request-driven half; the scale-to-zero half re-opened S56 as OQ-P6.** Per-org worker on Cloud Run (scheduled pipeline runs via Cloud Scheduler → HTTP trigger). Not GKE, not an always-on VM. Verified S56: `nitric.gcp.yaml` does already target Cloud Run (`provider: nitric/gcp@1.27.6`, `config.default.cloudrun`, `min-instances: 0`) — so the scaffold and the decision agree. What does **not** hold is `min-instances: 0` for the persistent-socket services (P8).
 - **OQ-P2 → RESOLVED: fully scripted in `deploy-org.yml`.** Review of current practice: the repo has **no Supabase-CLI migration setup**. The one migration precedent is `consumer-prices-core/` — plain numbered `migrations/NNN_name.sql` + a ~60-line forward-only runner (`src/db/migrate.ts`: `schema_migrations` tracking table, each file in a `BEGIN/COMMIT`, `pg` Pool via `DATABASE_URL`), run as `npm run migrate`. **Decision:** the deploy workflow needs the `supabase` CLI anyway for `functions deploy` + auth config, so use it for SQL too — `supabase/migrations/*.sql` (CLI convention) applied with `supabase db push`, `supabase/functions/*` with `supabase functions deploy --no-verify-jwt`, then `deno run register-provider.ts`. Per-org GH Environment holds `SUPABASE_ACCESS_TOKEN` + project ref + DB password. (The `consumer-prices-core` plain-`pg` runner is the CLI-free fallback if the CLI dependency proves painful.)
 - **OQ-P3 → RESOLVED: `app_metadata`.** Admin = `app_metadata.wm_admin === true` (or `app_metadata.role === 'admin'`), set by repo devs — manual per org for now (small `admin.updateUserById` step; a management UI later if it grows). `pipeline_config` RLS checks it; the admin-panel gate checks it. No GitHub-team lookup, no `org_admins` table.
 - **OQ-P4 → RESOLVED: operator bundle does NOT ship `settings.html`.** The per-operator LLM-key modal becomes a component **inside `dashboard.html`**. `settings.html` (+ the full `settings-main.ts` form) is admin-panel-only. Workstreams R + 3 updated below.
@@ -142,11 +210,88 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ## Open sub-questions
 
-- _(none open — all resolved S55. New ones get added here.)_
+### OQ-P6 — Cloud Run scale-to-zero vs. the persistent-socket services (opened S56)
+
+P8 puts the Telegram/AIS sockets in the worker; OQ-P1 puts the worker on Cloud
+Run at `min-instances: 0`. A process holding a socket cannot scale to zero.
+`nitric.gcp.yaml` already carries the standing TODO:
+
+> `min-instances: 0` means Cloud Run can scale them to zero between requests,
+> which breaks a persistent connection.
+
+Six services are long-running rather than request-driven: `ais-relay.cjs`
+(websocket relay, `Dockerfile.relay`), `digest-notifications`,
+`publish-bootstrap-tiers` (`--loop`), and the three BLMOVE/poll-loop consumers
+`process-simulation-tasks` / `process-deep-forecast-tasks` / `scenario-worker`.
+
+This is a **cost decision, not a technical one**, and it is the single place
+where P1's "we carry the cost" meets a number: `min-instances: 1` is a standing
+per-org charge multiplied by org count. Options: (a) accept a pinned
+min-instances:1 relay tier per org; (b) drop the persistent-socket sources from
+the platform tier; (c) run **one shared relay across all orgs** — it fetches
+public AIS/Telegram, so the per-org isolation argument is materially weaker here
+than for tenant data. **Decide before Workstream 5.**
+
+### OQ-P7 — where the 26 data-source keys live at worker runtime (opened S56)
+
+P3/P5 say Supabase `pipeline_config`, edited live by an org admin.
+`nitric-deploy.yml` says a single deploy-time `PRODUCTION_ENV_FILE` secret. Both
+cannot be true. If `pipeline_config` wins — and it should, or the admin panel is
+decorative — then note the consequence: `config-store.mjs`'s own header records
+**~600 `process.env.<KEY>` reads across the compiled `api/` route bundles**, none
+of which can be rewritten to call an accessor. So the worker needs a startup +
+periodic `pipeline_config → process.env` hydration, the exact mirror of
+`loadConfigIntoEnv()`.
+
+That in turn is a **user-visible contract P5 must state**: an admin's key edit
+takes effect on the worker's next hydration (or restart), not immediately. Pick
+the interval and say so in the panel.
 
 ---
 
 ## Session log
+
+### Session 56 — 2026-09-04
+
+Architecture review against the codebase, before any implementation. **Verdict:
+the architecture holds.** Eight findings, folded into the sections above rather
+than listed here. Still doc-only — no code touched.
+
+Blocking (would have failed during implementation):
+
+1. **Workstream R's revert list was self-contradictory.** `f1a90be` *created*
+   `beginGithubLogin()`; reverting it deletes `local-login.mjs`. Boundary
+   corrected to 3 commits (`ed3c281`, `e30f1cd`, `6ba93d2`); `f1a90be` stays.
+2. **"Drop `settings.html` from the operator bundle" had no seam.** No operator
+   Vite build exists (one unconditional 2-entry rollup input); the bundle does
+   `copyDir('dist')` wholesale. Retargeted to a post-copy prune.
+3. **P8 vs. OQ-P1** — persistent sockets cannot scale to zero. Re-opened as
+   **OQ-P6**; `nitric.gcp.yaml` already had the TODO.
+
+Corrections:
+
+4. **P6's denylist was materially incomplete** — the documented "DELIBERATELY
+   EXCLUDED" block (`story:` ~18.4k keys, `wm:`, `cache:`, `digest:`,
+   `baseline:`, `seed-*:`, infra prefixes, and the live `forecast:simulation-task*`
+   queue) matched none of the S55 shape patterns. And blanket-denying `brief:*`
+   is a **regression** — `keepKey()` deliberately mirrors the operator's own
+   brief. P6 now has three states.
+5. **Workstream 7's S55 pointer was wrong** (line ~2718 is an SSRF allowlist);
+   the real worklist is `cloudPreferredPrefixes` at ~769. Surface quantified: 22
+   handlers + 9 shared modules of 276. `list-feed-digest` promoted to its own
+   item — it has no seeder at all.
+6. **Workstream 1 — `config-store.mjs` repurposes cleanly, no entanglement.**
+   Two gaps: no TTL notion, and `.env`-wins precedence would let a stale
+   v2.12/2.13 `.env` shadow the broker's token forever, defeating revocation.
+7. **Workstream 2 path fix** — `fn_link_bridge_identity_if_needed.sql` is under
+   `platform/tools/supabase/schemas/public/`, and `deno.json` was missed.
+8. **Workstream 5** — nothing feeds `nitric.<org>.yaml` from `deploy/orgs/<org>.yml`
+   (every org would land in `apps-453107`), and the key-home conflict became
+   **OQ-P7**.
+
+Workstream ordering confirmed, with one addition: start Workstream 7's
+`list-feed-digest` seeder early — it is unblocked today and is 7's longest pole.
+Recommended: **R → 1 → 4 → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7.**
 
 ### Session 55 — 2026-09-04
 

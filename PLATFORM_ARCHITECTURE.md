@@ -13,14 +13,14 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstream 4 (denylist mirror) shipped.** Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
-- **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57). `v2.13.0` **not tagged**, on hold (P12).
+- **As of:** 2026-09-04 (session 57) — **Workstreams 4 (denylist mirror) + 2 (vendor the bridge) shipped; OQ-P6 resolved (P14).** Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
 - **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. One item stays open: **OQ-P7** (where the 26 data-source keys actually live at worker runtime — P3 and `nitric-deploy.yml` disagree). **OQ-P6 RESOLVED S57** — see P14 + the resolved-questions section.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
-- **START HERE: Workstream 2** (vendor the bridge — a pure file copy) ∥ **Workstream 7's `list-feed-digest` seeder** (unblocked, 7's longest pole). Everything else waits on Workstream 5 (deploy pipeline).
-- **Decisions needed from the operator before Workstream 5:** OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). None blocks 2 or the 7-seeder.
-- **Recommended order (S56):** ~~R → 1 → 4~~ (done) → (2 ∥ 7-seeder) → 5 → 3 → 6 → rest of 7.
+- **START HERE: Workstream 7's `list-feed-digest` seeder** (unblocked, 7's longest pole). Everything else waits on Workstream 5 (deploy pipeline).
+- **Decisions needed from the operator before Workstream 5:** OQ-P7, and a review of **P13** (revocation mechanism — decided during implementation, not by the S55 design conversation). Neither blocks the 7-seeder.
+- **Recommended order (S56):** ~~R → 1 → 4 → 2~~ (done) → (7-seeder) → 5 → 3 → 6 → rest of 7.
 
 ---
 
@@ -115,10 +115,12 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 2 — vendor `github-identity-bridge` (P9)
 
-- [ ] Copy **four** files into `worldmonitor/supabase/`, with the "upstream = platform @ &lt;sha&gt;" header. **S56 path correction** — they are not all in one place:
-  - `platform/tools/supabase/functions/github-identity-bridge/{index.ts, register-provider.ts, deno.json}` (`deno.json` was missed in the S55 list)
-  - `platform/tools/supabase/schemas/public/fn_link_bridge_identity_if_needed.sql` (**not** alongside the function)
-- [ ] Per-project provisioning steps documented + scripted for Workstream 5 (generate RSA keypair, set 5 function secrets, `functions deploy --no-verify-jwt`, `db push`, `deno run register-provider`).
+- [x] **DONE S57.** Vendored from platform @ `bafbfb15916c1db973f96a60564f99196c4e4428`:
+  - `supabase/functions/github-identity-bridge/{index.ts, register-provider.ts, deno.json}` — `index.ts` + `register-provider.ts` carry a vendor header; bodies verified **byte-for-byte** against upstream (only deviation: `index.ts`'s one comment path reference points at the migration instead of the platform schema file). `deno.json` = `{"imports":{}}` (identical to `local-config`'s).
+  - `supabase/migrations/20260904130000_github_identity_bridge.sql` — upstream keeps `fn_link_bridge_identity_if_needed.sql` as a **declarative-schema** file; WorldMonitor has no declarative setup, so it is vendored directly as a plain migration (function body byte-for-byte; `CREATE OR REPLACE` + REVOKE/GRANT are idempotent).
+  - `.npmrc` from the upstream function dir is **not** copied — it is an empty comment-only placeholder for private registries the bridge doesn't use.
+- [x] **DONE S57.** `supabase/functions/github-identity-bridge/PROVISIONING.md` — the per-org runbook for Workstream 5 to script: the 5 function secrets (`OIDC_SIGNING_PRIVATE_KEY_JWK` + `OIDC_SIGNING_KID` via a `jose` keygen snippet; `TICKET_SIGNING_SECRET` / `BRIDGE_CLIENT_ID` / `BRIDGE_CLIENT_SECRET` via `openssl rand`), then `supabase db push` → `supabase secrets set` → `supabase functions deploy --no-verify-jwt` → `deno run register-provider.ts`, plus the post-deploy Redirect-URL allow-list step (still manual — needs Workstream 3's login wiring to pin the URL) and a discovery/JWKS smoke check.
+- [ ] **Not gated here:** the function has no local typecheck/lint in this repo (`tsconfig` covers only `src/`; `lint` script doesn't include `supabase/`; no `deno`) — same "unrun until Workstream 5" caveat as `local-config`. First real execution is a W5 gate.
 
 ### Workstream 3 — per-operator LLM key modal (in `dashboard.html`, OQ-P4)
 
@@ -304,6 +306,30 @@ all become `min-instances: 0` scheduled jobs. Phased: Phase 1 ships the easy
 moves with W5 and keeps `ais-relay.cjs` pinned per-org as a stopgap; Phase 2
 (overlaps W7) decomposes it. Workstreams 5 and 7 updated with the concrete
 steps. **No code — doc only.**
+
+**Then Workstream 2 shipped** — `github-identity-bridge` vendored from platform
+@ `bafbfb15`.
+
+- `supabase/functions/github-identity-bridge/{index.ts, register-provider.ts,
+  deno.json}` + `supabase/migrations/20260904130000_github_identity_bridge.sql`.
+  Function + SQL bodies verified **byte-for-byte** against upstream (`diff`);
+  the only code deviation is one comment path in `index.ts` repointed from the
+  platform schema file to the migration. Vendor headers on the two `.ts` files
+  record the upstream SHA and the "re-copy, don't diverge" rule (P9).
+- Upstream keeps the SQL as a *declarative-schema* file (`db diff` → migration);
+  vendored here directly as a plain forward-only migration since WorldMonitor
+  has no declarative setup (W1's precedent). `CREATE OR REPLACE` + REVOKE/GRANT
+  make re-application idempotent.
+- `.npmrc` from the upstream function dir deliberately NOT copied — empty
+  comment-only private-registry placeholder, unused.
+- New `PROVISIONING.md` beside the function — the per-org runbook W5 will turn
+  into workflow steps: 5 function secrets (a `jose` RS256 keygen snippet for
+  the JWK + `kid`; `openssl rand` for the other three), then `db push` →
+  `secrets set` → `functions deploy --no-verify-jwt` → `deno run
+  register-provider.ts`, plus the manual Redirect-URL allow-list step (URL
+  pins when W3's login wiring lands) and a discovery/JWKS smoke check.
+- **No local gate** — `tsconfig` covers only `src/`, `lint` doesn't include
+  `supabase/`, no `deno` here. Unrun until W5, exactly like `local-config`.
 
 ### Session 56 — 2026-09-04
 

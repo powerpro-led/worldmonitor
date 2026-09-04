@@ -2249,12 +2249,19 @@ test('tauri-sidecar refreshes a near-expiry session.json against Supabase on sta
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
-      tokenHits.push({
-        path: `${url.pathname}${url.search}`,
-        apikey: req.headers.apikey,
-        auth: req.headers.authorization,
-        body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'),
-      });
+      // Only GoTrue calls count. This fake answers every path, and a
+      // tauri-sidecar startup also fires the config broker at
+      // /functions/v1/local-config (P4) — recording that here would make the
+      // assertion below "exactly one HTTP request of any kind", which is not
+      // what this test is about.
+      if (url.pathname.startsWith('/auth/')) {
+        tokenHits.push({
+          path: `${url.pathname}${url.search}`,
+          apikey: req.headers.apikey,
+          auth: req.headers.authorization,
+          body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'),
+        });
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
         access_token: 'at-new',
@@ -2342,8 +2349,14 @@ test('session refresh is skipped when the token still has plenty of runway', asy
   const localApi = await setupApiDir({});
   const sessionFile = path.join(os.tmpdir(), `wm-session-norefresh-${Date.now()}.json`);
 
+  // Same reasoning as the test above: the broker's /functions/v1/local-config
+  // call is an expected part of a tauri-sidecar startup, so only a GoTrue hit
+  // counts as "the session was refreshed".
   let hit = false;
-  const supabase = createServer((_req, res) => { hit = true; res.writeHead(500).end(); });
+  const supabase = createServer((req, res) => {
+    if (new URL(req.url || '/', 'http://127.0.0.1').pathname.startsWith('/auth/')) hit = true;
+    res.writeHead(500).end();
+  });
   const supabasePort = await listen(supabase);
   const supabaseOrigin = `http://127.0.0.1:${supabasePort}`;
 
@@ -2377,7 +2390,7 @@ test('session refresh is skipped when the token still has plenty of runway', asy
 
   try {
     await new Promise((r) => setTimeout(r, 150));
-    assert.equal(hit, false, 'Supabase not contacted while the token is far from expiry');
+    assert.equal(hit, false, 'GoTrue not contacted while the token is far from expiry');
     const session = JSON.parse(await readFile(sessionFile, 'utf8'));
     assert.equal(session.access_token, 'at-fresh');
   } finally {

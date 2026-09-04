@@ -50,9 +50,13 @@ import {
   deleteConfig,
   importFromEnvText,
   getConfigDbPath,
+  clearBrokeredConfig,
   CONFIG_KEYS,
   SECRET_CONFIG_KEYS,
 } from '../vscode-extension/sidecar/config-store.mjs';
+// Fetches this org's Upstash read-only credential from the local-config edge
+// function after a successful login (P4).
+import { refreshBrokeredConfig } from '../vscode-extension/sidecar/local-config-broker.mjs';
 // The loopback GitHub OAuth (PKCE) flow. Kept in its own module (rather than
 // inline here) because Workstream 1 adds a second caller — see that file's
 // header.
@@ -486,6 +490,22 @@ async function cmdLogin() {
   ok('');
   ok(`Logged in as ${saved.user.email || saved.user.id}`);
   ok(`  session:  ${SESSION_FILE}   (${describeExpiry(saved.expires_at)})`);
+
+  // Seed the brokered config immediately (P4 / Workstream 1). Without this the
+  // operator would sit with an empty mirror until the backend's own refresh
+  // loop next ticked — and on a first install there is nothing cached at all,
+  // so `login` would appear to succeed while every panel stayed blank.
+  const broker = await refreshBrokeredConfig({ force: true, logger: { log() {}, warn() {}, error() {} } });
+  if (broker.status === 'ok') {
+    ok('  config:   fetched this org\'s Upstash read-only credential from local-config.');
+  } else if (broker.status === 'revoked') {
+    ok('  config:   local-config refused this session — your account may not be entitled to this org.');
+  } else if (broker.status === 'unavailable') {
+    ok(`  config:   could not reach local-config (${broker.reason}); the backend will retry hourly.`);
+  } else if (broker.status === 'unconfigured') {
+    ok('  config:   no Supabase URL configured yet — set it before the backend can fetch credentials.');
+  }
+
   ok('  The backend keeps this token refreshed while it runs; re-run `login` only if it sits idle for weeks.');
   ok('  Restart the backend to pick it up now:  worldmonitor-local restart');
 }
@@ -501,7 +521,12 @@ async function cmdLogout() {
     });
   } catch { /* best-effort server-side revoke */ }
   rmSync(SESSION_FILE, { force: true });
+  // P4: "on SIGNED_OUT … drop the cache." The brokered Upstash credential was
+  // issued against the session we just destroyed, so leaving it on disk would
+  // let a signed-out machine keep mirroring this org's data.
+  clearBrokeredConfig();
   ok('Logged out — removed ~/.worldmonitor/session.json.');
+  ok('  Also cleared the cached Upstash credential; `login` re-fetches it.');
   ok('The backend keeps running; user-scoped routes will 401 until you log in again.');
 }
 

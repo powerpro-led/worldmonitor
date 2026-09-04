@@ -23,6 +23,8 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // login flow and this server's refresh timer.
 import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
 import { loadConfigIntoEnv } from './config-store.mjs';
+// Brokered Upstash credential (P4) — see local-config-broker.mjs.
+import { startBrokerRefreshLoop } from './local-config-broker.mjs';
 
 // Fill process.env from ~/.worldmonitor/config.db for any Supabase / Upstash /
 // OpenRouter key `node --env-file` didn't already set. Must run before
@@ -2358,6 +2360,7 @@ export async function createLocalApiServer(options = {}) {
   let stopReconciliationLoop = null;
   let stopSyncListener = null;
   let stopSessionRefresh = null;
+  let stopBrokerRefresh = null;
 
   const server = createServer(async (req, res) => {
     const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${context.port}`);
@@ -2577,6 +2580,15 @@ export async function createLocalApiServer(options = {}) {
       // panels survive a long webview close — see startSessionRefreshLoop().
       stopSessionRefresh = startSessionRefreshLoop(context);
 
+      // Keep the brokered Upstash credential current — one fetch now, then on
+      // an interval (P4). Started AFTER the session refresh above so a
+      // near-expiry token has already been renewed and the very first broker
+      // call doesn't 401 into clearing a perfectly good cache. Sidecar-only:
+      // docker/desktop modes supply their own credentials.
+      if (context.mode === 'tauri-sidecar') {
+        stopBrokerRefresh = startBrokerRefreshLoop(context);
+      }
+
       return { port: boundPort };
     },
     async close() {
@@ -2588,6 +2600,7 @@ export async function createLocalApiServer(options = {}) {
       if (stopSyncListener) { stopSyncListener(); stopSyncListener = null; }
       if (stopReconciliationLoop) { stopReconciliationLoop(); stopReconciliationLoop = null; }
       if (stopSessionRefresh) { stopSessionRefresh(); stopSessionRefresh = null; }
+      if (stopBrokerRefresh) { stopBrokerRefresh(); stopBrokerRefresh = null; }
       if (unregisterSelfFetchOrigins) {
         unregisterSelfFetchOrigins();
         unregisterSelfFetchOrigins = null;

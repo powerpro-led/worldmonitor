@@ -283,6 +283,7 @@ const SIDECAR_FILES = [
   'sync-listener.mjs',
   'session-file.mjs',
   'config-store.mjs',
+  'local-config-broker.mjs',
   'local-login.mjs',
   '_domain-config.mjs',
   'kv-cache-schema.mjs',

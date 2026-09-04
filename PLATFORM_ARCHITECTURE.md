@@ -13,9 +13,10 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 55) — architecture agreed, nothing built yet. Doc-only.
-- **Prior work state:** `main` == `origin/main` through `07c280c` (Local App Initiative Phases 0/1/3/4 complete; Phase 2's loopback control panel is **to be reverted** — see Workstream R). `v2.13.0` **not tagged** and now on hold pending the config-model change.
-- **START HERE:** Workstream 1 (`local-config` edge fn + `pipeline_config` table) and Workstream R (revert Phase 2) are the unblocked entry points. Everything else depends on the per-org deploy pipeline (Workstream 5).
+- **As of:** 2026-09-04 (session 55) — architecture + all sub-questions agreed. Doc-only, nothing built.
+- **Prior work state:** `main` @ `d623924` (== `origin/main` after the operator pushes; Local App Initiative Phases 0/1/3/4 complete + tested; Phase 2's loopback control panel **to be reverted** — Workstream R). `v2.13.0` **not tagged**, on hold (P12).
+- **All OQ-P1–5 resolved S55:** Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat.
+- **START HERE:** Workstream 1 (`local-config` edge fn + `pipeline_config`) + Workstream R (revert Phase 2) are unblocked. Workstream 4 (denylist mirror) is also standalone. Everything else waits on Workstream 5 (deploy pipeline).
 
 ---
 
@@ -80,13 +81,13 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 - [ ] Revert / neutralize `f1a90be`, `ed3c281`, `e30f1cd`, `6ba93d2` (keep `ad77eb8`'s doc structure). Specifically: remove `handleLocalControlPlane()` (`/api/local-config`, `/api/local-login|logout|restart`), `buildLocalControlPanelShim()`, `buildFirstRunRedirectShim()`, the `settings-main.ts` **Backend** section + its `window.__WM_LOCAL_CONTROL_PANEL` gate.
 - [ ] **Keep** `beginGithubLogin()` (`local-login.mjs`) — operators still sign in; just not through a "control panel."
-- [ ] Decide: does the operator bundle still ship `settings.html` at all? If the per-operator LLM-key modal lives in `dashboard.html` instead, drop `settings.html` from the bundle. (Workstream 3.)
+- [ ] **Drop `settings.html` from the operator bundle entirely** (OQ-P4). Remove it from `build-release-bundle.mjs` staging + `vite.config.ts` operator build. The LLM-key modal lives in `dashboard.html` (Workstream 3).
 - [ ] `test:sidecar` — drop the 7 Phase-2 tests, keep the rest green.
 
 ### Workstream 1 — config broker (`local-config` edge fn + `pipeline_config`)
 
 - [ ] `worldmonitor/supabase/functions/local-config/index.ts` — `verify_jwt: true`; read user from JWT; confirm org membership; return `{ upstashUrl, upstashReadonlyToken, appDomain }` from function secrets.
-- [ ] `worldmonitor/supabase/migrations/*_pipeline_config.sql` — `pipeline_config(key text primary key, value text, updated_at timestamptz)`; RLS: `select/insert/update` for a member with an `admin` claim; service-role bypass for the worker.
+- [ ] `worldmonitor/supabase/migrations/*_pipeline_config.sql` — `pipeline_config(key text primary key, value text, updated_at timestamptz)`; RLS: `select/insert/update` when `(auth.jwt() -> 'app_metadata' ->> 'wm_admin')::boolean` (OQ-P3); service-role bypass for the worker.
 - [ ] Local backend: `config.db` becomes a **cache** of the broker response, hourly refetch (repurposes Phase 1's `config-store.mjs` / `loadConfigIntoEnv()`); on `SIGNED_OUT` or a 401 from the broker, drop the cache.
 - [ ] `worldmonitor-local.mjs login` / `beginGithubLogin()` → after session, immediately call `local-config` and seed the cache.
 
@@ -95,11 +96,12 @@ data-source fetching and holds no data-source keys — it is a read replica.
 - [ ] Copy `index.ts` + `register-provider.ts` + `fn_link_bridge_identity_if_needed.sql` into `worldmonitor/supabase/`, with the "upstream = platform @ <sha>" header.
 - [ ] Per-project provisioning steps documented + scripted for Workstream 5 (generate RSA keypair, set 5 function secrets, `functions deploy --no-verify-jwt`, `db push`, `deno run register-provider`).
 
-### Workstream 3 — per-operator LLM key modal
+### Workstream 3 — per-operator LLM key modal (in `dashboard.html`, OQ-P4)
 
-- [ ] A minimal settings modal in the dashboard (filtered view of `settings-main.ts`'s AI category, or a fresh small component) — `OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_API_URL` + `OLLAMA_MODEL`.
-- [ ] Stored per-operator: `config.db` (local) — NOT sent anywhere. `server/_shared/llm.ts` reads it.
-- [ ] Everything else in `settings-main.ts` becomes admin-panel-only (Workstream 6).
+- [ ] A small modal **inside the dashboard** (fresh component, or a trimmed reuse of `settings-main.ts`'s AI category) — `OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_API_URL` + `OLLAMA_MODEL`. Opened from a Settings affordance in the dashboard chrome — NOT a separate `settings.html` page.
+- [ ] Stored per-operator in `config.db` (local) — NOT sent anywhere. `server/_shared/llm.ts` reads it.
+- [ ] **No key → chat/summarize hard-disabled** (OQ-P5): `llm.ts` / `chat-analyst` return a clean "AI features need an API key" state; the dashboard hides/disables those affordances. No cloud LLM proxy.
+- [ ] Everything else in `settings-main.ts` is admin-panel-only (Workstream 6).
 
 ### Workstream 4 — denylist mirror
 
@@ -109,16 +111,17 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 5 — multi-org deploy pipeline
 
-- [ ] `deploy/orgs/<org>.yml` — non-secret per-org config (domain, region, variant, Supabase project ref).
-- [ ] GH Actions Environment per org — GCP creds (scoped), Pulumi token, Supabase service key, Upstash write URL+token.
-- [ ] `.github/workflows/deploy-org.yml` — `workflow_dispatch(org)` → select env → provision Supabase (functions deploy, `db push`, `register-provider`, org-gate hook) → deploy GCP (worker + admin panel) via `nitric up` / Pulumi (grow `nitric-deploy.yml`).
-- [ ] Idempotent: re-running updates in place. A "new org" runbook: create the 3 projects + the Environment, run the workflow.
+- [ ] `deploy/orgs/<org>.yml` — non-secret per-org config (domain, GCP region, variant, Supabase project ref).
+- [ ] GH Actions Environment per org — GCP creds (scoped to that project), Pulumi token, `SUPABASE_ACCESS_TOKEN` + project ref + DB password, Upstash write URL+token.
+- [ ] `worldmonitor/supabase/` set up for the **Supabase CLI** (OQ-P2): `supabase/config.toml`, `supabase/migrations/*.sql` (`pipeline_config` + RLS + `fn_link_bridge_identity_if_needed`), `supabase/functions/{local-config,github-identity-bridge}/`.
+- [ ] `.github/workflows/deploy-org.yml` — `workflow_dispatch(org)` → select Environment → `supabase link` → `supabase db push` → `supabase functions deploy --no-verify-jwt` (both fns) → set function secrets → `deno run register-provider.ts` → configure the org-gate auth hook → deploy the worker + admin panel to **Cloud Run** (OQ-P1) via `nitric up` / Pulumi (grow `nitric-deploy.yml`).
+- [ ] Idempotent: re-running updates in place. "New org" runbook: create the Supabase project + Upstash DB + GCP project, add the GH Environment, run the workflow, then set the first admin's `app_metadata.wm_admin` (OQ-P3).
 
 ### Workstream 6 — admin panel
 
-- [ ] `settings.html` served by the GCP deploy, behind a GitHub-login gate that checks the `admin` claim (org-gate hook sets it for designated logins).
-- [ ] Write route: `pipeline_config` upsert (admin-gated, via Supabase client with the caller's session — RLS enforces).
-- [ ] `settings-main.ts`: the full 5-category form is the admin view; masking machinery already exists.
+- [ ] `settings.html` served by the Cloud Run deploy, behind a GitHub-login gate that checks `app_metadata.wm_admin` (OQ-P3).
+- [ ] Write route: `pipeline_config` upsert via the Supabase client with the caller's session — RLS enforces admin-only.
+- [ ] `settings-main.ts`: the full 5-category form is the admin view; masking machinery already exists. This is the ONLY place it renders now (removed from the operator bundle — Workstream R).
 
 ### Workstream 7 — worker: absorb the direct fetches
 
@@ -129,13 +132,17 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ---
 
+## Resolved sub-questions (session 55)
+
+- **OQ-P1 → RESOLVED: Cloud Run.** Per-org worker on Cloud Run (scale-to-zero; scheduled pipeline runs via Cloud Scheduler → HTTP trigger). Not GKE, not an always-on VM. `nitric.yaml` provider = GCP/Cloud Run.
+- **OQ-P2 → RESOLVED: fully scripted in `deploy-org.yml`.** Review of current practice: the repo has **no Supabase-CLI migration setup**. The one migration precedent is `consumer-prices-core/` — plain numbered `migrations/NNN_name.sql` + a ~60-line forward-only runner (`src/db/migrate.ts`: `schema_migrations` tracking table, each file in a `BEGIN/COMMIT`, `pg` Pool via `DATABASE_URL`), run as `npm run migrate`. **Decision:** the deploy workflow needs the `supabase` CLI anyway for `functions deploy` + auth config, so use it for SQL too — `supabase/migrations/*.sql` (CLI convention) applied with `supabase db push`, `supabase/functions/*` with `supabase functions deploy --no-verify-jwt`, then `deno run register-provider.ts`. Per-org GH Environment holds `SUPABASE_ACCESS_TOKEN` + project ref + DB password. (The `consumer-prices-core` plain-`pg` runner is the CLI-free fallback if the CLI dependency proves painful.)
+- **OQ-P3 → RESOLVED: `app_metadata`.** Admin = `app_metadata.wm_admin === true` (or `app_metadata.role === 'admin'`), set by repo devs — manual per org for now (small `admin.updateUserById` step; a management UI later if it grows). `pipeline_config` RLS checks it; the admin-panel gate checks it. No GitHub-team lookup, no `org_admins` table.
+- **OQ-P4 → RESOLVED: operator bundle does NOT ship `settings.html`.** The per-operator LLM-key modal becomes a component **inside `dashboard.html`**. `settings.html` (+ the full `settings-main.ts` form) is admin-panel-only. Workstreams R + 3 updated below.
+- **OQ-P5 → RESOLVED: hard-disable.** No LLM key configured → chat/summarize are disabled locally with a clean "AI features need an API key (Dashboard → Settings)" state. No cloud LLM proxy — that would re-create an org-tier key and outbound cost we're removing.
+
 ## Open sub-questions
 
-- **OQ-P1** — Worker deploy target: Cloud Run (per-service, scale-to-zero, cron via Cloud Scheduler) vs. GKE vs. a single always-on VM per org? Affects `nitric.yaml` provider config and cost.
-- **OQ-P2** — Per-org Supabase provisioning: fully scripted in `deploy-org.yml` (needs a Supabase management token with project-admin scope as a repo secret) vs. a documented one-time manual setup + the workflow only deploys functions/migrations after.
-- **OQ-P3** — "admin" claim: where does it come from — the org-gate `before-user-created` hook keying off a GitHub team, a `pipeline_config`-adjacent `org_admins` table, or a manual `app_metadata` flag?
-- **OQ-P4** — Does the operator bundle keep `settings.html` (for the LLM modal) or move that into `dashboard.html` and drop `settings.html` from the bundle entirely? (Workstream R / 3.)
-- **OQ-P5** — LLM on-demand for operators with no key: hard-disable chat/summarize, or proxy through an authenticated per-org cloud LLM endpoint that holds the org key (turns "operator LLM key" into an org-tier key after all)?
+- _(none open — all resolved S55. New ones get added here.)_
 
 ---
 
@@ -146,5 +153,6 @@ data-source fetching and holds no data-source keys — it is a read replica.
 - Architecture pivot agreed across a long design conversation. The Local App Initiative's "every operator self-configures a local backend" model is replaced by a multi-tenant platform: repo devs operate isolated per-org instances (Supabase + Upstash + GCP), org admins manage their org's data-source keys via a cloud admin panel, operators run a thin read-only mirror + one LLM key.
 - Decisions P1–P12 locked. Workstreams R + 1–7 defined. `v2.13.0` moved from "D12 gate" to "hold pending config-model change" (P12).
 - `github-identity-bridge` decoupling resolved → **P9** (vendor a copy; platform stays upstream; revisit only on churn).
+- **All five OQ-P sub-questions resolved** (see "Resolved sub-questions"): OQ-P1 Cloud Run · OQ-P2 Supabase-CLI-scripted in `deploy-org.yml` (repo has no CLI migration setup today — only `consumer-prices-core`'s plain-`pg` numbered-SQL runner precedent) · OQ-P3 `app_metadata.wm_admin` · OQ-P4 no `settings.html` in the operator bundle, LLM modal moves into `dashboard.html` · OQ-P5 no key → hard-disable chat/summarize.
 - This file created as the new single source of truth; `LOCAL_APP_INITIATIVE.md` demoted to the operator-client sub-track.
 - **Nothing implemented.** Doc-only session.

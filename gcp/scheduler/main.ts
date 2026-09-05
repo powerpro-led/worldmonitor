@@ -283,6 +283,12 @@ const CADENCES: Record<string, Cadence> = {
   // and api/health.js's SEED_META.satellites.maxStaleMin (240min = 2x).
   // ──────────────────────────────────────────────────────────────────────
   'seed-satellites': { kind: 'every', rate: '2 hours' },
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Port of
+  // ais-relay.cjs's startPositiveEventsSeedLoop (no standalone sibling; the
+  // GDELT throttle moved to _gdelt-fetch.mjs's shared cross-process rate
+  // gate). Cadence matches the deleted loop's POSITIVE_EVENTS_INTERVAL_MS
+  // (15min). TTL raised to 75min to clear the 60-min health staleness gate.
+  'seed-positive-events': { kind: 'every', rate: '15 minutes' },
   // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Straight port of
   // ais-relay.cjs's startUsniFleetSeedLoop (no standalone sibling existed).
   // Cadence matches the deleted loop's USNI_SEED_INTERVAL_MS (6h) and

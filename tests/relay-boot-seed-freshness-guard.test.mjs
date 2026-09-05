@@ -180,7 +180,6 @@ test('startBootSeedLoop waits the remaining freshness window before first skippe
 // drift the meta key or interval and re-open the boot-abuse hole.
 const SEEDERS = [
   ['Market', "'seed-meta:market:stocks'", 'MARKET_SEED_INTERVAL_MS', 'seedAllMarketData'],
-  ['PositiveEvents', "'seed-meta:positive-events:geo'", 'POSITIVE_EVENTS_INTERVAL_MS', 'seedPositiveEvents'],
   ['Classify', "'seed-meta:classify'", 'CLASSIFY_SEED_INTERVAL_MS', 'seedClassify'],
   // The four internal RPC warm-pings that used to be gated here (CII 8m,
   // Chokepoints 30m, CableHealth 30m, TemporalAnomalies 15m) were
@@ -217,6 +216,12 @@ const SEEDERS = [
   // scripts/railway-services.json + gcp/scheduler/main.ts's CADENCES) rather
   // than just deleting a duplicate. No notification logic to migrate — this
   // loop never called publishNotificationEvent.
+  //
+  // PositiveEvents was removed in session 63 — ported to
+  // scripts/seed-positive-events.mjs (every 15min). Its per-query 5.5s GDELT
+  // throttle moved to _gdelt-fetch.mjs's shared cross-process rate gate; the
+  // failure semantics are now pinned against the new file in
+  // tests/positive-events-seed-failure.test.mjs. No notification logic.
   //
   // Satellites was removed in session 63 by the same mechanism as GSCPI:
   // straight port to a new scripts/seed-satellites.mjs (CelesTrak TLE fetch),

@@ -309,6 +309,18 @@ const CADENCES: Record<string, Cadence> = {
   // matches the deleted loop's PIZZINT_SEED_INTERVAL_MS (10min) and
   // api/health.js's SEED_META.pizzint.maxStaleMin (30min = 3x).
   'seed-pizzint': { kind: 'every', rate: '10 minutes' },
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction as a NOTIFICATION
+  // migration (full UCDP/Weather treatment): ais-relay.cjs's
+  // startCorridorRiskSeedLoop / startShippingStressSeedLoop moved to
+  // scripts/seed-corridor-risk.mjs / scripts/seed-shipping-stress.mjs, each on
+  // the runSeed contract with an afterPublish hook carrying the corridor_risk /
+  // shipping_stress publisher. No standalone sibling existed. Cadences match the
+  // deleted loops' CORRIDOR_RISK_SEED_INTERVAL_MS (60min) /
+  // SHIPPING_STRESS_INTERVAL_MS (15min) and api/health.js's
+  // SEED_META.{corridorrisk.maxStaleMin 120 = 2x, shippingStress.maxStaleMin 45
+  // = 3x}. Both data-key TTLs (14400s / 3600s) already clear those gates.
+  'seed-corridor-risk': { kind: 'every', rate: '1 hours' },
+  'seed-shipping-stress': { kind: 'every', rate: '15 minutes' },
 };
 
 /**

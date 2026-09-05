@@ -32,6 +32,8 @@ const PRODUCER_FILES = [
   { path: 'scripts/seed-aviation.mjs',                  expected: 'domain' },
   { path: 'scripts/seed-ucdp-events.mjs',               expected: 'domain' },
   { path: 'scripts/seed-weather-alerts.mjs',            expected: 'domain' },
+  { path: 'scripts/seed-corridor-risk.mjs',             expected: 'domain' },
+  { path: 'scripts/seed-shipping-stress.mjs',           expected: 'domain' },
   { path: 'scripts/regional-snapshot/alert-emitter.mjs', expected: 'domain' },
   // Browser-side RSS producer
   { path: 'src/services/breaking-news-alerts.ts',       expected: 'rss' },

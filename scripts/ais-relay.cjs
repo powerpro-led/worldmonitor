@@ -3226,104 +3226,21 @@ async function startClassifySeedLoop() {
 
 const PORTWATCH_REDIS_KEY = 'supply_chain:portwatch:v1';
 
-const CORRIDOR_RISK_BASE_URL = 'https://corridorrisk.io/api/corridors';
+// Corridor Risk seed — standalone Railway cron (gcp/scheduler/main.ts, every
+// 1h) — scripts/seed-corridor-risk.mjs. Extracted in P14 Phase 2 (session 63
+// — see PLATFORM_ARCHITECTURE.md); a notification migration (the >=50-score
+// corridor_risk publisher moved with it, full UCDP/Weather treatment). No
+// standalone sibling existed before extraction.
+//
+// KEPT here: CORRIDOR_RISK_REDIS_KEY + `latestCorridorRiskData`. The relay's
+// TransitSummary loop (still relay-local — it consumes the live AIS
+// chokepointCrossings Map) Redis-hydrates supply_chain:corridorrisk:v1 into
+// latestCorridorRiskData on its own 10-min tick when its copy is null, so it
+// keeps picking up corridor data — just on the next TransitSummary tick rather
+// than instantly after a corridor-risk write (the relay used to kick
+// seedTransitSummaries() directly from seedCorridorRisk).
 const CORRIDOR_RISK_REDIS_KEY = 'supply_chain:corridorrisk:v1';
-const CORRIDOR_RISK_TTL = 14400; // 4h (seed runs hourly, gives 3 retries before expiry)
-const CORRIDOR_RISK_SEED_INTERVAL_MS = 60 * 60 * 1000;
-// API name -> canonical chokepoint ID (partial substring match)
-const CORRIDOR_RISK_NAME_MAP = [
-  { pattern: 'hormuz', id: 'hormuz_strait' },
-  { pattern: 'bab-el-mandeb', id: 'bab_el_mandeb' },
-  { pattern: 'red sea', id: 'bab_el_mandeb' },
-  { pattern: 'suez', id: 'suez' },
-  { pattern: 'south china sea', id: 'taiwan_strait' },
-  { pattern: 'black sea', id: 'bosphorus' },
-];
-let corridorRiskSeedInFlight = false;
 let latestCorridorRiskData = null;
-
-async function seedCorridorRisk() {
-  if (corridorRiskSeedInFlight) { console.log('[CorridorRisk] Skipped (already in-flight)'); return; }
-  corridorRiskSeedInFlight = true;
-  console.log('[CorridorRisk] Fetching...');
-  const t0 = Date.now();
-  try {
-    const resp = await fetch(CORRIDOR_RISK_BASE_URL, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': CHROME_UA,
-        Referer: 'https://corridorrisk.io/dashboard.html',
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      console.warn(`[CorridorRisk] HTTP ${resp.status} (${resp.headers.get('content-type') || 'unknown'}) — ${body.slice(0, 200)}`);
-      return;
-    }
-    const text = await resp.text();
-    if (text.startsWith('<')) {
-      console.warn(`[CorridorRisk] Got HTML instead of JSON (Cloudflare challenge?) — ${text.slice(0, 150)}`);
-      return;
-    }
-    const corridors = JSON.parse(text);
-    if (!Array.isArray(corridors) || !corridors.length) {
-      console.warn('[CorridorRisk] No corridors returned — skipping');
-      return;
-    }
-    const result = {};
-    for (const corridor of corridors) {
-      const name = (corridor.name || '').toLowerCase();
-      const mapping = CORRIDOR_RISK_NAME_MAP.find(m => name.includes(m.pattern));
-      if (!mapping) continue;
-      const score = Number(corridor.score ?? 0);
-      const riskLevel = score >= 70 ? 'critical' : score >= 50 ? 'high' : score >= 30 ? 'elevated' : 'normal';
-      result[mapping.id] = {
-        riskLevel,
-        riskScore: score,
-        incidentCount7d: Number(corridor.incident_count_7d ?? 0),
-        eventCount7d: Number(corridor.event_count_7d ?? 0),
-        disruptionPct: Number(corridor.disruption_pct ?? 0),
-        vesselCount: Number(corridor.vessel_count ?? 0),
-        riskSummary: String(corridor.risk_summary || '').slice(0, 200),
-        riskReportAction: String((corridor.risk_report?.action) || '').slice(0, 500),
-      };
-    }
-    if (Object.keys(result).length === 0) {
-      console.warn('[CorridorRisk] No matching corridors — skipping');
-      return;
-    }
-    latestCorridorRiskData = result;
-    const ok = await envelopeWrite(CORRIDOR_RISK_REDIS_KEY, result, CORRIDOR_RISK_TTL, { recordCount: Object.keys(result).length, sourceVersion: 'corridor-risk' });
-    await upstashSet('seed-meta:supply_chain:corridorrisk', { fetchedAt: Date.now(), recordCount: Object.keys(result).length }, 604800);
-    console.log(`[CorridorRisk] Seeded ${Object.keys(result).length} corridors (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    seedTransitSummaries().catch(e => console.warn('[TransitSummary] Post-CorridorRisk seed error:', e?.message || e));
-    for (const [corridorId, c] of Object.entries(result)) {
-      if (c.riskScore < 50) continue;
-      const label = corridorId.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-      publishNotificationEvent({
-        eventType: 'corridor_risk',
-        payload: { title: `${label}: risk score ${c.riskScore}${c.riskSummary ? ' — ' + c.riskSummary.slice(0, 80) : ''}`, source: 'Corridor Risk' },
-        severity: c.riskScore >= 70 ? 'critical' : 'high',
-        variant: undefined,
-        dedupTtl: 3600,
-      }).catch(err => console.warn('[Notify] CorridorRisk publish error:', err?.message));
-    }
-  } catch (e) {
-    console.warn('[CorridorRisk] Seed error:', e?.message || e);
-  } finally {
-    corridorRiskSeedInFlight = false;
-  }
-}
-
-async function startCorridorRiskSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[CorridorRisk] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[CorridorRisk] Seed loop starting (interval ${CORRIDOR_RISK_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('CorridorRisk', 'seed-meta:supply_chain:corridorrisk', CORRIDOR_RISK_SEED_INTERVAL_MS, seedCorridorRisk, e => console.warn('[CorridorRisk] Initial seed error:', e?.message || e), e => console.warn('[CorridorRisk] Seed error:', e?.message || e));
-}
 
 // USNI Fleet Tracker seed — standalone Railway cron (gcp/scheduler/main.ts,
 // every 6h) — scripts/seed-usni-fleet.mjs. Extracted in P14 Phase 2 (session
@@ -3332,87 +3249,15 @@ async function startCorridorRiskSeedLoop() {
 // scripts/lib/usni-fleet-parser.cjs (unchanged). No notifications to migrate —
 // this loop never called publishNotificationEvent.
 
-// ─────────────────────────────────────────────────────────────
-// Shipping Stress Index — Yahoo Finance carrier/ETF market data
-// ─────────────────────────────────────────────────────────────
-
-const SHIPPING_STRESS_REDIS_KEY = 'supply_chain:shipping_stress:v1';
-const SHIPPING_STRESS_TTL = 3600; // 1h — seed runs every 15min (4× safety margin)
-const SHIPPING_STRESS_INTERVAL_MS = 15 * 60 * 1000;
-
-const SHIPPING_CARRIERS = [
-  { symbol: 'BDRY', name: 'Breakwave Dry Bulk ETF',  carrierType: 'etf' },
-  { symbol: 'ZIM',  name: 'ZIM Integrated Shipping', carrierType: 'carrier' },
-  { symbol: 'MATX', name: 'Matson Inc',              carrierType: 'carrier' },
-  { symbol: 'SBLK', name: 'Star Bulk Carriers',      carrierType: 'carrier' },
-  { symbol: 'EGLE', name: 'Eagle Bulk Shipping',       carrierType: 'carrier' },
-];
-
-let shippingStressInFlight = false;
-let shippingStressRetryTimer = null;
-const SHIPPING_STRESS_RETRY_MS = 20 * 60 * 1000;
-
-async function seedShippingStress() {
-  if (shippingStressInFlight) { console.log('[ShippingStress] Skipped (in-flight)'); return; }
-  shippingStressInFlight = true;
-  if (shippingStressRetryTimer) { clearTimeout(shippingStressRetryTimer); shippingStressRetryTimer = null; }
-  console.log('[ShippingStress] Fetching...');
-  const t0 = Date.now();
-  try {
-    const results = [];
-    for (const carrier of SHIPPING_CARRIERS) {
-      await new Promise(r => setTimeout(r, 150));
-      const quote = await fetchYahooChartDirect(carrier.symbol);
-      if (!quote) continue;
-      results.push({
-        symbol: carrier.symbol,
-        name: carrier.name,
-        carrierType: carrier.carrierType,
-        price: quote.price,
-        changePct: Number(quote.change.toFixed(2)),
-        sparkline: quote.sparkline,
-      });
-    }
-    if (!results.length) {
-      console.warn('[ShippingStress] No carrier data — extending TTL, retrying in 20min');
-      try { await upstashExpire(SHIPPING_STRESS_REDIS_KEY, SHIPPING_STRESS_TTL); } catch {}
-      shippingStressRetryTimer = setTimeout(() => { seedShippingStress().catch(() => {}); }, SHIPPING_STRESS_RETRY_MS);
-      return;
-    }
-    const avgChange = results.reduce((a, b) => a + b.changePct, 0) / results.length;
-    // Neutral market (0% change) → score=40 (moderate). Positive change = lower stress.
-    const stressScore = Math.min(100, Math.max(0, Math.round(40 - avgChange * 3)));
-    const stressLevel = stressScore >= 75 ? 'critical' : stressScore >= 50 ? 'elevated' : stressScore >= 25 ? 'moderate' : 'low';
-    const payload = { carriers: results, stressScore, stressLevel, fetchedAt: Date.now() };
-    const ok = await envelopeWrite(SHIPPING_STRESS_REDIS_KEY, payload, SHIPPING_STRESS_TTL, { recordCount: results.length, sourceVersion: 'shipping-stress' });
-    await upstashSet('seed-meta:supply_chain:shipping_stress', { fetchedAt: Date.now(), recordCount: results.length }, 604800);
-    console.log(`[ShippingStress] Seeded ${results.length} carriers score=${stressScore}/${stressLevel} (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    if (stressScore >= 75) {
-      publishNotificationEvent({
-        eventType: 'shipping_stress',
-        payload: { title: `Global shipping stress: score ${stressScore}/100 (${stressLevel})`, source: 'Shipping Index' },
-        severity: stressScore >= 90 ? 'critical' : 'high',
-        variant: undefined,
-        dedupTtl: 7200,
-      }).catch(err => console.warn('[Notify] ShippingStress publish error:', err?.message));
-    }
-  } catch (e) {
-    console.warn('[ShippingStress] Seed error:', e?.message || e, '— extending TTL, retrying in 20min');
-    try { await upstashExpire(SHIPPING_STRESS_REDIS_KEY, SHIPPING_STRESS_TTL); } catch {}
-    shippingStressRetryTimer = setTimeout(() => { seedShippingStress().catch(() => {}); }, SHIPPING_STRESS_RETRY_MS);
-  } finally {
-    shippingStressInFlight = false;
-  }
-}
-
-async function startShippingStressSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[ShippingStress] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[ShippingStress] Seed loop starting (interval ${SHIPPING_STRESS_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('ShippingStress', 'seed-meta:supply_chain:shipping_stress', SHIPPING_STRESS_INTERVAL_MS, seedShippingStress, e => console.warn('[ShippingStress] Initial seed error:', e?.message || e), e => console.warn('[ShippingStress] Seed error:', e?.message || e));
-}
+// Shipping Stress Index seed — standalone Railway cron (gcp/scheduler/main.ts,
+// every 15min) — scripts/seed-shipping-stress.mjs. Extracted in P14 Phase 2
+// (session 63 — see PLATFORM_ARCHITECTURE.md); a notification migration (the
+// >=75-score shipping_stress publisher moved with it, full UCDP/Weather
+// treatment). No standalone sibling existed before extraction. Yahoo fetching
+// there goes through the shared scripts/_yahoo-fetch.mjs instead of the relay's
+// fetchYahooChartDirect (still used by the Market loop below); the relay's
+// 20-min setTimeout retry is replaced by runSeed's RETRY-on-empty + the next
+// scheduled tick.
 
 // Reddit "hot" listing fetch (ScrapeCreators → OAuth → public) — moved to the
 // shared scripts/_reddit-hot.cjs when both consumer loops were extracted to
@@ -8385,9 +8230,10 @@ server.listen(PORT, () => {
   // (gcp/scheduler/main.ts, every 3h) — scripts/seed-social-velocity.mjs /
   // scripts/seed-wsb-tickers.mjs. Same pass; Reddit fetch in _reddit-hot.cjs.
   startClassifySeedLoop();
-
-  startCorridorRiskSeedLoop();
-  startShippingStressSeedLoop();
+  // CorridorRisk + ShippingStress seeds — standalone Railway crons
+  // (gcp/scheduler/main.ts, every 1h / 15min) — scripts/seed-corridor-risk.mjs
+  // / scripts/seed-shipping-stress.mjs. P14 Phase 2 session 63; notification
+  // migration (corridor_risk / shipping_stress publishers moved with them).
 });
 
 wss.on('connection', (ws, req) => {

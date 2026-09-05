@@ -12,6 +12,12 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 const relaySrc = readFileSync(resolve(root, 'scripts/ais-relay.cjs'), 'utf-8');
+// CorridorRisk seeding was extracted from ais-relay.cjs to this standalone cron
+// in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md). TransitSummary
+// itself stays relay-local (it consumes the live AIS chokepointCrossings Map),
+// so the seedTransitSummaries assertions below still read relaySrc; only the
+// corridor-risk fetch/shape/name-map assertions moved to corridorSrc.
+const corridorSrc = readFileSync(resolve(root, 'scripts/seed-corridor-risk.mjs'), 'utf-8');
 const handlerSrc = readFileSync(resolve(root, 'server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts'), 'utf-8');
 
 function makeDays(count, dailyTotal, startOffset) {
@@ -128,9 +134,16 @@ describe('seedTransitSummaries (relay)', () => {
     assert.doesNotMatch(relaySrc, /const pw = await upstashGet\(PORTWATCH_REDIS_KEY\)/);
   });
 
-  it('is triggered after CorridorRisk seed completes', () => {
-    const corridorBlock = relaySrc.match(/\[CorridorRisk\] Seeded[\s\S]{0,200}seedTransitSummaries/);
-    assert.ok(corridorBlock, 'seedTransitSummaries should be called after CorridorRisk seed');
+  it('picks up corridor-risk data via Redis hydration (no longer kicked directly by the corridor seed)', () => {
+    // Pre-S63 the relay's seedCorridorRisk() called seedTransitSummaries()
+    // inline right after writing supply_chain:corridorrisk:v1. That loop is now
+    // scripts/seed-corridor-risk.mjs (a standalone cron) which cannot reach
+    // this relay-internal function, so the "[CorridorRisk] Seeded … →
+    // seedTransitSummaries()" kick is gone and TransitSummary instead
+    // Redis-hydrates the key on its own 10-min tick — asserted by the "reads
+    // CorridorRisk from Redis when latestCorridorRiskData is null" block below.
+    assert.doesNotMatch(relaySrc, /\[CorridorRisk\] Seeded[\s\S]{0,200}seedTransitSummaries/);
+    assert.match(relaySrc, /if\s*\(\s*!latestCorridorRiskData\s*\)/);
   });
 
   it('runs on 10 minute interval', () => {
@@ -318,39 +331,39 @@ describe('seedTransitSummaries (relay)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. CORRIDOR_RISK_NAME_MAP and seedCorridorRisk
+// 2. CORRIDOR_RISK_NAME_MAP and seedCorridorRisk — now scripts/seed-corridor-risk.mjs
 // ---------------------------------------------------------------------------
-describe('CORRIDOR_RISK_NAME_MAP (relay)', () => {
+describe('CORRIDOR_RISK_NAME_MAP (seed-corridor-risk)', () => {
   it('defines CORRIDOR_RISK_NAME_MAP array', () => {
-    assert.match(relaySrc, /const CORRIDOR_RISK_NAME_MAP\s*=\s*\[/);
+    assert.match(corridorSrc, /const CORRIDOR_RISK_NAME_MAP\s*=\s*\[/);
   });
 
   it('maps hormuz to hormuz_strait', () => {
-    assert.match(relaySrc, /pattern:\s*'hormuz'.*id:\s*'hormuz_strait'/);
+    assert.match(corridorSrc, /pattern:\s*'hormuz'.*id:\s*'hormuz_strait'/);
   });
 
   it('maps bab-el-mandeb to bab_el_mandeb', () => {
-    assert.match(relaySrc, /pattern:\s*'bab-el-mandeb'.*id:\s*'bab_el_mandeb'/);
+    assert.match(corridorSrc, /pattern:\s*'bab-el-mandeb'.*id:\s*'bab_el_mandeb'/);
   });
 
   it('maps red sea to bab_el_mandeb', () => {
-    assert.match(relaySrc, /pattern:\s*'red sea'.*id:\s*'bab_el_mandeb'/);
+    assert.match(corridorSrc, /pattern:\s*'red sea'.*id:\s*'bab_el_mandeb'/);
   });
 
   it('maps suez to suez', () => {
-    assert.match(relaySrc, /pattern:\s*'suez'.*id:\s*'suez'/);
+    assert.match(corridorSrc, /pattern:\s*'suez'.*id:\s*'suez'/);
   });
 
   it('maps south china sea to taiwan_strait', () => {
-    assert.match(relaySrc, /pattern:\s*'south china sea'.*id:\s*'taiwan_strait'/);
+    assert.match(corridorSrc, /pattern:\s*'south china sea'.*id:\s*'taiwan_strait'/);
   });
 
   it('maps black sea to bosphorus', () => {
-    assert.match(relaySrc, /pattern:\s*'black sea'.*id:\s*'bosphorus'/);
+    assert.match(corridorSrc, /pattern:\s*'black sea'.*id:\s*'bosphorus'/);
   });
 
   it('has exactly 6 mapping entries', () => {
-    const mapBlock = relaySrc.match(/CORRIDOR_RISK_NAME_MAP\s*=\s*\[([\s\S]*?)\];/);
+    const mapBlock = corridorSrc.match(/CORRIDOR_RISK_NAME_MAP\s*=\s*\[([\s\S]*?)\];/);
     assert.ok(mapBlock, 'CORRIDOR_RISK_NAME_MAP block not found');
     const patterns = [...mapBlock[1].matchAll(/pattern:\s*'/g)];
     assert.equal(patterns.length, 6);
@@ -358,9 +371,9 @@ describe('CORRIDOR_RISK_NAME_MAP (relay)', () => {
 });
 
 describe('seedCorridorRisk risk level derivation', () => {
-  // Extract the risk-level derivation logic from relay source to test boundaries
-  const riskLevelLine = relaySrc.match(/const riskLevel = score >= 70 \? 'critical' : score >= 50 \? 'high' : score >= 30 \? 'elevated' : 'normal'/);
-  assert.ok(riskLevelLine, 'risk level derivation logic not found in relay');
+  // Extract the risk-level derivation logic from the seed source to test boundaries
+  const riskLevelLine = corridorSrc.match(/const riskLevel = score >= 70 \? 'critical' : score >= 50 \? 'high' : score >= 30 \? 'elevated' : 'normal'/);
+  assert.ok(riskLevelLine, 'risk level derivation logic not found in scripts/seed-corridor-risk.mjs');
 
   // Re-implement for direct boundary testing
   function deriveRiskLevel(score) {
@@ -402,43 +415,48 @@ describe('seedCorridorRisk risk level derivation', () => {
 
 describe('seedCorridorRisk output fields', () => {
   it('writes riskLevel to result', () => {
-    assert.match(relaySrc, /riskLevel,/);
+    assert.match(corridorSrc, /riskLevel,/);
   });
 
   it('writes riskScore', () => {
-    assert.match(relaySrc, /riskScore:\s*score/);
+    assert.match(corridorSrc, /riskScore:\s*score/);
   });
 
   it('writes incidentCount7d from incident_count_7d', () => {
-    assert.match(relaySrc, /incidentCount7d:\s*Number\(corridor\.incident_count_7d/);
+    assert.match(corridorSrc, /incidentCount7d:\s*Number\(corridor\.incident_count_7d/);
   });
 
   it('writes disruptionPct from disruption_pct', () => {
-    assert.match(relaySrc, /disruptionPct:\s*Number\(corridor\.disruption_pct/);
+    assert.match(corridorSrc, /disruptionPct:\s*Number\(corridor\.disruption_pct/);
   });
 
   it('writes eventCount7d from event_count_7d', () => {
-    assert.match(relaySrc, /eventCount7d:\s*Number\(corridor\.event_count_7d/);
+    assert.match(corridorSrc, /eventCount7d:\s*Number\(corridor\.event_count_7d/);
   });
 
   it('writes vesselCount from vessel_count', () => {
-    assert.match(relaySrc, /vesselCount:\s*Number\(corridor\.vessel_count/);
+    assert.match(corridorSrc, /vesselCount:\s*Number\(corridor\.vessel_count/);
   });
 
   it('truncates riskSummary to 200 chars', () => {
-    assert.match(relaySrc, /\.slice\(0,\s*200\)/);
+    assert.match(corridorSrc, /\.slice\(0,\s*200\)/);
   });
 
-  it('stores result in latestCorridorRiskData for transit summary assembly', () => {
-    assert.match(relaySrc, /latestCorridorRiskData\s*=\s*result/);
+  it('returns the per-chokepoint keyed result for canonical publish', () => {
+    // Pre-S63 the relay assigned `latestCorridorRiskData = result` here; that
+    // in-process copy now lives only in ais-relay.cjs, hydrated from Redis by
+    // TransitSummary. The standalone seed just returns the keyed object and
+    // runSeed's contract path publishes it.
+    assert.match(corridorSrc, /return result;/);
+    assert.match(corridorSrc, /result\[mapping\.id\]\s*=\s*\{/);
   });
 
   it('writes to corridor risk Redis key', () => {
-    assert.match(relaySrc, /supply_chain:corridorrisk/);
+    assert.match(corridorSrc, /supply_chain:corridorrisk:v1/);
   });
 
-  it('writes seed-meta for corridor risk', () => {
-    assert.match(relaySrc, /seed-meta:supply_chain:corridorrisk/);
+  it('writes seed-meta for corridor risk (via runSeed domain/resource)', () => {
+    assert.match(corridorSrc, /runSeed\('supply_chain',\s*'corridorrisk'/);
   });
 });
 
@@ -524,7 +542,7 @@ describe('get-chokepoint-status handler (source analysis)', () => {
 // 4. CORRIDOR_RISK_NAME_MAP alignment with _chokepoint-ids
 // ---------------------------------------------------------------------------
 describe('corridor risk name map alignment with canonical IDs', () => {
-  const mapBlock = relaySrc.match(/CORRIDOR_RISK_NAME_MAP\s*=\s*\[([\s\S]*?)\];/);
+  const mapBlock = corridorSrc.match(/CORRIDOR_RISK_NAME_MAP\s*=\s*\[([\s\S]*?)\];/);
   const entries = [...mapBlock[1].matchAll(/\{\s*pattern:\s*'([^']+)',\s*id:\s*'([^']+)'\s*\}/g)];
 
   it('all mapped IDs are valid canonical chokepoint IDs', () => {

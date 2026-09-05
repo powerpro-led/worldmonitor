@@ -187,8 +187,6 @@ const SEEDERS = [
   // in P14 Phase 2 (session 62 — see PLATFORM_ARCHITECTURE.md). Each RPC
   // handler still owns its own seed-meta key; nothing in ais-relay.cjs
   // warm-pings them any more.
-  ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
-  ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
   ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
   // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,
@@ -237,6 +235,17 @@ const SEEDERS = [
   // (every 6h), HTML parsing still in scripts/lib/usni-fleet-parser.cjs. PizzINT
   // too — scripts/seed-pizzint.mjs (every 10min), pizzint.watch + GDELT tension
   // pairs; no standalone sibling existed, no notification logic.
+  //
+  // CorridorRisk + ShippingStress were removed in session 63 as a notification
+  // migration (full UCDP/Weather treatment) — ported to
+  // scripts/seed-corridor-risk.mjs (every 1h) and scripts/seed-shipping-stress.mjs
+  // (every 15min), each on the runSeed contract with an afterPublish hook that
+  // carries the corridor_risk / shipping_stress publisher. No standalone sibling
+  // existed. Their notification contracts are asserted against the new files in
+  // tests/notification-relay-payload-audit.test.mjs; the fetch/shape contracts
+  // in tests/corridorrisk-upstream.test.mjs and tests/transit-summaries.test.mjs.
+  // CORRIDOR_RISK_REDIS_KEY + `latestCorridorRiskData` stay in ais-relay.cjs —
+  // the relay-local TransitSummary loop still Redis-hydrates them.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

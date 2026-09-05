@@ -189,7 +189,6 @@ const SEEDERS = [
   // handler still owns its own seed-meta key; nothing in ais-relay.cjs
   // warm-pings them any more.
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
-  ['USNI', "'seed-meta:military:usni-fleet'", 'USNI_SEED_INTERVAL_MS', 'seedUsniFleet'],
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
   ['SocialVelocity', 'SOCIAL_VELOCITY_SEED_META_KEY', 'SOCIAL_VELOCITY_INTERVAL_MS', 'seedSocialVelocity'],
   ['WsbTickers', "'seed-meta:intelligence:wsb-tickers'", 'WSB_TICKERS_INTERVAL_MS', 'seedWsbTickers'],
@@ -224,7 +223,8 @@ const SEEDERS = [
   // straight port to a new scripts/seed-satellites.mjs (CelesTrak TLE fetch),
   // registered in scripts/railway-services.json + gcp/scheduler/main.ts's
   // CADENCES (every 2h). No standalone sibling existed; no notification logic
-  // to migrate.
+  // to migrate. USNI followed in the same session — scripts/seed-usni-fleet.mjs
+  // (every 6h), HTML parsing still in scripts/lib/usni-fleet-parser.cjs.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

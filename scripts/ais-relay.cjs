@@ -3498,85 +3498,12 @@ async function startCorridorRiskSeedLoop() {
   startBootSeedLoop('CorridorRisk', 'seed-meta:supply_chain:corridorrisk', CORRIDOR_RISK_SEED_INTERVAL_MS, seedCorridorRisk, e => console.warn('[CorridorRisk] Initial seed error:', e?.message || e), e => console.warn('[CorridorRisk] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// USNI Fleet Tracker — seeded via relay (fixed IP for Froxy proxy)
-// ─────────────────────────────────────────────────────────────
-
-const USNI_URL = 'https://news.usni.org/wp-json/wp/v2/posts?categories=4137&per_page=1';
-const USNI_REDIS_KEY = 'usni-fleet:sebuf:v1';
-const USNI_STALE_KEY = 'usni-fleet:sebuf:stale:v1';
-const USNI_TTL = 43200; // 12h — must outlive the 6h seed interval (2x)
-const USNI_STALE_TTL = 604800; // 7 days
-const USNI_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
-const {
-  usniStripHtml,
-  usniParseArticle,
-} = require('./lib/usni-fleet-parser.cjs');
-
-let usniSeedInFlight = false;
-
-async function seedUsniFleet() {
-  if (usniSeedInFlight) { console.log('[USNI] Skipped (already in-flight)'); return; }
-  usniSeedInFlight = true;
-  console.log('[USNI] Fetching fleet tracker...');
-  const t0 = Date.now();
-  try {
-    // USNI (WordPress): try direct fetch first (Railway Virginia should work),
-    // fall back to proxy if Cloudflare blocks the datacenter IP.
-    let wpData;
-    let fetched = false;
-    try {
-      const res = await fetch(USNI_URL, {
-        headers: { 'User-Agent': CHROME_UA, 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (res.ok) { wpData = await res.json(); fetched = true; }
-      else { console.warn(`[USNI] Direct fetch HTTP ${res.status}, trying proxy`); }
-    } catch (directErr) { console.warn(`[USNI] Direct fetch failed: ${directErr?.message}, trying proxy`); }
-    if (!fetched && PROXY_URL) {
-      try {
-        const proxy = { ...parseProxyUrl(PROXY_URL), tls: true };
-        const result = await ytFetchViaProxy(USNI_URL, proxy);
-        if (result?.ok) {
-          wpData = JSON.parse(result.body);
-          fetched = true;
-        } else { console.warn(`[USNI] Proxy returned HTTP ${result?.status ?? 'unavailable'}`); }
-      } catch (proxyErr) { console.warn(`[USNI] Proxy error: ${proxyErr?.message}`); }
-    }
-    if (!fetched) throw new Error('USNI fetch failed (direct + proxy)');
-    if (!Array.isArray(wpData) || !wpData.length) throw new Error('No fleet tracker articles');
-
-    const post = wpData[0];
-    const articleUrl = post.link || `https://news.usni.org/?p=${post.id}`;
-    const articleDate = post.date || new Date().toISOString();
-    const articleTitle = usniStripHtml(post.title?.rendered || 'USNI Fleet Tracker');
-    const htmlContent = post.content?.rendered || '';
-    if (!htmlContent) throw new Error('Empty article content');
-
-    const report = usniParseArticle(htmlContent, articleUrl, articleDate, articleTitle);
-    if (!report.vessels.length) { console.warn('[USNI] No vessels parsed, skipping write'); return; }
-
-    const ok = await envelopeWrite(USNI_REDIS_KEY, report, USNI_TTL, { recordCount: report.vessels.length, sourceVersion: 'usni-fleet' });
-    await envelopeWrite(USNI_STALE_KEY, report, USNI_STALE_TTL, { recordCount: report.vessels.length, sourceVersion: 'usni-fleet' });
-    await upstashSet('seed-meta:military:usni-fleet', { fetchedAt: Date.now(), recordCount: report.vessels.length }, 604800);
-
-    console.log(`[USNI] ${report.vessels.length} vessels, ${report.strikeGroups.length} CSGs, ${report.regions.length} regions (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    if (report.parsingWarnings.length > 0) console.warn('[USNI] Warnings:', report.parsingWarnings.join('; '));
-  } catch (e) {
-    console.warn('[USNI] Seed error:', e?.message || e);
-  } finally {
-    usniSeedInFlight = false;
-  }
-}
-
-async function startUsniFleetSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[USNI] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[USNI] Seed loop starting (interval ${USNI_SEED_INTERVAL_MS / 1000 / 60 / 60}h)`);
-  startBootSeedLoop('USNI', 'seed-meta:military:usni-fleet', USNI_SEED_INTERVAL_MS, seedUsniFleet, e => console.warn('[USNI] Initial seed error:', e?.message || e), e => console.warn('[USNI] Seed error:', e?.message || e));
-}
+// USNI Fleet Tracker seed — standalone Railway cron (gcp/scheduler/main.ts,
+// every 6h) — scripts/seed-usni-fleet.mjs. Extracted in P14 Phase 2 (session
+// 63 — see PLATFORM_ARCHITECTURE.md); a straight port with no standalone
+// sibling before extraction. HTML parsing still lives in
+// scripts/lib/usni-fleet-parser.cjs (unchanged). No notifications to migrate —
+// this loop never called publishNotificationEvent.
 
 // ─────────────────────────────────────────────────────────────
 // Shipping Stress Index — Yahoo Finance carrier/ETF market data
@@ -9278,11 +9205,12 @@ server.listen(PORT, () => {
   // Satellite TLE seed — standalone Railway cron (gcp/scheduler/main.ts,
   // every 2h) — scripts/seed-satellites.mjs. Straight port, P14 Phase 2
   // session 63; no notifications to migrate.
+  // USNI Fleet Tracker seed — standalone Railway cron (gcp/scheduler/main.ts,
+  // every 6h) — scripts/seed-usni-fleet.mjs. Straight port, same pass.
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
 
   startCorridorRiskSeedLoop();
-  startUsniFleetSeedLoop();
   startShippingStressSeedLoop();
   startSocialVelocitySeedLoop();
   startWsbTickersSeedLoop();

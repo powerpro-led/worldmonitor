@@ -283,6 +283,11 @@ const CADENCES: Record<string, Cadence> = {
   // and api/health.js's SEED_META.satellites.maxStaleMin (240min = 2x).
   // ──────────────────────────────────────────────────────────────────────
   'seed-satellites': { kind: 'every', rate: '2 hours' },
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Straight port of
+  // ais-relay.cjs's startUsniFleetSeedLoop (no standalone sibling existed).
+  // Cadence matches the deleted loop's USNI_SEED_INTERVAL_MS (6h) and
+  // api/health.js's SEED_META.usniFleet.maxStaleMin (720min = 2x).
+  'seed-usni-fleet': { kind: 'every', rate: '6 hours' },
 };
 
 /**

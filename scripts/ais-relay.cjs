@@ -4880,131 +4880,6 @@ function startTemporalAnomaliesWarmPingLoop() {
   startBootSeedLoop('TemporalAnomalies', 'seed-meta:temporal:anomalies', TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS, seedTemporalAnomaliesWarmPing, (e) => console.warn('[TemporalAnomalies] Initial warm-ping error:', e?.message || e), (e) => console.warn('[TemporalAnomalies] Warm-ping error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// Weather Alerts Seed — NWS API → Redis every 15 min
-// ─────────────────────────────────────────────────────────────
-const WEATHER_SEED_INTERVAL_MS = 15 * 60 * 1000; // 15 min
-const WEATHER_REDIS_KEY = 'weather:alerts:v1';
-const WEATHER_CACHE_TTL = 5400; // 1.5h — 6x interval; survives ~5 consecutive missed pings
-let weatherSeedInFlight = false;
-
-async function seedWeatherAlerts() {
-  if (weatherSeedInFlight) return;
-  weatherSeedInFlight = true;
-  const t0 = Date.now();
-  try {
-    const weatherUrl = 'https://api.weather.gov/alerts/active';
-    let data;
-    try {
-      const resp = await fetch(weatherUrl, {
-        headers: { Accept: 'application/geo+json', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      data = await resp.json();
-    } catch (directErr) {
-      if (!PROXY_URL) { console.warn(`[Weather] Seed failed: ${directErr.message}`); return; }
-      console.warn(`[Weather] Direct failed (${directErr.message}) — retrying via proxy`);
-      const { proxyFetch } = require('./_proxy-utils.cjs');
-      const proxy = { ...parseProxyUrl(PROXY_URL), tls: true };
-      const result = await proxyFetch(weatherUrl, proxy, { accept: 'application/geo+json', headers: { 'User-Agent': CHROME_UA }, timeoutMs: 15_000 });
-      if (!result.ok) { console.warn(`[Weather] Proxy also failed: HTTP ${result.status}`); return; }
-      data = JSON.parse(result.buffer.toString('utf8'));
-    }
-    const features = data.features || [];
-    const alerts = features
-      .filter((f) => f?.properties?.severity !== 'Unknown')
-      .slice(0, 50)
-      .map((f) => {
-        const p = f.properties;
-        let coords = [];
-        try {
-          const g = f.geometry;
-          if (g?.type === 'Polygon') coords = g.coordinates[0]?.map((c) => [c[0], c[1]]) || [];
-          else if (g?.type === 'MultiPolygon') coords = g.coordinates[0]?.[0]?.map((c) => [c[0], c[1]]) || [];
-        } catch { /* ignore */ }
-        const centroid = coords.length > 0
-          ? [coords.reduce((s, c) => s + c[0], 0) / coords.length, coords.reduce((s, c) => s + c[1], 0) / coords.length]
-          : undefined;
-        // Slot B: NWS VTEC string. NWS wraps VTEC in an array under
-        // properties.parameters.VTEC; pick the first entry (most alerts have one;
-        // multi-VTEC alerts use the primary). Used to derive a coalesce family key
-        // so adjacent-zone alerts for the same logical event collapse at the
-        // publisher and at the per-user dedup.
-        const vtec = Array.isArray(p?.parameters?.VTEC) ? p.parameters.VTEC[0] : undefined;
-        return {
-          id: f.id || '', event: p.event || '', severity: p.severity || 'Unknown',
-          headline: p.headline || '', description: (p.description || '').slice(0, 500),
-          areaDesc: p.areaDesc || '', onset: p.onset || '', expires: p.expires || '',
-          coordinates: coords, centroid, vtec,
-        };
-      });
-    if (alerts.length === 0) {
-      // NWS responded successfully but has no active alerts — valid quiet state.
-      // Still bump seed-meta so health.js knows the loop ran (avoids false STALE_SEED).
-      await upstashSet('seed-meta:weather:alerts', { fetchedAt: Date.now(), recordCount: 0 }, 604800);
-      console.log('[Weather] No active alerts — seed-meta refreshed, existing data preserved');
-      return;
-    }
-    const payload = { alerts };
-    const ok1 = await envelopeWrite(WEATHER_REDIS_KEY, payload, WEATHER_CACHE_TTL, { recordCount: alerts.length, sourceVersion: 'nws-weather' });
-    const ok2 = await upstashSet('seed-meta:weather:alerts', { fetchedAt: Date.now(), recordCount: alerts.length }, 604800);
-    console.log(`[Weather] Seeded ${alerts.length} alerts (redis: ${ok1 && ok2 ? 'OK' : 'PARTIAL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    const highSeverityAlerts = alerts.filter(a => a.severity === 'Extreme' || a.severity === 'Severe');
-    // Pick up to 3 DISTINCT event families before publishing. The naive
-    // `slice(0, 3)` would silently lose distinct families: if the first 3 raw
-    // alerts are adjacent-zone duplicates for one VTEC family (one storm
-    // crossing 3 counties), the publisher-side dedup collapses them to 1
-    // notification and a 4th genuinely-distinct family (tornado / flood /
-    // different storm) sitting at index 3+ would NEVER be considered.
-    // Dedupe by coalesceKey FIRST, then take the top 3 distinct families.
-    // Slot B regression fix from PR #3467 review.
-    const seenFamilyKeys = new Set();
-    const distinctFamilyAlerts = [];
-    for (const a of highSeverityAlerts) {
-      // Family key: prefer VTEC-derived coalesce key; fall back to a stable
-      // identity from the alert (NWS feature.id, then headline/event) so
-      // VTEC-less alerts still deduplicate against themselves.
-      const familyKey = deriveWeatherCoalesceKey(a.vtec)
-        ?? `nws:fallback:${a.id || a.headline || a.event || ''}`;
-      if (seenFamilyKeys.has(familyKey)) continue;
-      seenFamilyKeys.add(familyKey);
-      distinctFamilyAlerts.push(a);
-      if (distinctFamilyAlerts.length >= 3) break;
-    }
-    for (const a of distinctFamilyAlerts) {
-      // Slot B: derive a coalesceKey from the NWS VTEC string (when present)
-      // so adjacent-zone bulletins for the same logical event collapse to one
-      // notification per user. Falls back to title-based dedup when VTEC is
-      // absent (rare advisory types or missing parameters).
-      const coalesceKey = deriveWeatherCoalesceKey(a.vtec);
-      publishNotificationEvent({
-        eventType: 'weather_alert',
-        payload: {
-          title: a.headline || a.event || 'Weather alert',
-          source: 'NWS',
-          countryCode: 'US',
-          ...(coalesceKey ? { coalesceKey } : {}),
-        },
-        severity: a.severity === 'Extreme' ? 'critical' : 'high',
-        variant: undefined,
-      }).catch(e => console.warn('[Notify] Weather publish error:', e?.message));
-    }
-  } catch (e) {
-    console.warn('[Weather] Seed error:', e?.message || e);
-  } finally {
-    weatherSeedInFlight = false;
-  }
-}
-
-async function startWeatherSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[Weather] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[Weather] Seed loop starting (interval ${WEATHER_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('Weather', 'seed-meta:weather:alerts', WEATHER_SEED_INTERVAL_MS, seedWeatherAlerts, (e) => console.warn('[Weather] Initial seed error:', e?.message || e), (e) => console.warn('[Weather] Seed error:', e?.message || e));
-}
 
 
 // ─────────────────────────────────────────────────────────────
@@ -10986,7 +10861,6 @@ server.listen(PORT, () => {
   startServiceStatusesSeedLoop();
   startTheaterPostureSeedLoop();
 
-  startWeatherSeedLoop();
   startGscpiSeedLoop();
   startSatelliteSeedLoop();
   startCorridorRiskSeedLoop();

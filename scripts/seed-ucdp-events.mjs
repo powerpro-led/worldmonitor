@@ -1,10 +1,36 @@
 #!/usr/bin/env node
 
+/**
+ * @notification-source: domain
+ *   publishNotificationEvent() calls in this file build payload.title from
+ *   structured UCDP fields (country/parties/deaths). Events are NOT RSS-origin
+ *   and MUST NOT set payload.description. Enforced by
+ *   tests/notification-relay-payload-audit.test.mjs.
+ *
+ * Notification-publishing ported from the startUcdpSeedLoop() that used to
+ * live inside scripts/ais-relay.cjs (stripped as part of the P14 loop-deletion
+ * pass — see PLATFORM_ARCHITECTURE.md session 61/62). ais-relay's loop ran in
+ * a long-lived process and kept an in-memory `ucdpPrevAlertedIds` Set (capped
+ * at 500, cleared on overflow) so the same conflict-escalation event wasn't
+ * re-notified every 6h tick for as long as it stayed inside the newest-pages
+ * fetch window (which can be weeks — much longer than the 24h SETNX dedup TTL
+ * on the notification queue itself). A one-shot cron script has no such
+ * process-lifetime memory, so that Set is persisted to Redis here instead
+ * (UCDP_PREV_ALERTED_KEY) using the same read-filter-merge-write pattern
+ * scripts/seed-aviation.mjs already uses for its own prev-alerted state.
+ */
+
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { compactUcdpDashboardPayload } from './_ucdp-dashboard.mjs';
+import { getRedisCredentials } from './_seed-utils.mjs';
+import notificationDedup from './shared/notification-dedup.cjs';
+import countryNameMap from './shared/country-name-to-iso2.cjs';
+
+const { buildDedupMaterial, classifySetNxResult, recordDedupOutcome } = notificationDedup;
+const { countryNameToIso2 } = countryNameMap;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +137,145 @@ function getMaxDateMs(events) {
   return maxMs;
 }
 
+// ─── Notification publishing ─────────────────────────────────────────────────
+// Mirrors ais-relay.cjs::publishNotificationEvent (same inline-Upstash-helpers
+// pattern already used by scripts/seed-aviation.mjs): LPUSH the event onto
+// wm:events:queue, guarded by a SETNX dedup key (TTL = dedupTtl). On LPUSH
+// failure, rollback the dedup key so the next run can retry.
+
+// Persisted prev-alerted-IDs state — see file header comment for why this
+// exists (a one-shot cron has no in-process memory across ticks). 30 days
+// comfortably outlives the 365-day TRAILING_WINDOW_MS *without* trying to
+// match it — the primary bound on this list's size is the 500-entry cap
+// below (mirroring ais-relay's in-memory Set), not the TTL. The TTL only
+// protects against the key surviving forever if this seeder is ever retired.
+const UCDP_PREV_ALERTED_KEY = 'conflict:ucdp-events:prev-alerted:v1';
+const UCDP_PREV_ALERTED_TTL_SECONDS = 30 * 24 * 60 * 60;
+const UCDP_PREV_ALERTED_CAP = 500;
+
+function notifyHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(36);
+}
+
+async function upstashCommand(cmd) {
+  const { url, token } = getRedisCredentials();
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) throw new Error(`Upstash ${cmd[0]} failed: HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function upstashGetJson(key) {
+  try {
+    const result = await upstashCommand(['GET', key]);
+    if (!result?.result) return null;
+    try { return JSON.parse(result.result); } catch { return null; }
+  } catch { return null; }
+}
+
+async function upstashSetJson(key, value, ttlSeconds) {
+  try {
+    const result = await upstashCommand(['SET', key, JSON.stringify(value), 'EX', String(ttlSeconds)]);
+    return result?.result === 'OK';
+  } catch { return false; }
+}
+
+async function upstashSetNx(key, value, ttlSeconds) {
+  try {
+    const result = await upstashCommand(['SET', key, value, 'NX', 'EX', String(ttlSeconds)]);
+    return classifySetNxResult(result?.result);
+  } catch { return 'error'; }
+}
+
+async function upstashLpush(key, value) {
+  try {
+    const result = await upstashCommand(['LPUSH', key, value]);
+    return typeof result?.result === 'number' && result.result > 0;
+  } catch { return false; }
+}
+
+async function upstashDel(key) {
+  try {
+    const result = await upstashCommand(['DEL', key]);
+    return result?.result === 1;
+  } catch { return false; }
+}
+
+function normalizeNotificationCountryCode(raw) {
+  return countryNameToIso2(raw) ?? undefined;
+}
+
+async function publishNotificationEvent({ eventType, payload, severity, variant, dedupTtl = 1800 }) {
+  try {
+    const variantSuffix = variant ? `:${variant}` : '';
+    const dedupMaterial = buildDedupMaterial(eventType, payload?.title, payload?.coalesceKey);
+    const dedupKey = `wm:notif:scan-dedup:${eventType}${variantSuffix}:${notifyHash(dedupMaterial)}`;
+    const dedupResult = await upstashSetNx(dedupKey, '1', dedupTtl);
+    const dedupDecision = recordDedupOutcome(dedupResult, {
+      surface: 'seed-ucdp-events',
+      eventType,
+      severity,
+      fallbackKey: dedupKey,
+      fallbackTtlSeconds: dedupTtl,
+      emitTelemetry: ({ line }) => console.warn(line),
+    });
+    if (!dedupDecision.shouldPublish) {
+      if (!dedupDecision.isDuplicate) return;
+      console.log(`[Notify] Dedup hit — ${eventType}: ${String(payload.title ?? '').slice(0, 60)}`);
+      return;
+    }
+    const msg = JSON.stringify({ eventType, payload, severity: dedupDecision.severity, ...(variant ? { variant } : {}), publishedAt: Date.now() });
+    const ok = await upstashLpush('wm:events:queue', msg);
+    if (ok) {
+      console.log(`[Notify] Queued ${dedupDecision.severity} event: ${eventType} — ${String(payload.title ?? '').slice(0, 60)}`);
+    } else {
+      console.warn(`[Notify] LPUSH failed for ${eventType} — rolling back dedup key`);
+      await upstashDel(dedupKey);
+    }
+  } catch (e) {
+    console.warn(`[Notify] publishNotificationEvent error (${eventType}):`, e?.message || e);
+  }
+}
+
+// Ported from ais-relay.cjs's post-seed notification block. Called only after
+// a successful canonical publish, with the same `capped` events array that
+// was just written to Redis.
+async function dispatchUcdpNotifications(events) {
+  const prev = await upstashGetJson(UCDP_PREV_ALERTED_KEY);
+  const prevAlertedIds = new Set(Array.isArray(prev) ? prev : []);
+
+  const newConflicts = events
+    .filter((e) => e.deathsBest >= 10 && !prevAlertedIds.has(e.id))
+    .sort((a, b) => b.deathsBest - a.deathsBest);
+
+  for (const e of newConflicts.slice(0, 2)) {
+    prevAlertedIds.add(e.id);
+    const parties = e.sideA && e.sideB ? `${e.sideA.slice(0, 40)} vs ${e.sideB.slice(0, 40)}` : e.sideA || e.sideB || 'Unknown parties';
+    const countryCode = normalizeNotificationCountryCode(e.country);
+    await publishNotificationEvent({
+      eventType: 'conflict_escalation',
+      payload: { title: `${e.country}: ${parties} — ${e.deathsBest} casualties`, source: 'UCDP', ...(countryCode ? { countryCode } : {}) },
+      severity: e.deathsBest >= 50 ? 'critical' : 'high',
+      variant: undefined,
+      dedupTtl: 86400,
+    });
+  }
+
+  // Cap-then-clear mirrors ais-relay's in-memory Set behavior exactly: once
+  // the persisted list exceeds the cap, drop it entirely rather than
+  // trimming, so a later dedupTtl-expired re-scan of an old event isn't
+  // silently protected by a partial history. Overflow is rare in practice —
+  // at most 2 IDs are added per run.
+  const nextAlertedIds = prevAlertedIds.size > UCDP_PREV_ALERTED_CAP ? [] : [...prevAlertedIds];
+  await upstashSetJson(UCDP_PREV_ALERTED_KEY, nextAlertedIds, UCDP_PREV_ALERTED_TTL_SECONDS);
+}
+
 async function main() {
   loadEnvFile();
 
@@ -141,7 +306,10 @@ async function main() {
     if (page === 0) {
       pagesToFetch.push(Promise.resolve(page0));
     } else {
-      pagesToFetch.push(fetchGedPage(version, page, ucdpToken).catch(() => FAILED));
+      pagesToFetch.push(fetchGedPage(version, page, ucdpToken).catch((err) => {
+        console.warn(`  [UCDP] page ${page}: ${err.message || err}`);
+        return FAILED;
+      }));
     }
   }
 
@@ -291,6 +459,14 @@ async function main() {
     signal: AbortSignal.timeout(5_000),
   }).catch(() => console.error('  seed-meta write failed'));
   console.log(`  Wrote seed-meta: ${metaKey}`);
+
+  // Best-effort — a notification failure must not fail the canonical publish
+  // (the data write above already succeeded and returned OK).
+  try {
+    await dispatchUcdpNotifications(capped);
+  } catch (e) {
+    console.warn(`  Notification dispatch failed: ${e.message}`);
+  }
 
   const getResp = await fetch(`${redisUrl}/get/${encodeURIComponent(REDIS_KEY)}`, {
     headers: { Authorization: `Bearer ${redisToken}` },

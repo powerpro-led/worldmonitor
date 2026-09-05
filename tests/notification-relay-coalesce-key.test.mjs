@@ -6,7 +6,8 @@
  * relay scripts are runtime side-effect modules with no exports — the same
  * pattern used by tests/notification-relay-effective-sensitivity.test.mjs.
  *
- * The actual VTEC parser (deriveWeatherCoalesceKey in ais-relay.cjs) is
+ * The actual VTEC parser (deriveWeatherCoalesceKey, ported from ais-relay.cjs
+ * to scripts/seed-weather-alerts.mjs — see that file's header comment) is
  * exercised here too via a minimal re-implementation extracted from the
  * source. If the source diverges, this test will fail and force an update.
  *
@@ -28,6 +29,8 @@ const require = createRequire(import.meta.url);
 const relaySrc = readFileSync(resolve(__dirname, '..', 'scripts', 'notification-relay.cjs'), 'utf-8');
 const aisRelaySrc = readFileSync(resolve(__dirname, '..', 'scripts', 'ais-relay.cjs'), 'utf-8');
 const seedAviationSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'seed-aviation.mjs'), 'utf-8');
+const seedWeatherAlertsSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'seed-weather-alerts.mjs'), 'utf-8');
+const seedUcdpEventsSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'seed-ucdp-events.mjs'), 'utf-8');
 const regionalAlertEmitterSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'regional-snapshot', 'alert-emitter.mjs'), 'utf-8');
 const notificationDedupSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'shared', 'notification-dedup.cjs'), 'utf-8');
 const notificationDedup = require('../scripts/shared/notification-dedup.cjs');
@@ -149,6 +152,8 @@ describe('shared notification-dedup helper — buildDedupMaterial', () => {
     assert.match(relaySrc, /require\('\.\/shared\/notification-dedup\.cjs'\)/, 'notification-relay.cjs must require the shared helper');
     assert.match(aisRelaySrc, /require\('\.\/shared\/notification-dedup\.cjs'\)/, 'ais-relay.cjs must require the shared helper');
     assert.match(seedAviationSrc, /from '\.\/shared\/notification-dedup\.cjs'/, 'seed-aviation.mjs must import the shared helper');
+    assert.match(seedWeatherAlertsSrc, /from '\.\/shared\/notification-dedup\.cjs'/, 'seed-weather-alerts.mjs must import the shared helper');
+    assert.match(seedUcdpEventsSrc, /from '\.\/shared\/notification-dedup\.cjs'/, 'seed-ucdp-events.mjs must import the shared helper');
     assert.match(regionalAlertEmitterSrc, /from '\.\.\/shared\/notification-dedup\.cjs'/, 'regional alert emitter must import the shared helper');
   });
 });
@@ -251,6 +256,16 @@ describe('shared notification-dedup helper — SETNX failure policy', () => {
       seedAviationSrc,
       /classifySetNxResult[\s\S]*recordDedupOutcome/,
       'seed-aviation.mjs must use the shared SETNX classifier and outcome recorder',
+    );
+    assert.match(
+      seedWeatherAlertsSrc,
+      /classifySetNxResult[\s\S]*recordDedupOutcome/,
+      'seed-weather-alerts.mjs must use the shared SETNX classifier and outcome recorder',
+    );
+    assert.match(
+      seedUcdpEventsSrc,
+      /classifySetNxResult[\s\S]*recordDedupOutcome/,
+      'seed-ucdp-events.mjs must use the shared SETNX classifier and outcome recorder',
     );
     assert.match(
       regionalAlertEmitterSrc,
@@ -383,7 +398,7 @@ describe('seed-aviation publishNotificationEvent — Slot B publisher dedup', ()
   });
 });
 
-describe('ais-relay deriveWeatherCoalesceKey — VTEC parser', () => {
+describe('deriveWeatherCoalesceKey — VTEC parser (scripts/seed-weather-alerts.mjs)', () => {
   // Mini re-implementation that mirrors the source. If the parser shape changes,
   // both this test fixture and the source need updating in lockstep.
   function deriveWeatherCoalesceKey(vtec) {
@@ -428,10 +443,10 @@ describe('ais-relay deriveWeatherCoalesceKey — VTEC parser', () => {
   });
 });
 
-describe('ais-relay weather publisher — coalesceKey threading', () => {
+describe('seed-weather-alerts weather publisher — coalesceKey threading', () => {
   it('captures VTEC from properties.parameters.VTEC[0] in the alert mapping', () => {
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /vtec\s*=\s*Array\.isArray\(p\?\.parameters\?\.VTEC\)\s*\?\s*p\.parameters\.VTEC\[0\]\s*:\s*undefined/,
       'alert mapping must capture VTEC from p.parameters.VTEC[0] when present',
     );
@@ -441,12 +456,12 @@ describe('ais-relay weather publisher — coalesceKey threading', () => {
     // Spread-conditional: only includes the field when the parser returned a value,
     // so undefined isn't sent over the wire.
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /coalesceKey\s*=\s*deriveWeatherCoalesceKey\(a\.vtec\)/,
       'weather publisher must derive coalesceKey via deriveWeatherCoalesceKey(a.vtec)',
     );
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /\.\.\.\(coalesceKey\s*\?\s*\{\s*coalesceKey\s*\}\s*:\s*\{\}\)/,
       'weather publisher must spread coalesceKey into payload only when defined',
     );
@@ -458,25 +473,25 @@ describe('ais-relay weather publisher — coalesceKey threading', () => {
     // genuinely-distinct family at index 3+ is never considered. Net silent
     // loss of legit events. Fix: dedupe BY family key FIRST, then take top 3.
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /seenFamilyKeys\s*=\s*new Set\(\)/,
       'publisher must build a Set of seen family keys before publishing',
     );
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /distinctFamilyAlerts/,
       'publisher must accumulate distinct-family alerts (not raw .slice(0, 3))',
     );
     // The naive `for (const a of highSeverityAlerts.slice(0, 3))` ordering is the bug; assert it's gone.
     assert.doesNotMatch(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /for\s*\(const\s+a\s+of\s+highSeverityAlerts\.slice\(0,\s*3\)\)/,
       'publisher must NOT iterate highSeverityAlerts.slice(0, 3) directly — that loses distinct families',
     );
     // Family-key fallback uses a stable per-alert identity (NWS feature.id, then
     // headline/event) so VTEC-less alerts still dedupe against themselves.
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /deriveWeatherCoalesceKey\(a\.vtec\)\s*\n?\s*\?\?\s*`nws:fallback:\$\{a\.id/,
       'family-key fallback must include a stable per-alert identity (id || headline || event)',
     );

@@ -34,6 +34,14 @@ const aisRelaySrc = readFileSync(
   resolve(__dirname, '..', 'scripts', 'ais-relay.cjs'),
   'utf-8',
 );
+const seedUcdpEventsSrc = readFileSync(
+  resolve(__dirname, '..', 'scripts', 'seed-ucdp-events.mjs'),
+  'utf-8',
+);
+const seedWeatherAlertsSrc = readFileSync(
+  resolve(__dirname, '..', 'scripts', 'seed-weather-alerts.mjs'),
+  'utf-8',
+);
 
 function normalizeEventCountryCode(raw) {
   return countryNameToIso2(raw);
@@ -302,27 +310,40 @@ describe('notification-relay eventMatchesCountryScope — behavioural', () => {
 });
 
 describe('ais-relay country-specific notification publishers — source-grep contract', () => {
-  it('OREF, UCDP, and NWS publish countryCode when the publisher knows country scope', () => {
+  it('OREF publishes countryCode when the publisher knows country scope', () => {
     assert.match(
       aisRelaySrc,
       /eventType:\s*'oref_siren'[\s\S]*?countryCode:\s*'IL'/,
       'OREF siren notifications must publish countryCode=IL',
     );
+    // UCDP and NWS weather were moved out of ais-relay.cjs to standalone
+    // scripts/seed-ucdp-events.mjs / scripts/seed-weather-alerts.mjs in P14
+    // Phase 2 (session 62 — see PLATFORM_ARCHITECTURE.md); their
+    // countryCode contract is asserted in the two `it` blocks below against
+    // the new source files, same pattern as the cyber_threat note this
+    // comment used to carry.
+  });
+
+  it('UCDP conflict notifications publish normalized countryCode when available (scripts/seed-ucdp-events.mjs)', () => {
     assert.match(
-      aisRelaySrc,
+      seedUcdpEventsSrc,
       /eventType:\s*'conflict_escalation'[\s\S]*?countryCode/,
       'UCDP conflict notifications must include normalized countryCode when available',
     );
+  });
+
+  it('NWS weather notifications publish countryCode=US (scripts/seed-weather-alerts.mjs)', () => {
     assert.match(
-      aisRelaySrc,
+      seedWeatherAlertsSrc,
       /eventType:\s*'weather_alert'[\s\S]*?countryCode:\s*'US'/,
       'NWS weather notifications must publish countryCode=US',
     );
-    // cyber_threat notifications were removed from ais-relay.cjs in session 61
-    // (PLATFORM_ARCHITECTURE.md P14 Phase 2) — seedCyberThreats was dead code,
-    // never invoked (a comment at the old call site said so: the standalone
-    // scripts/seed-cyber-threats.mjs cron handles cyber threats instead), so
-    // this publisher never actually ran in production and had no live
-    // behavior for this assertion to protect.
   });
+
+  // cyber_threat notifications were removed from ais-relay.cjs in session 61
+  // (PLATFORM_ARCHITECTURE.md P14 Phase 2) — seedCyberThreats was dead code,
+  // never invoked (a comment at the old call site said so: the standalone
+  // scripts/seed-cyber-threats.mjs cron handles cyber threats instead), so
+  // this publisher never actually ran in production and had no live
+  // behavior for this assertion to protect.
 });

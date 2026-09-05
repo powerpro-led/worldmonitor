@@ -179,7 +179,6 @@ test('startBootSeedLoop waits the remaining freshness window before first skippe
 // exact-string match pins all four arguments so a future edit can't silently
 // drift the meta key or interval and re-open the boot-abuse hole.
 const SEEDERS = [
-  ['UCDP', "'seed-meta:conflict:ucdp-events'", 'UCDP_POLL_INTERVAL_MS', 'seedUcdpEvents'],
   ['Satellites', "'seed-meta:intelligence:satellites'", 'SAT_SEED_INTERVAL_MS', 'seedSatelliteTLEs'],
   ['Market', "'seed-meta:market:stocks'", 'MARKET_SEED_INTERVAL_MS', 'seedAllMarketData'],
   ['PositiveEvents', "'seed-meta:positive-events:geo'", 'POSITIVE_EVENTS_INTERVAL_MS', 'seedPositiveEvents'],
@@ -195,7 +194,6 @@ const SEEDERS = [
   // Added 2026-08-19 (session 26): folded in from the retired seed-infra.mjs
   // (its only non-redundant target -- see TASKS.md "orphaned crons" item 5).
   ['TemporalAnomalies', "'seed-meta:temporal:anomalies'", 'TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS', 'seedTemporalAnomaliesWarmPing'],
-  ['Weather', "'seed-meta:weather:alerts'", 'WEATHER_SEED_INTERVAL_MS', 'seedWeatherAlerts'],
   ['GSCPI', "'seed-meta:economic:gscpi'", 'GSCPI_SEED_INTERVAL_MS', 'seedGscpi'],
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
   ['USNI', "'seed-meta:military:usni-fleet'", 'USNI_SEED_INTERVAL_MS', 'seedUsniFleet'],
@@ -213,7 +211,12 @@ const SEEDERS = [
   // deleted in the same pass and then restored (commits 629df49, 7febde9)
   // because their seed functions also published live notifications
   // (conflict_escalation / severe weather alerts) that no standalone script
-  // replicates — see those commits before ever re-attempting their removal.
+  // replicated at the time. Session 62 ported that notification logic into
+  // scripts/seed-ucdp-events.mjs and scripts/seed-weather-alerts.mjs (see
+  // PLATFORM_ARCHITECTURE.md) and removed both loops from here for good —
+  // their countryCode/coalesceKey contracts are now asserted against those
+  // files directly in tests/notification-relay-country-filter.test.mjs and
+  // tests/notification-relay-coalesce-key.test.mjs.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

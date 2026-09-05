@@ -75,6 +75,20 @@ function maxStaleMin(path: string, seedDomain: string): number {
   return evalNumberExpression(match[1]);
 }
 
+// UCDP's writer loop (and UCDP_POLL_INTERVAL_MS) moved out of ais-relay.cjs to
+// the standalone scripts/seed-ucdp-events.mjs, scheduled by
+// scripts/seed-bundle-relay-backup.mjs (P14 Phase 2, session 62 — see
+// PLATFORM_ARCHITECTURE.md). That bundle entry's intervalMs is now the
+// authoritative cadence; HOUR/MIN/DAY are the _bundle-runner.mjs constants
+// bundle files build intervalMs from.
+function bundleIntervalMinutes(path: string, label: string): number {
+  const source = readSource(path);
+  const match = source.match(new RegExp(`label:\\s*'${label}'[^}]*intervalMs:\\s*([^,}\\n]+)`));
+  assert.ok(match, `${path} must declare intervalMs for label '${label}'`);
+  const expr = match[1].replace(/\bHOUR\b/g, '3_600_000').replace(/\bMIN\b/g, '60_000').replace(/\bDAY\b/g, '86_400_000');
+  return evalNumberExpression(expr) / 60_000;
+}
+
 function healthMaxStale(entry: string): number {
   const match = healthSource.match(new RegExp(`${entry}:\\s*\\{[^}]*maxStaleMin:\\s*([^,}\\n]+)`));
   assert.ok(match, `api/health.js must declare SEED_META.${entry}.maxStaleMin`);
@@ -178,8 +192,9 @@ describe('layer explanation metadata', () => {
       'aviation panel polling cycle',
     );
 
-    assertDuration(renderedFreshnessText('ucdpEvents'), /every\s+([0-9]+)\s+(hour)s?/i, relayConstMinutes('UCDP_POLL_INTERVAL_MS'), 'UCDP relay seed cadence');
-    assert.equal(healthMaxStale('ucdpEvents'), relayConstMinutes('UCDP_POLL_INTERVAL_MS') + 60, 'UCDP health budget should be cadence plus one hour grace');
+    const ucdpCadenceMin = bundleIntervalMinutes('scripts/seed-bundle-relay-backup.mjs', 'UCDP-Events');
+    assertDuration(renderedFreshnessText('ucdpEvents'), /every\s+([0-9]+)\s+(hour)s?/i, ucdpCadenceMin, 'UCDP seed cadence');
+    assert.equal(healthMaxStale('ucdpEvents'), ucdpCadenceMin + 60, 'UCDP health budget should be cadence plus one hour grace');
 
     assertDuration(renderedFreshnessText('cyberThreats'), /every\s+([0-9]+)\s+(hour)s?/i, relayConstMinutes('CYBER_SEED_INTERVAL_MS'), 'cyber relay seed cadence');
     assertDuration(renderedFreshnessText('cyberThreats'), /([0-9]+)-\s*(day)\s+rolling window/i, cyberRollingWindowMinutes(), 'cyber IOC rolling window');

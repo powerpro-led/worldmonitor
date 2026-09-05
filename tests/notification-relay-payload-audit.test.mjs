@@ -30,6 +30,8 @@ const PRODUCER_FILES = [
   // Server-side domain producers (Railway / Vercel)
   { path: 'scripts/ais-relay.cjs',                     expected: 'domain' },
   { path: 'scripts/seed-aviation.mjs',                  expected: 'domain' },
+  { path: 'scripts/seed-ucdp-events.mjs',               expected: 'domain' },
+  { path: 'scripts/seed-weather-alerts.mjs',            expected: 'domain' },
   { path: 'scripts/regional-snapshot/alert-emitter.mjs', expected: 'domain' },
   // Browser-side RSS producer
   { path: 'src/services/breaking-news-alerts.ts',       expected: 'rss' },

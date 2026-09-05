@@ -21,6 +21,12 @@ describe('UCDP retained window is intentionally smaller than CII classification 
   });
 
   it('guards the intentionally capped one-year Redis writer window', () => {
+    // scripts/seed-ucdp-events.mjs is now the sole UCDP Redis writer —
+    // ais-relay.cjs's writer-side UCDP_MAX_PAGES/UCDP_MAX_EVENTS (and the
+    // seedUcdpEvents loop they bounded) moved out in P14 Phase 2 (session
+    // 62 — see PLATFORM_ARCHITECTURE.md). UCDP_TRAILING_WINDOW_MS stayed
+    // behind in ais-relay.cjs (still checked below) because the separate
+    // on-demand relay-reader shares it independently of the writer move.
     const standaloneSeed = readRepoFile('scripts/seed-ucdp-events.mjs');
     const relay = readRepoFile('scripts/ais-relay.cjs');
 
@@ -41,18 +47,8 @@ describe('UCDP retained window is intentionally smaller than CII classification 
     );
     assert.match(
       relay,
-      /const UCDP_MAX_PAGES = 6;/,
-      'relay Redis UCDP seed page cap changed; update this guard and public docs deliberately',
-    );
-    assert.match(
-      relay,
-      /const UCDP_MAX_EVENTS = 2000;/,
-      'relay Redis UCDP seed event cap changed; update this guard and public docs deliberately',
-    );
-    assert.match(
-      relay,
       /const UCDP_TRAILING_WINDOW_MS = 365 \* 24 \* 60 \* 60 \* 1000;/,
-      'relay UCDP retention changed; align with scorer or document the smaller window',
+      'relay reader UCDP retention changed; align with scorer or document the smaller window',
     );
   });
 

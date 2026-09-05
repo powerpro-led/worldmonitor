@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-05 (session 62) — **P14 Phase 2 continued: UCDP and Weather's notification logic ported to their standalone scripts, both loops now deleted from `ais-relay.cjs` for good (10 of 27 gone).** Completes the item session 61 flagged as its next candidate (see the S61 bullet below). `conflict_escalation` (UCDP) and `weather_alert` (NWS) publishing — including their Redis-backed dedup/coalesce-key machinery, ported from the same `wm:events:queue` LPUSH + SETNX pattern `scripts/seed-aviation.mjs` already used — now live in `scripts/seed-ucdp-events.mjs` and `scripts/seed-weather-alerts.mjs`. Two real bugs caught and fixed before this could ship: (1) the standalone weather script never captured the NWS VTEC field its own coalesce-key logic needed — the adjacent-zone dedup would have silently never fired; (2) deleting `ais-relay.cjs`'s writer block also deleted `UCDP_TRAILING_WINDOW_MS`/`UCDP_PAGE_SIZE`, which the *separate*, untouched on-demand `/ucdp-events` relay-reader still referenced — a `node --check` clean but `ReferenceError`-at-runtime landmine, caught only by grepping every identifier the deleted blocks declared for remaining references. 8 test files updated to source-grep the new files instead of the deleted `ais-relay.cjs` functions (`tests/ucdp-seed-resilience.test.mjs`, `tests/ucdp-retention-window.test.mjs`, `tests/documentation-alignment-guardrails.test.mjs`, `tests/notification-relay-{payload-audit,coalesce-key,country-filter}.test.mjs`, `tests/relay-boot-seed-freshness-guard.test.mjs`, `tests/layer-explanations.test.mts`); 3 dead ais-relay functions/constants that only the deleted loops used (`ucdpVersionRank`/`ucdpVersionNewer`, `deriveWeatherCoalesceKey`) removed along with them, since the standalone UCDP writer's discovery is sequential-by-construction and doesn't need version-ranking at all. Verified: `tsc --noEmit` clean repo-wide; full `npm run test:data` at its pre-existing noise floor (95 fail — identical set to the session-61 baseline, confirmed by diffing failing-test names across two runs — 0 new regressions). Not committed yet.
 - **As of:** 2026-09-05 (session 61) — **P14 Phase 2 started: 8 of 27 `startBootSeedLoop` loops removed from `ais-relay.cjs`.** Full loop-by-loop audit (redundant-duplicate vs. genuinely-unique) completed and recorded below; TheaterPosture, ServiceStatuses, Spending, WorldBank, ClimateNewsSeed, ChokepointFlows, TechEvents, and the already-dead Cyber loop deleted (each a confirmed pure duplicate of an already-independently-scheduled `scripts/seed-*.mjs`), `-1848` net lines. **UCDP and Weather were also deleted then restored same-session** — both turned out to also publish live notifications (`conflict_escalation`, severe weather alerts) that no standalone script replicates; deleting them was a real regression caught by the test suite, not by the initial audit (which only checked Redis-key duplication). See commits `629df49`/`7febde9`. Market's `seedAllMarketData` (a 9-way bundle) was investigated and left alone — 8/9 sub-seeds are covered elsewhere but `market:sectors` has no standalone replacement. Remaining Workstream 7 items: the rest of P14 Phase 2 (WS core + Telegram poller extraction, blocked on a cross-org secrets decision — see below), the 21 direct-fetch handlers, and `cloudFallback`.
 - **As of:** 2026-09-05 (session 61, earlier) — **Workstream 7's cameras removal (P7) done and committed.** `PinnedWebcamsPanel`/`api/webcam` removed full-stack (backend RPCs/proto/generated code/seeder/routing, all three map renderers, config, locales, tests) — a deliberate, operator-confirmed reversal of an older "do not delete" correction that had protected a different (already-settled) removal. Verified clean: `tsc` zero errors, touched-file lint clean, full test suite at its documented pre-existing noise floor. Committed S61 as `8eaf658` on `main` (11 ahead of `origin/main`, not pushed — operator's call).
 - **As of:** 2026-09-05 (session 59) — **Workstream 6 (admin panel) shipped.** `settings.html` gains a cloud-admin gate (connect org → sign in with GitHub → `app_metadata.wm_admin` check) ahead of its existing category-editing UI, wired to write straight into the connected org's `pipeline_config` (RLS-enforced, no new SQL). Zero new hosting: rides the existing Vercel `dist/` build — see P5's correction below for why the original GCP-colocated design was never buildable as written. Only Workstream 7 (worker: absorb the direct fetches, incl. P14 Phase 2's AIS-ingest extraction) remains on the recommended order; Workstreams R and 1–6 are all shipped.
@@ -277,10 +278,12 @@ data-source fetching and holds no data-source keys — it is a read replica.
 - [~] **Decompose `ais-relay.cjs` (P14 Phase 2) — IN PROGRESS, started S61.** 28 `startBootSeedLoop` seed/warm-ping loops → `gcp/scheduler/main.ts` `CADENCES` entries (map each against what's already registered/shadowed there first — the file already lists several as "ais-relay backup"). Extract the ~150-line AIS WS core → the shared ingest service. Extract the Telegram MTProto poller → scheduled `--once` + Redis lock. `tauri-sidecar` `telegram-feed` / `gpsjam` routes become mirror reads. End state: the per-org deploy has 0 pinned instances.
   - [x] **S61 — full loop audit + 8 confirmed-redundant/dead loops deleted.** Method: pull each loop's `metaKey`/canonical Redis key out of `ais-relay.cjs`, grep it against every `scripts/seed-*.mjs`/bundle file, confirm the sibling is reachable from `CADENCES`, **then check the original function for `publishNotificationEvent(...)` calls before deleting** (the UCDP/Weather near-miss below is why that last step is now mandatory, not optional).
     - **Deleted** (pure duplicates or dead code, verified no notification side-effects): Cyber (dead — never invoked; standalone `seed-cyber-threats.mjs` already owns it), TheaterPosture (`seed-military-flights.mjs` writes identical LIVE/STALE/BACKUP keys), ServiceStatuses (`seed-service-statuses.mjs` does the identical RPC warm-ping), Spending (`seed-usa-spending.mjs`, via `seed-bundle-relay-backup.mjs`), WorldBank (`seed-wb-indicators.mjs` writes all 3 identical keys, via the same bundle), ClimateNewsSeed (ais-relay's own copy already just execFile'd the same `seed-climate-news.mjs` the bundle also runs — literally two unsynchronized invocations of one script), ChokepointFlows (ditto, but with NO existing schedule at all — flipped from `ORPHANS_NOT_SCHEDULED` to a real `CADENCES` entry), TechEvents (`seed-research.mjs` writes the identical literal key `research:tech-events:v1`, hourly vs. ais-relay's 6h).
-    - **Deleted then restored same-session** (commits `629df49`, `7febde9`): UCDP and Weather. Both seed functions *also* called `publishNotificationEvent()` (UCDP: `conflict_escalation` for high-casualty events; Weather: severe-alert push via `deriveWeatherCoalesceKey(vtec)`) — logic that exists nowhere else in the codebase. The standalone siblings (`seed-ucdp-events.mjs`, `seed-weather-alerts.mjs`) only mirror the Redis data; neither notifies. Caught by `tests/ucdp-seed-resilience.test.mjs` / `tests/notification-relay-coalesce-key.test.mjs` failing after the deletion, not by the pre-deletion audit. **Moving the notification logic into the standalone scripts (so these two can be safely deleted too) is unstarted — next session's first candidate.**
+    - **S61: deleted then restored same-session** (commits `629df49`, `7febde9`): UCDP and Weather. Both seed functions *also* called `publishNotificationEvent()` (UCDP: `conflict_escalation` for high-casualty events; Weather: severe-alert push via `deriveWeatherCoalesceKey(vtec)`) — logic that exists nowhere else in the codebase. The standalone siblings (`seed-ucdp-events.mjs`, `seed-weather-alerts.mjs`) only mirrored the Redis data; neither notified.
+    - **S62: notification logic ported, both deleted for good.** `scripts/seed-ucdp-events.mjs` and `scripts/seed-weather-alerts.mjs` now carry their own `publishNotificationEvent`/SETNX-dedup/`wm:events:queue` LPUSH machinery — the same inline-Upstash-helpers pattern `scripts/seed-aviation.mjs` already established (that script was itself the precedent for moving a notifying loop out of `ais-relay.cjs` safely). UCDP additionally persists its own prev-alerted-IDs to Redis (`conflict:ucdp-events:prev-alerted:v1`, 500-entry cap, 30-day TTL) since a one-shot cron script has no in-process memory across ticks the way `ais-relay.cjs`'s long-lived process did — mirrors `seed-aviation.mjs`'s own prev-alerted-state pattern. Weather's coalesce-by-VTEC-family dedup needed no such extra state (the Redis-backed SETNX dedup already inside `publishNotificationEvent` is enough), but the standalone script's `fetchAlerts()` was never actually capturing the VTEC field its own coalesce key would have needed — fixed. `ais-relay.cjs`'s writer blocks, `ucdpPrevAlertedIds`, `normalizeNotificationCountryCode`'s only caller, and `deriveWeatherCoalesceKey` (now unused anywhere in that file) are gone; the separate on-demand `/ucdp-events` relay-reader (a different feature — user-triggered lookups, not a Redis writer) is untouched, though 2 of its constants (`UCDP_TRAILING_WINDOW_MS`, `UCDP_PAGE_SIZE`) had to move out of the deleted writer block into the reader's own section since it depended on them. `cyberPrevAlertedIds` was noticed to already be orphaned (an S61 Cyber-removal leftover, unrelated to this task) — flagged, not touched.
     - **Investigated, deliberately left alone:** Market (`seedAllMarketData`) is not one loop but a 9-way bundle (stocks/commodities/sectors/gulf/etf/crypto/stablecoins/crypto-sectors/token-panels). 8 of 9 sub-seeds already have standalone/bundle coverage (`seed-market-quotes.mjs`, `seed-commodity-quotes.mjs`, `seed-crypto-sectors.mjs` independently; gulf/etf/crypto/stablecoins/token-panels via `seed-bundle-market-backup.mjs`) — but `seedSectorSummary`/`market:sectors` has **no replacement anywhere**. Deleting the loop wholesale would have silently dropped the sector-summary panel's data. Needs a new `seed-sector-summary.mjs` before Market's loop can go.
     - **Confirmed genuinely unique, no sibling exists anywhere (untouched, real extraction candidates for a future stage):** GSCPI, Classify, Oref (the 28th "loop" — a custom poll loop, not `startBootSeedLoop`-based), Satellites, PositiveEvents, CII/Chokepoints/CableHealth/TemporalAnomalies (warm-pings), CorridorRisk, USNI-fleet, ShippingStress, SocialVelocity, WsbTickers, PizzINT, Transit, TransitSummary.
-    - Also updated to match: `tests/relay-boot-seed-freshness-guard.test.mjs`'s `SEEDERS` inventory (removed the 8 deleted entries, kept UCDP/Weather) and `tests/notification-relay-country-filter.test.mjs` (removed the now-stale `cyber_threat` assertion).
+    - **S61:** also updated to match: `tests/relay-boot-seed-freshness-guard.test.mjs`'s `SEEDERS` inventory (removed the 8 deleted entries, kept UCDP/Weather) and `tests/notification-relay-country-filter.test.mjs` (removed the now-stale `cyber_threat` assertion).
+    - **S62:** UCDP/Weather now removed from `SEEDERS` too. 8 test files retargeted from source-grepping the deleted `ais-relay.cjs` functions to the standalone scripts: `tests/ucdp-seed-resilience.test.mjs` (rewritten around `seed-ucdp-events.mjs`'s `main()` body; dropped 3 assertions for a parallel-race-then-rank discovery algorithm — `Promise.allSettled` + `ucdpVersionNewer` — that only ever existed in the deleted `ais-relay.cjs` writer, since the standalone's sequential newest-first discovery is immune to that failure mode by construction, not by a guard worth asserting on), `tests/ucdp-retention-window.test.mjs`, `tests/documentation-alignment-guardrails.test.mjs`, `tests/notification-relay-payload-audit.test.mjs`, `tests/notification-relay-coalesce-key.test.mjs`, `tests/notification-relay-country-filter.test.mjs`, `tests/relay-boot-seed-freshness-guard.test.mjs`, `tests/layer-explanations.test.mts` (UCDP's freshness-copy cadence check now reads `scripts/seed-bundle-relay-backup.mjs`'s bundle `intervalMs` instead of a deleted `ais-relay.cjs` constant). Also fixed in passing: `seed-ucdp-events.mjs` silently dropped ais-relay's per-page failure logging — restored (`ucdp-seed-resilience.test.mjs` had been guarding it in the wrong file). Noticed but out of scope: `tests/layer-explanations.test.mts`'s `CYBER_SEED_INTERVAL_MS` assertion has been broken since S61's Cyber removal (predates this session, confirmed via `git stash`) — still open.
 - [x] **DONE S57 — `list-feed-digest` seeder.** `scripts/seed-news-digest.mjs`: a nixpacks-root-scripts warm-ping job (NOT a re-implementation — `scripts/` can't import `server/` and `buildDigest` isn't exported). It HTTP-pings `/api/news/v1/list-feed-digest?variant=&lang=` per `(variant, lang)` pair (env `NEWS_DIGEST_SEED_VARIANTS`=`full`, `NEWS_DIGEST_SEED_LANGS`=`en,zh`; `en` first so `zh` reuses the warmed `rss:feed:v8:*` per-feed caches) — the RPC runs `buildDigest`, `setCachedJson`s `news:digest:v1:<variant>:<lang>` (which also fires the mirror notify) and stamps a fresh `generatedAt` (what the panels read for freshness, so no `seed-meta:` write here). Registered in `railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` at **`*/10 * * * *`** — a hard constraint, not an inference: must stay under `list-feed-digest.ts`'s 900s `news:digest:v1` TTL or the cold-hole bug returns. `classifyKey('news:digest:v1:*')` was already `'mirror'` — no W4 change. Exit-code policy: 0 on any success (partial failure self-heals next tick), 1 only if every ping fails. Unit test: `tests/seed-news-digest.test.mjs` (10 cases). **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed** — it was already inert whenever `WS_RELAY_URL` was unset (`/api/news/v1/` is `cloudPreferred` then), i.e. in exactly the config the pivot backend runs; the digest now arrives over the mirror.
 - [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
 - [ ] `cloudFallback` — with a real per-org cloud origin now existing, decide whether operator backends may use it (probably still off; a miss = "not synced yet").
@@ -300,6 +303,78 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 62 — 2026-09-05
+
+Picked up S61's flagged next candidate directly: port UCDP's and Weather's
+notification-publishing logic into their standalone `scripts/seed-*.mjs`
+siblings so the two loops S61 had to restore into `ais-relay.cjs` could
+finally be deleted for real.
+
+**The port.** Used `scripts/seed-aviation.mjs` as the reference implementation
+— it had already solved exactly this problem when its own notifying loop
+moved out of `ais-relay.cjs` in an earlier pass: inline Upstash SETNX/LPUSH
+helpers + the shared `scripts/shared/notification-dedup.cjs` module, no
+dependency on anything `ais-relay.cjs`-specific. Copied that pattern into
+`seed-ucdp-events.mjs` and `seed-weather-alerts.mjs`, wiring the notification
+dispatch as `runSeed()`'s `afterPublish` hook for weather (fires only after a
+successful canonical publish) and as a best-effort call after the seed-meta
+write for UCDP (which predates `runSeed()` and still hand-rolls its Redis
+calls).
+
+**Two bugs caught before shipping, neither from source-reading alone:**
+1. `seed-weather-alerts.mjs`'s `fetchAlerts()` never captured the NWS VTEC
+   field (`properties.parameters.VTEC[0]`) in its returned alert objects —
+   only `ais-relay.cjs`'s copy did. The coalesce-by-VTEC-family logic I was
+   porting would have compiled, run, and silently never coalesced anything
+   (every alert falling through to the fallback per-alert key) — caught by
+   checking the ported code's actual data dependencies against the source it
+   was called on, not by any test (none existed yet to catch it).
+2. Deleting `ais-relay.cjs`'s UCDP writer block also deleted
+   `UCDP_TRAILING_WINDOW_MS` and `UCDP_PAGE_SIZE` — which the *separate*,
+   untouched on-demand `/ucdp-events` relay-reader (a user-triggered lookup
+   feature, not a Redis writer, that shared those two constants with the
+   writer purely by module-scope proximity) still referenced. `node --check`
+   stayed green throughout — it's a syntax checker, not a reference resolver.
+   Caught only by grepping every identifier the deleted blocks had declared
+   against the rest of the file before considering the deletion done.
+
+**Test debt.** 8 test files source-grepped the now-deleted `ais-relay.cjs`
+functions directly (`seedUcdpEvents`, `ucdpDiscoverVersion`,
+`deriveWeatherCoalesceKey`, `UCDP_POLL_INTERVAL_MS`, …) — a real, load-bearing
+pattern in this codebase (relay scripts are runtime side-effect modules with
+no exports, so behavioral contracts are enforced by reading the source text).
+Found them by running the full suite (105 failures on first pass vs. a
+95-failure baseline established via `git stash` on the clean tree), diffing
+failing-test names rather than trusting raw counts (this repo's parallel test
+run carries real pre-existing flakiness — confirmed identical failing-name
+sets across two consecutive runs, with only concurrency-flake churn in
+between), then retargeting each one at the new source files rather than
+weakening the coverage. One test's concern (a parallel-race-then-rank version
+discovery algorithm, `Promise.allSettled` + `ucdpVersionNewer`) turned out to
+not translate at all — the standalone script's discovery was always
+sequential-in-pre-sorted-order, which is immune to the "faster-but-older
+release wins" bug by construction, not by a guard. Deleted those three
+assertions with an explanatory comment rather than force a translation that
+would have tested nothing real.
+
+Verified: `tsc --noEmit` clean repo-wide; full `npm run test:data` — 95
+failures, identical failing-test-name set to the pre-session baseline (0 new
+regressions, confirmed by name-diff not just count). Not committed — working
+tree left for the operator to review before commit, matching this project's
+established convention of leaving platform work unpushed/uncommitted for a
+review pass.
+
+**Next:** the ~17 remaining genuinely-unique loops (GSCPI, Classify, Oref,
+Satellites, PositiveEvents, CII/Chokepoints/CableHealth/TemporalAnomalies
+warm-pings, CorridorRisk, USNI-fleet, ShippingStress, SocialVelocity,
+WsbTickers, PizzINT, Transit, TransitSummary), Market's missing
+`seed-sector-summary.mjs`, then the larger WS-core/Telegram-poller extraction
+(blocked on the unraised cross-org-secrets question). Separately noticed and
+flagged but not touched: `ais-relay.cjs`'s `cyberPrevAlertedIds` is already
+orphaned (an S61 Cyber-removal leftover), and
+`tests/layer-explanations.test.mts`'s `CYBER_SEED_INTERVAL_MS` assertion has
+been broken since that same S61 removal — both predate this session.
 
 ### Session 61 — 2026-09-05
 

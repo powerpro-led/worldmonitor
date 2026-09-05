@@ -605,32 +605,10 @@ function marketAlertCoalesceKey(assetClass, identifier, direction, severity) {
   return `market:${assetClass}:${stableIdentifier}:${direction}:${severity}`;
 }
 
-/**
- * Slot B helper: derive a coalesce-family key from an NWS VTEC string.
- *
- * NWS VTEC format (https://www.weather.gov/vtec/):
- *   /O.NEW.KSGF.SV.W.0034.250427T1257Z-250427T1330Z/
- *    │  │   │   │  │  │
- *    │  │   │   │  │  └── event tracking number (per-office, per-phenomenon, per-significance)
- *    │  │   │   │  └───── significance: W=warning, A=watch, Y=advisory, etc.
- *    │  │   │   └──────── phenomenon: SV=severe thunderstorm, TO=tornado, FF=flash flood, etc.
- *    │  │   └──────────── forecast office (4-letter ICAO)
- *    │  └──────────────── action: NEW, CON (continued), CAN (cancel), EXP (expired), etc.
- *    └─────────────────── product status: O=operational, T=test, E=exercise, X=experimental
- *
- * The (office, phenomenon, significance, eventID) tuple identifies one logical
- * event across adjacent zones — exactly what we want to coalesce. We drop the
- * action so NEW + CON + CAN bulletins for the same event also collapse.
- *
- * Returns a stable family key like "nws:KSGF.SV.W.0034" or undefined if the
- * VTEC string is missing or malformed.
- */
-function deriveWeatherCoalesceKey(vtec) {
-  if (typeof vtec !== 'string') return undefined;
-  const m = vtec.match(/\/[OTEX]\.[A-Z]+\.([A-Z]{4})\.([A-Z]{2})\.([A-Z])\.(\d{4})\./);
-  if (!m) return undefined;
-  return `nws:${m[1]}.${m[2]}.${m[3]}.${m[4]}`;
-}
+// deriveWeatherCoalesceKey (Slot B NWS VTEC coalesce-key helper) lived here
+// until the weather seed loop that was its only caller moved to
+// scripts/seed-weather-alerts.mjs (P14 Phase 2, session 62 — see
+// PLATFORM_ARCHITECTURE.md). See that file for the current implementation.
 
 async function publishNotificationEvent({ eventType, payload, severity, variant, dedupTtl = 1800 }) {
   try {
@@ -1576,197 +1554,6 @@ async function startOrefPollLoop() {
     orefFetchAlerts().catch(e => console.warn('[Relay] OREF poll error:', e?.message || e));
   }, OREF_POLL_INTERVAL_MS).unref?.();
   console.log(`[Relay] OREF poll loop started (interval ${OREF_POLL_INTERVAL_MS}ms)`);
-}
-
-// ─────────────────────────────────────────────────────────────
-// UCDP GED Events — fetch paginated conflict data, write to Redis
-// ─────────────────────────────────────────────────────────────
-const UCDP_ACCESS_TOKEN = (process.env.UCDP_ACCESS_TOKEN || process.env.UC_DP_KEY || '').trim();
-const UCDP_REDIS_KEY = 'conflict:ucdp-events:v1';
-const UCDP_PAGE_SIZE = 1000;
-const UCDP_MAX_PAGES = 6;
-const UCDP_MAX_EVENTS = 2000; // Redis payload guard; widening needs live UCDP volume + Upstash payload validation.
-// Retained Redis input window. CII v8's classifier accepts a 2-year window, but
-// this Redis writer fetches the newest pages only and keeps at most UCDP_MAX_EVENTS
-// from a 365-day trailing slice until retention is deliberately widened.
-const UCDP_TRAILING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
-const UCDP_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const UCDP_TTL_SECONDS = 86400; // 24h safety net
-const UCDP_VIOLENCE_TYPE_MAP = { 1: 'UCDP_VIOLENCE_TYPE_STATE_BASED', 2: 'UCDP_VIOLENCE_TYPE_NON_STATE', 3: 'UCDP_VIOLENCE_TYPE_ONE_SIDED' };
-
-function ucdpFetchPage(version, page, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const pageUrl = new URL(`https://ucdpapi.pcr.uu.se/api/gedevents/${version}?pagesize=${UCDP_PAGE_SIZE}&page=${page}`);
-    const headers = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
-    if (UCDP_ACCESS_TOKEN) headers['x-ucdp-access-token'] = UCDP_ACCESS_TOKEN;
-    const req = https.request(pageUrl, { method: 'GET', headers, timeout: timeoutMs }, (resp) => {
-      if (resp.statusCode === 401 || resp.statusCode === 403) {
-        resp.resume();
-        return reject(new Error(`UCDP ${version} page ${page}: HTTP ${resp.statusCode} — API token required (set UCDP_ACCESS_TOKEN env var)`));
-      }
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        resp.resume();
-        return reject(new Error(`UCDP ${version} page ${page}: HTTP ${resp.statusCode}`));
-      }
-      let data = '';
-      resp.on('data', (chunk) => { data += chunk; });
-      resp.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (typeof parsed === 'string') return reject(new Error(`UCDP ${version} page ${page}: ${parsed}`));
-          resolve(parsed);
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('UCDP timeout')); });
-    req.end();
-  });
-}
-
-// Compare UCDP GED version strings ('26.1' > '25.1' > '24.1', '25.0.6' > '25.0.5')
-// numerically segment-by-segment so the NEWEST release sorts first.
-function ucdpVersionRank(v) {
-  return String(v).split('.').map((n) => Number(n) || 0);
-}
-function ucdpVersionNewer(a, b) {
-  const ra = ucdpVersionRank(a);
-  const rb = ucdpVersionRank(b);
-  for (let i = 0; i < Math.max(ra.length, rb.length); i++) {
-    const d = (ra[i] || 0) - (rb[i] || 0);
-    if (d !== 0) return d > 0;
-  }
-  return false;
-}
-
-async function ucdpDiscoverVersion() {
-  const year = new Date().getFullYear() - 2000;
-  const candidates = [...new Set([`${year}.1`, `${year - 1}.1`, '25.1', '24.1'])];
-  // Probe ALL candidates, then prefer the NEWEST version that returned events.
-  // Promise.any (first-responder) used to win here, which let an OLDER release
-  // that merely replied faster win: it froze conflict:ucdp-events:v1 at v24.1
-  // (2023 data, 889 days old) while v25.1 was available, dropping every event
-  // outside the CII 2-year conflict recency window and flipping
-  // /api/health.riskScores to COVERAGE_PARTIAL. allSettled waits for the slowest
-  // candidate, so the discovery probe uses a tighter 15s timeout (vs the 30s
-  // full-page default) — a non-existent version that hangs can't stall the
-  // 6h seed for 30s, while one page is comfortably fetchable in 15s.
-  const DISCOVER_TIMEOUT_MS = 15000;
-  const settled = await Promise.allSettled(candidates.map(async (v) => {
-    const p0 = await ucdpFetchPage(v, 0, DISCOVER_TIMEOUT_MS);
-    if (!Array.isArray(p0?.Result) || p0.Result.length === 0) throw new Error(`${v}: no results`);
-    return { version: v, page0: p0 };
-  }));
-  const valid = settled.filter((s) => s.status === 'fulfilled').map((s) => s.value);
-  if (valid.length === 0) {
-    const reasons = settled.map((s) => s.reason?.message).filter(Boolean).join('; ');
-    throw new Error(`No valid UCDP GED version found (${reasons})`);
-  }
-  // 3-way comparator: equal versions must return 0 (Array.sort contract — an
-  // inconsistent comparator is undefined behaviour and can reorder
-  // non-deterministically). Set-dedup makes ties unlikely, but stay spec-correct.
-  valid.sort((a, b) => (ucdpVersionNewer(a.version, b.version) ? -1 : ucdpVersionNewer(b.version, a.version) ? 1 : 0));
-  return valid[0];
-}
-
-async function seedUcdpEvents() {
-  try {
-    const { version, page0 } = await ucdpDiscoverVersion();
-    const totalPages = Math.max(1, Number(page0?.TotalPages) || 1);
-    const newestPage = totalPages - 1;
-    console.log(`[UCDP] Version ${version}, ${totalPages} total pages`);
-
-    const FAILED = Symbol('failed');
-    const fetches = [];
-    for (let offset = 0; offset < UCDP_MAX_PAGES && (newestPage - offset) >= 0; offset++) {
-      const pg = newestPage - offset;
-      fetches.push(pg === 0 ? Promise.resolve(page0) : ucdpFetchPage(version, pg).catch((err) => {
-        console.warn(`[UCDP] page ${pg}: ${err.message || err}`);
-        return FAILED;
-      }));
-    }
-    const pageResults = await Promise.all(fetches);
-
-    const allEvents = [];
-    let latestMs = NaN;
-    let failedPages = 0;
-    for (const raw of pageResults) {
-      if (raw === FAILED) { failedPages++; continue; }
-      const events = Array.isArray(raw?.Result) ? raw.Result : [];
-      allEvents.push(...events);
-      for (const e of events) {
-        const ms = e?.date_start ? Date.parse(String(e.date_start)) : NaN;
-        if (Number.isFinite(ms) && (!Number.isFinite(latestMs) || ms > latestMs)) latestMs = ms;
-      }
-    }
-
-    // If no events from newest pages, extend existing cache TTL instead of overwriting
-    // with stale/empty data. This preserves the last known good payload.
-    if (allEvents.length === 0 && failedPages > 0) {
-      console.warn(`[UCDP] All ${failedPages} newest pages failed, extending existing key TTL (preserving last good data)`);
-      try { await upstashExpire(UCDP_REDIS_KEY, UCDP_TTL_SECONDS); } catch {}
-      // Do NOT update seed-meta: health should reflect actual data freshness, not this failed attempt
-      return;
-    }
-
-    const filtered = allEvents.filter((e) => {
-      if (!Number.isFinite(latestMs)) return true;
-      const ms = e?.date_start ? Date.parse(String(e.date_start)) : NaN;
-      return Number.isFinite(ms) && ms >= (latestMs - UCDP_TRAILING_WINDOW_MS);
-    });
-
-    const mapped = filtered.map((e) => ({
-      id: String(e.id || ''),
-      dateStart: Date.parse(e.date_start) || 0,
-      dateEnd: Date.parse(e.date_end) || 0,
-      location: { latitude: Number(e.latitude) || 0, longitude: Number(e.longitude) || 0 },
-      country: e.country || '',
-      sideA: (e.side_a || '').substring(0, 200),
-      sideB: (e.side_b || '').substring(0, 200),
-      deathsBest: Number(e.best) || 0,
-      deathsLow: Number(e.low) || 0,
-      deathsHigh: Number(e.high) || 0,
-      violenceType: UCDP_VIOLENCE_TYPE_MAP[e.type_of_violence] || 'UCDP_VIOLENCE_TYPE_UNSPECIFIED',
-      sourceOriginal: (e.source_original || '').substring(0, 300),
-    })).sort((a, b) => b.dateStart - a.dateStart).slice(0, UCDP_MAX_EVENTS);
-
-    // Partial success but 0 events after filtering: extend TTL, don't overwrite
-    if (mapped.length === 0) {
-      console.warn(`[UCDP] 0 events after filtering (failed pages: ${failedPages}), extending existing key TTL`);
-      try { await upstashExpire(UCDP_REDIS_KEY, UCDP_TTL_SECONDS); } catch {}
-      return;
-    }
-
-    const payload = { events: mapped, fetchedAt: Date.now(), version, totalRaw: allEvents.length, filteredCount: mapped.length };
-    const ok = await envelopeWrite(UCDP_REDIS_KEY, payload, UCDP_TTL_SECONDS, { recordCount: mapped.length, sourceVersion: 'ucdp' });
-    await upstashSet('seed-meta:conflict:ucdp-events', { fetchedAt: Date.now(), recordCount: mapped.length }, 604800);
-    console.log(`[UCDP] Seeded ${mapped.length} events (raw: ${allEvents.length}, failed pages: ${failedPages}, redis: ${ok ? 'OK' : 'FAIL'})`);
-    const newConflicts = mapped.filter(e => e.deathsBest >= 10 && !ucdpPrevAlertedIds.has(e.id)).sort((a, b) => b.deathsBest - a.deathsBest);
-    for (const e of newConflicts.slice(0, 2)) {
-      ucdpPrevAlertedIds.add(e.id);
-      const parties = e.sideA && e.sideB ? `${e.sideA.slice(0, 40)} vs ${e.sideB.slice(0, 40)}` : e.sideA || e.sideB || 'Unknown parties';
-      const countryCode = normalizeNotificationCountryCode(e.country);
-      publishNotificationEvent({
-        eventType: 'conflict_escalation',
-        payload: { title: `${e.country}: ${parties} — ${e.deathsBest} casualties`, source: 'UCDP', ...(countryCode ? { countryCode } : {}) },
-        severity: e.deathsBest >= 50 ? 'critical' : 'high',
-        variant: undefined,
-        dedupTtl: 86400,
-      }).catch(err => console.warn('[Notify] UCDP publish error:', err?.message));
-    }
-    if (ucdpPrevAlertedIds.size > 500) ucdpPrevAlertedIds.clear();
-  } catch (e) {
-    console.warn('[UCDP] Seed error:', e?.message || e);
-  }
-}
-
-async function startUcdpSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[UCDP] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[UCDP] Seed loop starting (interval ${UCDP_POLL_INTERVAL_MS / 1000 / 60}min, token: ${UCDP_ACCESS_TOKEN ? 'yes' : 'no'})`);
-  startBootSeedLoop('UCDP', 'seed-meta:conflict:ucdp-events', UCDP_POLL_INTERVAL_MS, seedUcdpEvents, e => console.warn('[UCDP] Initial seed error:', e?.message || e), e => console.warn('[UCDP] Seed error:', e?.message || e));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2931,13 +2718,14 @@ async function startMarketDataSeedLoop() {
 // consolidated into scripts/seed-aviation.mjs (standalone Railway cron).
 const AVIATIONSTACK_API_KEY = process.env.AVIATIONSTACK_API || '';
 
-// In-process dedup sets for non-aviation seed notifications (cyber + UCDP).
-// These track IDs already queued within a seed process's lifetime so the
-// loops below don't re-notify on every poll. Cleared at 500 entries to
-// bound memory. Aviation + NOTAM moved their dedup state to Redis
-// (notifications:dedup:aviation:prev-alerted:v1 / notam:prev-closed-state:v1).
+// In-process dedup set for cyber seed notifications. Tracks IDs already
+// queued within a seed process's lifetime so a loop doesn't re-notify on
+// every poll. Cleared at 500 entries to bound memory. Aviation + NOTAM moved
+// their dedup state to Redis (notifications:dedup:aviation:prev-alerted:v1 /
+// notam:prev-closed-state:v1); UCDP's equivalent (ucdpPrevAlertedIds) moved
+// to Redis too when its seed loop moved to scripts/seed-ucdp-events.mjs
+// (P14 Phase 2, session 62 — see PLATFORM_ARCHITECTURE.md).
 const cyberPrevAlertedIds = new Set();
-const ucdpPrevAlertedIds = new Set();
 
 // ─────────────────────────────────────────────────────────────
 // Positive Events Seed — Railway fetches GDELT GEO API → writes to Redis
@@ -3929,132 +3717,6 @@ async function seedTemporalAnomaliesWarmPing() {
 function startTemporalAnomaliesWarmPingLoop() {
   console.log(`[TemporalAnomalies] Warm-ping loop starting (interval ${TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS / 1000 / 60}min)`);
   startBootSeedLoop('TemporalAnomalies', 'seed-meta:temporal:anomalies', TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS, seedTemporalAnomaliesWarmPing, (e) => console.warn('[TemporalAnomalies] Initial warm-ping error:', e?.message || e), (e) => console.warn('[TemporalAnomalies] Warm-ping error:', e?.message || e));
-}
-
-// ─────────────────────────────────────────────────────────────
-// Weather Alerts Seed — NWS API → Redis every 15 min
-// ─────────────────────────────────────────────────────────────
-const WEATHER_SEED_INTERVAL_MS = 15 * 60 * 1000; // 15 min
-const WEATHER_REDIS_KEY = 'weather:alerts:v1';
-const WEATHER_CACHE_TTL = 5400; // 1.5h — 6x interval; survives ~5 consecutive missed pings
-let weatherSeedInFlight = false;
-
-async function seedWeatherAlerts() {
-  if (weatherSeedInFlight) return;
-  weatherSeedInFlight = true;
-  const t0 = Date.now();
-  try {
-    const weatherUrl = 'https://api.weather.gov/alerts/active';
-    let data;
-    try {
-      const resp = await fetch(weatherUrl, {
-        headers: { Accept: 'application/geo+json', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      data = await resp.json();
-    } catch (directErr) {
-      if (!PROXY_URL) { console.warn(`[Weather] Seed failed: ${directErr.message}`); return; }
-      console.warn(`[Weather] Direct failed (${directErr.message}) — retrying via proxy`);
-      const { proxyFetch } = require('./_proxy-utils.cjs');
-      const proxy = { ...parseProxyUrl(PROXY_URL), tls: true };
-      const result = await proxyFetch(weatherUrl, proxy, { accept: 'application/geo+json', headers: { 'User-Agent': CHROME_UA }, timeoutMs: 15_000 });
-      if (!result.ok) { console.warn(`[Weather] Proxy also failed: HTTP ${result.status}`); return; }
-      data = JSON.parse(result.buffer.toString('utf8'));
-    }
-    const features = data.features || [];
-    const alerts = features
-      .filter((f) => f?.properties?.severity !== 'Unknown')
-      .slice(0, 50)
-      .map((f) => {
-        const p = f.properties;
-        let coords = [];
-        try {
-          const g = f.geometry;
-          if (g?.type === 'Polygon') coords = g.coordinates[0]?.map((c) => [c[0], c[1]]) || [];
-          else if (g?.type === 'MultiPolygon') coords = g.coordinates[0]?.[0]?.map((c) => [c[0], c[1]]) || [];
-        } catch { /* ignore */ }
-        const centroid = coords.length > 0
-          ? [coords.reduce((s, c) => s + c[0], 0) / coords.length, coords.reduce((s, c) => s + c[1], 0) / coords.length]
-          : undefined;
-        // Slot B: NWS VTEC string. NWS wraps VTEC in an array under
-        // properties.parameters.VTEC; pick the first entry (most alerts have one;
-        // multi-VTEC alerts use the primary). Used to derive a coalesce family key
-        // so adjacent-zone alerts for the same logical event collapse at the
-        // publisher and at the per-user dedup.
-        const vtec = Array.isArray(p?.parameters?.VTEC) ? p.parameters.VTEC[0] : undefined;
-        return {
-          id: f.id || '', event: p.event || '', severity: p.severity || 'Unknown',
-          headline: p.headline || '', description: (p.description || '').slice(0, 500),
-          areaDesc: p.areaDesc || '', onset: p.onset || '', expires: p.expires || '',
-          coordinates: coords, centroid, vtec,
-        };
-      });
-    if (alerts.length === 0) {
-      // NWS responded successfully but has no active alerts — valid quiet state.
-      // Still bump seed-meta so health.js knows the loop ran (avoids false STALE_SEED).
-      await upstashSet('seed-meta:weather:alerts', { fetchedAt: Date.now(), recordCount: 0 }, 604800);
-      console.log('[Weather] No active alerts — seed-meta refreshed, existing data preserved');
-      return;
-    }
-    const payload = { alerts };
-    const ok1 = await envelopeWrite(WEATHER_REDIS_KEY, payload, WEATHER_CACHE_TTL, { recordCount: alerts.length, sourceVersion: 'nws-weather' });
-    const ok2 = await upstashSet('seed-meta:weather:alerts', { fetchedAt: Date.now(), recordCount: alerts.length }, 604800);
-    console.log(`[Weather] Seeded ${alerts.length} alerts (redis: ${ok1 && ok2 ? 'OK' : 'PARTIAL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    const highSeverityAlerts = alerts.filter(a => a.severity === 'Extreme' || a.severity === 'Severe');
-    // Pick up to 3 DISTINCT event families before publishing. The naive
-    // `slice(0, 3)` would silently lose distinct families: if the first 3 raw
-    // alerts are adjacent-zone duplicates for one VTEC family (one storm
-    // crossing 3 counties), the publisher-side dedup collapses them to 1
-    // notification and a 4th genuinely-distinct family (tornado / flood /
-    // different storm) sitting at index 3+ would NEVER be considered.
-    // Dedupe by coalesceKey FIRST, then take the top 3 distinct families.
-    // Slot B regression fix from PR #3467 review.
-    const seenFamilyKeys = new Set();
-    const distinctFamilyAlerts = [];
-    for (const a of highSeverityAlerts) {
-      // Family key: prefer VTEC-derived coalesce key; fall back to a stable
-      // identity from the alert (NWS feature.id, then headline/event) so
-      // VTEC-less alerts still deduplicate against themselves.
-      const familyKey = deriveWeatherCoalesceKey(a.vtec)
-        ?? `nws:fallback:${a.id || a.headline || a.event || ''}`;
-      if (seenFamilyKeys.has(familyKey)) continue;
-      seenFamilyKeys.add(familyKey);
-      distinctFamilyAlerts.push(a);
-      if (distinctFamilyAlerts.length >= 3) break;
-    }
-    for (const a of distinctFamilyAlerts) {
-      // Slot B: derive a coalesceKey from the NWS VTEC string (when present)
-      // so adjacent-zone bulletins for the same logical event collapse to one
-      // notification per user. Falls back to title-based dedup when VTEC is
-      // absent (rare advisory types or missing parameters).
-      const coalesceKey = deriveWeatherCoalesceKey(a.vtec);
-      publishNotificationEvent({
-        eventType: 'weather_alert',
-        payload: {
-          title: a.headline || a.event || 'Weather alert',
-          source: 'NWS',
-          countryCode: 'US',
-          ...(coalesceKey ? { coalesceKey } : {}),
-        },
-        severity: a.severity === 'Extreme' ? 'critical' : 'high',
-        variant: undefined,
-      }).catch(e => console.warn('[Notify] Weather publish error:', e?.message));
-    }
-  } catch (e) {
-    console.warn('[Weather] Seed error:', e?.message || e);
-  } finally {
-    weatherSeedInFlight = false;
-  }
-}
-
-async function startWeatherSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[Weather] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[Weather] Seed loop starting (interval ${WEATHER_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('Weather', 'seed-meta:weather:alerts', WEATHER_SEED_INTERVAL_MS, seedWeatherAlerts, (e) => console.warn('[Weather] Initial seed error:', e?.message || e), (e) => console.warn('[Weather] Seed error:', e?.message || e));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -6305,7 +5967,15 @@ setTimeout(() => {
 
 // UCDP GED Events cache (persistent in-memory — Railway advantage). This relay
 // reader can fetch more pages than the Redis seed writer, but it intentionally
-// shares the same 365-day UCDP_TRAILING_WINDOW_MS filter.
+// shares the same 365-day trailing-window filter as scripts/seed-ucdp-events.mjs
+// (that script's own TRAILING_WINDOW_MS — the writer loop this constant used to
+// be shared with lived in ais-relay.cjs until it moved out in P14 Phase 2,
+// session 62; this reader's declaration stayed behind since it's still local
+// to this on-demand HTTP proxy, unrelated to the seed-loop consolidation).
+const UCDP_TRAILING_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+// Also moved here from the deleted writer loop for the same reason as
+// UCDP_TRAILING_WINDOW_MS above — ucdpRelayFetchPage() below still needs it.
+const UCDP_PAGE_SIZE = 1000;
 const UCDP_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const UCDP_RELAY_MAX_PAGES = 12;
 const UCDP_FETCH_TIMEOUT = 30000; // 30s per page (no Railway limit)
@@ -6364,7 +6034,9 @@ async function ucdpRelayDiscoverVersion() {
   // Candidates are newest-first ([26.1, 25.1, 24.1]); take the newest version that
   // actually returns events. Require Result.length > 0 (not just isArray) so a
   // newer release that exists but is still empty doesn't win over a populated
-  // older one — same recency concern as ucdpDiscoverVersion above.
+  // older one — same recency concern as discoverVersion() in
+  // scripts/seed-ucdp-events.mjs (the writer's equivalent, formerly
+  // ucdpDiscoverVersion in this file before it moved out in P14 Phase 2).
   const candidates = ucdpBuildVersionCandidates();
   for (const version of candidates) {
     try {
@@ -10013,7 +9685,6 @@ server.listen(PORT, () => {
   console.log(`[Relay] WebSocket relay on port ${PORT} (OpenSky: ${OPENSKY_PROXY_ENABLED ? 'via proxy' : 'direct'})`);
   startTelegramPollLoop();
   startOrefPollLoop();
-  startUcdpSeedLoop();
   startMarketDataSeedLoop();
   // Aviation + NOTAM seeds — standalone Railway cron — scripts/seed-aviation.mjs
   // Writes aviation:delays:intl:v3, aviation:delays:faa:v1, aviation:notam:closures:v2,
@@ -10022,6 +9693,12 @@ server.listen(PORT, () => {
   // Assembles per-country canonical energy keys from 6 domain sources daily.
   // Cyber seed disabled — standalone cron seed-cyber-threats.mjs handles this
   // (avoids burning 12 extra AbuseIPDB calls/day from duplicate relay loop)
+  // UCDP seed — standalone Railway cron (scripts/seed-bundle-relay-backup.mjs,
+  // 6h cadence) — scripts/seed-ucdp-events.mjs. Also publishes
+  // conflict_escalation notifications (P14 Phase 2, session 62 — see
+  // PLATFORM_ARCHITECTURE.md); moved out of ais-relay.cjs.
+  // Weather alerts seed — standalone Railway cron — scripts/seed-weather-alerts.mjs
+  // Also publishes weather_alert notifications (same P14 Phase 2 pass).
   startCiiWarmPingLoop();
   startChokepointWarmPingLoop();
   startCableHealthWarmPingLoop();
@@ -10029,7 +9706,6 @@ server.listen(PORT, () => {
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
 
-  startWeatherSeedLoop();
   startGscpiSeedLoop();
   startSatelliteSeedLoop();
   startCorridorRiskSeedLoop();

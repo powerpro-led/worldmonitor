@@ -4,11 +4,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { discoverVersion as discoverStandaloneUcdpVersion } from '../scripts/seed-ucdp-events.mjs';
 
+// ais-relay.cjs's UCDP writer (seedUcdpEvents/startUcdpSeedLoop) moved to the
+// standalone scripts/seed-ucdp-events.mjs in P14 Phase 2 (session 62 — see
+// PLATFORM_ARCHITECTURE.md). `src` is kept only for ucdpRelayDiscoverVersion —
+// the separate on-demand /ucdp-events HTTP-proxy reader, which still lives in
+// ais-relay.cjs and was NOT touched by that move (it doesn't write to Redis).
 const src = readFileSync('scripts/ais-relay.cjs', 'utf8');
 const standaloneSrc = readFileSync('scripts/seed-ucdp-events.mjs', 'utf8');
 const UCDP_REDIS_KEY = 'conflict:ucdp-events:v1';
 const EXPECTED_UCDP_WRITER_PATHS = [
-  'scripts/ais-relay.cjs',
   'scripts/seed-ucdp-events.mjs',
 ];
 const SOURCE_SCAN_IGNORED_DIRS = new Set([
@@ -91,17 +95,18 @@ function ucdpRedisWriterPaths() {
     .sort();
 }
 
-// Extract just the seedUcdpEvents function body for targeted assertions
-const fnStart = src.indexOf('async function seedUcdpEvents()');
-const fnEnd = src.indexOf('\nasync function startUcdpSeedLoop()');
-const fnBody = src.slice(fnStart, fnEnd);
+// Extract just main()'s body — the sole UCDP writer now that ais-relay.cjs's
+// seedUcdpEvents() moved out (P14 Phase 2, session 62 — see
+// PLATFORM_ARCHITECTURE.md) — for targeted assertions.
+const mainFnStart = standaloneSrc.indexOf('async function main() {');
+const mainFnBody = standaloneSrc.slice(mainFnStart);
 
-describe('UCDP seed resilience branches', () => {
+describe('UCDP seed resilience branches (scripts/seed-ucdp-events.mjs)', () => {
   it('logs error details on page fetch failures instead of silently swallowing', () => {
     // The .catch must include console.warn with the page number and error
     assert.match(
-      fnBody,
-      /\.catch\(\(err\)\s*=>\s*\{[^}]*console\.warn\(`\[UCDP\] page/,
+      mainFnBody,
+      /\.catch\(\(err\)\s*=>\s*\{[^}]*console\.warn\(`\s*\[UCDP\] page/,
       'Page fetch .catch should log error with page number',
     );
   });
@@ -109,101 +114,75 @@ describe('UCDP seed resilience branches', () => {
   it('does NOT use page 0 as fallback data (would overwrite good cache with stale)', () => {
     // There must be no code path that pushes page0.Result into allEvents
     assert.ok(
-      !fnBody.includes('page0.Result'),
-      'seedUcdpEvents must not push page0 data into allEvents (would overwrite last known good cache)',
+      !mainFnBody.includes('page0.Result'),
+      'main() must not push page0 data into allEvents (would overwrite last known good cache)',
     );
   });
 
-  it('extends existing key TTL when all pages fail instead of overwriting', () => {
+  it('extends existing key TTL when nothing survives processing, instead of overwriting', () => {
+    // Unlike ais-relay's two separate guards (allEvents.length === 0 &&
+    // failedPages > 0 / mapped.length === 0), the standalone script collapses
+    // both into one: capped.length === 0 covers an all-pages-failed run too,
+    // since an empty allEvents/filtered set also yields an empty capped set.
     assert.match(
-      fnBody,
-      /allEvents\.length\s*===\s*0\s*&&\s*failedPages\s*>\s*0/,
-      'Should check for all-pages-failed condition',
+      mainFnBody,
+      /if\s*\(capped\.length === 0\)\s*\{/,
+      'Should check for the empty-after-processing condition',
     );
     assert.match(
-      fnBody,
-      /upstashExpire\(UCDP_REDIS_KEY/,
-      'Should call upstashExpire to extend existing key TTL',
+      mainFnBody,
+      /\['EXPIRE',\s*REDIS_KEY,\s*86400\]/,
+      'Should EXPIRE the existing canonical key to extend its TTL',
     );
   });
 
-  it('does NOT write seed-meta when all pages fail (would make health lie)', () => {
-    // Between the "allEvents.length === 0 && failedPages > 0" check and its return,
-    // there must be no upstashSet('seed-meta:...) call
-    const failBranch = fnBody.slice(
-      fnBody.indexOf('allEvents.length === 0 && failedPages > 0'),
-      fnBody.indexOf('allEvents.length === 0 && failedPages > 0') + 300,
-    );
+  it('does NOT write fresh seed-meta inside the empty-after-processing branch (would make health lie)', () => {
+    const guardStart = mainFnBody.indexOf('if (capped.length === 0)');
+    const emptyBranch = mainFnBody.slice(guardStart, mainFnBody.indexOf('process.exit(0);', guardStart) + 20);
     assert.ok(
-      !failBranch.includes("upstashSet('seed-meta"),
-      'All-pages-failed branch must NOT update seed-meta (health should reflect actual data freshness)',
+      !emptyBranch.includes("'SET'"),
+      'Empty-after-processing branch must only EXPIRE seed-meta, never SET it with a fresh fetchedAt/recordCount',
     );
-  });
-
-  it('does NOT write seed-meta when mapped is empty after filtering', () => {
-    // The "mapped.length === 0" branch should also not write seed-meta
-    const emptyBranch = fnBody.slice(
-      fnBody.indexOf('mapped.length === 0'),
-      fnBody.indexOf('mapped.length === 0') + 300,
-    );
-    assert.ok(
-      !emptyBranch.includes("upstashSet('seed-meta"),
-      'Empty-after-filtering branch must NOT update seed-meta',
+    assert.match(
+      emptyBranch,
+      /\['EXPIRE',\s*'seed-meta:conflict:ucdp-events',\s*604800\]/,
+      'Should extend the seed-meta key TTL alongside the canonical key',
     );
   });
 
   it('only writes seed-meta on successful publish with actual events', () => {
-    // seed-meta write should appear after upstashSet(UCDP_REDIS_KEY, payload, ...)
-    const publishSection = fnBody.slice(fnBody.indexOf('const payload = {'));
+    const publishSection = mainFnBody.slice(mainFnBody.indexOf('const payload = {'));
     assert.match(
       publishSection,
-      // Accept both the pre-contract `upstashSet(KEY, payload, ...)` shape and
-      // the post-contract `envelopeWrite(KEY, payload, ...)` shape — dual
-      // form is part of the seed-contract PR 2 envelope migration.
-      /(?:upstashSet|envelopeWrite)\(UCDP_REDIS_KEY,\s*payload/,
+      /\['SET',\s*REDIS_KEY,\s*JSON\.stringify\(payload\)/,
       'Should write payload to UCDP key',
     );
     assert.match(
       publishSection,
-      /upstashSet\('seed-meta:conflict:ucdp-events'/,
+      /\['SET',\s*metaKey,\s*JSON\.stringify\(meta\)/,
       'Should write seed-meta after successful publish',
     );
   });
 });
 
-// Brace-matched extraction of a top-level function declaration from the source.
-function extractFn(name) {
-  const start = src.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `missing function ${name}`);
-  const open = src.indexOf('{', start);
-  let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === '{') depth++;
-    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
-  }
-  throw new Error(`unbalanced ${name}`);
-}
-
 describe('UCDP version selection prefers the newest release', () => {
-  const discover = src.slice(
-    src.indexOf('async function ucdpDiscoverVersion()'),
-    src.indexOf('async function seedUcdpEvents()'),
-  );
-
-  it('probes all candidates and does NOT first-responder race (Promise.any)', () => {
-    // Promise.any let an older release that merely replied faster win, freezing
-    // conflict:ucdp-events:v1 at v24.1 (2023 data) outside the CII 2-year window.
-    // Match the CALL form (`Promise.any(`) so the explanatory comment that names
-    // the old behavior doesn't trip this guard.
-    assert.doesNotMatch(discover, /Promise\.any\(/, 'must not first-responder race');
-    assert.match(discover, /Promise\.allSettled\(/, 'must probe all candidates');
-  });
-
-  it('selects the newest valid version (sorts by ucdpVersionNewer)', () => {
-    assert.match(discover, /ucdpVersionNewer\(/, 'must rank candidates by version recency');
-    // only versions that returned a non-empty Result are eligible
-    assert.match(discover, /Result\.length === 0\) throw/);
-  });
+  // ais-relay.cjs's writer-side ucdpDiscoverVersion() — which probed all
+  // candidates in PARALLEL (Promise.allSettled) and ranked them with
+  // ucdpVersionNewer() to avoid an older-but-faster release winning — moved
+  // out with the rest of the writer (P14 Phase 2, session 62). Its
+  // replacement, scripts/seed-ucdp-events.mjs's discoverVersion(), sidesteps
+  // that failure mode structurally instead of guarding against it: it tries
+  // pre-sorted (newest-first) candidates SEQUENTIALLY and returns the first
+  // one with a non-empty Result, so an older release never gets a chance to
+  // "win a race" — there is no race. That property is verified behaviorally
+  // below ('standalone cron discovery...'), so the two source-grep checks
+  // this comment used to introduce (Promise.any-avoidance, ucdpVersionNewer
+  // usage) and the standalone 'ucdpVersionNewer ranks GED versions
+  // newest-first' unit test that used to follow are gone along with the
+  // parallel-race algorithm and the ucdpVersionRank/ucdpVersionNewer
+  // functions they exercised — neither exists anywhere in the codebase
+  // anymore (grep scripts/ais-relay.cjs and scripts/seed-ucdp-events.mjs to
+  // confirm before ever reintroducing them).
 
   it('on-demand relay discovery requires a non-empty Result (no empty newer wins)', () => {
     const relayDiscover = src.slice(
@@ -246,16 +225,5 @@ describe('UCDP version selection prefers the newest release', () => {
     } finally {
       console.log = originalLog;
     }
-  });
-
-  it('ucdpVersionNewer ranks GED versions newest-first (behavioral)', () => {
-    const ucdpVersionNewer = new Function(
-      `${extractFn('ucdpVersionRank')}\n${extractFn('ucdpVersionNewer')}\nreturn ucdpVersionNewer;`,
-    )();
-    assert.equal(ucdpVersionNewer('25.1', '24.1'), true, '25.1 newer than 24.1');
-    assert.equal(ucdpVersionNewer('24.1', '25.1'), false, '24.1 not newer than 25.1');
-    assert.equal(ucdpVersionNewer('26.1', '25.1'), true, '26.1 newer than 25.1');
-    assert.equal(ucdpVersionNewer('25.0.6', '25.0.5'), true, 'monthly candidate ordering');
-    assert.equal(ucdpVersionNewer('24.1', '24.1'), false, 'equal versions are not newer');
   });
 });

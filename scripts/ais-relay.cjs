@@ -1578,7 +1578,6 @@ async function startOrefPollLoop() {
   console.log(`[Relay] OREF poll loop started (interval ${OREF_POLL_INTERVAL_MS}ms)`);
 }
 
-
 // ─────────────────────────────────────────────────────────────
 // Satellite TLE Seed — CelesTrak NORAD elements → Redis
 // ─────────────────────────────────────────────────────────────
@@ -2749,7 +2748,6 @@ const AVIATIONSTACK_API_KEY = process.env.AVIATIONSTACK_API || '';
 const cyberPrevAlertedIds = new Set();
 const ucdpPrevAlertedIds = new Set();
 
-
 // ─────────────────────────────────────────────────────────────
 // Positive Events Seed — Railway fetches GDELT GEO API → writes to Redis
 // so Vercel handler serves from cache (avoids 25s edge timeout on slow GDELT)
@@ -3544,9 +3542,6 @@ async function startClassifySeedLoop() {
   startBootSeedLoop('Classify', 'seed-meta:classify', CLASSIFY_SEED_INTERVAL_MS, seedClassify, (e) => console.warn('[Classify] Initial seed error:', e?.message || e), (e) => console.warn('[Classify] Seed error:', e?.message || e));
 }
 
-
-
-
 // ─────────────────────────────────────────────────────────────
 // Warm-ping shared auth — relay → the api.<APP_DOMAIN> subdomain
 //
@@ -3745,8 +3740,6 @@ function startTemporalAnomaliesWarmPingLoop() {
   startBootSeedLoop('TemporalAnomalies', 'seed-meta:temporal:anomalies', TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS, seedTemporalAnomaliesWarmPing, (e) => console.warn('[TemporalAnomalies] Initial warm-ping error:', e?.message || e), (e) => console.warn('[TemporalAnomalies] Warm-ping error:', e?.message || e));
 }
 
-
-
 // ─────────────────────────────────────────────────────────────
 // GSCPI seed — NY Fed Global Supply Chain Pressure Index
 // CSV fetched from newyorkfed.org (no API key required).
@@ -3858,8 +3851,6 @@ async function startGscpiSeedLoop() {
   console.log('[GSCPI] Seed loop starting (interval 24h)');
   startBootSeedLoop('GSCPI', 'seed-meta:economic:gscpi', GSCPI_SEED_INTERVAL_MS, seedGscpi, (e) => console.warn('[GSCPI] Initial seed error:', e?.message || e), (e) => console.warn('[GSCPI] Seed error:', e?.message || e));
 }
-
-
 
 const PORTWATCH_REDIS_KEY = 'supply_chain:portwatch:v1';
 
@@ -4671,8 +4662,6 @@ async function startWsbTickersSeedLoop() {
   startBootSeedLoop('WsbTickers', 'seed-meta:intelligence:wsb-tickers', WSB_TICKERS_INTERVAL_MS, seedWsbTickers, e => console.warn('[WsbTickers] Initial seed error:', e?.message || e), e => console.warn('[WsbTickers] Seed error:', e?.message || e));
 }
 
-
-
 // ─────────────────────────────────────────────────────────────
 // PizzINT Seed — Pentagon Pizza Index + GDELT tensions → Redis
 // Fetches from pizzint.watch on Railway (datacenter IPs blocked
@@ -4799,7 +4788,6 @@ function startPizzintSeedLoop() {
   console.log(`[PizzINT] Seed loop starting (interval ${PIZZINT_SEED_INTERVAL_MS / 1000 / 60}min)`);
   startBootSeedLoop('PizzINT', 'seed-meta:intelligence:pizzint', PIZZINT_SEED_INTERVAL_MS, seedPizzint, (e) => console.warn('[PizzINT] Initial seed error:', e?.message || e), (e) => console.warn('[PizzINT] Seed error:', e?.message || e));
 }
-
 
 function gzipSyncBuffer(body) {
   try {

@@ -275,6 +275,14 @@ const CADENCES: Record<string, Cadence> = {
   // See scripts/seed-rpc-warmpings.mjs's header for why over-pinging the
   // 30-min ones is harmless.
   'seed-rpc-warmpings': { kind: 'every', rate: '8 minutes' },
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Straight port
+  // of ais-relay.cjs's startSatelliteSeedLoop (no standalone sibling
+  // existed — "satellites" appeared nowhere in CADENCES before this).
+  // Cadence matches the deleted loop's SAT_SEED_INTERVAL_MS exactly (2h)
+  // and api/health.js's SEED_META.satellites.maxStaleMin (240min = 2x).
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-satellites': { kind: 'every', rate: '2 hours' },
 };
 
 /**

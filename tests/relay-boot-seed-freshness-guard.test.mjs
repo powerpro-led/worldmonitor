@@ -179,7 +179,6 @@ test('startBootSeedLoop waits the remaining freshness window before first skippe
 // exact-string match pins all four arguments so a future edit can't silently
 // drift the meta key or interval and re-open the boot-abuse hole.
 const SEEDERS = [
-  ['Satellites', "'seed-meta:intelligence:satellites'", 'SAT_SEED_INTERVAL_MS', 'seedSatelliteTLEs'],
   ['Market', "'seed-meta:market:stocks'", 'MARKET_SEED_INTERVAL_MS', 'seedAllMarketData'],
   ['PositiveEvents', "'seed-meta:positive-events:geo'", 'POSITIVE_EVENTS_INTERVAL_MS', 'seedPositiveEvents'],
   ['Classify', "'seed-meta:classify'", 'CLASSIFY_SEED_INTERVAL_MS', 'seedClassify'],
@@ -220,6 +219,12 @@ const SEEDERS = [
   // scripts/railway-services.json + gcp/scheduler/main.ts's CADENCES) rather
   // than just deleting a duplicate. No notification logic to migrate — this
   // loop never called publishNotificationEvent.
+  //
+  // Satellites was removed in session 63 by the same mechanism as GSCPI:
+  // straight port to a new scripts/seed-satellites.mjs (CelesTrak TLE fetch),
+  // registered in scripts/railway-services.json + gcp/scheduler/main.ts's
+  // CADENCES (every 2h). No standalone sibling existed; no notification logic
+  // to migrate.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

@@ -27,7 +27,12 @@ loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'usni-fleet:sebuf:v1';
 const STALE_KEY = 'usni-fleet:sebuf:stale:v1';
-const CACHE_TTL = 43_200; // 12h — must outlive the 6h cron interval (2x)
+// 18h — 3x the 6h cron interval, and STRICTLY above the 720-min (43200s)
+// health staleness gate so a merely-late seeder escalates STALE_SEED→EMPTY in
+// order (tests/seed-ttl-outlives-staleness-fleet.test.mjs). The relay loop
+// wrote this key at exactly 12h (== the gate) — invisible debt there because
+// it isn't a seed-*.mjs file; not replicated here.
+const CACHE_TTL = 64_800;
 const STALE_TTL = 604_800; // 7 days
 const USNI_URL = 'https://news.usni.org/wp-json/wp/v2/posts?categories=4137&per_page=1';
 

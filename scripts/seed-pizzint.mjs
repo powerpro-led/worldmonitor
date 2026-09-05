@@ -20,7 +20,12 @@ import { loadEnvFile, CHROME_UA, runSeed } from './_seed-utils.mjs';
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'intelligence:pizzint:seed:v1';
-const CACHE_TTL = 1800; // 30 min — 3x the 10-min cron interval
+// 60 min — 6x the 10-min cron interval, and STRICTLY above the 30-min (1800s)
+// health staleness gate so a merely-late seeder escalates STALE_SEED→EMPTY in
+// order (tests/seed-ttl-outlives-staleness-fleet.test.mjs). The relay loop
+// wrote this key at exactly 30 min (== the gate) — invisible debt there
+// because it isn't a seed-*.mjs file; not replicated here.
+const CACHE_TTL = 3600;
 const PIZZINT_API = 'https://www.pizzint.watch/api/dashboard-data';
 const GDELT_BATCH_API = 'https://www.pizzint.watch/api/gdelt/batch';
 const DEFAULT_GDELT_PAIRS = 'usa_russia,russia_ukraine,usa_china,china_taiwan,usa_iran,usa_venezuela';

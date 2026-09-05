@@ -64,9 +64,18 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startPipelineConfigHydration } from '../../server/_shared/pipeline-config-hydration';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+// OQ-P7 (PLATFORM_ARCHITECTURE.md Workstream 5): every spawned seed script
+// below reads its data-source keys via plain `process.env.<KEY>`. Awaited
+// before any schedule is registered so the very first scheduled tick already
+// sees a hydrated env; spawn()'d children inherit this process's env by
+// default (no explicit `env` option passed to spawn() below), so this one
+// hydration loop covers every child process too.
+await startPipelineConfigHydration();
 
 interface RailwayServiceEntry {
   entry: string;
@@ -270,10 +279,10 @@ const CADENCES: Record<string, Cadence> = {
 const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events', 'seed-webcams', 'seed-chokepoint-flows'] as const;
 void ORPHANS_NOT_SCHEDULED;
 
-function runScriptOnce(entryRelativePath: string): () => Promise<void> {
+function runScriptOnce(entryRelativePath: string, extraArgs: string[] = []): () => Promise<void> {
   return () =>
     new Promise<void>((resolve, reject) => {
-      const child = spawn('node', [entryRelativePath], { cwd: REPO_ROOT, stdio: 'inherit' });
+      const child = spawn('node', [entryRelativePath, ...extraArgs], { cwd: REPO_ROOT, stdio: 'inherit' });
       child.on('exit', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`${entryRelativePath} exited with code ${code}`));
@@ -309,3 +318,49 @@ for (const svc of nixpacksEntries) {
     schedule(svc.service).every(cadence.rate, handler);
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// 2026-09-05 — P14 Phase 1 (PLATFORM_ARCHITECTURE.md Workstream 5): "no
+// pinned instances per org." These four registrations are hand-written, NOT
+// driven by scripts/railway-services.json like the loop above — deliberately.
+// Railway is still the live production deploy for the pre-pivot
+// single-tenant fork (nitric-deploy.yml's own header: `nitric up` has never
+// been run against apps-453107 for real), and that file is Railway's actual
+// config source. Changing it to redirect these four scripts through the
+// nixpacks-driven loop above would alter what Railway itself does with them.
+// These entries exist ONLY for the GCP/Nitric deploy target this file
+// already serves, alongside it, without touching Railway's config at all.
+//
+//   - `queue-worker` — scripts/queue-worker.mjs (new), one scheduled tick of
+//     the 3 forecast/scenario queue consumers that ALWAYS_ON_NOT_SCHEDULED
+//     above still excludes from the loop (they were always-on Railway
+//     workers, not periodic crons — see that Set's own comment). All three
+//     are already async pending→poll flows, so a ~1min queue latency is
+//     fine. See scripts/queue-worker.mjs's header for why it bypasses the
+//     process-simulation-tasks.mjs / process-deep-forecast-tasks.mjs wrapper
+//     scripts entirely.
+//   - `digest-notifications` — scripts/seed-digest-notifications.mjs is
+//     already one-shot (Dockerfile.digest-notifications's CMD runs it
+//     directly); only the trigger mechanism changes here, from Railway's own
+//     Cron Schedule feature (30 min, external config) to this schedule.
+//   - `publish-bootstrap-tiers-fast` / `-slow` — scripts/publish-bootstrap-
+//     tiers.mjs already supports one-shot `--tier=fast`/`--tier=slow`
+//     invocations as an alternative to its `--loop` mode (which is what
+//     Dockerfile.publish-bootstrap-tiers still runs for Railway); this
+//     reuses that existing flag rather than a script change.
+// ──────────────────────────────────────────────────────────────────────────
+schedule('queue-worker').every('1 minutes', async () => {
+  await runScriptOnce('scripts/queue-worker.mjs')();
+});
+
+schedule('digest-notifications').cron('*/30 * * * *', async () => {
+  await runScriptOnce('scripts/seed-digest-notifications.mjs')();
+});
+
+schedule('publish-bootstrap-tiers-fast').cron('*/2 * * * *', async () => {
+  await runScriptOnce('scripts/publish-bootstrap-tiers.mjs', ['--tier=fast'])();
+});
+
+schedule('publish-bootstrap-tiers-slow').cron('*/10 * * * *', async () => {
+  await runScriptOnce('scripts/publish-bootstrap-tiers.mjs', ['--tier=slow'])();
+});

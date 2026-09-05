@@ -13,39 +13,24 @@ services:
   - match: gcp/scheduler/main.ts
     start: npx tsx watch --env-file=.env $SERVICE_PATH
     runtime: scheduler
-  # The 5 `deployMode: "dockerfile"` entries in scripts/railway-services.json
-  # (long-running processes, not discrete cron runs) — reuse their EXISTING
-  # Dockerfiles unchanged, no Nitric SDK wrapper needed since none of them
-  # import @nitric/sdk yet. min-instances for these will need a
-  # nitric.gcp.yaml `config:` override before real deploy — scale-to-zero
-  # breaks a persistent websocket relay / queue consumer. Not decided here;
-  # see docs/architecture/nitric-gcp-scaffold.md.
+  # P14 Phase 1 (PLATFORM_ARCHITECTURE.md Workstream 5, 2026-09-05): "no
+  # pinned instances per org." ais-relay.cjs is the ONE deliberate exception
+  # — the sole genuinely persistent connection (aisstream.io WebSocket) —
+  # kept pinned as the explicit stopgap
+  # (scripts/generate-nitric-org-stack.mjs's PINNED_SERVICES). The other 5
+  # long-running dev services this block used to list (a digest-notifications
+  # loop wrapper, publish-bootstrap-tiers, and the 3 forecast/scenario queue
+  # consumers below) are gone from here: gcp/scheduler/main.ts now spawns
+  # each of them on a real cadence instead (queue-worker.mjs merges the 3
+  # queue consumers into one scheduled `--once` tick; digest-notifications
+  # and publish-bootstrap-tiers reuse their already-one-shot invocation
+  # modes). This ONLY affects local `nitric start` dev and the not-yet-live
+  # GCP target — Railway's own config (scripts/railway-services.json,
+  # Dockerfile.digest-notifications, Dockerfile.publish-bootstrap-tiers) is
+  # untouched and keeps running these as it always has.
   - match: scripts/ais-relay.cjs
     start: node $SERVICE_PATH
     runtime: relay
-  - match: scripts/loop-digest-notifications.mjs
-    # scripts/seed-digest-notifications.mjs is one-shot (main() + process.exit(),
-    # no internal loop) — its real cadence came from Railway's own Cron Schedule
-    # feature re-invoking the container every 30 min (Dockerfile.digest-notifications's
-    # header + the script's own docblock), which is a re-invoke primitive this local
-    # `services:` block doesn't have. A bare `node $SERVICE_PATH` on that script here
-    # runs it exactly once at `nitric start` and never again — found 2026-08-23 via a
-    # genuinely stale Latest Brief (stuck a day behind because nothing was re-composing
-    # it locally).
-    #
-    # Matches scripts/loop-digest-notifications.mjs (a real file, not the digest
-    # script itself) rather than an inline `sh -c "while true; do ...; done"` on the
-    # digest script directly — that inline form previously threw `unexpected EOF
-    # while looking for matching "` on every `nitric start` (confirmed live
-    # 2026-08-31: nitric's local start-command parser splits a quoted -c argument
-    # on whitespace instead of passing it through intact). A plain `node
-    # $SERVICE_PATH` pointed at a real wrapper file sidesteps that parser
-    # entirely — see that file's own header for the loop itself. Production's
-    # Dockerfile.digest-notifications is untouched: it still runs the digest
-    # script directly, one-shot, per Railway's cron — this loop only exists for
-    # local `nitric start` dev sessions.
-    start: node $SERVICE_PATH
-    runtime: digest-notifications
   - match: scripts/seed-bundle-portwatch-port-activity.mjs
     start: node $SERVICE_PATH
     runtime: seed-bundle-portwatch-port-activity
@@ -57,9 +42,6 @@ services:
     # ENV NODE_OPTIONS wiring, which local `node $SERVICE_PATH` never had.
     start: NODE_OPTIONS=--import=file://$PWD/node_modules/tsx/dist/loader.mjs node $SERVICE_PATH
     runtime: seed-bundle-resilience-validation
-  - match: scripts/publish-bootstrap-tiers.mjs
-    start: node $SERVICE_PATH --loop
-    runtime: publish-bootstrap-tiers
   - match: scripts/loop-fetch-gpsjam.mjs
     # Local-dev-only wrapper (see its own header). scripts/fetch-gpsjam.mjs is
     # scheduled for real by gcp/scheduler/main.ts's CADENCES map ('fetch-gpsjam',
@@ -75,21 +57,6 @@ services:
     # untouched.
     start: node $SERVICE_PATH
     runtime: loop-fetch-gpsjam
-  # 3 more always-on services, added 2026-08-06 after discovering (while
-  # filling in gcp/scheduler/main.ts's cadences) that these `deployMode:
-  # "nixpacks-root-scripts"` registry entries are actually always-on Railway
-  # workers, not periodic crons — see docs/architecture/nitric-gcp-scaffold.md.
-  # New Dockerfiles (not reused from Railway, which used bare nixpacks
-  # detection) since GCP/Nitric needs an explicit image.
-  - match: scripts/process-simulation-tasks.mjs
-    start: node $SERVICE_PATH
-    runtime: process-simulation-tasks
-  - match: scripts/process-deep-forecast-tasks.mjs
-    start: node $SERVICE_PATH
-    runtime: process-deep-forecast-tasks
-  - match: scripts/scenario-worker.mjs
-    start: node $SERVICE_PATH
-    runtime: scenario-worker
 
 runtimes:
   api:
@@ -107,24 +74,23 @@ runtimes:
   relay:
     dockerfile: Dockerfile.relay
     context: .
-  digest-notifications:
-    dockerfile: Dockerfile.digest-notifications
-    context: .
   seed-bundle-portwatch-port-activity:
     dockerfile: Dockerfile.seed-bundle-portwatch-port-activity
     context: .
   seed-bundle-resilience-validation:
     dockerfile: Dockerfile.seed-bundle-resilience-validation
     context: .
-  publish-bootstrap-tiers:
-    dockerfile: Dockerfile.publish-bootstrap-tiers
-    context: .
-  process-simulation-tasks:
-    dockerfile: Dockerfile.process-simulation-tasks
-    context: .
-  process-deep-forecast-tasks:
-    dockerfile: Dockerfile.process-deep-forecast-tasks
-    context: .
-  scenario-worker:
-    dockerfile: Dockerfile.scenario-worker
-    context: .
+  # digest-notifications / publish-bootstrap-tiers / process-simulation-tasks
+  # / process-deep-forecast-tasks / scenario-worker runtimes removed here
+  # (P14 Phase 1, 2026-09-05) — no longer wired as pinned nitric services,
+  # see the services: block above. Dockerfile.digest-notifications and
+  # Dockerfile.publish-bootstrap-tiers are untouched on disk (Railway's real,
+  # currently-live artifacts — scripts/railway-services.json still points at
+  # them). Dockerfile.process-simulation-tasks / .process-deep-forecast-tasks
+  # / .scenario-worker are ALSO left on disk, deliberately not deleted this
+  # pass: unlike the other two, no registry entry or CI step references them
+  # (a pre-existing gap — tests/railway-services-registry-coverage.test.mts
+  # already fails on this, confirmed unrelated to this change), so whether
+  # Railway's dashboard has ever pointed at them independently of the JSON
+  # registry could not be confirmed from this environment. Safe to delete
+  # once that's confirmed with the operator.

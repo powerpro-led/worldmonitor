@@ -19,7 +19,16 @@
 import { api } from '@nitric/sdk';
 import { registerGeneratedRoutes } from './routes.generated';
 import { adaptVercelHandler } from './adapt-vercel-handler';
+import { startPipelineConfigHydration } from '../../server/_shared/pipeline-config-hydration';
 import mcpHandler from '../../api/mcp';
+
+// OQ-P7 (PLATFORM_ARCHITECTURE.md Workstream 5): every route below reads its
+// ~26 data-source keys via plain `process.env.<KEY>` — this is the org
+// admin's `pipeline_config` table copied into this process's env, refreshed
+// every 5 minutes, so a live admin-panel edit reaches this already-running
+// instance without a redeploy or restart. Awaited so a fresh cold start
+// never registers routes ahead of its first hydration.
+await startPipelineConfigHydration();
 
 const apiGateway = api('api');
 registerGeneratedRoutes(apiGateway);

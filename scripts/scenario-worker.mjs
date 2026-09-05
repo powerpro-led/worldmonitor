@@ -348,91 +348,111 @@ const JOB_ID_RE = /^scenario:\d{13}:[a-z0-9]{8}$/;
 // Main worker loop
 // ────────────────────────────────────────────────────────────────────────────
 
-async function runWorker() {
+/**
+ * One dequeue attempt: claims at most one job (or finds the queue empty) and
+ * fully processes it before returning. Extracted from the loop body so
+ * `runWorker({ once: true })` (P14 Phase 1's queue-worker merge,
+ * PLATFORM_ARCHITECTURE.md Workstream 5) can call it exactly once — every
+ * early-exit `continue` below became a `return`, which is equivalent inside
+ * a function body called once per outer-loop iteration.
+ */
+async function runOneIteration() {
+  let raw;
+  try {
+    // Atomic FIFO dequeue+claim: moves item from pending → processing.
+    // Note: Upstash REST API does not honour the BLMOVE blocking timeout —
+    // it returns null immediately for empty queues. The 5s sleep below prevents
+    // busy-looping when the queue is idle.
+    raw = await redisCmd('blmove', [QUEUE_KEY, PROCESSING_KEY, 'LEFT', 'RIGHT', BLMOVE_TIMEOUT_SECONDS]);
+  } catch (err) {
+    console.error('[scenario-worker] BLMOVE error:', err.message);
+    // Brief pause before retrying to avoid hot-loop on connectivity issues
+    await new Promise(r => setTimeout(r, 5_000));
+    return;
+  }
+
+  if (!raw) {
+    // Upstash REST returns null immediately for empty queue (no true HTTP blocking).
+    // Sleep before retrying to avoid busy-loop burning CPU.
+    await new Promise(r => setTimeout(r, 5_000));
+    return;
+  }
+
+  /** @type {ScenarioJob | null} */
+  let job = null;
+  try {
+    job = JSON.parse(String(raw));
+  } catch {
+    console.error('[scenario-worker] Unparseable job payload, discarding:', String(raw).slice(0, 100));
+    await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
+    return;
+  }
+
+  const { jobId, scenarioId, iso2 } = job;
+
+  // Validate payload fields before using any as Redis key fragments.
+  if (
+    typeof jobId !== 'string' || !JOB_ID_RE.test(jobId) ||
+    typeof scenarioId !== 'string' ||
+    (iso2 !== null && (typeof iso2 !== 'string' || !/^[A-Z]{2}$/.test(iso2)))
+  ) {
+    console.error('[scenario-worker] Job failed field validation, discarding:', String(raw).slice(0, 100));
+    await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
+    return;
+  }
+
+  console.log(`[scenario-worker] processing ${jobId} (${scenarioId}, iso2=${iso2 ?? 'all'})`);
+
+  // Idempotency: skip if result already written
+  const resultKey = `scenario-result:${jobId}`;
+  const existing = await redisGet(resultKey).catch(() => null);
+  if (existing) {
+    console.log(`[scenario-worker] ${jobId} already processed, skipping`);
+    await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
+    return;
+  }
+
+  // Write processing state immediately so status.ts can reflect in-flight work.
+  await redisSetex(resultKey, RESULT_TTL_SECONDS,
+    JSON.stringify({ status: 'processing', startedAt: Date.now() }),
+  ).catch(() => null);
+
+  try {
+    const result = await computeScenario(scenarioId, iso2);
+    await redisSetex(
+      resultKey,
+      RESULT_TTL_SECONDS,
+      JSON.stringify({ status: 'done', result, completedAt: Date.now() }),
+    );
+    console.log(`[scenario-worker] ${jobId} done — ${result.topImpactCountries.length} countries impacted`);
+  } catch (err) {
+    console.error(`[scenario-worker] ${jobId} failed:`, err.message);
+    await redisSetex(
+      resultKey,
+      RESULT_TTL_SECONDS,
+      JSON.stringify({ status: 'failed', error: 'computation_error', failedAt: Date.now() }),
+    ).catch(() => null);
+  } finally {
+    // Always remove from processing list so the queue doesn't stall
+    await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
+  }
+}
+
+/**
+ * @param {{ once?: boolean }} [opts] `once: true` (P14 Phase 1's
+ * queue-worker merge) processes at most one dequeue attempt and returns,
+ * instead of looping forever — mirrors `seed-forecasts.mjs`'s
+ * `runSimulationWorker`/`runDeepForecastWorker` `{ once }` contract exactly,
+ * so `scripts/queue-worker.mjs` can drive all three workers the same way.
+ */
+export async function runWorker({ once = false } = {}) {
   console.log('[scenario-worker] starting — listening on scenario-queue:pending');
 
   await requeueOrphanedJobs();
 
   while (!shuttingDown) {
-    let raw;
-    try {
-      // Atomic FIFO dequeue+claim: moves item from pending → processing.
-      // Note: Upstash REST API does not honour the BLMOVE blocking timeout —
-      // it returns null immediately for empty queues. The 5s sleep below prevents
-      // busy-looping when the queue is idle.
-      raw = await redisCmd('blmove', [QUEUE_KEY, PROCESSING_KEY, 'LEFT', 'RIGHT', BLMOVE_TIMEOUT_SECONDS]);
-    } catch (err) {
-      console.error('[scenario-worker] BLMOVE error:', err.message);
-      // Brief pause before retrying to avoid hot-loop on connectivity issues
-      await new Promise(r => setTimeout(r, 5_000));
-      continue;
-    }
-
-    if (!raw) {
-      // Upstash REST returns null immediately for empty queue (no true HTTP blocking).
-      // Sleep before retrying to avoid busy-loop burning CPU.
-      await new Promise(r => setTimeout(r, 5_000));
-      continue;
-    }
-
-    /** @type {ScenarioJob | null} */
-    let job = null;
-    try {
-      job = JSON.parse(String(raw));
-    } catch {
-      console.error('[scenario-worker] Unparseable job payload, discarding:', String(raw).slice(0, 100));
-      await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
-      continue;
-    }
-
-    const { jobId, scenarioId, iso2 } = job;
-
-    // Validate payload fields before using any as Redis key fragments.
-    if (
-      typeof jobId !== 'string' || !JOB_ID_RE.test(jobId) ||
-      typeof scenarioId !== 'string' ||
-      (iso2 !== null && (typeof iso2 !== 'string' || !/^[A-Z]{2}$/.test(iso2)))
-    ) {
-      console.error('[scenario-worker] Job failed field validation, discarding:', String(raw).slice(0, 100));
-      await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
-      continue;
-    }
-
-    console.log(`[scenario-worker] processing ${jobId} (${scenarioId}, iso2=${iso2 ?? 'all'})`);
-
-    // Idempotency: skip if result already written
-    const resultKey = `scenario-result:${jobId}`;
-    const existing = await redisGet(resultKey).catch(() => null);
-    if (existing) {
-      console.log(`[scenario-worker] ${jobId} already processed, skipping`);
-      await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
-      continue;
-    }
-
-    // Write processing state immediately so status.ts can reflect in-flight work.
-    await redisSetex(resultKey, RESULT_TTL_SECONDS,
-      JSON.stringify({ status: 'processing', startedAt: Date.now() }),
-    ).catch(() => null);
-
-    try {
-      const result = await computeScenario(scenarioId, iso2);
-      await redisSetex(
-        resultKey,
-        RESULT_TTL_SECONDS,
-        JSON.stringify({ status: 'done', result, completedAt: Date.now() }),
-      );
-      console.log(`[scenario-worker] ${jobId} done — ${result.topImpactCountries.length} countries impacted`);
-    } catch (err) {
-      console.error(`[scenario-worker] ${jobId} failed:`, err.message);
-      await redisSetex(
-        resultKey,
-        RESULT_TTL_SECONDS,
-        JSON.stringify({ status: 'failed', error: 'computation_error', failedAt: Date.now() }),
-      ).catch(() => null);
-    } finally {
-      // Always remove from processing list so the queue doesn't stall
-      await redisLrem(PROCESSING_KEY, String(raw)).catch(() => null);
-    }
+    await runOneIteration();
+    if (once) return;
   }
 
   console.log('[scenario-worker] shutdown complete (SIGTERM received)');

@@ -1,0 +1,17 @@
+# Worked example / schema fixture — see deploy/orgs/README.md.
+#
+# `mosiq` is the one real tenant provisioned so far (session 57, hand-built
+# while validating Workstreams 1 and 2 against a live Supabase project — see
+# PLATFORM_ARCHITECTURE.md's session log). Its Supabase project is real and
+# live; it has NO GCP project or GH Environment yet, so this file is not
+# wired to a real `workflow_dispatch` run this session — it exists to give
+# `scripts/generate-nitric-org-stack.mjs` and its test a real, non-synthetic
+# fixture to run against.
+org: mosiq
+domain: mosiq.example.invalid # placeholder — no real domain provisioned yet
+supabase:
+  projectRef: lntyjouahofgewtkmpyi
+gcp:
+  projectId: apps-453107-mosiq # placeholder — no GCP project provisioned yet
+  region: us-central1
+variant: full

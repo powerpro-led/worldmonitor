@@ -13,13 +13,11 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstream 3 (per-operator LLM keys) fully shipped** (Parts A backend, B dashboard `ai` tab, C hard-disable visibility), alongside W4 + 2 + OQ-P6→P14 + W7's `list-feed-digest` seeder. **OQ-P7 resolved and P13 reviewed** (doc-only). **Then: a real test tenant (`mosiq`) provisioned by hand for the first time** — W1's and W2's migrations + both edge functions validated live against a real Supabase project; **P15 found and fixed** (every WorldMonitor Supabase object now lives in a dedicated `worldmonitor` schema, not `public`). Workstream 5 has no remaining operator-gated blocker. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
-- **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
-- **RESOLVED S57 — Workstreams 1 and 2 both validated against a real Supabase project** (`mosiq`, a hand-provisioned test tenant — see the S57 session log). Both migrations apply cleanly, both edge functions deploy and respond live and correctly. `register-provider.ts`, a full GitHub sign-in round trip, and `local-config`'s Upstash-backed secrets remain untested (need `deno`, a real GitHub token, and a real Upstash DB respectively — none available this session) — those are Workstream 5's real remaining gate, not "has anything run at all."
+- **As of:** 2026-09-05 (session 58) — **Workstream 5 (multi-org deploy pipeline) shipped**, except P14 Phase 2's AIS-shared-ingest deploy target (deliberately deferred — see Workstream 5's checklist, needs code Phase 2/Workstream 7 hasn't extracted yet). Org config schema (`deploy/orgs/<org>.yml`), the `nitric.<org>.yaml` generator, the worker-side `pipeline_config` hydration loop (OQ-P7, live), `.github/workflows/deploy-org.yml`, and P14 Phase 1's service consolidation (3 queue workers merged into `queue-worker.mjs`; digest-notifications + publish-bootstrap-tiers moved to Cloud Scheduler cadences; `ais-relay.cjs` is the sole remaining pinned instance) are all in, all unit-tested (23 new tests across 5 new/changed test files), all typechecked/linted clean. **Next: Workstream 6 (admin panel)** — no remaining blocker; Workstream 5 has no live infrastructure to point it at yet (needs a real org's GH Environment + GCP project, still just `mosiq`'s Supabase half).
+- **Prior work state:** `main` @ `93ba62e` at S58 start (8 ahead of `origin/main`, not pushed — operator's call, unchanged this session). S57 shipped Workstream 3 fully (LLM-key backend + dashboard tab + hard-disable visibility), Workstream 4 (denylist mirror), Workstream 2 (vendored identity bridge), W7's `list-feed-digest` seeder, resolved OQ-P7 + reviewed P13, then hand-provisioned the `mosiq` test tenant and found/fixed P15 (dedicated `worldmonitor` schema). `v2.13.0` still not tagged, on hold (P12).
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. **OQ-P6 and OQ-P7 both RESOLVED S57** — see P14 and the resolved-questions section; no open sub-questions remain.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
-- **START HERE: Workstream 5 (deploy pipeline)** — everything remaining waits on it. **Both prior blockers cleared S57:** OQ-P7 resolved (`pipeline_config` wins, 5-min hydration) and P13 reviewed (accepted as designed). Nothing operator-gated remains before starting W5.
-- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder) → 3~~ (done) → 5 → 6 → rest of 7.
+- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder) → 3 → 5~~ (done, minus P14 Phase 2) → 6 → rest of 7 (incl. P14 Phase 2).
 
 ---
 
@@ -226,15 +224,15 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 5 — multi-org deploy pipeline
 
-- [ ] `deploy/orgs/<org>.yml` — non-secret per-org config (domain, GCP region, variant, Supabase project ref).
-- [ ] **Generate `nitric.<org>.yaml` from `deploy/orgs/<org>.yml` at deploy time** (S56 gap). `nitric.gcp.yaml` hardcodes `gcp-project-id: apps-453107` and `region: us-central1`; Nitric selects a stack by *filename*, and `nitric-deploy.yml` already exposes a `stack-name` input — so the lever exists, but nothing currently feeds it from the per-org config. Without this step `deploy-org.yml` deploys every org into `apps-453107`.
-- [ ] **OQ-P7 resolved S57 → implement the hydration.** `pipeline_config` wins; the deploy-time `PRODUCTION_ENV_FILE` secret stops being the 26 keys' home (confirm nothing else in `nitric-deploy.yml` still needs it before removing it). Worker needs a startup + 5-minute-interval `pipeline_config → process.env` hydration loop (mirrors `loadConfigIntoEnv()`). Workstream 6's admin panel copy must say "changes apply within 5 minutes."
-- [ ] GH Actions Environment per org — GCP creds (scoped to that project), Pulumi token, `SUPABASE_ACCESS_TOKEN` + project ref + DB password, Upstash write URL+token.
-- [ ] `worldmonitor/supabase/` set up for the **Supabase CLI** (OQ-P2): `supabase/config.toml`, `supabase/migrations/*.sql` (`pipeline_config` + RLS + `fn_link_bridge_identity_if_needed`), `supabase/functions/{local-config,github-identity-bridge}/`.
-- [ ] `.github/workflows/deploy-org.yml` — `workflow_dispatch(org)` → select Environment → `supabase link` → `supabase db push` → `supabase functions deploy --no-verify-jwt` (both fns) → set function secrets → `deno run register-provider.ts` → configure the org-gate auth hook → deploy the worker + admin panel to **Cloud Run** (OQ-P1) via `nitric up` / Pulumi (grow `nitric-deploy.yml`).
-- [ ] Idempotent: re-running updates in place. "New org" runbook: create the Supabase project + Upstash DB + GCP project, add the GH Environment, run the workflow, then set the first admin's `app_metadata.wm_admin` (OQ-P3).
-- [ ] **P14 — no pinned instances per org.** Phase 1: `digest-notifications` + `publish-bootstrap-tiers` (×2) as Cloud Scheduler jobs; the 3 forecast/scenario queue consumers merged into one `queue-worker.mjs` run scheduled `--once`; `ais-relay.cjs` as a single per-org `min-instances:1` stopgap. The generated `nitric.<org>.yaml` carries that one pinned override and nothing else.
-- [ ] **P14 — the shared AIS ingest is its OWN deploy target, not part of `deploy-org.yml`.** Separate workflow + GH Environment, own `AISSTREAM_API_KEY`, a maintained registry of `{org → Upstash write url+token}` (it writes vessel state into every org's DB). New-org onboarding must append the org to that registry. Deferred detail: how the registry is stored + rotated (candidate: a JSON secret in the shared service's Environment, updated by `deploy-org.yml` as a side effect).
+- [x] **DONE S58.** `deploy/orgs/<org>.yml` — non-secret per-org config (domain, GCP region, variant, Supabase project ref). Schema + `deploy/orgs/README.md` (field-by-field consumer table + the "new org" runbook). `deploy/orgs/mosiq.yml` is the worked example, using the one real live tenant's real Supabase ref — its `gcp.projectId`/`domain` are placeholders (no GCP project or GH Environment exists for it yet).
+- [x] **DONE S58.** **Generate `nitric.<org>.yaml` from `deploy/orgs/<org>.yml` at deploy time** (S56 gap). `scripts/generate-nitric-org-stack.mjs --org=<org>` templates `gcp-project-id`/`region` from the org config, plus P14 Phase 1's one pinned override (`ais-relay: min-instances: 1`) — everything else inherits `config.default`'s `min-instances: 0`. Pure config generation, no live infra; unit tested (`tests/generate-nitric-org-stack.test.mjs`, 5 cases, runs for real against the `mosiq` fixture).
+- [x] **DONE S58.** **OQ-P7 → hydration implemented.** `server/_shared/pipeline-config-hydration.ts`: mirrors `config-store.mjs`'s `loadConfigIntoEnv()`, reusing the already-`worldmonitor`-schema-scoped `getSupabaseAdmin()` (P15) rather than a new Supabase-client bootstrap. Every `pipeline_config` row is brokered by definition (always overwrites `process.env` — no `.env`-wins branch exists worker-side under P2). Awaited once at startup (blocks route/schedule registration so a cold start never serves before its first hydration) then re-runs every 5 minutes, wired into both `gcp/api/main.ts` and `gcp/scheduler/main.ts` (whose `spawn()`-launched child seeders inherit the hydrated env for free — no explicit `env` option was ever passed to `spawn()`). 7 tests (`server/__tests__/pipeline-config-hydration.test.ts`), including the core OQ-P7 contract: pipeline_config always overwrites a stale `.env`-sourced value, never the reverse.
+- [x] **DONE S58 (doc only — inherently manual).** GH Actions Environment per org — the exact secret/var list is now the authoritative header comment in `.github/workflows/deploy-org.yml` (also summarized in `deploy/orgs/README.md`). Creating the Environment itself is a one-time manual step per org (no API access this repo can script safely for a GH Environment + its secrets from outside a workflow run).
+- [x] **DONE S58 — with one correction.** `worldmonitor/supabase/` Supabase-CLI setup (OQ-P2): migrations + both functions already existed (W1/W2); **`supabase/config.toml` turned out to be unnecessary** — every CLI command in `deploy-org.yml` takes an explicit `--project-ref`/uses `supabase link` first, so there's nothing a config.toml would add that isn't already covered, and skipping it avoids a stray file with no secrets but also no clear ownership story.
+- [x] **DONE S58.** `.github/workflows/deploy-org.yml` — `workflow_dispatch(org)`, `environment: ${{ inputs.org }}` for per-org secret scoping. Grows `nitric-deploy.yml`'s GCP-auth/Pulumi/Docker-cache steps rather than duplicating them. Sequence: generate stack file → `supabase link` → `db push` → deploy both functions (`local-config` default `verify_jwt`, `github-identity-bridge --no-verify-jwt`) → `secrets set` (both functions' secrets, sourced from Environment secrets, NOT regenerated per run) → `register-provider.ts` (via `denoland/setup-deno`) → GCP auth → assemble this deploy's own infra `.env` (explicit named list — Supabase/Upstash/session-secret credentials this worker itself needs, deliberately NOT the 26 data-source keys, which now live only in `pipeline_config`) → `nitric up --stack-name=<org>`. The org-gate auth hook config step and the Redirect-URL allow-list step are left manual, exactly as `PROVISIONING.md` already flagged (the latter needs Workstream 3's real redirect URL to pin against). Confirmed `PRODUCTION_ENV_FILE` has no other consumer in `nitric-deploy.yml` before this workflow stopped using that pattern.
+- [x] **DONE S58.** Idempotent by construction (every step is individually idempotent, confirmed in `PROVISIONING.md` + this workstream's own migrations). "New org" runbook written into `deploy/orgs/README.md` (7 steps: provision the 3 cloud resources by hand → create the GH Environment → add the org config → run the workflow → set the first admin's `app_metadata.wm_admin` → allow-list the redirect URL → the AIS-ingest registry step, currently N/A — see below).
+- [x] **DONE S58.** **P14 Phase 1 — no pinned instances per org.** `scripts/queue-worker.mjs` (new) merges the 3 forecast/scenario queue consumers into one scheduled `--once` tick — imports `runSimulationWorker`/`runDeepForecastWorker` directly from `seed-forecasts.mjs` (bypassing the `process-simulation-tasks.mjs`/`process-deep-forecast-tasks.mjs` wrapper scripts, which execute at import time and `process.exit(1)` on error — confirmed unsafe to import into a merged process) and `scenario-worker.mjs`'s `runWorker` (**which had zero `{ once }` support until this session** — added by extracting its loop body into `runOneIteration()`, every `continue` becoming a `return`, so `runWorker({ once: true })` now does exactly one dequeue attempt and returns, mirroring the other two workers' contract exactly). `Promise.allSettled` across all three (one failing must not block the others), exit 0 unless all three fail (same partial-failure tolerance as W7's `seed-news-digest.mjs`). `gcp/scheduler/main.ts` gets 4 new **hand-written** registrations (`queue-worker` every 1 min; `digest-notifications` `*/30 * * * *`; `publish-bootstrap-tiers-fast`/`-slow` at `*/2`/`*/10 * * * *`, reusing that script's already-existing one-shot `--tier=` flags) — deliberately NOT derived from `scripts/railway-services.json`'s nixpacks-driven loop, because that file is still Railway's live config source for the pre-pivot single-tenant fork and this pass leaves it completely untouched. `nitric.yaml`'s dev `services:`/`runtimes:` blocks lost the 5 now-redundant pinned entries (kept `ais-relay.cjs` as the sole P14 stopgap) — confirmed to only affect local `nitric start` dev and the not-yet-live GCP target. 11 new tests total (3 for `scenario-worker.mjs`'s `{once}` behavior mocking Upstash REST via `fetch`, 4 for `queue-worker.mjs`'s exit-code contract via an injectable worker list). **Left alone, deliberately:** 3 Dockerfiles (`Dockerfile.process-simulation-tasks`/`.process-deep-forecast-tasks`/`.scenario-worker`) are now unreferenced by `nitric.yaml` and have no `railway-services.json` entry either — safe to delete, but this session could not confirm from here whether Railway's dashboard points at them independently of the JSON registry, so they're left on disk pending operator confirmation. **Pre-existing, unrelated:** `tests/railway-services-registry-coverage.test.mts` already fails on exactly this gap (those 3 Dockerfiles vs. no registry entry) on a clean tree with none of this session's changes applied — confirmed via `git stash`, not caused here.
+- [ ] **P14 Phase 2 (overlaps Workstream 7) — the shared AIS ingest as its own deploy target.** Deliberately NOT built this session: the architecture doc's own phasing puts the actual WebSocket-core extraction from `scripts/ais-relay.cjs` in Phase 2, so there is no standalone AIS-ingest artifact yet for a `deploy-ais-shared.yml`/`nitric.ais-shared.yaml` to deploy — writing that workflow now would be scaffolding with nothing real behind it. Each org's own `ais-relay.cjs` instance (P14 Phase 1's pinned stopgap) already ingests AIS data for that org independently in the meantime; nothing is operationally broken by the delay, just N redundant connections to the same public feed until Phase 2 consolidates them. `deploy/orgs/README.md`'s new-org runbook step 7 documents this explicitly rather than pointing at a workflow file that doesn't exist.
 
 ### Workstream 6 — admin panel
 
@@ -286,6 +284,99 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 58 — 2026-09-05
+
+**Workstream 5 shipped** (minus P14 Phase 2, deliberately deferred — see its
+own checklist entry). Two Explore passes first confirmed every implementation
+detail against the live codebase (exact file paths, existing patterns to
+mirror, exact loop structures) before any code was written — see the
+checklist above for the file-by-file detail; this entry covers what a
+straight read of the checklist wouldn't.
+
+- **`deploy/orgs/<org>.yml` + generator + hydration loop are pure config /
+  fail-soft code — fully unit tested with zero live infra.** All three ran
+  green locally: `scripts/generate-nitric-org-stack.mjs` (5 tests, one of
+  them a real run against the `mosiq` fixture, not just a mock), `server/
+  _shared/pipeline-config-hydration.ts` (7 tests, vitest — mocks
+  `getSupabaseAdmin()` the same way `followed-countries.test.ts` already
+  does). The hydration loop's initial call is **awaited**, not
+  fire-and-forget, before either `gcp/api/main.ts` registers routes or
+  `gcp/scheduler/main.ts` registers schedules — a fresh Cloud Run cold start
+  should never serve its first request/tick with unhydrated (missing)
+  data-source keys, and top-level `await` typechecks fine under this repo's
+  `ES2020`/`ESNext` module target (verified, not assumed).
+- **`supabase/config.toml` turned out unnecessary** — a real finding from
+  reading `PROVISIONING.md`'s own command sequence: every step uses `supabase
+  link --project-ref` or an explicit `--no-verify-jwt` flag, never anything a
+  config.toml would supply. `deploy-org.yml` was written without one.
+- **P14 Phase 1's queue-worker merge needed one real code change, not just
+  orchestration.** `scenario-worker.mjs` had NO `{ once }` support at all
+  (unlike its two siblings) — its `while (!shuttingDown)` loop only exits on
+  SIGTERM. Extracted the loop body into `runOneIteration()` (every internal
+  `continue` became a `return` — behaviourally identical, since both end the
+  current iteration), then `runWorker({ once: true })` does exactly one call
+  and returns. `scripts/queue-worker.mjs` (new) imports this plus
+  `runSimulationWorker`/`runDeepForecastWorker` **directly from
+  `seed-forecasts.mjs`**, deliberately bypassing the `process-simulation-
+  tasks.mjs`/`process-deep-forecast-tasks.mjs` wrapper scripts — both execute
+  their worker at module top level and `process.exit(1)` on error, which
+  would kill the merged process before the other two workers ever ran
+  (confirmed by reading them, not assumed). Verified import-safe by actually
+  importing the merged module in a scratch Node process before writing any
+  test — no live network calls fired, confirming `seed-forecasts.mjs`'s
+  `_isDirectRun` gating holds. 3 tests for the `{once}` behavior (mocking
+  Upstash REST via `fetch`, both the POST-body-array shape `redisCmd` uses
+  and the plain-GET shape `redisGet` uses — these are different HTTP shapes
+  and a mock only handling one silently drops the other's assertions), 4 for
+  `queue-worker.mjs`'s exit-code contract (via an injectable worker-list
+  param on `run()` — same pattern as the hydration loop's injectable `env`).
+- **`gcp/scheduler/main.ts` gets 4 new hand-written registrations, explicitly
+  NOT derived from `scripts/railway-services.json`'s existing nixpacks-driven
+  loop.** Confirmed live (via `nitric-deploy.yml`'s own header + a `git
+  stash` diff test) that Railway is still the actual live production deploy
+  for the pre-pivot single-tenant fork, and that file is Railway's real
+  config source — so every change in this session that touches scheduling
+  is additive, never a rewrite of what Railway itself does. `nitric.yaml`'s
+  dev `services:`/`runtimes:` blocks lost 5 now-redundant pinned entries
+  (kept `ais-relay.cjs`); verified programmatically that every remaining
+  `services:` entry still has a matching `runtimes:` block and no orphans
+  exist either way.
+- **Found and deliberately did NOT touch:** 3 Dockerfiles
+  (`Dockerfile.process-simulation-tasks`/`.process-deep-forecast-tasks`/
+  `.scenario-worker`) are now unreferenced by `nitric.yaml` and have no
+  `railway-services.json` entry — created specifically for the old
+  always-on-nitric-service pattern P14 retires. Read all three fully; each
+  is self-contained (no shared base image, no other consumer). Left on disk
+  rather than deleted — this session could not confirm whether Railway's
+  dashboard points at them independently of the JSON registry, and deleting
+  a Dockerfile that turned out to be live would be a real production
+  incident for zero benefit. `tests/railway-services-registry-coverage.
+  test.mts` already fails on exactly this Dockerfile/registry gap —
+  confirmed via `git stash` to fail identically with none of this session's
+  changes applied, so it's pre-existing, not introduced here.
+- **P14 Phase 2 (shared AIS ingest deploy target) explicitly NOT built.**
+  The architecture doc's own phasing puts the WebSocket-core extraction from
+  `scripts/ais-relay.cjs` in Phase 2 (overlaps Workstream 7) — there is no
+  standalone AIS-ingest artifact yet for a `deploy-ais-shared.yml`/`nitric.
+  ais-shared.yaml` to deploy, so writing that workflow now would be
+  scaffolding with nothing real behind it. `deploy/orgs/README.md`'s new-org
+  runbook step 7 documents this directly (an earlier draft of that step
+  pointed at a workflow file that doesn't exist yet — caught and fixed
+  before finishing, not left as a dangling reference).
+- Green: `tsc --noEmit -p tsconfig.gcp.json` 0 · `npm run typecheck:api` 0 ·
+  `biome check` 0 on every touched/new file · 23 new tests across 5
+  files, all passing (`tests/generate-nitric-org-stack.test.mjs` 5,
+  `server/__tests__/pipeline-config-hydration.test.ts` 7,
+  `tests/scenario-worker-once.test.mjs` 3, `tests/queue-worker.test.mjs` 4,
+  plus `nitric.yaml`'s services/runtimes consistency checked by a one-off
+  script, not a committed test).
+- **Not done here:** nothing pushed (`main` still 8 ahead of `origin/main` at
+  session start, now more — operator's call, unchanged policy). No real
+  second org exists to actually run `deploy-org.yml` against — everything
+  above is verified as far as this environment allows (unit tests, `tsc`,
+  YAML parsing, `git stash` diffs) but the workflow itself has never
+  executed in GitHub Actions.
 
 ### Session 57 — 2026-09-04
 

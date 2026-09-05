@@ -1,0 +1,206 @@
+name: Deploy Org (Workstream 5)
+
+# Per-tenant deploy pipeline (PLATFORM_ARCHITECTURE.md P1/P10). Provisions one
+# org's Supabase project (pipeline_config + github-identity-bridge, both
+# idempotent) and deploys that org's Cloud Run worker + admin panel via
+# Nitric, using a stack file generated fresh from that org's
+# deploy/orgs/<org>.yml (scripts/generate-nitric-org-stack.mjs).
+#
+# Grows .github/workflows/nitric-deploy.yml's GCP-auth / Pulumi / Docker-cache
+# steps rather than duplicating them — same underlying `nitric up`, just
+# parameterized per org instead of hardcoding this repo's single dev GCP
+# project. See that workflow's own header for background on the Nitric/Pulumi
+# mechanics; this one adds everything upstream of it (Supabase provisioning,
+# stack generation) that a single shared project never needed.
+#
+# Manual-only, same rationale as nitric-deploy.yml: an on-push trigger here
+# would redeploy a tenant's live infrastructure on every unrelated merge.
+#
+# Required GH Environment (name == the `org` input, P10) contents:
+#   GCP_CREDENTIALS          — service account JSON scoped to that org's GCP project.
+#   PULUMI_ACCESS_TOKEN       — Nitric's GCP provider deploys via Pulumi.
+#   SUPABASE_ACCESS_TOKEN     — authenticates the `supabase` CLI.
+#   vars.SUPABASE_PROJECT_REF — that org's Supabase project ref (also mirrors
+#                               deploy/orgs/<org>.yml's supabase.projectRef —
+#                               see that directory's README for why both).
+#   SUPABASE_DB_PASSWORD      — that org's Postgres password (supabase link).
+#   SUPABASE_URL, SUPABASE_SECRET_KEY, VITE_SUPABASE_URL,
+#   VITE_SUPABASE_PUBLISHABLE_KEY — that org's Supabase API credentials, both
+#                               server- and client-facing.
+#   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN — that org's Upstash
+#                               WRITE credentials (the worker's own DB — NOT
+#                               the read-only broker token operators get).
+#   WM_UPSTASH_REST_URL, WM_UPSTASH_READONLY_TOKEN, WM_APP_DOMAIN — the
+#                               local-config edge function's 3 secrets (P4) —
+#                               same Upstash DB, read-only token + this org's
+#                               domain.
+#   OIDC_SIGNING_PRIVATE_KEY_JWK, OIDC_SIGNING_KID, TICKET_SIGNING_SECRET,
+#   BRIDGE_CLIENT_ID, BRIDGE_CLIENT_SECRET — github-identity-bridge's 5
+#                               function secrets (PROVISIONING.md's keypair
+#                               step — generate ONCE per org, not per deploy).
+#   WM_SESSION_SECRET         — this deploy's own session signing secret.
+#
+# What this workflow deliberately does NOT set: any of the ~26 data-source
+# keys (ACLED, FRED, Finnhub, ...). Those live in the org's `pipeline_config`
+# table, edited live via the Workstream 6 admin panel, and reach this
+# deploy's running worker via the 5-minute hydration loop
+# (server/_shared/pipeline-config-hydration.ts, OQ-P7) — not via any secret
+# baked in at deploy time. This is the replacement for the old
+# PRODUCTION_ENV_FILE blob nitric-deploy.yml used, confirmed to have no other
+# consumer in that file before this workflow stopped using it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: 'Org slug — must match a GH Environment name and deploy/orgs/<org>.yml.'
+        required: true
+      confirm:
+        description: 'Type DEPLOY to confirm — this provisions/deploys real infrastructure for the named org.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Provision + Deploy Org
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.org }}
+
+    steps:
+      - name: Require explicit confirmation
+        if: ${{ inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}'). Re-run and type DEPLOY to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate this org's Nitric stack file
+        run: node scripts/generate-nitric-org-stack.mjs --org=${{ inputs.org }}
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase link --project-ref ${{ vars.SUPABASE_PROJECT_REF }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      # Applies supabase/migrations/* — pipeline_config (Workstream 1) +
+      # github_identity_bridge (Workstream 2), both idempotent
+      # (`create table if not exists` / `create or replace function`).
+      # Confirmed live against the mosiq test tenant (session 57).
+      - name: Apply migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push
+
+      # local-config keeps the CLI default (verify_jwt: true, P4) —
+      # github-identity-bridge is deployed unauthenticated because it IS the
+      # auth provider (PROVISIONING.md's explicit reasoning).
+      - name: Deploy local-config
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy local-config
+
+      - name: Deploy github-identity-bridge
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy github-identity-bridge --no-verify-jwt
+
+      # PROVISIONING.md: the bridge's 5 secrets should be generated ONCE per
+      # org at Environment-setup time and stored as GH secrets — regenerating
+      # here on every deploy would rotate the OIDC signing key and log out
+      # every operator (old ID tokens stop verifying once the old `kid`
+      # leaves /jwks).
+      - name: Set function secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase secrets set \
+            WM_UPSTASH_REST_URL="${{ secrets.WM_UPSTASH_REST_URL }}" \
+            WM_UPSTASH_READONLY_TOKEN="${{ secrets.WM_UPSTASH_READONLY_TOKEN }}" \
+            WM_APP_DOMAIN="${{ secrets.WM_APP_DOMAIN }}" \
+            OIDC_SIGNING_PRIVATE_KEY_JWK="${{ secrets.OIDC_SIGNING_PRIVATE_KEY_JWK }}" \
+            OIDC_SIGNING_KID="${{ secrets.OIDC_SIGNING_KID }}" \
+            TICKET_SIGNING_SECRET="${{ secrets.TICKET_SIGNING_SECRET }}" \
+            BRIDGE_CLIENT_ID="${{ secrets.BRIDGE_CLIENT_ID }}" \
+            BRIDGE_CLIENT_SECRET="${{ secrets.BRIDGE_CLIENT_SECRET }}"
+
+      # Idempotent — creates the auth.custom_oauth_providers row, or updates
+      # it if it already exists (PROVISIONING.md).
+      - name: Register github-identity-bridge as an OIDC provider
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          BRIDGE_CLIENT_ID: ${{ secrets.BRIDGE_CLIENT_ID }}
+          BRIDGE_CLIENT_SECRET: ${{ secrets.BRIDGE_CLIENT_SECRET }}
+        run: deno run --allow-net --allow-env supabase/functions/github-identity-bridge/register-provider.ts
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Setup GCP Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Install and configure Pulumi
+        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
+
+      # Infra credentials this deploy's own worker needs at runtime — NOT the
+      # ~26 data-source keys (those come from pipeline_config, see this
+      # file's header). Kept as an explicit, named list rather than one
+      # opaque blob so it's obvious at a glance what actually lives here.
+      - name: Create org env file
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }}
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          APP_DOMAIN=${{ vars.APP_DOMAIN }}
+          VITE_VARIANT=${{ vars.VITE_VARIANT }}
+          WM_SESSION_SECRET=${{ secrets.WM_SESSION_SECRET }}
+          EOF
+
+      # Runners are ephemeral, so BuildKit cache mounts start cold every run.
+      # One cache key per org (region/config differ, but the npm-install
+      # layer is identical across every org) — see nitric-deploy.yml for why
+      # this materially speeds up repeat deploys.
+      - name: Cache Nitric Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .nitric/docker-cache
+          key: nitric-docker-${{ inputs.org }}-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
+          restore-keys: |
+            nitric-docker-${{ inputs.org }}-${{ runner.os }}-
+            nitric-docker-${{ runner.os }}-
+
+      - name: Deploy Infrastructure
+        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
+        with:
+          command: up
+          stack-name: ${{ inputs.org }}
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

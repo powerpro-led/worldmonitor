@@ -143,6 +143,15 @@ const CADENCES: Record<string, Cadence> = {
   'seed-market-quotes': { kind: 'every', rate: '30 minutes' }, // ~30min (30m TTL)
   'seed-commodity-quotes': { kind: 'every', rate: '30 minutes' }, // ~30min (30m TTL)
   'seed-crypto-sectors': { kind: 'every', rate: '1 hours' }, // hourly (1h TTL)
+  // 2026-09-06 (session 63) — P14 Phase 2, loop extraction. The one sub-seed of
+  // ais-relay.cjs's seedAllMarketData bundle with no standalone replacement:
+  // seedSectorSummary → scripts/seed-sector-summary.mjs (S&P sector ETF change%
+  // + Yahoo quoteSummary valuations → market:sectors:v2 + the
+  // market:quotes:v1:<sectors> companion). Extracting it unblocks deleting the
+  // whole relay Market loop. 15min matches api/seed-health.js's
+  // 'market:sectors' intervalMin and api/health.js's SEED_META.sectors
+  // maxStaleMin 30 (= 2x); TTL 7200 (relay's MARKET_SEED_TTL) clears that gate.
+  'seed-sector-summary': { kind: 'every', rate: '15 minutes' },
   'seed-market-breadth': { kind: 'every', rate: '1 days' }, // daily (30d history window)
   'seed-weather-alerts': { kind: 'every', rate: '15 minutes' }, // ~15min (15m TTL)
   'seed-fx-yoy': { kind: 'every', rate: '1 days' }, // daily (25h TTL)

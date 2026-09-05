@@ -2,7 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const src = readFileSync('scripts/ais-relay.cjs', 'utf8');
+// seedSectorSummary + its valuation helpers were extracted from
+// ais-relay.cjs's seedAllMarketData bundle to this standalone cron in P14
+// Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md). fetchYahooQuoteSummary
+// → fetchQuoteSummary, seedSectorSummary → fetchSectorSummary (the runSeed
+// fetchFn); parseSectorValuation is byte-for-byte the same.
+const src = readFileSync('scripts/seed-sector-summary.mjs', 'utf8');
 
 const extractFn = (name) => {
   const start = src.indexOf(`function ${name}(`);
@@ -96,15 +101,14 @@ describe('parseSectorValuation', () => {
   });
 });
 
-describe('fetchYahooQuoteSummary (static analysis)', () => {
-  const fnStart = src.indexOf('function fetchYahooQuoteSummary(');
+describe('fetchQuoteSummary (static analysis)', () => {
+  const fnStart = src.indexOf('function fetchQuoteSummary(');
   // Window sized to cover the direct-fetch block (headers, timeout, field
-  // extraction). Grown to 2000 when proxy-fallback wiring (settled guard,
-  // curl helper reference) was added — field extraction must stay visible.
+  // extraction) plus the crumb-refresh retry.
   const fnChunk = src.slice(fnStart, fnStart + 2000);
 
-  it('exists in ais-relay.cjs', () => {
-    assert.ok(fnStart > -1, 'fetchYahooQuoteSummary function not found');
+  it('exists in scripts/seed-sector-summary.mjs', () => {
+    assert.ok(fnStart > -1, 'fetchQuoteSummary function not found');
   });
 
   it('uses summaryDetail and defaultKeyStatistics modules', () => {
@@ -131,17 +135,17 @@ describe('fetchYahooQuoteSummary (static analysis)', () => {
   });
 
   it('has timeout configured', () => {
-    assert.match(fnChunk, /timeout:\s*\d+/, 'should have a timeout set');
+    assert.match(fnChunk, /AbortSignal\.timeout\(\d[\d_]*\)/, 'should have a timeout set');
   });
 });
 
-describe('seedSectorSummary valuation integration (static analysis)', () => {
-  const fnStart = src.indexOf('async function seedSectorSummary()');
-  const fnEnd = src.indexOf('\n// Gulf Quotes');
+describe('fetchSectorSummary valuation integration (static analysis)', () => {
+  const fnStart = src.indexOf('async function fetchSectorSummary()');
+  const fnEnd = src.indexOf('\nfunction validate(');
   const fnBody = src.slice(fnStart, fnEnd);
 
-  it('calls fetchYahooQuoteSummary for each sector', () => {
-    assert.match(fnBody, /fetchYahooQuoteSummary\(s\)/, 'should call fetchYahooQuoteSummary per sector');
+  it('calls fetchQuoteSummary for each sector', () => {
+    assert.match(fnBody, /fetchQuoteSummary\(s\)/, 'should call fetchQuoteSummary per sector');
   });
 
   it('calls parseSectorValuation on raw response', () => {

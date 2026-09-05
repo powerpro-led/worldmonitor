@@ -13,7 +13,8 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-05 (session 60) — **Workstream 7's cameras removal (P7) done.** `PinnedWebcamsPanel`/`api/webcam` removed full-stack (backend RPCs/proto/generated code/seeder/routing, all three map renderers, config, locales, tests) — a deliberate, operator-confirmed reversal of an older "do not delete" correction that had protected a different (already-settled) removal. Verified clean: `tsc` zero errors, touched-file lint clean, full test suite at its documented pre-existing noise floor. Not yet committed. Two Workstream 7 items remain: the `ais-relay.cjs` decomposition (P14 Phase 2) and the 21 remaining direct-fetch handlers + `cloudFallback` decision — see the workstream section below.
+- **As of:** 2026-09-05 (session 61) — **P14 Phase 2 started: 8 of 27 `startBootSeedLoop` loops removed from `ais-relay.cjs`.** Full loop-by-loop audit (redundant-duplicate vs. genuinely-unique) completed and recorded below; TheaterPosture, ServiceStatuses, Spending, WorldBank, ClimateNewsSeed, ChokepointFlows, TechEvents, and the already-dead Cyber loop deleted (each a confirmed pure duplicate of an already-independently-scheduled `scripts/seed-*.mjs`), `-1848` net lines. **UCDP and Weather were also deleted then restored same-session** — both turned out to also publish live notifications (`conflict_escalation`, severe weather alerts) that no standalone script replicates; deleting them was a real regression caught by the test suite, not by the initial audit (which only checked Redis-key duplication). See commits `629df49`/`7febde9`. Market's `seedAllMarketData` (a 9-way bundle) was investigated and left alone — 8/9 sub-seeds are covered elsewhere but `market:sectors` has no standalone replacement. Remaining Workstream 7 items: the rest of P14 Phase 2 (WS core + Telegram poller extraction, blocked on a cross-org secrets decision — see below), the 21 direct-fetch handlers, and `cloudFallback`.
+- **As of:** 2026-09-05 (session 61, earlier) — **Workstream 7's cameras removal (P7) done and committed.** `PinnedWebcamsPanel`/`api/webcam` removed full-stack (backend RPCs/proto/generated code/seeder/routing, all three map renderers, config, locales, tests) — a deliberate, operator-confirmed reversal of an older "do not delete" correction that had protected a different (already-settled) removal. Verified clean: `tsc` zero errors, touched-file lint clean, full test suite at its documented pre-existing noise floor. Committed S61 as `8eaf658` on `main` (11 ahead of `origin/main`, not pushed — operator's call).
 - **As of:** 2026-09-05 (session 59) — **Workstream 6 (admin panel) shipped.** `settings.html` gains a cloud-admin gate (connect org → sign in with GitHub → `app_metadata.wm_admin` check) ahead of its existing category-editing UI, wired to write straight into the connected org's `pipeline_config` (RLS-enforced, no new SQL). Zero new hosting: rides the existing Vercel `dist/` build — see P5's correction below for why the original GCP-colocated design was never buildable as written. Only Workstream 7 (worker: absorb the direct fetches, incl. P14 Phase 2's AIS-ingest extraction) remains on the recommended order; Workstreams R and 1–6 are all shipped.
 - **Prior work state:** `main` @ `ea1f964` at S59 start (9 ahead of `origin/main`, not pushed — operator's call, unchanged this session). S58 shipped Workstream 5 (multi-org deploy pipeline: org config schema, `nitric.<org>.yaml` generator, `pipeline_config` hydration loop, `deploy-org.yml`) + P14 Phase 1 (service consolidation — 3 queue workers merged, `ais-relay.cjs` the sole remaining pinned instance). `v2.13.0` still not tagged, on hold (P12).
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. **OQ-P6 and OQ-P7 both RESOLVED S57** — see P14 and the resolved-questions section; no open sub-questions remain.
@@ -272,8 +273,14 @@ data-source fetching and holds no data-source keys — it is a read replica.
 > backend is already a read replica *for writes*; only the compute is still local,
 > so P2's delta is smaller than it reads.
 
-- [x] **DONE S60 — Cameras removed entirely (P7).** Full-stack removal of `PinnedWebcamsPanel`/`api/webcam`, confirmed with the operator as a deliberate reversal of the session-18-19-era "do not delete `api/webcam/*`" correction (that correction protected a *different* feature, `PinnedWebcamsPanel`, from being conflated with the already-approved `LiveWebcamsPanel` removal — P7 now removes `PinnedWebcamsPanel` too, on purpose). Backend: `proto/worldmonitor/webcam/v1/*`, `server/worldmonitor/webcam/v1/*`, `api/webcam/`, the 2 `server/gateway.ts` cache-tier lines, `scripts/seed-webcams.mjs`, its `gcp/scheduler/main.ts` orphan-list entry, `sync-domains.mjs`'s now-dead deny line, `api/health.js`'s `STANDALONE_KEYS.webcams`, `WINDY_API_KEY` docs, and the CSP `frame-src` entry all deleted; `make generate` + `scripts/generate-nitric-routes.mjs` re-run to regenerate everything else byte-identical while cleanly dropping webcam. Frontend: the panel + `src/services/webcams/`, all three map renderers' (`Map.ts`/`GlobeMap.ts`/`DeckGLMap.ts`) marker/tooltip/popup layers, config across every variant, the `MapLayers.webcams` type (tsc catches any straggler), app wiring, and all 26 locale files (scripted removal, verified valid JSON) — bundled in the same pass, per operator's call: dead leftovers from the already-settled `LiveWebcamsPanel` removal (orphaned locale keys, a stale e2e spec, unused `localStorage` keys). 9 test files updated to match. Verification: `tsc --noEmit` zero errors repo-wide; touched-file `biome lint` clean; full `npm run test:data` at its documented pre-existing noise band (94 fail / 36 cancelled, none webcam-related — spot-checked via `git stash`); final repo-wide grep clean except docs/history and 3 harmless pre-existing comment mentions. Not yet committed.
-- [ ] **Decompose `ais-relay.cjs` (P14 Phase 2).** 28 `startBootSeedLoop` seed/warm-ping loops → `gcp/scheduler/main.ts` `CADENCES` entries (map each against what's already registered/shadowed there first — the file already lists several as "ais-relay backup"). Extract the ~150-line AIS WS core → the shared ingest service. Extract the Telegram MTProto poller → scheduled `--once` + Redis lock. `tauri-sidecar` `telegram-feed` / `gpsjam` routes become mirror reads. End state: the per-org deploy has 0 pinned instances.
+- [x] **DONE S60 — Cameras removed entirely (P7).** Full-stack removal of `PinnedWebcamsPanel`/`api/webcam`, confirmed with the operator as a deliberate reversal of the session-18-19-era "do not delete `api/webcam/*`" correction (that correction protected a *different* feature, `PinnedWebcamsPanel`, from being conflated with the already-approved `LiveWebcamsPanel` removal — P7 now removes `PinnedWebcamsPanel` too, on purpose). Backend: `proto/worldmonitor/webcam/v1/*`, `server/worldmonitor/webcam/v1/*`, `api/webcam/`, the 2 `server/gateway.ts` cache-tier lines, `scripts/seed-webcams.mjs`, its `gcp/scheduler/main.ts` orphan-list entry, `sync-domains.mjs`'s now-dead deny line, `api/health.js`'s `STANDALONE_KEYS.webcams`, `WINDY_API_KEY` docs, and the CSP `frame-src` entry all deleted; `make generate` + `scripts/generate-nitric-routes.mjs` re-run to regenerate everything else byte-identical while cleanly dropping webcam. Frontend: the panel + `src/services/webcams/`, all three map renderers' (`Map.ts`/`GlobeMap.ts`/`DeckGLMap.ts`) marker/tooltip/popup layers, config across every variant, the `MapLayers.webcams` type (tsc catches any straggler), app wiring, and all 26 locale files (scripted removal, verified valid JSON) — bundled in the same pass, per operator's call: dead leftovers from the already-settled `LiveWebcamsPanel` removal (orphaned locale keys, a stale e2e spec, unused `localStorage` keys). 9 test files updated to match. Verification: `tsc --noEmit` zero errors repo-wide; touched-file `biome lint` clean; full `npm run test:data` at its documented pre-existing noise band (94 fail / 36 cancelled, none webcam-related — spot-checked via `git stash`); final repo-wide grep clean except docs/history and 3 harmless pre-existing comment mentions. **Committed S61 as `8eaf658`** (84 files, +121/-2990).
+- [~] **Decompose `ais-relay.cjs` (P14 Phase 2) — IN PROGRESS, started S61.** 28 `startBootSeedLoop` seed/warm-ping loops → `gcp/scheduler/main.ts` `CADENCES` entries (map each against what's already registered/shadowed there first — the file already lists several as "ais-relay backup"). Extract the ~150-line AIS WS core → the shared ingest service. Extract the Telegram MTProto poller → scheduled `--once` + Redis lock. `tauri-sidecar` `telegram-feed` / `gpsjam` routes become mirror reads. End state: the per-org deploy has 0 pinned instances.
+  - [x] **S61 — full loop audit + 8 confirmed-redundant/dead loops deleted.** Method: pull each loop's `metaKey`/canonical Redis key out of `ais-relay.cjs`, grep it against every `scripts/seed-*.mjs`/bundle file, confirm the sibling is reachable from `CADENCES`, **then check the original function for `publishNotificationEvent(...)` calls before deleting** (the UCDP/Weather near-miss below is why that last step is now mandatory, not optional).
+    - **Deleted** (pure duplicates or dead code, verified no notification side-effects): Cyber (dead — never invoked; standalone `seed-cyber-threats.mjs` already owns it), TheaterPosture (`seed-military-flights.mjs` writes identical LIVE/STALE/BACKUP keys), ServiceStatuses (`seed-service-statuses.mjs` does the identical RPC warm-ping), Spending (`seed-usa-spending.mjs`, via `seed-bundle-relay-backup.mjs`), WorldBank (`seed-wb-indicators.mjs` writes all 3 identical keys, via the same bundle), ClimateNewsSeed (ais-relay's own copy already just execFile'd the same `seed-climate-news.mjs` the bundle also runs — literally two unsynchronized invocations of one script), ChokepointFlows (ditto, but with NO existing schedule at all — flipped from `ORPHANS_NOT_SCHEDULED` to a real `CADENCES` entry), TechEvents (`seed-research.mjs` writes the identical literal key `research:tech-events:v1`, hourly vs. ais-relay's 6h).
+    - **Deleted then restored same-session** (commits `629df49`, `7febde9`): UCDP and Weather. Both seed functions *also* called `publishNotificationEvent()` (UCDP: `conflict_escalation` for high-casualty events; Weather: severe-alert push via `deriveWeatherCoalesceKey(vtec)`) — logic that exists nowhere else in the codebase. The standalone siblings (`seed-ucdp-events.mjs`, `seed-weather-alerts.mjs`) only mirror the Redis data; neither notifies. Caught by `tests/ucdp-seed-resilience.test.mjs` / `tests/notification-relay-coalesce-key.test.mjs` failing after the deletion, not by the pre-deletion audit. **Moving the notification logic into the standalone scripts (so these two can be safely deleted too) is unstarted — next session's first candidate.**
+    - **Investigated, deliberately left alone:** Market (`seedAllMarketData`) is not one loop but a 9-way bundle (stocks/commodities/sectors/gulf/etf/crypto/stablecoins/crypto-sectors/token-panels). 8 of 9 sub-seeds already have standalone/bundle coverage (`seed-market-quotes.mjs`, `seed-commodity-quotes.mjs`, `seed-crypto-sectors.mjs` independently; gulf/etf/crypto/stablecoins/token-panels via `seed-bundle-market-backup.mjs`) — but `seedSectorSummary`/`market:sectors` has **no replacement anywhere**. Deleting the loop wholesale would have silently dropped the sector-summary panel's data. Needs a new `seed-sector-summary.mjs` before Market's loop can go.
+    - **Confirmed genuinely unique, no sibling exists anywhere (untouched, real extraction candidates for a future stage):** GSCPI, Classify, Oref (the 28th "loop" — a custom poll loop, not `startBootSeedLoop`-based), Satellites, PositiveEvents, CII/Chokepoints/CableHealth/TemporalAnomalies (warm-pings), CorridorRisk, USNI-fleet, ShippingStress, SocialVelocity, WsbTickers, PizzINT, Transit, TransitSummary.
+    - Also updated to match: `tests/relay-boot-seed-freshness-guard.test.mjs`'s `SEEDERS` inventory (removed the 8 deleted entries, kept UCDP/Weather) and `tests/notification-relay-country-filter.test.mjs` (removed the now-stale `cyber_threat` assertion).
 - [x] **DONE S57 — `list-feed-digest` seeder.** `scripts/seed-news-digest.mjs`: a nixpacks-root-scripts warm-ping job (NOT a re-implementation — `scripts/` can't import `server/` and `buildDigest` isn't exported). It HTTP-pings `/api/news/v1/list-feed-digest?variant=&lang=` per `(variant, lang)` pair (env `NEWS_DIGEST_SEED_VARIANTS`=`full`, `NEWS_DIGEST_SEED_LANGS`=`en,zh`; `en` first so `zh` reuses the warmed `rss:feed:v8:*` per-feed caches) — the RPC runs `buildDigest`, `setCachedJson`s `news:digest:v1:<variant>:<lang>` (which also fires the mirror notify) and stamps a fresh `generatedAt` (what the panels read for freshness, so no `seed-meta:` write here). Registered in `railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` at **`*/10 * * * *`** — a hard constraint, not an inference: must stay under `list-feed-digest.ts`'s 900s `news:digest:v1` TTL or the cold-hole bug returns. `classifyKey('news:digest:v1:*')` was already `'mirror'` — no W4 change. Exit-code policy: 0 on any success (partial failure self-heals next tick), 1 only if every ping fails. Unit test: `tests/seed-news-digest.test.mjs` (10 cases). **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed** — it was already inert whenever `WS_RELAY_URL` was unset (`/api/news/v1/` is `cloudPreferred` then), i.e. in exactly the config the pivot backend runs; the digest now arrives over the mirror.
 - [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
 - [ ] `cloudFallback` — with a real per-org cloud origin now existing, decide whether operator backends may use it (probably still off; a miss = "not synced yet").
@@ -293,6 +300,83 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 61 — 2026-09-05
+
+**Committed S60's cameras removal** (`8eaf658`), then started Workstream 7's
+other big item: decomposing `ais-relay.cjs` (P14 Phase 2). Given the scope —
+a new shared cross-org service, GCP scheduler migrations, a 27-loop audit —
+went through plan mode first rather than editing an 11.6k-line production
+file live; operator scoped this session to "audit + delete confirmed
+redundant loops" (Stages 1–2 of an 8-stage plan), explicitly deferring the
+WS-core/Telegram extraction and the direct-fetch handlers.
+
+**The audit.** For each of the 27 `startBootSeedLoop`-based loops (plus the
+Oref poller, a 28th loop using a different mechanism), pulled its Redis
+meta-key/canonical key and grepped for a standalone `scripts/seed-*.mjs`
+sibling already writing the same key on an already-scheduled cadence. Found
+1 already fully dead (Cyber — defined, never invoked, superseded by a
+standalone cron per its own neighboring comment) and 9 more with confirmed
+exact-key-match duplicates already covered elsewhere (some via their own
+`CADENCES` entry, several via `seed-bundle-relay-backup.mjs`/
+`seed-bundle-market-backup.mjs`, one — ChokepointFlows — was already being
+execFile-delegated to its standalone script by ais-relay itself, just never
+independently scheduled).
+
+**The near-miss.** Deleted all 10, then ran the actual test suite (not just
+`tsc`) as the plan's verification step required. Two "confirmed redundant"
+loops — UCDP and Weather — turned out to also fire live push notifications
+(`conflict_escalation`, severe-weather alerts via `publishNotificationEvent`)
+that their standalone Redis-mirroring siblings never replicated. The
+key-match audit had only checked the *data* side, not side effects; the
+notification loss wasn't visible in a `grep` for the Redis key, only in the
+test suite actually failing (`tests/ucdp-seed-resilience.test.mjs`,
+`tests/notification-relay-coalesce-key.test.mjs`). Restored both to their
+exact pre-deletion state (`629df49`, `7febde9`) rather than attempt a
+same-session migration of the notification logic into the standalone
+scripts — that's real new code, out of this session's delete-only scope.
+Net result: **8 loops deleted** (Cyber, TheaterPosture, ServiceStatuses,
+Spending, WorldBank, ClimateNewsSeed, ChokepointFlows, TechEvents), file
+shrank 11,775 → 10,117 lines.
+
+**Market turned out to be a trap too.** `seedAllMarketData` looked like one
+loop with one redundant sibling (`seed-market-quotes.mjs` matching
+`seed-meta:market:stocks`) but is actually a 9-way bundle. Checked all 9
+sub-seeds' keys individually: 8 have coverage (2 via their own `CADENCES`
+entry, 5 via `seed-bundle-market-backup.mjs`, discovered by reading that
+bundle's actual source rather than trusting the "ais-relay backup" comment
+label alone), but `seedSectorSummary`/`market:sectors` has no replacement
+anywhere in the repo. Left the whole loop running rather than delete 8/9 and
+silently break the sectors panel.
+
+**Verification.** `node -c` after every single deletion (10 separate
+commits, one per loop, for easy `git revert`), `tsc --noEmit` clean
+throughout. Full `npm run test:data` run against a `git worktree`-isolated
+copy of the pre-session commit to get a *real* baseline rather than trust
+the previously-documented "94 fail" figure (which didn't reproduce — actual
+baseline was 55 fail/36 cancelled; this suite has more run-to-run variance
+than its own documentation assumed, confirmed via a second full run showing
+yet a different fail count with almost entirely different failing tests,
+none touching `ais-relay.cjs`/the scheduler). Isolated the genuinely
+attributable failures via `comm` diffing against that baseline rather than
+eyeballing raw counts — found and fixed 2 stale tests
+(`tests/relay-boot-seed-freshness-guard.test.mjs`'s `SEEDERS` inventory,
+`tests/notification-relay-country-filter.test.mjs`'s dead-code `cyber_threat`
+assertion) whose failures were expected consequences of the 8 real
+deletions, not regressions.
+
+**Also:** squashed a handful of blank-line artifacts left by the boot-block
+invocation deletions; landed `scripts/railway-services.json` +
+`gcp/scheduler/main.ts` changes for ChokepointFlows's new independent
+schedule.
+
+Not pushed (`main` now well ahead of `origin/main` — operator's call, as
+every prior session). Next: migrate UCDP's/Weather's notification logic
+into their standalone scripts (unlocks 2 more deletions), then the
+remaining ~17 genuinely-unique loops, GSCPI/Classify extraction, and
+eventually the WS-core/Telegram/shared-service pieces (Stage 7 is blocked
+on an operator decision about cross-org Upstash-credential storage — not
+yet raised).
 
 ### Session 60 — 2026-09-05
 

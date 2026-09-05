@@ -192,7 +192,6 @@ const SEEDERS = [
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
   ['SocialVelocity', 'SOCIAL_VELOCITY_SEED_META_KEY', 'SOCIAL_VELOCITY_INTERVAL_MS', 'seedSocialVelocity'],
   ['WsbTickers', "'seed-meta:intelligence:wsb-tickers'", 'WSB_TICKERS_INTERVAL_MS', 'seedWsbTickers'],
-  ['PizzINT', "'seed-meta:intelligence:pizzint'", 'PIZZINT_SEED_INTERVAL_MS', 'seedPizzint'],
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
   ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
   // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,
@@ -224,7 +223,9 @@ const SEEDERS = [
   // registered in scripts/railway-services.json + gcp/scheduler/main.ts's
   // CADENCES (every 2h). No standalone sibling existed; no notification logic
   // to migrate. USNI followed in the same session — scripts/seed-usni-fleet.mjs
-  // (every 6h), HTML parsing still in scripts/lib/usni-fleet-parser.cjs.
+  // (every 6h), HTML parsing still in scripts/lib/usni-fleet-parser.cjs. PizzINT
+  // too — scripts/seed-pizzint.mjs (every 10min), pizzint.watch + GDELT tension
+  // pairs; no standalone sibling existed, no notification logic.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

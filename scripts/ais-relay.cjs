@@ -4134,132 +4134,11 @@ async function startWsbTickersSeedLoop() {
   startBootSeedLoop('WsbTickers', 'seed-meta:intelligence:wsb-tickers', WSB_TICKERS_INTERVAL_MS, seedWsbTickers, e => console.warn('[WsbTickers] Initial seed error:', e?.message || e), e => console.warn('[WsbTickers] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// PizzINT Seed — Pentagon Pizza Index + GDELT tensions → Redis
-// Fetches from pizzint.watch on Railway (datacenter IPs blocked
-// from Vercel Edge). Vercel handler reads from seed key only.
-// ─────────────────────────────────────────────────────────────
-const PIZZINT_SEED_INTERVAL_MS = 10 * 60 * 1000; // 10 min
-const PIZZINT_SEED_TTL = 1800; // 30 min (3× interval)
-const PIZZINT_REDIS_KEY = 'intelligence:pizzint:seed:v1';
-const PIZZINT_API = 'https://www.pizzint.watch/api/dashboard-data';
-const GDELT_BATCH_API = 'https://www.pizzint.watch/api/gdelt/batch';
-const DEFAULT_GDELT_PAIRS = 'usa_russia,russia_ukraine,usa_china,china_taiwan,usa_iran,usa_venezuela';
-let pizzintSeedInFlight = false;
-
-async function seedPizzint() {
-  if (pizzintSeedInFlight) return;
-  pizzintSeedInFlight = true;
-  const t0 = Date.now();
-  try {
-    const resp = await fetch(PIZZINT_API, {
-      headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!resp.ok) {
-      console.warn(`[PizzINT] Seed failed: HTTP ${resp.status}`);
-      return;
-    }
-    const raw = await resp.json();
-    if (!raw.success || !Array.isArray(raw.data)) {
-      console.warn('[PizzINT] No data in API response');
-      return;
-    }
-
-    const locations = raw.data.map((d) => ({
-      placeId: d.place_id || '',
-      name: d.name || '',
-      address: d.address || '',
-      currentPopularity: typeof d.current_popularity === 'number' ? d.current_popularity : 0,
-      percentageOfUsual: typeof d.percentage_of_usual === 'number' ? d.percentage_of_usual : 0,
-      isSpike: !!d.is_spike,
-      spikeMagnitude: typeof d.spike_magnitude === 'number' ? d.spike_magnitude : 0,
-      dataSource: d.data_source || '',
-      recordedAt: d.recorded_at || '',
-      dataFreshness: d.data_freshness === 'fresh' ? 'DATA_FRESHNESS_FRESH' : 'DATA_FRESHNESS_STALE',
-      isClosedNow: !!d.is_closed_now,
-      lat: d.lat ?? 0,
-      lng: d.lng ?? 0,
-    }));
-
-    const openLocations = locations.filter((l) => !l.isClosedNow);
-    const activeSpikes = locations.filter((l) => l.isSpike).length;
-    const avgPop = openLocations.length > 0
-      ? openLocations.reduce((s, l) => s + l.currentPopularity, 0) / openLocations.length
-      : 0;
-
-    let adjusted = avgPop;
-    if (activeSpikes > 0) adjusted += activeSpikes * 10;
-    adjusted = Math.min(100, adjusted);
-    let defconLevel = 5;
-    let defconLabel = 'Normal Activity';
-    if (adjusted >= 85) { defconLevel = 1; defconLabel = 'Maximum Activity'; }
-    else if (adjusted >= 70) { defconLevel = 2; defconLabel = 'High Activity'; }
-    else if (adjusted >= 50) { defconLevel = 3; defconLabel = 'Elevated Activity'; }
-    else if (adjusted >= 25) { defconLevel = 4; defconLabel = 'Above Normal'; }
-
-    const hasFresh = locations.some((l) => l.dataFreshness === 'DATA_FRESHNESS_FRESH');
-
-    const pizzint = {
-      defconLevel,
-      defconLabel,
-      aggregateActivity: Math.round(avgPop),
-      activeSpikes,
-      locationsMonitored: locations.length,
-      locationsOpen: openLocations.length,
-      updatedAt: Date.now(),
-      dataFreshness: hasFresh ? 'DATA_FRESHNESS_FRESH' : 'DATA_FRESHNESS_STALE',
-      locations,
-    };
-
-    // Fetch GDELT tensions (non-fatal if unavailable)
-    let tensionPairs = [];
-    try {
-      const gdeltUrl = `${GDELT_BATCH_API}?pairs=${encodeURIComponent(DEFAULT_GDELT_PAIRS)}&method=gpr`;
-      const gdeltResp = await fetch(gdeltUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (gdeltResp.ok) {
-        const gdeltRaw = await gdeltResp.json();
-        tensionPairs = Object.entries(gdeltRaw).map(([pairKey, dataPoints]) => {
-          const countries = pairKey.split('_');
-          const latest = dataPoints[dataPoints.length - 1];
-          const prev = dataPoints.length > 1 ? dataPoints[dataPoints.length - 2] : latest;
-          const change = prev && prev.v > 0 ? ((latest.v - prev.v) / prev.v) * 100 : 0;
-          const trend = change > 5 ? 'TREND_DIRECTION_RISING' : change < -5 ? 'TREND_DIRECTION_FALLING' : 'TREND_DIRECTION_STABLE';
-          return {
-            id: pairKey,
-            countries,
-            label: countries.map((c) => c.toUpperCase()).join(' - '),
-            score: latest?.v ?? 0,
-            trend,
-            changePercent: Math.round(change * 10) / 10,
-            region: 'global',
-          };
-        });
-      }
-    } catch { /* GDELT unavailable — non-fatal */ }
-
-    const payload = { pizzint, tensionPairs };
-    const ok1 = await envelopeWrite(PIZZINT_REDIS_KEY, payload, PIZZINT_SEED_TTL, { recordCount: locations.length, sourceVersion: 'pizzint' });
-    const ok2 = await upstashSet('seed-meta:intelligence:pizzint', { fetchedAt: Date.now(), recordCount: locations.length }, 604800);
-    console.log(`[PizzINT] Seeded ${locations.length} locations (open:${openLocations.length} spikes:${activeSpikes} defcon:${defconLevel} gdelt:${tensionPairs.length} redis:${ok1 && ok2 ? 'OK' : 'PARTIAL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  } catch (e) {
-    console.warn('[PizzINT] Seed error:', e?.message || e);
-  } finally {
-    pizzintSeedInFlight = false;
-  }
-}
-
-function startPizzintSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[PizzINT] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[PizzINT] Seed loop starting (interval ${PIZZINT_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('PizzINT', 'seed-meta:intelligence:pizzint', PIZZINT_SEED_INTERVAL_MS, seedPizzint, (e) => console.warn('[PizzINT] Initial seed error:', e?.message || e), (e) => console.warn('[PizzINT] Seed error:', e?.message || e));
-}
+// PizzINT seed — standalone Railway cron (gcp/scheduler/main.ts, every 10min)
+// — scripts/seed-pizzint.mjs. Extracted in P14 Phase 2 (session 63 — see
+// PLATFORM_ARCHITECTURE.md); a straight port with no standalone sibling
+// before extraction. No notifications to migrate — this loop never called
+// publishNotificationEvent.
 
 function gzipSyncBuffer(body) {
   try {
@@ -9207,6 +9086,8 @@ server.listen(PORT, () => {
   // session 63; no notifications to migrate.
   // USNI Fleet Tracker seed — standalone Railway cron (gcp/scheduler/main.ts,
   // every 6h) — scripts/seed-usni-fleet.mjs. Straight port, same pass.
+  // PizzINT seed — standalone Railway cron (gcp/scheduler/main.ts, every
+  // 10min) — scripts/seed-pizzint.mjs. Straight port, same pass.
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
 
@@ -9214,7 +9095,6 @@ server.listen(PORT, () => {
   startShippingStressSeedLoop();
   startSocialVelocitySeedLoop();
   startWsbTickersSeedLoop();
-  startPizzintSeedLoop();
 });
 
 wss.on('connection', (ws, req) => {

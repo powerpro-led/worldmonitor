@@ -288,6 +288,12 @@ const CADENCES: Record<string, Cadence> = {
   // Cadence matches the deleted loop's USNI_SEED_INTERVAL_MS (6h) and
   // api/health.js's SEED_META.usniFleet.maxStaleMin (720min = 2x).
   'seed-usni-fleet': { kind: 'every', rate: '6 hours' },
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Straight port of
+  // ais-relay.cjs's startPizzintSeedLoop (no standalone sibling existed;
+  // scripts/fetch-pizzint-bases.mjs is a different, base-list job). Cadence
+  // matches the deleted loop's PIZZINT_SEED_INTERVAL_MS (10min) and
+  // api/health.js's SEED_META.pizzint.maxStaleMin (30min = 3x).
+  'seed-pizzint': { kind: 'every', rate: '10 minutes' },
 };
 
 /**

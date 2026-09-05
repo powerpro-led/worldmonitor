@@ -302,7 +302,7 @@ describe('notification-relay eventMatchesCountryScope — behavioural', () => {
 });
 
 describe('ais-relay country-specific notification publishers — source-grep contract', () => {
-  it('OREF, UCDP, cyber, and NWS publish countryCode when the publisher knows country scope', () => {
+  it('OREF, UCDP, and NWS publish countryCode when the publisher knows country scope', () => {
     assert.match(
       aisRelaySrc,
       /eventType:\s*'oref_siren'[\s\S]*?countryCode:\s*'IL'/,
@@ -315,13 +315,14 @@ describe('ais-relay country-specific notification publishers — source-grep con
     );
     assert.match(
       aisRelaySrc,
-      /eventType:\s*'cyber_threat'[\s\S]*?countryCode/,
-      'cyber notifications must include normalized countryCode when available',
-    );
-    assert.match(
-      aisRelaySrc,
       /eventType:\s*'weather_alert'[\s\S]*?countryCode:\s*'US'/,
       'NWS weather notifications must publish countryCode=US',
     );
+    // cyber_threat notifications were removed from ais-relay.cjs in session 61
+    // (PLATFORM_ARCHITECTURE.md P14 Phase 2) — seedCyberThreats was dead code,
+    // never invoked (a comment at the old call site said so: the standalone
+    // scripts/seed-cyber-threats.mjs cron handles cyber threats instead), so
+    // this publisher never actually ran in production and had no live
+    // behavior for this assertion to protect.
   });
 });

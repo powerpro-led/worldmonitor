@@ -189,30 +189,31 @@ const SEEDERS = [
   // (Previously excluded; the endpoints self-limit, so gating is risk-free here —
   // a missing key fails open to an immediate ping — and also dedupes the boot ping
   // against organic traffic that already kept the cache warm.)
-  ['ServiceStatuses', "'seed-meta:infra:service-statuses'", 'SERVICE_STATUSES_SEED_INTERVAL_MS', 'seedServiceStatuses'],
   ['CII', "'seed-meta:intelligence:risk-scores'", 'CII_WARM_PING_INTERVAL_MS', 'seedCiiWarmPing'],
   ['Chokepoints', "'seed-meta:supply_chain:chokepoints'", 'CHOKEPOINT_WARM_PING_INTERVAL_MS', 'seedChokepointWarmPing'],
   ['CableHealth', "'seed-meta:cable-health'", 'CABLE_HEALTH_WARM_PING_INTERVAL_MS', 'seedCableHealthWarmPing'],
   // Added 2026-08-19 (session 26): folded in from the retired seed-infra.mjs
   // (its only non-redundant target -- see TASKS.md "orphaned crons" item 5).
   ['TemporalAnomalies', "'seed-meta:temporal:anomalies'", 'TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS', 'seedTemporalAnomaliesWarmPing'],
-  ['TheaterPosture', "'seed-meta:theater-posture'", 'THEATER_POSTURE_SEED_INTERVAL_MS', 'seedTheaterPosture'],
   ['Weather', "'seed-meta:weather:alerts'", 'WEATHER_SEED_INTERVAL_MS', 'seedWeatherAlerts'],
-  ['Spending', "'seed-meta:economic:spending'", 'SPENDING_SEED_INTERVAL_MS', 'seedUsaSpending'],
   ['GSCPI', "'seed-meta:economic:gscpi'", 'GSCPI_SEED_INTERVAL_MS', 'seedGscpi'],
-  ['TechEvents', "'seed-meta:research:tech-events'", 'TECH_EVENTS_SEED_INTERVAL_MS', 'seedTechEvents'],
-  ['WB', '`seed-meta:${WB_BOOTSTRAP_KEY}`', 'WB_SEED_INTERVAL_MS', 'seedWorldBank'],
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
   ['USNI', "'seed-meta:military:usni-fleet'", 'USNI_SEED_INTERVAL_MS', 'seedUsniFleet'],
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
   ['SocialVelocity', 'SOCIAL_VELOCITY_SEED_META_KEY', 'SOCIAL_VELOCITY_INTERVAL_MS', 'seedSocialVelocity'],
   ['WsbTickers', "'seed-meta:intelligence:wsb-tickers'", 'WSB_TICKERS_INTERVAL_MS', 'seedWsbTickers'],
-  ['ClimateNewsSeed', "'relay:heartbeat:climate-news'", 'CLIMATE_NEWS_SEED_INTERVAL_MS', 'seedClimateNews'],
-  ['ChokepointFlows', "'relay:heartbeat:chokepoint-flows'", 'CHOKEPOINT_FLOWS_SEED_INTERVAL_MS', 'seedChokepointFlows'],
   ['PizzINT', "'seed-meta:intelligence:pizzint'", 'PIZZINT_SEED_INTERVAL_MS', 'seedPizzint'],
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
   ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
-  ['Cyber', "'seed-meta:cyber:threats'", 'CYBER_SEED_INTERVAL_MS', 'seedCyberThreats'],
+  // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,
+  // ChokepointFlows, and Cyber were removed from ais-relay.cjs entirely in
+  // session 61 (PLATFORM_ARCHITECTURE.md P14 Phase 2) — each was a pure
+  // duplicate of an already-independently-scheduled scripts/seed-*.mjs (or,
+  // for Cyber, fully dead code that was never invoked). UCDP and Weather were
+  // deleted in the same pass and then restored (commits 629df49, 7febde9)
+  // because their seed functions also published live notifications
+  // (conflict_escalation / severe weather alerts) that no standalone script
+  // replicates — see those commits before ever re-attempting their removal.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

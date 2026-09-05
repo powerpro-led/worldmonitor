@@ -260,6 +260,15 @@ const CADENCES: Record<string, Cadence> = {
   // = 6h, "matching portwatch seed cadence").
   // ──────────────────────────────────────────────────────────────────────
   'seed-chokepoint-flows': { kind: 'cron', expr: '0 */6 * * *' },
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-09-05 (session 62) — PLATFORM_ARCHITECTURE.md P14 Phase 2, loop
+  // extraction. First of 17 startBootSeedLoop loops confirmed to have NO
+  // existing standalone sibling anywhere (checked against this file too —
+  // "GSCPI" appeared nowhere in CADENCES before this entry). Cadence
+  // matches the deleted loop's own GSCPI_SEED_INTERVAL_MS exactly (24h;
+  // "Published monthly; seeded daily to catch fresh releases").
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-gscpi': { kind: 'every', rate: '1 days' },
 };
 
 /**

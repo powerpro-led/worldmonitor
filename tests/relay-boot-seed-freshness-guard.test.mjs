@@ -194,7 +194,6 @@ const SEEDERS = [
   // Added 2026-08-19 (session 26): folded in from the retired seed-infra.mjs
   // (its only non-redundant target -- see TASKS.md "orphaned crons" item 5).
   ['TemporalAnomalies', "'seed-meta:temporal:anomalies'", 'TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS', 'seedTemporalAnomaliesWarmPing'],
-  ['GSCPI', "'seed-meta:economic:gscpi'", 'GSCPI_SEED_INTERVAL_MS', 'seedGscpi'],
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
   ['USNI', "'seed-meta:military:usni-fleet'", 'USNI_SEED_INTERVAL_MS', 'seedUsniFleet'],
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
@@ -217,6 +216,15 @@ const SEEDERS = [
   // their countryCode/coalesceKey contracts are now asserted against those
   // files directly in tests/notification-relay-country-filter.test.mjs and
   // tests/notification-relay-coalesce-key.test.mjs.
+  //
+  // GSCPI was removed the same session (S62), as the first of the 17
+  // "genuinely unique, no sibling exists anywhere" loops the S61 audit
+  // identified as real extraction candidates — unlike the deletions above,
+  // it had no standalone script to be redundant WITH, so extraction meant
+  // writing scripts/seed-gscpi.mjs new (registered in
+  // scripts/railway-services.json + gcp/scheduler/main.ts's CADENCES) rather
+  // than just deleting a duplicate. No notification logic to migrate — this
+  // loop never called publishNotificationEvent.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

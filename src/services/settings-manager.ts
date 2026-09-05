@@ -9,6 +9,8 @@ import {
   verifySecretWithApi,
   type RuntimeSecretKey,
 } from './runtime-config';
+import { isDesktopRuntime } from './runtime';
+import { commitToPipelineConfig } from './admin-org-connection';
 import { PLAINTEXT_KEYS, MASKED_SENTINEL } from './settings-constants';
 
 export class SettingsManager {
@@ -116,7 +118,15 @@ export class SettingsManager {
   async commitVerifiedSecrets(): Promise<void> {
     for (const [key, value] of this.pendingSecrets) {
       if (this.validatedKeys.get(key) !== false) {
-        await setSecretValue(key, value);
+        // Desktop persists to the Tauri keychain vault; everywhere else
+        // (Workstream 6's cloud admin panel) writes go straight to the
+        // connected org's Supabase `pipeline_config` — RLS enforces
+        // admin-only server-side regardless of this branch.
+        if (isDesktopRuntime()) {
+          await setSecretValue(key, value);
+        } else {
+          await commitToPipelineConfig(key, value);
+        }
         this.pendingSecrets.delete(key);
         this.validatedKeys.delete(key);
         this.validationMessages.delete(key);

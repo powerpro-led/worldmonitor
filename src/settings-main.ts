@@ -22,12 +22,23 @@ import {
   setSecretValue,
   validateSecret,
   loadDesktopSecrets,
+  seedSecretsFromCloudAdmin,
   type RuntimeFeatureDefinition,
   type RuntimeFeatureId,
   type RuntimeSecretKey,
 } from '@/services/runtime-config';
 import { isDesktopRuntime, resolveLocalApiPort, startSmartPollLoop, type SmartPollLoopHandle } from '@/services/runtime';
 import { proxyLocalApiRequest, tryInvokeTauri, invokeTauri } from '@/services/tauri-bridge';
+import {
+  getStoredOrgConnection,
+  setStoredOrgConnection,
+  clearStoredOrgConnection,
+  adminSignInWithGithub,
+  isAdminSignedIn,
+  isCurrentUserAdmin,
+  adminSignOut,
+  fetchPipelineConfigPresence,
+} from '@/services/admin-org-connection';
 import { escapeHtml } from '@/utils/sanitize';
 import { initI18n, t } from '@/services/i18n';
 import { applyStoredTheme } from '@/utils/theme-manager';
@@ -39,6 +50,16 @@ import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 let activeSection = 'overview';
 let settingsManager: SettingsManager;
 let _diagCleanup: (() => void) | null = null;
+
+// Cloud-admin view manages one org's `pipeline_config` (Workstream 6); `ai`
+// (OPENROUTER_API_KEY/GROQ_API_KEY/OLLAMA_*) is per-operator tier (P3),
+// already has its own dashboard tab (Workstream 3), and isn't a
+// `pipeline_config` key at all — excluded from the cloud-admin render so
+// its category doesn't show a permanently-empty, unsaveable form. Desktop
+// keeps all 5 categories, unchanged.
+const VISIBLE_SETTINGS_CATEGORIES: SettingsCategory[] = isDesktopRuntime()
+  ? SETTINGS_CATEGORIES
+  : SETTINGS_CATEGORIES.filter(cat => cat.id !== 'ai');
 
 function setActionStatus(message: string, tone: 'ok' | 'error' = 'ok'): void {
   const statusEl = document.getElementById('settingsActionStatus');
@@ -113,7 +134,7 @@ function renderSidebar(): void {
 
   items.push('<div class="settings-nav-sep"></div>');
 
-  for (const cat of SETTINGS_CATEGORIES) {
+  for (const cat of VISIBLE_SETTINGS_CATEGORIES) {
     const { ready, total } = getFeatureStatusCounts(cat);
     const dotClass = ready === total ? 'dot-ok' : ready > 0 ? 'dot-partial' : 'dot-warn';
     items.push(`
@@ -157,7 +178,7 @@ function renderSection(sectionId: string): void {
     } else if (sectionId === 'debug') {
       renderDebug(area);
     } else {
-      const cat = SETTINGS_CATEGORIES.find(c => c.id === sectionId);
+      const cat = VISIBLE_SETTINGS_CATEGORIES.find(c => c.id === sectionId);
       if (cat) renderFeatureSection(area, cat);
     }
 
@@ -180,7 +201,7 @@ function renderOverview(area: HTMLElement): void {
   const wmState = getSecretState('WORLDMONITOR_API_KEY');
   const wmStatusText = wmState.present ? 'Active' : 'Not set';
   const wmStatusClass = wmState.present ? 'ok' : 'warn';
-  const catCards = SETTINGS_CATEGORIES.map(cat => {
+  const catCards = VISIBLE_SETTINGS_CATEGORIES.map(cat => {
     const { ready: catReady, total: catTotal } = getFeatureStatusCounts(cat);
     const cls = catReady === catTotal ? 'ov-cat-ok' : catReady > 0 ? 'ov-cat-partial' : 'ov-cat-warn';
     return `<button class="settings-ov-cat ${cls}" data-section="${cat.id}">
@@ -752,7 +773,7 @@ function handleSearch(query: string): void {
   const q = query.toLowerCase();
   const matches: Array<{ feature: RuntimeFeatureDefinition; catLabel: string }> = [];
 
-  for (const cat of SETTINGS_CATEGORIES) {
+  for (const cat of VISIBLE_SETTINGS_CATEGORIES) {
     for (const fid of cat.features) {
       const feature = RUNTIME_FEATURES.find(f => f.id === fid);
       if (!feature) continue;
@@ -818,32 +839,135 @@ function handleSearch(query: string): void {
   initFeatureSectionListeners(area);
 }
 
+// ── Cloud-admin gate (Workstream 6) ──
+//
+// Desktop never sees any of this (isDesktopRuntime() short-circuits it in
+// initSettingsWindow()). Everywhere else `settings.html` loads — today
+// that means the org-admin panel riding the existing Vercel `dist/` build
+// (PLATFORM_ARCHITECTURE.md P5) — the page must first resolve which org's
+// Supabase project it's managing (no org is baked into this shared build),
+// then confirm a signed-in session, then confirm that session is an org
+// admin, before the normal category-editing UI has anything real to show.
+//
+// Each gate screen's action mutates local state (a stored connection, a
+// Supabase sign-out) and then re-invokes runCloudAdminGate() itself rather
+// than reloading the page — the one exception is "Sign in with GitHub",
+// which is a real OAuth redirect; the browser comes back to a fresh load
+// of this same page, and detectSessionInUrl:true (admin-org-connection.ts)
+// picks the session up from there.
+
+const KNOWN_SECRET_KEYS = new Set<string>(Object.keys(HUMAN_LABELS));
+
+function setGateChromeVisible(visible: boolean): void {
+  const sidebar = document.querySelector<HTMLElement>('.settings-sidebar');
+  if (sidebar) sidebar.style.display = visible ? '' : 'none';
+  const okBtn = document.getElementById('okBtn') as HTMLElement | null;
+  if (okBtn) okBtn.style.display = visible ? '' : 'none';
+}
+
+function renderConnectOrgForm(area: HTMLElement): void {
+  setTrustedHtml(area, trustedHtml(`
+    <div class="settings-section-header"><h2>Connect your organization</h2></div>
+    <section class="wm-section">
+      <p class="wm-section-desc">Enter your organization's Supabase project to manage its data-source keys. These are the same two values used in its <code>org.env</code>.</p>
+      <div class="wm-key-row">
+        <div class="wm-input-wrap">
+          <input type="text" class="wm-input" data-org-url placeholder="Supabase Project URL" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <div class="wm-key-row">
+        <div class="wm-input-wrap">
+          <input type="password" class="wm-input" data-org-key placeholder="Supabase Publishable Key" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <button type="button" class="settings-btn settings-btn-primary" data-org-connect>Connect</button>
+      <p class="settings-secret-hint" data-org-connect-error hidden></p>
+    </section>
+  `, "legacy direct innerHTML migration"));
+
+  area.querySelector('[data-org-connect]')?.addEventListener('click', () => {
+    const url = area.querySelector<HTMLInputElement>('[data-org-url]')?.value.trim() || '';
+    const key = area.querySelector<HTMLInputElement>('[data-org-key]')?.value.trim() || '';
+    const errorEl = area.querySelector<HTMLElement>('[data-org-connect-error]');
+    if (!url || !key) {
+      if (errorEl) { errorEl.textContent = 'Both fields are required.'; errorEl.hidden = false; }
+      return;
+    }
+    setStoredOrgConnection(url, key);
+    void runCloudAdminGate(area);
+  });
+}
+
+function renderAdminSignIn(area: HTMLElement): void {
+  setTrustedHtml(area, trustedHtml(`
+    <div class="settings-section-header"><h2>Sign in</h2></div>
+    <section class="wm-section">
+      <p class="wm-section-desc">Sign in with the GitHub account your organization's admin registered.</p>
+      <button type="button" class="settings-btn settings-btn-primary" data-admin-signin>Sign in with GitHub</button>
+      <p class="settings-secret-hint"><a href="#" data-org-disconnect>Not your organization? Disconnect</a></p>
+    </section>
+  `, "legacy direct innerHTML migration"));
+
+  area.querySelector('[data-admin-signin]')?.addEventListener('click', () => {
+    void adminSignInWithGithub();
+  });
+  area.querySelector('[data-org-disconnect]')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    clearStoredOrgConnection();
+    void runCloudAdminGate(area);
+  });
+}
+
+function renderAccessDenied(area: HTMLElement): void {
+  setTrustedHtml(area, trustedHtml(`
+    <div class="settings-section-header"><h2>Access denied</h2></div>
+    <section class="wm-section">
+      <p class="wm-section-desc">You're signed in, but your account isn't an admin for this organization. Ask an existing admin to grant access, or sign in with a different account.</p>
+      <button type="button" class="settings-btn settings-btn-secondary" data-admin-signout>Sign out</button>
+    </section>
+  `, "legacy direct innerHTML migration"));
+
+  area.querySelector('[data-admin-signout]')?.addEventListener('click', () => {
+    void (async () => {
+      await adminSignOut();
+      void runCloudAdminGate(area);
+    })();
+  });
+}
+
+async function runCloudAdminGate(area: HTMLElement): Promise<void> {
+  if (!getStoredOrgConnection()) {
+    setGateChromeVisible(false);
+    renderConnectOrgForm(area);
+    return;
+  }
+
+  const signedIn = await isAdminSignedIn().catch(() => false);
+  if (!signedIn) {
+    setGateChromeVisible(false);
+    renderAdminSignIn(area);
+    return;
+  }
+
+  const isAdmin = await isCurrentUserAdmin().catch(() => false);
+  if (!isAdmin) {
+    setGateChromeVisible(false);
+    renderAccessDenied(area);
+    return;
+  }
+
+  const presentKeys = await fetchPipelineConfigPresence().catch(() => new Set<string>());
+  seedSecretsFromCloudAdmin(
+    Array.from(presentKeys).filter(k => KNOWN_SECRET_KEYS.has(k)) as RuntimeSecretKey[],
+  );
+
+  setGateChromeVisible(true);
+  await proceedPastGate();
+}
+
 // ── Init ──
 
-async function initSettingsWindow(): Promise<void> {
-  await initI18n();
-  applyStoredTheme();
-  applyFont();
-
-  // Localize the static HTML shell (settings.html) — labels are baked in
-  // English so the page paints something before this script runs; once
-  // i18n is ready we swap them to the user's locale.
-  document.title = t('modals.settingsWindow.shellTitle');
-  const headerTitle = document.querySelector('.settings-header-title');
-  if (headerTitle) headerTitle.textContent = t('modals.settingsWindow.shellTitle');
-  const searchInputEl = document.getElementById('settingsSearch') as HTMLInputElement | null;
-  if (searchInputEl) searchInputEl.placeholder = t('modals.settingsWindow.shellSearchPlaceholder');
-  const cancelEl = document.getElementById('cancelBtn');
-  if (cancelEl) cancelEl.textContent = t('modals.settingsWindow.shellCancel');
-  const okEl = document.getElementById('okBtn');
-  if (okEl) okEl.textContent = t('modals.settingsWindow.shellSaveClose');
-
-  try { await resolveLocalApiPort(); } catch { /* use default */ }
-
-  requestAnimationFrame(() => {
-    document.documentElement.classList.remove('no-transition');
-  });
-
+async function proceedPastGate(): Promise<void> {
   await loadDesktopSecrets();
   settingsManager = new SettingsManager();
 
@@ -914,6 +1038,41 @@ async function initSettingsWindow(): Promise<void> {
   window.addEventListener('beforeunload', () => {
     settingsManager.destroy();
   });
+}
+
+async function initSettingsWindow(): Promise<void> {
+  await initI18n();
+  applyStoredTheme();
+  applyFont();
+
+  // Localize the static HTML shell (settings.html) — labels are baked in
+  // English so the page paints something before this script runs; once
+  // i18n is ready we swap them to the user's locale.
+  document.title = t('modals.settingsWindow.shellTitle');
+  const headerTitle = document.querySelector('.settings-header-title');
+  if (headerTitle) headerTitle.textContent = t('modals.settingsWindow.shellTitle');
+  const searchInputEl = document.getElementById('settingsSearch') as HTMLInputElement | null;
+  if (searchInputEl) searchInputEl.placeholder = t('modals.settingsWindow.shellSearchPlaceholder');
+  const cancelEl = document.getElementById('cancelBtn');
+  if (cancelEl) cancelEl.textContent = t('modals.settingsWindow.shellCancel');
+  const okEl = document.getElementById('okBtn');
+  if (okEl) okEl.textContent = t('modals.settingsWindow.shellSaveClose');
+
+  try { await resolveLocalApiPort(); } catch { /* use default */ }
+
+  requestAnimationFrame(() => {
+    document.documentElement.classList.remove('no-transition');
+  });
+
+  if (!isDesktopRuntime()) {
+    const gateArea = document.getElementById('contentArea');
+    if (gateArea) {
+      await runCloudAdminGate(gateArea);
+      return; // runCloudAdminGate() calls proceedPastGate() itself once it passes
+    }
+  }
+
+  await proceedPastGate();
 }
 
 localStorage.setItem('wm-settings-open', '1');

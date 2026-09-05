@@ -13,11 +13,11 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-05 (session 58) — **Workstream 5 (multi-org deploy pipeline) shipped**, except P14 Phase 2's AIS-shared-ingest deploy target (deliberately deferred — see Workstream 5's checklist, needs code Phase 2/Workstream 7 hasn't extracted yet). Org config schema (`deploy/orgs/<org>.yml`), the `nitric.<org>.yaml` generator, the worker-side `pipeline_config` hydration loop (OQ-P7, live), `.github/workflows/deploy-org.yml`, and P14 Phase 1's service consolidation (3 queue workers merged into `queue-worker.mjs`; digest-notifications + publish-bootstrap-tiers moved to Cloud Scheduler cadences; `ais-relay.cjs` is the sole remaining pinned instance) are all in, all unit-tested (23 new tests across 5 new/changed test files), all typechecked/linted clean. **Next: Workstream 6 (admin panel)** — no remaining blocker; Workstream 5 has no live infrastructure to point it at yet (needs a real org's GH Environment + GCP project, still just `mosiq`'s Supabase half).
-- **Prior work state:** `main` @ `93ba62e` at S58 start (8 ahead of `origin/main`, not pushed — operator's call, unchanged this session). S57 shipped Workstream 3 fully (LLM-key backend + dashboard tab + hard-disable visibility), Workstream 4 (denylist mirror), Workstream 2 (vendored identity bridge), W7's `list-feed-digest` seeder, resolved OQ-P7 + reviewed P13, then hand-provisioned the `mosiq` test tenant and found/fixed P15 (dedicated `worldmonitor` schema). `v2.13.0` still not tagged, on hold (P12).
+- **As of:** 2026-09-05 (session 59) — **Workstream 6 (admin panel) shipped.** `settings.html` gains a cloud-admin gate (connect org → sign in with GitHub → `app_metadata.wm_admin` check) ahead of its existing category-editing UI, wired to write straight into the connected org's `pipeline_config` (RLS-enforced, no new SQL). Zero new hosting: rides the existing Vercel `dist/` build — see P5's correction below for why the original GCP-colocated design was never buildable as written. Only Workstream 7 (worker: absorb the direct fetches, incl. P14 Phase 2's AIS-ingest extraction) remains on the recommended order; Workstreams R and 1–6 are all shipped.
+- **Prior work state:** `main` @ `ea1f964` at S59 start (9 ahead of `origin/main`, not pushed — operator's call, unchanged this session). S58 shipped Workstream 5 (multi-org deploy pipeline: org config schema, `nitric.<org>.yaml` generator, `pipeline_config` hydration loop, `deploy-org.yml`) + P14 Phase 1 (service consolidation — 3 queue workers merged, `ais-relay.cjs` the sole remaining pinned instance). `v2.13.0` still not tagged, on hold (P12).
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. **OQ-P6 and OQ-P7 both RESOLVED S57** — see P14 and the resolved-questions section; no open sub-questions remain.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
-- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder) → 3 → 5~~ (done, minus P14 Phase 2) → 6 → rest of 7 (incl. P14 Phase 2).
+- **Recommended order (S56):** ~~R → 1 → 4 → 2 → (7-seeder) → 3 → 5 → 6~~ (done, minus P14 Phase 2) → rest of 7 (incl. P14 Phase 2).
 
 ---
 
@@ -51,7 +51,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 | **P2** | **Local backend = pure read-only Upstash mirror.** Zero data-source keys, zero direct external fetch for pipeline data. One GitHub login for identity; everything else is brokered. | The "every operator fills in keys" journey was the core mistake. | S55 |
 | **P3** | **Two-tier keys.** (a) **Org-admin tier** — the ~26 data-source keys (ACLED, FRED, Finnhub, AISStream, FIRMS, Brave/Exa/SerpAPI, …). Set once by an org admin in the cloud admin panel, stored in that org's Supabase, read only by that org's **worker**. (b) **Per-operator tier** — the LLM key (`OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_*`) only, set in a dashboard settings modal, powers on-demand chat/summaries that can't be pre-seeded. | Operators go from ~27 keys to 1. The scary "Backend control panel" disappears. | S55 |
 | **P4** | **Config broker.** A per-org `local-config` Supabase Edge Function (`verify_jwt: true`) returns that org's Upstash **read-only** URL+token + `APP_DOMAIN` to authenticated org members. The local backend caches it in `~/.worldmonitor/config.db` and **re-fetches hourly** (so removing someone from the org propagates within the hour). **One shared read-only token per org**, not per-user. | Upstash REST has no SSO / JWT federation and no API to mint scoped tokens. Per-user Upstash ACL users are possible (paid tier) but buy only revocation granularity on read-only access to non-sensitive shared data — not worth the lifecycle. | S55 |
-| **P5** | **Admin panel is colocated with the worker, not a separate release.** `settings.html` + a write route ship inside the org's GCP deploy (same Vite build), gated to that org's admin GitHub logins. It writes the 26 keys to that org's Supabase (`pipeline_config` table, RLS = admins). NOT bundled with the operator local backend; NOT its own downloadable artifact. | The admin already runs the full repo as the worker host — the panel rides along. | S55 |
+| **P5** | **Admin panel rides the existing Vercel `dist/` build, not the GCP worker deploy** (corrected S59 — literal "colocated with the worker" was never built: `gcp/api/main.ts` has zero static-file-serving capability and the root `.dockerignore` excludes `dist/` from Docker build contexts, so that route needed new Docker/build infra with real unknowns). `settings.html` already builds into this repo's live Vercel `dist/` today (`vite.config.ts`'s rollup input); Vercel's filesystem-priority-over-rewrites behavior (the `rewrites` array, not the legacy `routes` format) serves it as-is, unprotected by `vercel.json`'s catch-all or `middleware.ts`'s matcher. Nothing per-org is baked into this one shared build, so the admin resolves *which* org's Supabase project they're managing at runtime, in the browser: they type their org's Supabase URL + Publishable Key once (the same two values as `org.env`, P11), stored in `localStorage`, gated to that org's admin GitHub logins (native OAuth, `app_metadata.wm_admin`). It writes the 26 keys to that org's Supabase (`pipeline_config` table, RLS = admins). NOT bundled with the operator local backend; NOT its own downloadable artifact; NOT per-org infrastructure — one shared build serves every org. | Zero new hosting/Docker/build-pipeline work — a frontend feature riding a build that's already deployed, plus the RLS enforcement Workstream 1 already shipped. | S55, corrected S59 |
 | **P6** | **Mirror = denylist, not the `SYNC_PREFIXES` allowlist — with THREE states, not two** (corrected S56): `deny` / `mirror` / `mirror-filtered`. Deny = the shape patterns (`*:token`, `*:secret`, `*:oauth:*`, `ratelimit:*`, `lock:*`, `idempotency:*`, `session:*`, `*:cursor`) **plus the whole "DELIBERATELY EXCLUDED, verified by reading the keys" block already documented at the foot of `SYNC_PREFIXES`** — see Workstream 4 for the enumerated list, which the S55 shape patterns did **not** cover. `brief:` is **mirror-filtered**, NOT denied. | Kills "panel X broke because nobody added the prefix" without copying org secrets, live worker queues, or other operators' personal briefs onto laptops (the session-39 `brief:` leak class). **S56 correction:** a blanket `brief:*` deny is a functional regression — `local-sync.mjs`'s `keepKey()` deliberately mirrors the operator's *own* `brief:<uid>:*` (+ shared `brief:llm:*`), and `api/latest-brief.js` reads that key through the mirror. Deny it wholesale and Latest Brief is permanently empty locally. | S55, corrected S56 |
 | **P7** | **Cameras removed entirely** — `PinnedWebcamsPanel`, `api/webcam`, `list-webcams`, webcam sync keys. Not wanted. | Operator's call. | S55 |
 | **P8** | **Live streams → buffered upstream, republished to Upstash.** Telegram / AIS / gpsjam: a rolling window (last N messages / last known positions) is written to Upstash; `sync-listener` pushes it to local. ~30–60s staleness accepted. Metadata (channel list, AIS regions) mirrors like any other key. **S57: *where* the buffering runs is settled by P14** — AIS by the one shared ingest service, Telegram + gpsjam by scheduled `--once` jobs. The OQ-P1 scale-to-zero conflict is resolved: nothing in the per-org deploy holds a persistent socket. | "Upstash is the single source of truth" — consistency over sub-minute latency. | S55, resolved S57 |
@@ -73,7 +73,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 | **`local-config` edge fn** | each org's Supabase project | — (reads function secrets) | verifies caller's session; returns `{ upstashUrl, upstashReadonlyToken, appDomain }` |
 | **`github-identity-bridge` edge fn** (vendored, P9) | each org's Supabase project | per-project OIDC signing keys | GitHub API · that project's GoTrue |
 | **`pipeline_config` table** | each org's Supabase project | the 26 data-source keys (RLS: org admins write, worker reads via service role) | — |
-| **Admin panel** (`settings.html`, P5) | inside each org's GCP deploy | — | that org's Supabase (`pipeline_config` R/W, admin-gated) |
+| **Admin panel** (`settings.html`, P5) | the existing shared Vercel `dist/` deploy (org-agnostic — one build serves every org) | the admin's chosen org connection (Supabase URL + key, in `localStorage`) | that org's Supabase (`pipeline_config` R/W, admin-gated) |
 | **Worker** (pipeline) | each org's GCP deploy | that org's 26 data-source keys · that org's Upstash **write** token | external APIs · LLM · that org's Upstash (write) |
 | **Upstash DB** | Upstash cloud, one per org | the org's computed dashboard state — **single source of truth** | — |
 
@@ -236,9 +236,17 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 6 — admin panel
 
-- [ ] `settings.html` served by the Cloud Run deploy, behind a GitHub-login gate that checks `app_metadata.wm_admin` (OQ-P3).
-- [ ] Write route: `pipeline_config` upsert via the Supabase client with the caller's session — RLS enforces admin-only.
-- [ ] `settings-main.ts`: the full 5-category form is the admin view; masking machinery already exists. This is the ONLY place it renders now (removed from the operator bundle — Workstream R).
+> **S59 correction to this checklist's own wording**: "served by the Cloud
+> Run deploy" (below) and "the full 5-category form" were both wrong as
+> literally written — see P5's corrected text. Served by the existing
+> Vercel `dist/` build instead (zero new hosting); the admin-visible form
+> is 4 categories (`economy`/`markets`/`security`/`tracking`), excluding
+> `ai` — that category is per-operator tier (P3) and already Workstream 3's
+> dashboard tab's job, not a `pipeline_config` key at all.
+
+- [x] **DONE S59.** `settings.html` served by the existing shared Vercel `dist/` build, behind a GitHub-login gate that checks `app_metadata.wm_admin` (OQ-P3) — plus a prerequisite step neither this checklist nor P5 originally accounted for: the admin first types their org's Supabase URL + Publishable Key once (stored in `localStorage`), since nothing per-org is baked into this one shared build. New `src/services/admin-org-connection.ts` — connection storage, a Supabase client instance kept fully separate from `supabase-client.ts`'s dashboard singleton (own `auth.storageKey`, `'wm-admin-auth'`, so a signed-in admin session never collides with a signed-in dashboard session in the same browser), native GitHub OAuth sign-in (`signInWithOAuth({ provider: 'github' })` — deliberately NOT `github-identity-bridge`, which relays a token a VS Code session already holds rather than originating a fresh browser consent screen, per that bridge's own module doc), the `app_metadata.wm_admin` client-side gate. `settings-main.ts`'s `initSettingsWindow()` runs this gate sequence (connect → sign in → admin check) for every non-desktop load, hiding the sidebar/Save button until it resolves; the Tauri desktop path is completely untouched (`isDesktopRuntime()` skips the gate entirely).
+- [x] **DONE S59.** Write route: `pipeline_config` upsert (or delete, for a cleared field) via the admin Supabase client with the caller's own session — RLS enforces admin-only, no new SQL needed (Workstream 1's 4 policies already cover it). Wired through the ONE existing choke point, `settings-manager.ts`'s `commitVerifiedSecrets()`: `isDesktopRuntime() ? setSecretValue(...) : commitToPipelineConfig(...)`.
+- [x] **DONE S59 — with one correction to this line's own wording.** `settings-main.ts`: the admin view renders 4 of the 5 categories (`ai` excluded — see the correction note above), reusing the existing `MASKED_SENTINEL` masking machinery unchanged — a `pipeline_config` row's presence (never its plaintext value) is read once via `fetchPipelineConfigPresence()` and seeded into the same `runtimeConfig.secrets` state `loadDesktopSecrets()` populates for the vault (`seedSecretsFromCloudAdmin()`, `runtime-config.ts`), so the shared render pipeline treats a cloud-admin-set key identically to a desktop vault entry with zero changes to `renderSecretInput()`. This is the ONLY place it renders now (removed from the operator bundle — Workstream R). **Known nuance, not fixed this session:** `isFeatureAvailable()` already returns `true` unconditionally for `!isDesktopRuntime()` (a pre-existing assumption from when this render path had no real audience) — so a category's sidebar dot / overview progress ring reads "Ready" regardless of whether its keys are actually saved yet, even though the individual secret-row status (Missing/Staged/masked-present) is accurate. Left alone deliberately: `isFeatureAvailable()` is called from many places across the live public dashboard, not just this panel, and making it admin-panel-aware risks a much broader behavior change than this workstream's scope.
 
 ### Workstream 7 — worker: absorb the direct fetches
 
@@ -284,6 +292,94 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 59 — 2026-09-05
+
+**Workstream 6 shipped.** Picked up a plan handed off from the previous
+session (plan mode, no code written there — only a plan file + a memory
+backup). Before executing, re-verified every one of that plan's factual
+claims against the live repo (an Explore pass plus personally reading
+`vercel.json`) rather than trusting a session-old plan at face value — all
+held up, with one correction worth recording: **`vercel.json` uses only the
+modern `rewrites` array (no legacy `routes` key)**, so Vercel's documented
+filesystem-priority behavior applies and an existing static file always
+wins over a rewrite rule — `settings.html`'s absence from the catch-all's
+negative-lookahead allow-list is irrelevant, it was never at risk of being
+shadowed. A literal regex-reading of that allow-list (which a first pass
+did) gets this wrong; the platform-level serving-order rule is what
+actually decides it.
+
+- **The core design, unchanged from the handed-off plan:** a client-side
+  gate in `settings-main.ts` — connect (org's Supabase URL + Publishable
+  Key, `localStorage`) → sign in (native GitHub OAuth) → admin check
+  (`app_metadata.wm_admin`) — ahead of the existing category-editing UI,
+  for every non-desktop load (`isDesktopRuntime()` skips it entirely, so
+  the Tauri desktop path is byte-for-byte untouched). New
+  `src/services/admin-org-connection.ts` holds a Supabase client instance
+  kept deliberately separate from `supabase-client.ts`'s dashboard
+  singleton — own `auth.storageKey` (`'wm-admin-auth'`) so a signed-in
+  admin session can never collide with a signed-in dashboard session in
+  the same browser profile, confirmed necessary by checking that the
+  dashboard singleton sets no custom storage key of its own (uses
+  Supabase's default) — an admin visiting both `settings.html` and
+  `dashboard.html` on the same org's project would otherwise fight over
+  one `localStorage` slot.
+- **Write path** reuses the one existing choke point,
+  `settings-manager.ts`'s `commitVerifiedSecrets()`: a single
+  `isDesktopRuntime() ? setSecretValue(...) : commitToPipelineConfig(...)`
+  branch. `commitToPipelineConfig`'s actual upsert-vs-delete logic lives in
+  a separate, directly-unit-testable function
+  (`commitPipelineConfigValue(client, key, value)`) that takes the
+  Supabase client as a parameter — mirroring `runtime-config.ts`'s existing
+  split between pure `validateSecret()` and effectful `setSecretValue()` —
+  so the branching is covered by a plain fake-client unit test with no
+  `createClient()`/`localStorage` involved.
+- **Read path** adds one new `runtime-config.ts` export,
+  `seedSecretsFromCloudAdmin()` — the cloud-admin twin of the existing
+  `loadDesktopSecrets()`, seeding `runtimeConfig.secrets[key] = { source:
+  'vault' }` (presence only, never the plaintext value — `pipeline_config`
+  rows are fetched by `key` column alone) for whatever
+  `fetchPipelineConfigPresence()` returns. This means the entire existing
+  render pipeline (`renderSecretInput()`, `MASKED_SENTINEL` masking) needed
+  **zero changes** to treat an org-admin-set key identically to a desktop
+  vault entry.
+- **Category scope**: `ai` (`OPENROUTER_API_KEY`/`GROQ_API_KEY`/`OLLAMA_*`)
+  is excluded from the cloud-admin render — it's per-operator tier (P3),
+  already Workstream 3's dashboard tab's job, and not a `pipeline_config`
+  key at all. A new `VISIBLE_SETTINGS_CATEGORIES` const in
+  `settings-main.ts` (desktop keeps all 5; non-desktop filters to 4)
+  replaces every direct `SETTINGS_CATEGORIES` reference in that file — the
+  Workstream 6 checklist's own "full 5-category form" wording was wrong as
+  literally written; corrected in the checklist itself.
+- **Known nuance, deliberately not fixed:** `isFeatureAvailable()` already
+  returns `true` unconditionally for any non-desktop runtime — a
+  pre-existing assumption from when this render path had no real user
+  (this repo's public dashboard, not an admin panel). That means a
+  category's sidebar dot / overview progress ring in the cloud-admin view
+  reads "Ready" even before an admin has actually saved a key, though each
+  individual secret row's own status (Missing/Staged/masked-present) is
+  accurate. Not fixed here: `isFeatureAvailable()` is called from many
+  places across the live public dashboard, not just this panel, and making
+  it admin-panel-aware risks a much broader behavior change than this
+  workstream's scope calls for.
+- **Docs corrected in place, not just the checklist:** P5's decision text,
+  the component-map's admin-panel row, and this session's own Status/log
+  entries — all previously described the GCP-colocated design that was
+  never actually built. `deploy/orgs/README.md`'s new-org runbook gained
+  step 6a (configure native GitHub OAuth on the org's Supabase project —
+  the admin panel's sign-in silently fails without it).
+- **Verification:** `tsc --noEmit` and `biome check` both clean on every
+  touched file. Unit tests for `admin-org-connection.ts`'s connection
+  storage round-trip and `commitPipelineConfigValue()`'s upsert/delete
+  branching (fake-client, no network); a source-grep regression test for
+  `settings-main.ts`'s gate sequence and category filter, matching this
+  repo's own established convention for inline-HTML-string settings
+  content (`tests/llm-key-settings.test.mjs`'s own header explains why:
+  no jsdom is wired into `node:test` here). **Cannot be verified
+  end-to-end from this environment** — needs a real org's Supabase project
+  with native GitHub OAuth actually configured, and the `mosiq` test
+  tenant doesn't have that set up yet. Stating that plainly rather than
+  claiming live verification.
 
 ### Session 58 — 2026-09-05
 

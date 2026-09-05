@@ -86,6 +86,17 @@ GH Environment already scopes):
 6. Add the org's redirect URL to its Supabase project's Auth → Redirect URLs
    allow-list (`PROVISIONING.md`'s post-deploy step — GoTrue silently drops
    an un-allow-listed `redirectTo`).
+6a. **Configure native GitHub OAuth on this org's Supabase project**
+   (Supabase dashboard → Authentication → Providers → GitHub → set the
+   Client ID/Secret + callback URL from a GitHub OAuth App you register for
+   this org). This is the sign-in the Workstream 6 admin panel
+   (`settings.html`) uses for a plain browser visitor — deliberately the
+   *native* provider, not `github-identity-bridge` (that bridge relays a
+   GitHub token a VS Code session already holds; it doesn't originate a
+   fresh consent screen for someone with no existing token, see
+   `src/services/auth-provider.ts`'s module doc). Skipping this step means
+   the admin panel's "Sign in with GitHub" button fails for every org
+   admin visiting `settings.html`.
 7. **Not yet available**: a standalone shared AIS-ingest deploy target (P14
    part b — one shared Cloud Run service pushing vessel data into every
    org's Upstash DB). Its WebSocket core still lives embedded inside

@@ -525,6 +525,21 @@ export async function verifySecretWithApi(
   }
 }
 
+/**
+ * Cloud-admin org-connection twin of loadDesktopSecrets() — seeds presence
+ * (never plaintext) for keys an org admin has already set in Supabase
+ * `pipeline_config`, so the shared render pipeline (getSecretState(),
+ * MASKED_SENTINEL masking in settings-main.ts) treats them identically to
+ * a desktop vault entry. Workstream 6 (admin panel) only — called from
+ * settings-main.ts's cloud-admin gate, never from the desktop path.
+ */
+export function seedSecretsFromCloudAdmin(presentKeys: Iterable<RuntimeSecretKey>): void {
+  for (const key of presentKeys) {
+    runtimeConfig.secrets[key] = { source: 'vault' };
+  }
+  notifyConfigChanged();
+}
+
 export async function loadDesktopSecrets(): Promise<void> {
   if (!isDesktopRuntime()) return;
 

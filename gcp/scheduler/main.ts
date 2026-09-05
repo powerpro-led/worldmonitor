@@ -289,6 +289,15 @@ const CADENCES: Record<string, Cadence> = {
   // gate). Cadence matches the deleted loop's POSITIVE_EVENTS_INTERVAL_MS
   // (15min). TTL raised to 75min to clear the 60-min health staleness gate.
   'seed-positive-events': { kind: 'every', rate: '15 minutes' },
+  // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Ports of
+  // ais-relay.cjs's startWsbTickersSeedLoop / startSocialVelocitySeedLoop.
+  // Reddit fetching (ScrapeCreators→OAuth→public) moved to the shared
+  // scripts/_reddit-hot.cjs. Cadence matches each deleted loop's
+  // {WSB_TICKERS,SOCIAL_VELOCITY}_INTERVAL_MS (3h) and api/health.js's
+  // maxStaleMin 540 (= 3x). Both data-key TTLs (43200s / 12h) already clear
+  // that gate.
+  'seed-wsb-tickers': { kind: 'every', rate: '3 hours' },
+  'seed-social-velocity': { kind: 'every', rate: '3 hours' },
   // 2026-09-05 (session 63) — P14 Phase 2, loop extraction. Straight port of
   // ais-relay.cjs's startUsniFleetSeedLoop (no standalone sibling existed).
   // Cadence matches the deleted loop's USNI_SEED_INTERVAL_MS (6h) and

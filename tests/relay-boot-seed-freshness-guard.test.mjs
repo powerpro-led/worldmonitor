@@ -189,8 +189,6 @@ const SEEDERS = [
   // warm-pings them any more.
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
-  ['SocialVelocity', 'SOCIAL_VELOCITY_SEED_META_KEY', 'SOCIAL_VELOCITY_INTERVAL_MS', 'seedSocialVelocity'],
-  ['WsbTickers', "'seed-meta:intelligence:wsb-tickers'", 'WSB_TICKERS_INTERVAL_MS', 'seedWsbTickers'],
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
   ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
   // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,
@@ -222,6 +220,14 @@ const SEEDERS = [
   // throttle moved to _gdelt-fetch.mjs's shared cross-process rate gate; the
   // failure semantics are now pinned against the new file in
   // tests/positive-events-seed-failure.test.mjs. No notification logic.
+  //
+  // SocialVelocity + WsbTickers were removed the same session — ported to
+  // scripts/seed-social-velocity.mjs (hand-rolled, keeps the status:'ok'/'error'
+  // seed-meta) and scripts/seed-wsb-tickers.mjs (every 3h each). The Reddit
+  // fetch path (ScrapeCreators→OAuth→public) moved to scripts/_reddit-hot.cjs;
+  // its source contract is now pinned there by tests/reddit-oauth-fetch.test.mjs,
+  // and the error-seed-meta behaviour by tests/social-velocity-seed-health.test.mjs.
+  // No notification logic.
   //
   // Satellites was removed in session 63 by the same mechanism as GSCPI:
   // straight port to a new scripts/seed-satellites.mjs (CelesTrak TLE fetch),

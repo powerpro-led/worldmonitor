@@ -100,6 +100,18 @@
     "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
   },
   {
+    "entry": "scripts/seed-wsb-tickers.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "seed-wsb-tickers",
+    "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
+  },
+  {
+    "entry": "scripts/seed-social-velocity.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "seed-social-velocity",
+    "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
+  },
+  {
     "entry": "scripts/seed-fx-yoy.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-fx-yoy",

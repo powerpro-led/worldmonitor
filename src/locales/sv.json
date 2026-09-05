@@ -85,8 +85,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalier"
     },
-    "liveWebcams": "Live-webbkameror",
-    "windyWebcams": "Windy Live-webbkamera",
     "groceryBasket": "Matvaruindex",
     "groceryItem": "Vara",
     "bigmacDesc": "Big Mac-priser i länder i Mellanöstern (Big Mac Index)",
@@ -444,20 +442,6 @@
       "showingMatches": "Visar {{count}} av {{total}} matchningar",
       "match": "träff",
       "matches": "träffar"
-    },
-    "webcams": {
-      "regions": {
-        "all": "ALLA",
-        "mideast": "MELLANÖSTERN",
-        "europe": "EUROPA",
-        "americas": "AMERIKA",
-        "asia": "ASIEN",
-        "space": "RYMDEN"
-      },
-      "paused": "Webbkameror pausade",
-      "pausedIdle": "Webbkameror pausade — flytta musen för att återuppta",
-      "play": "Spela",
-      "previewStatus": "Liveförhandsvisning"
     },
     "playback": {
       "live": "LIVE",
@@ -1196,8 +1180,6 @@
       "badgeAnimDesc": "Animera uppdateringsemblem i panelrubriker",
       "headlineMemoryLabel": "Rubrikminne",
       "headlineMemoryDesc": "Kom ihåg sedda rubriker för att markera nya",
-      "streamAlwaysOnLabel": "Spela upp liveströmmar automatiskt på instrumentpanelen",
-      "streamAlwaysOnDesc": "Startar Live News och Live Webcams automatiskt när de är synliga. Lämna avstängt för att ladda video först efter att du klickar på Spela.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -1741,9 +1723,6 @@
         "failedToLoad": "Det gick inte att läsa in"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Livewebbkameror</strong> Livesändningar från geopolitiskt betydelsefulla platser världen över: konfliktzoner, huvudstäder, gränsövergångar och strategiska flaskhalsar. Strömmar från YouTube och offentliga nätverk."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Makroindikatorer</strong> Viktiga makroekonomiska indikatorer för USA och euroområdet: CPI, arbetslöshet, GDP och centralbanksräntor. Värden visade med delta mot föregående period. Källa: FRED (Federal Reserve Economic Data)."
     },
@@ -1764,9 +1743,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Avkastningskurva &amp; Räntor</strong> US Treasury avkastningskurva (2Y, 5Y, 10Y, 30Y) och nyckelräntespreadar inklusive 10Y-2Y-inversionsindikatorn. Visar även euroområdets räntor (EURIBOR, ESTR). En inverterad kurva föregår historiskt recessioner. Källa: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Fäst en webbkamera från kartan"
     },
     "breakthroughsTicker": {
       "noData": "Inga vetenskapliga genombrott ännu"

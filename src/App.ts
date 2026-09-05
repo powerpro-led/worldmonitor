@@ -668,7 +668,6 @@ export class App {
       if (!localStorage.getItem(PANEL_KEY_RENAMES_MIGRATION_KEY)) {
         let migrated = false;
         const keyRenames: Array<[string, string]> = [
-          ['pinned-webcams', 'windy-webcams'],
           ...(SITE_VARIANT === 'finance' ? [['regulation', 'fin-regulation'] as [string, string]] : []),
         ];
         // In non-finance variants, 'regulation' was dead config (no feeds). Just prune it.

@@ -273,27 +273,6 @@ test('classifyKey: empty on-demand standalone key → EMPTY_ON_DEMAND (warn)', (
   assert.equal(STATUS_COUNTS[entry.status], 'warn');
 });
 
-test('classifyKey: webcams active pointer has no seed-meta freshness tracking (orphaned cron, alarm removed 2026-08-19)', () => {
-  // seed-webcams.mjs is an orphaned cron (zero Railway services, zero
-  // bundles) blocked on a missing WINDY_API_KEY -- operator decided not
-  // worth pursuing (session 26, TASKS.md "orphaned crons" item 5), so its
-  // SEED_META entry was deliberately removed rather than left as a
-  // permanent false "looks broken" alarm. Without a seedCfg, classifyKey
-  // can no longer read a real recordCount or maxStaleMin for this key --
-  // it falls back to the generic hasData-only default (records=1,
-  // maxStaleMin=undefined) rather than tracking staleness at all.
-  const entry = classifyKey('webcams', STANDALONE_KEYS.webcams, { allowOnDemand: true },
-    makeCtx({
-      strens: { [STANDALONE_KEYS.webcams]: 13 },
-      metaValues: { 'seed-meta:webcam:cameras:geo': seedMeta({ recordCount: 65000 }) },
-    }));
-
-  assert.equal(STANDALONE_KEYS.webcams, 'webcam:cameras:active');
-  assert.equal(entry.status, 'OK');
-  assert.equal(entry.records, 1);
-  assert.equal(entry.maxStaleMin, undefined);
-});
-
 test('classifyKey: digestNotifications heartbeat goes stale when the cron stops', () => {
   const entry = classifyKey('digestNotifications', STANDALONE_KEYS.digestNotifications, { allowOnDemand: true },
     makeCtx({

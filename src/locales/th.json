@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "ความผิดปกติ"
     },
-    "liveWebcams": "กล้องเว็บสด",
-    "windyWebcams": "กล้องเว็บสด Windy",
     "groceryBasket": "ดัชนีสินค้าชุมชน",
     "groceryItem": "สินค้า",
     "bigmacDesc": "ราคา Big Mac ในประเทศตะวันออกกลาง (Big Mac Index)",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "กล้องหยุดชั่วคราว",
-      "pausedIdle": "กล้องหยุดชั่วคราว — เลื่อนเมาส์เพื่อดำเนินต่อ",
-      "regions": {
-        "all": "ทั้งหมด",
-        "mideast": "ตะวันออกกลาง",
-        "europe": "ยุโรป",
-        "americas": "อเมริกา",
-        "asia": "เอเชีย",
-        "space": "อวกาศ"
-      },
-      "play": "เล่น",
-      "previewStatus": "ตัวอย่างสด"
-    },
     "positiveNewsFeed": {
       "noStories": "ยังไม่มีเรื่องราวในหมวดนี้"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "แสดงแอนิเมชันป้ายอัปเดตบนส่วนหัวของแผง",
       "headlineMemoryLabel": "หน่วยความจำพาดหัว",
       "headlineMemoryDesc": "จดจำพาดหัวที่เคยดูเพื่อเน้นข่าวใหม่",
-      "streamAlwaysOnLabel": "เล่นสตรีมสดบนแดชบอร์ดโดยอัตโนมัติ",
-      "streamAlwaysOnDesc": "เริ่ม Live News และ Live Webcams โดยอัตโนมัติเมื่อมองเห็น ปิดไว้เพื่อโหลดวิดีโอหลังจากคุณคลิกเล่นเท่านั้น",
       "analysisFrameworksLabel": "กรอบการวิเคราะห์",
       "analysisFrameworksActivePerPanel": "ใช้งานต่อแผง",
       "analysisFrameworksSkillLibrary": "ไลบรารีทักษะ",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "การโหลดล้มเหลว"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>เว็บแคมสด</strong> ถ่ายทอดสดจากสถานที่ที่มีความสำคัญทางภูมิรัฐศาสตร์ทั่วโลก: เขตขัดแย้ง เมืองหลวง จุดข้ามพรมแดน และจุดคอขวดเชิงยุทธศาสตร์ สตรีมจาก YouTube และเครือข่ายสาธารณะ"
-    },
     "macroTiles": {
       "infoTooltip": "<strong>ตัวชี้วัดมหภาค</strong> ตัวชี้วัดเศรษฐกิจมหภาคหลักสำหรับสหรัฐฯ และยูโรโซน: CPI อัตราการว่างงาน GDP และอัตราดอกเบี้ยธนาคารกลาง ค่าแสดงพร้อมเดลต้าจากช่วงก่อนหน้า แหล่งข้อมูล: FRED (Federal Reserve Economic Data)"
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>เส้นอัตราผลตอบแทน &amp; อัตราดอกเบี้ย</strong> เส้นอัตราผลตอบแทน US Treasury (2Y, 5Y, 10Y, 30Y) และสเปรดอัตราดอกเบี้ยหลัก รวมถึงตัวบ่งชี้การกลับตัวของ 10Y-2Y แสดงอัตราดอกเบี้ยยูโรโซนด้วย (EURIBOR, ESTR) เส้นกลับด้านมักนำหน้าภาวะถดถอยในประวัติศาสตร์ แหล่งข้อมูล: FRED"
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "ปักหมุดกล้องเว็บแคมจากแผนที่"
     },
     "breakthroughsTicker": {
       "noData": "ยังไม่มีความก้าวหน้าทางวิทยาศาสตร์"

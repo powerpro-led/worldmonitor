@@ -403,8 +403,6 @@
     "techReadiness": "Tech Readiness Index",
     "gccInvestments": "GCC Investments",
     "geoHubs": "Geopolitical Hubs",
-    "liveWebcams": "Live Webcams",
-    "windyWebcams": "Windy Live Webcam",
     "gulfEconomies": "Gulf Economies",
     "groceryBasket": "Grocery Index",
     "groceryItem": "Item",
@@ -759,23 +757,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Webcams paused",
-      "pausedIdle": "Webcams paused — move mouse to resume",
-      "play": "Play",
-      "previewStatus": "Live preview",
-      "regions": {
-        "all": "ALL",
-        "mideast": "MIDEAST",
-        "europe": "EUROPE",
-        "americas": "AMERICAS",
-        "asia": "ASIA",
-        "space": "SPACE"
-      }
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Pin a webcam from the map"
-    },
     "positiveNewsFeed": {
       "noStories": "No stories in this category yet"
     },
@@ -1425,8 +1406,6 @@
       "analysisFrameworksFromAgentskills": "From agentskills.io",
       "analysisFrameworksPasteJson": "Paste JSON",
       "analysisFrameworksSaveToLibrary": "Save to Library",
-      "streamAlwaysOnLabel": "Auto-play live streams on dashboard",
-      "streamAlwaysOnDesc": "Starts Live News and Live Webcams automatically when visible. Leave off to load video only after you click Play.",
       "frameworkNote": "Applies to client-generated analysis only",
       "loadingServerInsights": "Loading server insights...",
       "usingCachedBrief": "Using cached brief...",
@@ -2189,9 +2168,6 @@
         "unavailable": "Hormuz data unavailable",
         "failedToLoad": "Failed to load"
       }
-    },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live Webcams</strong> Live feeds from geopolitically significant locations worldwide: conflict zones, capital cities, border crossings, and strategic chokepoints. Streams sourced from YouTube and public networks."
     },
     "macroTiles": {
       "infoTooltip": "<strong>Macro Indicators</strong> Key macroeconomic indicators for the US and Euro Area: CPI, unemployment, GDP, and central bank rates. Values shown with prior period delta. Source: FRED (Federal Reserve Economic Data)."

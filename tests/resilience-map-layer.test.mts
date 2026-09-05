@@ -211,7 +211,7 @@ describe('resilience non-DeckGL sanitization', () => {
       tradeRoutes: false, iranAttacks: false, gpsJamming: false, satellites: false,
       ciiChoropleth: false, resilienceScore: false, dayNight: false,
       miningSites: false, processingPlants: false, commodityPorts: false,
-      webcams: false, weatherRadar: false, diseaseOutbreaks: false,
+      weatherRadar: false, diseaseOutbreaks: false,
     };
   }
 });
@@ -270,7 +270,6 @@ describe('resilience choropleth exclusivity', () => {
       miningSites: false,
       processingPlants: false,
       commodityPorts: false,
-      webcams: false,
       weatherRadar: false,
       diseaseOutbreaks: false,
     };

@@ -102,7 +102,6 @@ export const DEFAULT_MAP_LAYERS: MapLayers = {
   cyberThreats: false,
   ciiChoropleth: false,
   resilienceScore: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -163,7 +162,6 @@ export const MOBILE_DEFAULT_MAP_LAYERS: MapLayers = {
   cyberThreats: false,
   ciiChoropleth: false,
   resilienceScore: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 

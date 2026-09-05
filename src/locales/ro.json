@@ -342,8 +342,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalii"
     },
-    "liveWebcams": "Camere web live",
-    "windyWebcams": "Cameră web live Windy",
     "groceryBasket": "Index cărucior",
     "groceryItem": "Produs",
     "bigmacDesc": "Prețurile Big Mac în țările din Orientul Mijlociu (Big Mac Index)",
@@ -693,20 +691,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Camerele web au fost întrerupte",
-      "pausedIdle": "Camere web întrerupte — mișcați mouse-ul pentru a relua",
-      "regions": {
-        "all": "TOATE",
-        "mideast": "ORIENT. MIJ.",
-        "europe": "EUROPA",
-        "americas": "AMERICA",
-        "asia": "ASIA",
-        "space": "SPAȚIU"
-      },
-      "play": "Redă",
-      "previewStatus": "Previzualizare live"
-    },
     "positiveNewsFeed": {
       "noStories": "Încă nu există povești în această categorie"
     },
@@ -1278,8 +1262,6 @@
       "badgeAnimDesc": "Animați insigne de actualizare pe anteturile panoului",
       "headlineMemoryLabel": "Memorie titlu",
       "headlineMemoryDesc": "Amintiți-vă titlurile văzute pentru a evidenția povești noi",
-      "streamAlwaysOnLabel": "Redă automat fluxurile live în tabloul de bord",
-      "streamAlwaysOnDesc": "Pornește automat Live News și Live Webcams când sunt vizibile. Lasă dezactivat pentru a încărca video doar după ce dai clic pe Redă.",
       "analysisFrameworksLabel": "Cadre de Analiză",
       "analysisFrameworksActivePerPanel": "Activ per panou",
       "analysisFrameworksSkillLibrary": "Bibliotecă de Abilități",
@@ -2004,9 +1986,6 @@
         "failedToLoad": "Încărcarea a eșuat"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Camere web în direct</strong> Fluxuri în direct din locații semnificative geopolitic din întreaga lume: zone de conflict, capitale, puncte de trecere a frontierei și puncte strategice de blocaj. Fluxuri de la YouTube și rețele publice."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Indicatori macro</strong> Indicatori macroeconomici cheie pentru SUA și zona euro: CPI, șomaj, GDP și ratele băncilor centrale. Valori afișate cu delta față de perioada anterioară. Sursă: FRED (Federal Reserve Economic Data)."
     },
@@ -2027,9 +2006,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Curba randamentelor &amp; Rate</strong> Curba randamentelor US Treasury (2Y, 5Y, 10Y, 30Y) și spread-uri cheie ale ratelor, inclusiv indicatorul de inversiune 10Y-2Y. Afișează și ratele zonei euro (EURIBOR, ESTR). O curbă inversată precede istoric recesiunile. Sursă: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Fixați o cameră web de pe hartă"
     },
     "breakthroughsTicker": {
       "noData": "Nicio descoperire științifică încă"

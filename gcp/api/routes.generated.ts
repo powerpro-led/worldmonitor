@@ -152,11 +152,10 @@ import route_80_v2_shipping_webhooks_subscriberIdHandler from '../../api/v2/ship
 import route_81_v2_shipping_webhooks_subscriberId_actionHandler from '../../api/v2/shipping/webhooks/[subscriberId]/[action]';
 // @ts-expect-error — JS module, no declaration file
 import route_82_versionHandler from '../../api/version.js';
-import route_83_webcam_v1_rpcHandler from '../../api/webcam/v1/[rpc]';
-import route_84_widget_agentHandler from '../../api/widget-agent';
-import route_85_wildfire_v1_rpcHandler from '../../api/wildfire/v1/[rpc]';
+import route_83_widget_agentHandler from '../../api/widget-agent';
+import route_84_wildfire_v1_rpcHandler from '../../api/wildfire/v1/[rpc]';
 // @ts-expect-error — JS module, no declaration file
-import route_86_wm_sessionHandler from '../../api/wm-session.js';
+import route_85_wm_sessionHandler from '../../api/wm-session.js';
 
 export function registerGeneratedRoutes(api: Api): void {
   const route_0_a2a = api.route('/api/a2a');
@@ -740,32 +739,25 @@ export function registerGeneratedRoutes(api: Api): void {
   route_82_version.patch(adaptVercelHandler(route_82_versionHandler));
   route_82_version.delete(adaptVercelHandler(route_82_versionHandler));
   route_82_version.options(adaptVercelHandler(route_82_versionHandler));
-  const route_83_webcam_v1_rpc = api.route('/api/webcam/v1/:rpc');
-  route_83_webcam_v1_rpc.get(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  route_83_webcam_v1_rpc.post(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  route_83_webcam_v1_rpc.put(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  route_83_webcam_v1_rpc.patch(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  route_83_webcam_v1_rpc.delete(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  route_83_webcam_v1_rpc.options(adaptVercelHandler(route_83_webcam_v1_rpcHandler));
-  const route_84_widget_agent = api.route('/api/widget-agent');
-  route_84_widget_agent.get(adaptVercelHandler(route_84_widget_agentHandler));
-  route_84_widget_agent.post(adaptVercelHandler(route_84_widget_agentHandler));
-  route_84_widget_agent.put(adaptVercelHandler(route_84_widget_agentHandler));
-  route_84_widget_agent.patch(adaptVercelHandler(route_84_widget_agentHandler));
-  route_84_widget_agent.delete(adaptVercelHandler(route_84_widget_agentHandler));
-  route_84_widget_agent.options(adaptVercelHandler(route_84_widget_agentHandler));
-  const route_85_wildfire_v1_rpc = api.route('/api/wildfire/v1/:rpc');
-  route_85_wildfire_v1_rpc.get(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  route_85_wildfire_v1_rpc.post(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  route_85_wildfire_v1_rpc.put(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  route_85_wildfire_v1_rpc.patch(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  route_85_wildfire_v1_rpc.delete(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  route_85_wildfire_v1_rpc.options(adaptVercelHandler(route_85_wildfire_v1_rpcHandler));
-  const route_86_wm_session = api.route('/api/wm-session');
-  route_86_wm_session.get(adaptVercelHandler(route_86_wm_sessionHandler));
-  route_86_wm_session.post(adaptVercelHandler(route_86_wm_sessionHandler));
-  route_86_wm_session.put(adaptVercelHandler(route_86_wm_sessionHandler));
-  route_86_wm_session.patch(adaptVercelHandler(route_86_wm_sessionHandler));
-  route_86_wm_session.delete(adaptVercelHandler(route_86_wm_sessionHandler));
-  route_86_wm_session.options(adaptVercelHandler(route_86_wm_sessionHandler));
+  const route_83_widget_agent = api.route('/api/widget-agent');
+  route_83_widget_agent.get(adaptVercelHandler(route_83_widget_agentHandler));
+  route_83_widget_agent.post(adaptVercelHandler(route_83_widget_agentHandler));
+  route_83_widget_agent.put(adaptVercelHandler(route_83_widget_agentHandler));
+  route_83_widget_agent.patch(adaptVercelHandler(route_83_widget_agentHandler));
+  route_83_widget_agent.delete(adaptVercelHandler(route_83_widget_agentHandler));
+  route_83_widget_agent.options(adaptVercelHandler(route_83_widget_agentHandler));
+  const route_84_wildfire_v1_rpc = api.route('/api/wildfire/v1/:rpc');
+  route_84_wildfire_v1_rpc.get(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  route_84_wildfire_v1_rpc.post(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  route_84_wildfire_v1_rpc.put(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  route_84_wildfire_v1_rpc.patch(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  route_84_wildfire_v1_rpc.delete(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  route_84_wildfire_v1_rpc.options(adaptVercelHandler(route_84_wildfire_v1_rpcHandler));
+  const route_85_wm_session = api.route('/api/wm-session');
+  route_85_wm_session.get(adaptVercelHandler(route_85_wm_sessionHandler));
+  route_85_wm_session.post(adaptVercelHandler(route_85_wm_sessionHandler));
+  route_85_wm_session.put(adaptVercelHandler(route_85_wm_sessionHandler));
+  route_85_wm_session.patch(adaptVercelHandler(route_85_wm_sessionHandler));
+  route_85_wm_session.delete(adaptVercelHandler(route_85_wm_sessionHandler));
+  route_85_wm_session.options(adaptVercelHandler(route_85_wm_sessionHandler));
 }

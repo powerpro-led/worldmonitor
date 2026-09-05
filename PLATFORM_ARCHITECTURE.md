@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-05 (session 60) — **Workstream 7's cameras removal (P7) done.** `PinnedWebcamsPanel`/`api/webcam` removed full-stack (backend RPCs/proto/generated code/seeder/routing, all three map renderers, config, locales, tests) — a deliberate, operator-confirmed reversal of an older "do not delete" correction that had protected a different (already-settled) removal. Verified clean: `tsc` zero errors, touched-file lint clean, full test suite at its documented pre-existing noise floor. Not yet committed. Two Workstream 7 items remain: the `ais-relay.cjs` decomposition (P14 Phase 2) and the 21 remaining direct-fetch handlers + `cloudFallback` decision — see the workstream section below.
 - **As of:** 2026-09-05 (session 59) — **Workstream 6 (admin panel) shipped.** `settings.html` gains a cloud-admin gate (connect org → sign in with GitHub → `app_metadata.wm_admin` check) ahead of its existing category-editing UI, wired to write straight into the connected org's `pipeline_config` (RLS-enforced, no new SQL). Zero new hosting: rides the existing Vercel `dist/` build — see P5's correction below for why the original GCP-colocated design was never buildable as written. Only Workstream 7 (worker: absorb the direct fetches, incl. P14 Phase 2's AIS-ingest extraction) remains on the recommended order; Workstreams R and 1–6 are all shipped.
 - **Prior work state:** `main` @ `ea1f964` at S59 start (9 ahead of `origin/main`, not pushed — operator's call, unchanged this session). S58 shipped Workstream 5 (multi-org deploy pipeline: org config schema, `nitric.<org>.yaml` generator, `pipeline_config` hydration loop, `deploy-org.yml`) + P14 Phase 1 (service consolidation — 3 queue workers merged, `ais-relay.cjs` the sole remaining pinned instance). `v2.13.0` still not tagged, on hold (P12).
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. **OQ-P6 and OQ-P7 both RESOLVED S57** — see P14 and the resolved-questions section; no open sub-questions remain.
@@ -271,7 +272,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 > backend is already a read replica *for writes*; only the compute is still local,
 > so P2's delta is smaller than it reads.
 
-- [ ] Cameras: delete (P7) — includes `server/worldmonitor/webcam/v1/get-webcam-image.ts`, one of the 22.
+- [x] **DONE S60 — Cameras removed entirely (P7).** Full-stack removal of `PinnedWebcamsPanel`/`api/webcam`, confirmed with the operator as a deliberate reversal of the session-18-19-era "do not delete `api/webcam/*`" correction (that correction protected a *different* feature, `PinnedWebcamsPanel`, from being conflated with the already-approved `LiveWebcamsPanel` removal — P7 now removes `PinnedWebcamsPanel` too, on purpose). Backend: `proto/worldmonitor/webcam/v1/*`, `server/worldmonitor/webcam/v1/*`, `api/webcam/`, the 2 `server/gateway.ts` cache-tier lines, `scripts/seed-webcams.mjs`, its `gcp/scheduler/main.ts` orphan-list entry, `sync-domains.mjs`'s now-dead deny line, `api/health.js`'s `STANDALONE_KEYS.webcams`, `WINDY_API_KEY` docs, and the CSP `frame-src` entry all deleted; `make generate` + `scripts/generate-nitric-routes.mjs` re-run to regenerate everything else byte-identical while cleanly dropping webcam. Frontend: the panel + `src/services/webcams/`, all three map renderers' (`Map.ts`/`GlobeMap.ts`/`DeckGLMap.ts`) marker/tooltip/popup layers, config across every variant, the `MapLayers.webcams` type (tsc catches any straggler), app wiring, and all 26 locale files (scripted removal, verified valid JSON) — bundled in the same pass, per operator's call: dead leftovers from the already-settled `LiveWebcamsPanel` removal (orphaned locale keys, a stale e2e spec, unused `localStorage` keys). 9 test files updated to match. Verification: `tsc --noEmit` zero errors repo-wide; touched-file `biome lint` clean; full `npm run test:data` at its documented pre-existing noise band (94 fail / 36 cancelled, none webcam-related — spot-checked via `git stash`); final repo-wide grep clean except docs/history and 3 harmless pre-existing comment mentions. Not yet committed.
 - [ ] **Decompose `ais-relay.cjs` (P14 Phase 2).** 28 `startBootSeedLoop` seed/warm-ping loops → `gcp/scheduler/main.ts` `CADENCES` entries (map each against what's already registered/shadowed there first — the file already lists several as "ais-relay backup"). Extract the ~150-line AIS WS core → the shared ingest service. Extract the Telegram MTProto poller → scheduled `--once` + Redis lock. `tauri-sidecar` `telegram-feed` / `gpsjam` routes become mirror reads. End state: the per-org deploy has 0 pinned instances.
 - [x] **DONE S57 — `list-feed-digest` seeder.** `scripts/seed-news-digest.mjs`: a nixpacks-root-scripts warm-ping job (NOT a re-implementation — `scripts/` can't import `server/` and `buildDigest` isn't exported). It HTTP-pings `/api/news/v1/list-feed-digest?variant=&lang=` per `(variant, lang)` pair (env `NEWS_DIGEST_SEED_VARIANTS`=`full`, `NEWS_DIGEST_SEED_LANGS`=`en,zh`; `en` first so `zh` reuses the warmed `rss:feed:v8:*` per-feed caches) — the RPC runs `buildDigest`, `setCachedJson`s `news:digest:v1:<variant>:<lang>` (which also fires the mirror notify) and stamps a fresh `generatedAt` (what the panels read for freshness, so no `seed-meta:` write here). Registered in `railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` at **`*/10 * * * *`** — a hard constraint, not an inference: must stay under `list-feed-digest.ts`'s 900s `news:digest:v1` TTL or the cold-hole bug returns. `classifyKey('news:digest:v1:*')` was already `'mirror'` — no W4 change. Exit-code policy: 0 on any success (partial failure self-heals next tick), 1 only if every ping fails. Unit test: `tests/seed-news-digest.test.mjs` (10 cases). **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed** — it was already inert whenever `WS_RELAY_URL` was unset (`/api/news/v1/` is `cloudPreferred` then), i.e. in exactly the config the pivot backend runs; the digest now arrives over the mirror.
 - [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
@@ -292,6 +293,85 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 60 — 2026-09-05
+
+**Workstream 7's cameras removal (P7) done.** Started Workstream 7 fresh, as the
+prior session's handoff suggested; the "quick" cameras-deletion item turned
+out to touch ~60 files once two Explore agents mapped the full surface
+(generated protobuf code, all three map renderers, config across every site
+variant, 26 locale files, gateway routing, sync-domain denylist, health
+classification, tests) — big enough to plan formally rather than improvise.
+
+**The one real judgment call, surfaced rather than assumed:** the mapping
+turned up a direct conflict. An older session (18-19) had explicitly
+corrected a prior over-eager deletion attempt — *"do not delete `api/webcam/*`
+or its generated client/server code"* — because it protected a real, wanted
+feature (`PinnedWebcamsPanel`, "pin a webcam to the map") that a different,
+already-approved removal (`LiveWebcamsPanel`, a TV-style stream wall) had
+almost taken down with it by mistake. P7 (written much later, S55) names
+`PinnedWebcamsPanel` for removal too — reading as a deliberate reversal made
+in the platform-pivot context (one fewer of the ~26 per-org data-source keys,
+`WINDY_API_KEY`, every tenant would otherwise need), but there was no way to
+tell from the repo alone whether that reversal was intentional or whether P7
+was written without cross-checking the older correction. Asked the operator
+directly rather than guessing either way: confirmed to proceed with full
+removal, and to bundle in leftover dead code from the already-settled
+`LiveWebcamsPanel` removal that the mapping surfaced as a free find
+(orphaned locale keys in all 25 languages, a stale e2e spec, unused
+`localStorage` keys).
+
+**Execution, in dependency order:** proto files deleted → `make generate`
+(after installing `buf` + the `sebuf` plugins, see below) regenerated every
+other domain's client/server code byte-identical to what was already
+committed, cleanly dropping only webcam → `scripts/generate-nitric-routes.mjs`
+re-run for `gcp/api/routes.generated.ts` → backend RPC handlers, seeder,
+scheduler entry, sync-domain deny line, health classification, env docs, and
+CSP all cleaned → frontend panel + service deleted → all three map renderers
+(`Map.ts`/`GlobeMap.ts`/`DeckGLMap.ts`) had their marker/tooltip/popup layers
+removed individually (each renderer duplicates this logic, not shared) →
+config/types/app-wiring cleaned across every site variant, with the
+`MapLayers.webcams` type removal used deliberately as a `tsc` completeness
+check → all 26 locale files cleaned via a small Node script (safer than 100+
+manual JSON edits) → 9 test files updated to match.
+
+**A self-inflicted, self-healing detour:** `make generate`'s first run
+depended on a `clean` step that wiped the *entire* generated-code directory
+before failing on a missing `buf` binary — briefly broke `tsc` repo-wide
+across every domain, not just webcam. Recovered by installing `buf` (Homebrew
+bottle, not `go install` from source — the latter kept stalling on this
+network doing per-dependency `sum.golang.org` checksum lookups, ~1s each,
+fixed generally by `GOSUMDB=off` for one-off tool installs) and the two
+`sebuf` codegen plugins, then re-running `make generate` clean.
+
+**A second network detour, diagnosed with the `local-network-optimizer`
+skill:** the Homebrew bottle download itself then hung on `ghcr.io` — HTTP/2
+protocol errors, and forcing HTTP/1.1 worked but crawled at ~15KB/s. The
+skill's playbook correctly identified this as VPN-tunnel routing (`route get`
+showed `utun6`) for GitHub's release-CDN range, not a broken link (a
+Cloudflare speed-test control ran fine at ~580KB/s the whole time). Confirmed
+with the operator this was their personal VPN and safe to route around, then
+a `sudo route add -net 185.199.108.0/22 <physical-gateway>` fixed it
+(270KB/s after). This route is **not persisted** — it's a plain routing-table
+entry that won't survive a reboot or VPN reconnect; a future session hitting
+the same ghcr.io slowness should re-check `route get` before troubleshooting
+from scratch, and can persist it with a LaunchDaemon per the skill's own
+template if it recurs often enough to be worth automating.
+
+**Verification:** `npx tsc --noEmit` zero errors repo-wide (the main safety
+net for the `MapLayers` type change rippling through every renderer/config
+file). Touched-file `biome lint` clean (whole-repo lint has pre-existing
+unrelated failures in files this work never touched, confirmed by scope).
+Full `npm run test:data` at 94 fail / 36 cancelled — within the documented
+pre-existing noise band (88↔94 under `--test-concurrency=16`); spot-checked
+the two failures most plausibly connected to this work
+(`nixpacks-seeder-import-graph.test.mjs`, `mission-presets.test.mts`) via
+`git stash` and confirmed both fail identically on a clean tree, unrelated to
+this session's changes. Final repo-wide grep clean except docs/history
+(`CHANGELOG.md`, `TASKS.md`, this file) and 3 harmless leftover code
+comments, two of which were fixed anyway for accuracy. Not yet committed —
+operator's call on when to commit, per this repo's established pattern this
+session of not committing without being asked.
 
 ### Session 59 — 2026-09-05
 

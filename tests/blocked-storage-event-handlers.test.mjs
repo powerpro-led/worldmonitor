@@ -35,16 +35,6 @@ describe('blocked-storage event handlers', () => {
     assert.match(resetLayout, /removeStorageValue\('map-height'\)/);
   });
 
-  it('keeps the globe webcam marker control functional without persistence', () => {
-    const webcamControl = globeMapSrc.match(
-      /\/\/ ── Webcam marker-mode sub-toggle ─+([\s\S]*?)this\.enforceLayerLimit\(\);/,
-    )?.[1];
-
-    assert.ok(webcamControl, 'GlobeMap must define the webcam marker-mode control');
-    assert.doesNotMatch(webcamControl, /localStorage\./);
-    assert.match(webcamControl, /this\.webcamMarkerMode/);
-  });
-
   it('keeps critical posture banner rendering and dismissal functional without session persistence', () => {
     const criticalBanner = panelLayoutSrc.match(
       /renderCriticalBanner\(postures: TheaterPostureSummary\[\]\): void \{([\s\S]*?)\n {2}\}\n\n {2}applyPanelSettings/,

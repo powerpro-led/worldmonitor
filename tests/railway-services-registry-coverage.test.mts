@@ -237,7 +237,6 @@ describe('Railway service registry coverage', () => {
     ['seed-recall-benchmark', 'runs in .github/workflows/feed-validation.yml — its header says "no Railway slot"'],
     ['seed-consumer-prices', 'header: "MANUAL FALLBACK script only. Do NOT configure as a Railway cron" — consumer-prices-core publish.ts is the authoritative writer'],
     ['seed-iran-events', 'header: "Iran-events domain sunset (war ended 2026-07). Default OFF" — manually re-seeded'],
-    ['seed-webcams', 'health alarm removed by operator decision (session 26); also needs WINDY_API_KEY'],
   ]);
 
   it('every scripts/seed-*.mjs is scheduled somewhere or explicitly excused', () => {

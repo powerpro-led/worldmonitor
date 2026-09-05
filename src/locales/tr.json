@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomaliler"
     },
-    "liveWebcams": "Canlı Web Kameralar",
-    "windyWebcams": "Windy Canlı Web Kamera",
     "groceryBasket": "Bakkal Endeksi",
     "groceryItem": "Ürün",
     "bigmacDesc": "Orta Doğu ülkelerinde Big Mac fiyatları (Big Mac Endeksi)",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Web kameralar duraklatıldı",
-      "pausedIdle": "Web kameralar duraklatıldı — devam etmek için fareyi hareket ettirin",
-      "regions": {
-        "all": "TUMU",
-        "mideast": "ORTA DOGU",
-        "europe": "AVRUPA",
-        "americas": "AMERIKA",
-        "asia": "ASYA",
-        "space": "UZAY"
-      },
-      "play": "Oynat",
-      "previewStatus": "Canlı önizleme"
-    },
     "positiveNewsFeed": {
       "noStories": "Bu kategoride henüz haber yok"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "Panel başlıklarındaki güncelleme rozetlerini canlandır",
       "headlineMemoryLabel": "Başlık hafızası",
       "headlineMemoryDesc": "Yenileri vurgulamak için görülen başlıkları hatırla",
-      "streamAlwaysOnLabel": "Panoda canlı yayınları otomatik oynat",
-      "streamAlwaysOnDesc": "Görünür olduklarında Live News ve Live Webcams otomatik olarak başlar. Videoyu yalnızca Oynat’a tıkladıktan sonra yüklemek için kapalı bırakın.",
       "analysisFrameworksLabel": "Analiz Çerçeveleri",
       "analysisFrameworksActivePerPanel": "Panel başına etkin",
       "analysisFrameworksSkillLibrary": "Beceri kütüphanesi",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "Yükleme başarısız"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Canlı Web Kameraları</strong> Dünya genelinde jeopolitik açıdan önemli konumlardan canlı yayınlar: çatışma bölgeleri, başkentler, sınır geçişleri ve stratejik darboğazlar. YouTube ve kamusal ağlardan akışlar."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Makro Göstergeler</strong> ABD ve Euro Bölgesi için temel makroekonomik göstergeler: CPI, işsizlik, GDP ve merkez bankası faizleri. Önceki dönem deltasıyla birlikte gösterilen değerler. Kaynak: FRED (Federal Reserve Economic Data)."
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Getiri Eğrisi &amp; Faizler</strong> US Treasury getiri eğrisi (2Y, 5Y, 10Y, 30Y) ve 10Y-2Y tersine dönme göstergesi dahil temel faiz farkları. Ayrıca Euro Bölgesi faizlerini gösterir (EURIBOR, ESTR). Ters çevrilmiş eğri tarihsel olarak durgunlukları önceler. Kaynak: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Haritadan bir webcam sabitle"
     },
     "breakthroughsTicker": {
       "noData": "Henüz bilim atılımı yok"

@@ -326,7 +326,6 @@ const STANDALONE_KEYS = {
   climateNewsRelayHeartbeat:     'relay:heartbeat:climate-news',
   telegramFeed:                  'intelligence:telegram-feed:v1',
   digestNotifications:           'digest:last-run',
-  webcams:                       'webcam:cameras:active',
   forecastResolutions:           'forecast:resolutions:v1',
   forecastScorecard:             'forecast:scorecard:v1',
   forecastBets:                  'forecast:bets:history:v1',
@@ -601,12 +600,6 @@ const SEED_META = {
   lowCarbonGeneration:     { key: 'seed-meta:resilience:low-carbon-generation',     maxStaleMin: 11520 },
   fossilElectricityShare:  { key: 'seed-meta:resilience:fossil-electricity-share',  maxStaleMin: 11520 },
   powerLosses:             { key: 'seed-meta:resilience:power-losses',              maxStaleMin: 11520 },
-  // webcams alarm removed 2026-08-19 (session 26): seed-webcams.mjs is an
-  // orphaned cron (registered in zero Railway services, zero bundles) AND
-  // blocked on a missing WINDY_API_KEY -- operator decided not worth
-  // pursuing right now. This key was never going to be kept fresh, so the
-  // alarm was a permanent false "looks broken" signal, not a real one. See
-  // TASKS.md's "orphaned crons" item 5 if this gets revisited.
 };
 
 // Iran-events sunset: when disabled (default), drop it from all health

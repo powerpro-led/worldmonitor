@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "Ανωμαλίες"
     },
-    "liveWebcams": "Live Webcams",
-    "windyWebcams": "Windy Live Webcam",
     "groceryBasket": "Grocery Index",
     "groceryItem": "Είδος",
     "bigmacDesc": "Τιμές Big Mac σε χώρες της Μέσης Ανατολής (Big Mac Index)",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Κάμερες σε παύση",
-      "pausedIdle": "Κάμερες σε παύση — μετακινήστε το ποντίκι για συνέχεια",
-      "regions": {
-        "all": "ΟΛΑ",
-        "mideast": "Μ. ΑΝΑΤΟΛΗ",
-        "europe": "ΕΥΡΩΠΗ",
-        "americas": "ΑΜΕΡΙΚΗ",
-        "asia": "ΑΣΙΑ",
-        "space": "ΔΙΑΣΤΗΜΑ"
-      },
-      "play": "Αναπαραγωγή",
-      "previewStatus": "Ζωντανή προεπισκόπηση"
-    },
     "positiveNewsFeed": {
       "noStories": "Δεν υπάρχουν ακόμα ιστορίες σε αυτή την κατηγορία"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "Κίνηση σημάτων ενημέρωσης στις κεφαλίδες πάνελ",
       "headlineMemoryLabel": "Μνήμη τίτλων",
       "headlineMemoryDesc": "Αποθήκευση τίτλων που είδατε για επισήμανση νέων",
-      "streamAlwaysOnLabel": "Αυτόματη αναπαραγωγή ζωντανών ροών στον πίνακα ελέγχου",
-      "streamAlwaysOnDesc": "Ξεκινά αυτόματα το Live News και το Live Webcams όταν είναι ορατά. Αφήστε το απενεργοποιημένο για φόρτωση βίντεο μόνο αφού κάνετε κλικ στην Αναπαραγωγή.",
       "analysisFrameworksLabel": "Πλαίσια Ανάλυσης",
       "analysisFrameworksActivePerPanel": "Ενεργό ανά πίνακα",
       "analysisFrameworksSkillLibrary": "Βιβλιοθήκη Δεξιοτήτων",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "Αποτυχία φόρτωσης"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Ζωντανές Κάμερες</strong> Ζωντανές ροές από γεωπολιτικά σημαντικές τοποθεσίες παγκοσμίως: ζώνες σύγκρουσης, πρωτεύουσες, συνοριακά περάσματα και στρατηγικά σημεία συμφόρησης. Ροές από YouTube και δημόσια δίκτυα."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Μακροοικονομικοί Δείκτες</strong> Βασικοί μακροοικονομικοί δείκτες για τις ΗΠΑ και την Ευρωζώνη: CPI, ανεργία, GDP και επιτόκια κεντρικών τραπεζών. Τιμές με δέλτα προηγούμενης περιόδου. Πηγή: FRED (Federal Reserve Economic Data)."
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Καμπύλη Αποδόσεων &amp; Επιτόκια</strong> Καμπύλη αποδόσεων US Treasury (2Y, 5Y, 10Y, 30Y) και βασικά spreads επιτοκίων συμπεριλαμβανομένου του δείκτη αναστροφής 10Y-2Y. Εμφανίζει επίσης επιτόκια Ευρωζώνης (EURIBOR, ESTR). Η ανεστραμμένη καμπύλη ιστορικά προηγείται υφέσεων. Πηγή: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Καρφιτσώστε μια κάμερα από τον χάρτη"
     },
     "breakthroughsTicker": {
       "noData": "Κανένα επιστημονικό ανακάλυψη ακόμα"

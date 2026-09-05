@@ -109,7 +109,6 @@ export const LAYER_REGISTRY: Record<keyof MapLayers, LayerDefinition> = {
   miningSites:              def('miningSites',              '&#128301;', 'miningSites',              'Mining Sites'),
   processingPlants:         def('processingPlants',         '&#127981;', 'processingPlants',         'Processing Plants'),
   commodityPorts:           def('commodityPorts',           '&#9973;',   'commodityPorts',           'Commodity Ports'),
-  webcams:                  def('webcams',                  '&#128247;', 'webcams',                  'Live Webcams'),
   // weatherRadar removed — radar tiles now auto-start when Weather Alerts layer is toggled on
   diseaseOutbreaks:         def('diseaseOutbreaks',         '&#129440;', 'diseaseOutbreaks',         'Disease Outbreaks', ['flat'], undefined, true),
   // DeckGL-only layers. `renderers: ['flat']` hides them from the globe
@@ -298,7 +297,7 @@ const VARIANT_LAYER_ORDER: Record<MapVariant, Array<keyof MapLayers>> = {
     'ucdpEvents', 'displacement', 'climate', 'weather',
     'outages', 'cyberThreats', 'natural', 'fires',
     'waterways', 'economic', 'minerals', 'gpsJamming',
-    'satellites', 'ciiChoropleth', 'resilienceScore', 'sanctions', 'dayNight', 'webcams',
+    'satellites', 'ciiChoropleth', 'resilienceScore', 'sanctions', 'dayNight',
     'diseaseOutbreaks',
   ],
   tech: [
@@ -462,9 +461,6 @@ export const LAYER_SYNONYMS: Record<string, Array<keyof MapLayers>> = {
   sanction: ['sanctions'],
   night: ['dayNight'],
   sun: ['dayNight'],
-  webcam: ['webcams'],
-  camera: ['webcams'],
-  livecam: ['webcams'],
 };
 
 export function resolveLayerLabel(def: LayerDefinition, tFn?: (key: string) => string): string {

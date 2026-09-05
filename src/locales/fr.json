@@ -342,8 +342,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalies"
     },
-    "liveWebcams": "Webcams en direct",
-    "windyWebcams": "Webcam en direct Windy",
     "groceryBasket": "Indice d'épicerie",
     "groceryItem": "Article",
     "bigmacDesc": "Prix du Big Mac dans les pays du Moyen-Orient (Indice Big Mac)",
@@ -701,20 +699,6 @@
       "showingMatches": "Affichage de {{count}} sur {{total}} correspondances",
       "match": "corresp.",
       "matches": "corresp."
-    },
-    "webcams": {
-      "regions": {
-        "all": "TOUS",
-        "mideast": "MOYEN-ORIENT",
-        "europe": "EUROPE",
-        "americas": "AMÉRIQUES",
-        "asia": "ASIE",
-        "space": "ESPACE"
-      },
-      "paused": "Webcams en pause",
-      "pausedIdle": "Webcams en pause — bougez la souris pour reprendre",
-      "play": "Lire",
-      "previewStatus": "Aperçu en direct"
     },
     "regulation": {
       "timeline": "Chronologie",
@@ -1237,8 +1221,6 @@
       "analysisFrameworksFromAgentskills": "Depuis agentskills.io",
       "analysisFrameworksPasteJson": "Coller JSON",
       "analysisFrameworksSaveToLibrary": "Enregistrer dans la bibliothèque",
-      "streamAlwaysOnLabel": "Lire automatiquement les flux en direct sur le tableau de bord",
-      "streamAlwaysOnDesc": "Lance automatiquement Live News et Live Webcams lorsqu’ils sont visibles. Laissez désactivé pour charger la vidéo seulement après avoir cliqué sur Lire.",
       "globeRenderScaleOptions": {
         "1": "Éco (1x)",
         "2": "4K (2x)",
@@ -2004,9 +1986,6 @@
         "failedToLoad": "Échec du chargement"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Webcams en direct</strong> Flux en direct depuis des lieux géopolitiquement significatifs dans le monde : zones de conflit, capitales, postes frontières et points de passage stratégiques. Flux provenant de YouTube et réseaux publics."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Indicateurs macro</strong> Indicateurs macroéconomiques clés pour les États-Unis et la zone euro : CPI, chômage, GDP et taux des banques centrales. Valeurs affichées avec delta par rapport à la période précédente. Source : FRED (Federal Reserve Economic Data)."
     },
@@ -2027,9 +2006,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Courbe des taux &amp; Rendements</strong> Courbe des rendements du Trésor américain (2Y, 5Y, 10Y, 30Y) et écarts de taux clés incluant l'indicateur d'inversion 10Y-2Y. Affiche également les taux de la zone euro (EURIBOR, ESTR). Une courbe inversée précède historiquement les récessions. Source : FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Épinglez une webcam depuis la carte"
     },
     "breakthroughsTicker": {
       "noData": "Aucune percée scientifique pour le moment"

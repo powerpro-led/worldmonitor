@@ -403,8 +403,6 @@
     "techReadiness": "Tech Readiness Index",
     "gccInvestments": "GCC Beruházások",
     "geoHubs": "Geopolitikai Központok",
-    "liveWebcams": "Élő Webkamerák",
-    "windyWebcams": "Windy Élő Webkamera",
     "gulfEconomies": "Öböl Gazdaságok",
     "groceryBasket": "Bevásárlókosár Index",
     "groceryItem": "Termék",
@@ -759,23 +757,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Webkamerák szüneteltetve",
-      "pausedIdle": "Webkamerák szüneteltetve — mozgassa az egeret a folytatáshoz",
-      "regions": {
-        "all": "ÖSSZES",
-        "mideast": "KÖZEL-KELET",
-        "europe": "EURÓPA",
-        "americas": "AMERIKA",
-        "asia": "ÁZSIA",
-        "space": "VILÁGŰR"
-      },
-      "play": "Lejátszás",
-      "previewStatus": "Élő előnézet"
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Rögzítsen egy webkamerát a térképről"
-    },
     "positiveNewsFeed": {
       "noStories": "Még nincsenek történetek ebben a kategóriában"
     },
@@ -1425,8 +1406,6 @@
       "analysisFrameworksFromAgentskills": "Az agentskills.io-ból",
       "analysisFrameworksPasteJson": "JSON beillesztése",
       "analysisFrameworksSaveToLibrary": "Mentés a könyvtárba",
-      "streamAlwaysOnLabel": "Élő streamek automatikus lejátszása az irányítópulton",
-      "streamAlwaysOnDesc": "Automatikusan elindítja a Live News és Live Webcams elemeket, amikor láthatók. Hagyja kikapcsolva, hogy a videó csak a Lejátszás gombra kattintás után töltődjön be.",
       "frameworkNote": "Csak az ügyfél által generált elemzésre vonatkozik",
       "loadingServerInsights": "Szerver insights betöltése...",
       "usingCachedBrief": "Gyorsítótározott összefoglalás használata...",
@@ -2186,9 +2165,6 @@
         "unavailable": "Hormuz adatok nem érhetőek el",
         "failedToLoad": "Betöltés sikertelen"
       }
-    },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live Webcams</strong> Élő kameranyitások geopolitikailag szignifikáns helyekről világszerte: konfliktuszónák, fővárosok, határátkelések és stratégiai szűk keresztmetszetek. Streamek YouTube-ból és közös hálózatokból."
     },
     "macroTiles": {
       "infoTooltip": "<strong>Macro Indicators</strong> Kulcsfontosságú makrogazdasági mutatók az USA és az Euró-övezet számára: CPI, munkanélküliség, GDP és központi banki kamatok. Értékek az előző periódus delta értékével jelennek meg. Forrás: FRED (Federal Reserve Economic Data)."

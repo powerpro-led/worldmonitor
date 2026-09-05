@@ -71,7 +71,6 @@ const DENY_PREFIXES = [
   'seed-routes:',
   'seed-activated:',
   'seed-lock:',
-  'seed-webcams:', // cameras are being removed entirely (P7) — deny regardless
 
   // The real-time-sync plumbing itself. `sync:changelog` is a live stream
   // key SCAN returns; `sync:notify` is the pub/sub channel; a cursor may be

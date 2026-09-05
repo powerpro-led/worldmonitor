@@ -13,11 +13,9 @@ export const CLOUD_SYNC_KEYS = [
   'wm-breaking-alerts-v1',
   'wm-market-watchlist-v1',
   'aviation:watchlist:v1',
-  'wm-pinned-webcams',
   'wm-map-provider',
   'wm-font-family',
   'wm-globe-visual-preset',
-  'wm-stream-quality',
   'wm-ai-flow-cloud-llm',
   // Sister AI-flow toggles. Without these, the user's "Browser Local Model"
   // and "Headline Memory" prefs reset per variant and disagree with the
@@ -34,8 +32,6 @@ export const CLOUD_SYNC_KEYS = [
   'wm-map-theme:pmtiles',
   'wm-map-theme:openfreemap',
   'wm-map-theme:carto',
-  // Live-stream mode
-  'wm-live-streams-always-on',
   // #4923 read-state: previous-visit timestamp driving "new since you were
   // last here" — synced so a phone visit doesn't re-flag stories already
   // read on desktop.

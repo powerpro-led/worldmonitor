@@ -82,7 +82,6 @@ const DEFERRED_RPC_CLIENT_CHUNKS = [
   'rpc-client-thermal-v1',
   'rpc-client-trade-v1',
   'rpc-client-unrest-v1',
-  'rpc-client-webcam-v1',
   'rpc-client-wildfire-v1',
 ];
 const GENERATED_RPC_ENDPOINT_MARKERS = [

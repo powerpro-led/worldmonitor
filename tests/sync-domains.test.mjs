@@ -39,7 +39,6 @@ describe('classifyKey — denylist model', () => {
       'seed-routes:v1',
       'seed-activated:economic',
       'seed-lock:seed-forecasts',
-      'seed-webcams:active',
       'health:acled',
       'rl:ep:api/news',
       'rl:apikey:day:u1:2026-09-04',

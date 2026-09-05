@@ -155,9 +155,6 @@ import {
 import { formatResilienceServerLevel } from './resilience-widget-utils';
 
 import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
-import { pinWebcam, isPinned } from '@/services/webcams/pinned-store';
-import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
-import { fetchWebcamImage } from '@/services/webcams';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import { summarizeRenderTiming, formatRenderTiming } from '@/components/map/render-timing';
 import { DeferredHeavyCommit } from '@/components/map/deferred-layer-commit';
@@ -623,7 +620,6 @@ export class DeckGLMap {
   private happinessSource = '';
   private speciesRecoveryZones: Array<SpeciesRecovery & { recoveryZone: { name: string; lat: number; lon: number } }> = [];
   private renewableInstallations: RenewableInstallation[] = [];
-  private webcamData: Array<WebcamEntry | WebcamCluster> = [];
   private countriesGeoJsonData: FeatureCollection<Geometry> | null = null;
   private conflictZoneGeoJson: GeoJSON.FeatureCollection | null = null;
   // #4561: all zone features + their precomputed bounds, built once (cheap — no
@@ -2206,19 +2202,6 @@ export class DeckGLMap {
 
     if (mapLayers.satellites && filteredImageryScenes.length > 0 && !this.satelliteImageryLayerFailed) {
       layers.push(this.createImageryFootprintLayer(filteredImageryScenes));
-    }
-
-    // Webcam layer (server-side clustered markers)
-    if (mapLayers.webcams && this.webcamData.length > 0) {
-      layers.push(new ScatterplotLayer<WebcamEntry | WebcamCluster>({
-        id: 'webcam-layer',
-        data: this.webcamData,
-        getPosition: (d) => [d.lng, d.lat],
-        getRadius: (d) => ('count' in d ? Math.min(8 + d.count * 0.5, 24) : 6),
-        getFillColor: (d) => ('count' in d ? [0, 212, 255, 180] : [255, 215, 0, 200]) as [number, number, number, number],
-        radiusUnits: 'pixels',
-        pickable: true,
-      }));
     }
 
     // News geo-locations (always shown if data exists)
@@ -4945,12 +4928,6 @@ export class DeckGLMap {
         imgHtml += '</div>';
         return { html: imgHtml };
       }
-      case 'webcam-layer': {
-        const label = 'count' in obj
-          ? `${obj.count} webcams`
-          : (obj.title || obj.name || 'Webcam');
-        return { html: `<div class="deckgl-tooltip"><strong>${text(label)}</strong></div>` };
-      }
       default:
         return null;
     }
@@ -5137,11 +5114,6 @@ export class DeckGLMap {
       return;
     }
 
-    if (layerId === 'webcam-layer' && !('count' in info.object)) {
-      this.showWebcamClickPopup(info.object as WebcamEntry, info.x, info.y);
-      return;
-    }
-
     if (layerId === 'trade-routes-layer') {
       const segment = info.object as TradeRouteSegment;
       if (!hasPremiumAccess(getAuthState())) {
@@ -5256,72 +5228,6 @@ export class DeckGLMap {
     if (popupType === 'conflict') {
       this.popup.loadConflictHistory(data as import('@/types').ConflictZone);
     }
-  }
-
-  private async showWebcamClickPopup(webcam: WebcamEntry, x: number, y: number): Promise<void> {
-    // Remove any existing popup
-    this.container.querySelector('.deckgl-webcam-popup')?.remove();
-
-    const popup = document.createElement('div');
-    popup.className = 'deckgl-webcam-popup';
-    popup.style.position = 'absolute';
-    popup.style.left = x + 'px';
-    popup.style.top = y + 'px';
-    popup.style.zIndex = '1000';
-
-    const titleEl = document.createElement('div');
-    titleEl.className = 'deckgl-webcam-popup-title';
-    titleEl.textContent = webcam.title || webcam.webcamId || '';
-    popup.appendChild(titleEl);
-
-    const locationEl = document.createElement('div');
-    locationEl.className = 'deckgl-webcam-popup-location';
-    locationEl.textContent = webcam.country || '';
-    popup.appendChild(locationEl);
-
-    const id = webcam.webcamId;
-
-    // Fetch playerUrl for when user pins
-    const imageData = await fetchWebcamImage(id).catch(() => null);
-
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'webcam-pin-btn';
-    if (isPinned(id)) {
-      pinBtn.classList.add('webcam-pin-btn--pinned');
-      pinBtn.textContent = '\u{1F4CC} Pinned';
-      pinBtn.disabled = true;
-    } else {
-      pinBtn.textContent = '\u{1F4CC} Pin';
-      pinBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        pinWebcam({
-          webcamId: id,
-          title: webcam.title || imageData?.title || '',
-          lat: webcam.lat,
-          lng: webcam.lng,
-          category: webcam.category || 'other',
-          country: webcam.country || '',
-          playerUrl: imageData?.playerUrl || '',
-        });
-        pinBtn.classList.add('webcam-pin-btn--pinned');
-        pinBtn.textContent = '\u{1F4CC} Pinned';
-        pinBtn.disabled = true;
-      });
-    }
-    popup.appendChild(pinBtn);
-
-    const cleanup = () => {
-      popup.remove();
-      document.removeEventListener('click', closeHandler);
-      clearTimeout(autoDismiss);
-    };
-    const closeHandler = (e: MouseEvent) => {
-      if (!popup.contains(e.target as Node)) cleanup();
-    };
-    const autoDismiss = setTimeout(cleanup, 8000);
-    setTimeout(() => document.addEventListener('click', closeHandler), 0);
-
-    this.container.appendChild(popup);
   }
 
   // Utility methods
@@ -6740,11 +6646,6 @@ export class DeckGLMap {
 
   public setRadiationObservations(observations: RadiationObservation[]): void {
     this.radiationObservations = observations;
-    this.render();
-  }
-
-  public setWebcams(markers: Array<WebcamEntry | WebcamCluster>): void {
-    this.webcamData = markers;
     this.render();
   }
 

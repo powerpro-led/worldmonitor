@@ -151,7 +151,6 @@ export const DEFERRED_PANEL_NATURAL_FOOTPRINTS: Readonly<Record<string, Deferred
   'threat-timeline': { rowSpan: 2 },
   'trade-policy': { rowSpan: 2 },
   'ucdp-events': { rowSpan: 2 },
-  'windy-webcams': { className: 'panel-wide' },
 };
 
 const DEFERRED_DYNAMIC_PANEL_FOOTPRINTS: Readonly<Record<string, DeferredPanelShellFootprint>> = {
@@ -1809,8 +1808,6 @@ export class PanelLayoutManager implements AppModule {
     this.lazyPanel('climate-news', () =>
       this.importPanel('climate-news', () => import('@/components/ClimateNewsPanel'), 'ClimateNewsPanel', (ClimateNewsPanel) => new ClimateNewsPanel()),
     );
-
-    this.lazyDefaultPanel('windy-webcams', () => import('@/components/PinnedWebcamsPanel'), 'PinnedWebcamsPanel');
 
     this.lazyPanel('events', () =>
       this.importPanel(

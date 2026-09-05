@@ -1,8 +1,8 @@
 /**
- * Minimal transient toast. Mirrors the long-standing inline implementations
- * in UnifiedSettings.ts / webcams/pinned-store.ts so new callers (e.g. the
- * CMD+K "Add panel" cap-block feedback) have a shared entry point instead of
- * a fourth copy. Single-instance: a new toast replaces any visible one.
+ * Minimal transient toast. Mirrors the long-standing inline implementation
+ * in UnifiedSettings.ts so new callers (e.g. the CMD+K "Add panel" cap-block
+ * feedback) have a shared entry point instead of a copy. Single-instance: a
+ * new toast replaces any visible one.
  */
 export function showToast(msg: string): void {
   document.querySelector('.toast-notification')?.remove();

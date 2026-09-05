@@ -27,7 +27,6 @@ import type { SupplyChainServiceClient as SupplyChainServiceClientInstance } fro
 import type { ThermalServiceClient as ThermalServiceClientInstance } from '@/generated/client/worldmonitor/thermal/v1/service_client';
 import type { TradeServiceClient as TradeServiceClientInstance } from '@/generated/client/worldmonitor/trade/v1/service_client';
 import type { UnrestServiceClient as UnrestServiceClientInstance } from '@/generated/client/worldmonitor/unrest/v1/service_client';
-import type { WebcamServiceClient as WebcamServiceClientInstance } from '@/generated/client/worldmonitor/webcam/v1/service_client';
 import type { WildfireServiceClient as WildfireServiceClientInstance } from '@/generated/client/worldmonitor/wildfire/v1/service_client';
 
 type RpcClientOptions = { fetch?: typeof fetch; defaultHeaders?: Record<string, string> };
@@ -205,11 +204,6 @@ export const TradeServiceClient = createLazyRpcClientConstructor<TradeServiceCli
 export const UnrestServiceClient = createLazyRpcClientConstructor<UnrestServiceClientInstance>(async () => {
   const module = await import('@/generated/client/worldmonitor/unrest/v1/service_client');
   return module.UnrestServiceClient;
-});
-
-export const WebcamServiceClient = createLazyRpcClientConstructor<WebcamServiceClientInstance>(async () => {
-  const module = await import('@/generated/client/worldmonitor/webcam/v1/service_client');
-  return module.WebcamServiceClient;
 });
 
 export const WildfireServiceClient = createLazyRpcClientConstructor<WildfireServiceClientInstance>(async () => {

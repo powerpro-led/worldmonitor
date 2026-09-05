@@ -85,8 +85,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalieën"
     },
-    "liveWebcams": "Live Webcams",
-    "windyWebcams": "Windy Live Webcam",
     "groceryBasket": "Boodschappenmandindex",
     "groceryItem": "Artikel",
     "bigmacDesc": "Big Mac-prijzen in landen in het Midden-Oosten (Big Mac Index)",
@@ -444,20 +442,6 @@
       "showingMatches": "Toont {{count}} van {{total}} overeenkomsten",
       "match": "overeenkomst",
       "matches": "wedstrijden"
-    },
-    "webcams": {
-      "regions": {
-        "all": "ALLE",
-        "mideast": "MIDDEN-OOSTEN",
-        "europe": "EUROPA",
-        "americas": "AMERIKA",
-        "asia": "AZIË",
-        "space": "RUIMTE"
-      },
-      "paused": "Webcams gepauzeerd",
-      "pausedIdle": "Webcams gepauzeerd — beweeg de muis om te hervatten",
-      "play": "Afspelen",
-      "previewStatus": "Livevoorbeeld"
     },
     "playback": {
       "live": "Live",
@@ -1196,8 +1180,6 @@
       "badgeAnimDesc": "Update-badges in paneelkoppen animeren",
       "headlineMemoryLabel": "Koptekstgeheugen",
       "headlineMemoryDesc": "Gezien koppen onthouden om nieuwe te markeren",
-      "streamAlwaysOnLabel": "Livestreams automatisch afspelen op het dashboard",
-      "streamAlwaysOnDesc": "Start Live News en Live Webcams automatisch wanneer ze zichtbaar zijn. Laat uit om video pas te laden nadat je op Afspelen klikt.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -1741,9 +1723,6 @@
         "failedToLoad": "Laden mislukt"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live webcams</strong> Livestreams van geopolitiek significante locaties wereldwijd: conflictzones, hoofdsteden, grensovergangen en strategische knelpunten. Streams van YouTube en openbare netwerken."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Macro-indicatoren</strong> Belangrijke macro-economische indicatoren voor de VS en de eurozone: CPI, werkloosheid, GDP en centrale banktarieven. Waarden getoond met delta ten opzichte van de voorgaande periode. Bron: FRED (Federal Reserve Economic Data)."
     },
@@ -1764,9 +1743,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Rentecurve &amp; Rentes</strong> US Treasury-rentecurve (2Y, 5Y, 10Y, 30Y) en belangrijke rentespreads inclusief de 10Y-2Y-inversie-indicator. Toont ook rentetarieven voor de eurozone (EURIBOR, ESTR). Een omgekeerde curve gaat historisch vooraf aan recessies. Bron: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Pin een webcam vanuit de kaart"
     },
     "breakthroughsTicker": {
       "noData": "Nog geen wetenschappelijke doorbraken"

@@ -415,8 +415,6 @@
     "techReadiness": "Indeks Tehnološke Spremnosti",
     "gccInvestments": "GCC Investicije",
     "geoHubs": "Geopolitički Čvorišta",
-    "liveWebcams": "Užive Kamere",
-    "windyWebcams": "Windy Uživa Kamera",
     "gulfEconomies": "Gospodarstva Perzijskog Zaljeva",
     "groceryBasket": "Indeks Namirnica",
     "groceryItem": "Stavka",
@@ -807,24 +805,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "expand": "Proširi",
-      "paused": "Web kamere pauziran",
-      "pausedIdle": "Web kamere pauziran — pomaknite miš da nastavite",
-      "regions": {
-        "all": "SVE",
-        "mideast": "BLISKI ISTOK",
-        "europe": "EUROPA",
-        "americas": "AMERIKE",
-        "asia": "AZIJA",
-        "space": "SVEMIR"
-      },
-      "play": "Pokreni",
-      "previewStatus": "Pregled uživo"
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Prikvačite web kameru sa karte"
-    },
     "positiveNewsFeed": {
       "noStories": "Nema članka u ovoj kategoriji"
     },
@@ -1553,8 +1533,6 @@
       "analysisFrameworksFromAgentskills": "Iz agentskills.io",
       "analysisFrameworksPasteJson": "Zalijepi JSON",
       "analysisFrameworksSaveToLibrary": "Spremi u knjižnicu",
-      "streamAlwaysOnLabel": "Automatski pokreni prijenose uživo na nadzornoj ploči",
-      "streamAlwaysOnDesc": "Automatski pokreće Live News i Live Webcams kada su vidljivi. Ostavite isključeno kako bi se video učitao tek nakon klika na Pokreni.",
       "frameworkNote": "Primjenjuje se samo na analizu generirane od strane klijenta",
       "loadingServerInsights": "Učitavanje server uvida...",
       "usingCachedBrief": "Korištenje keširanih sažetaka...",
@@ -2355,9 +2333,6 @@
         "unavailable": "Hormuz podaci nisu dostupni",
         "failedToLoad": "Učitavanje nije uspjelo"
       }
-    },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live Webcams</strong> Živući prijenos iz geopolitički važnih lokacija diljem svijeta: područja sukoba, glavnih gradova, graničnih prijelaza i strateških tjesnaca. Tokovi iz YouTubea i javnih mreža."
     },
     "macroTiles": {
       "infoTooltip": "<strong>Macro Indicators</strong> Ključni makroekonomski pokazatelji za SAD i eurozone: CPI, nezaposlenost, BDP i kamatne stope središnjih banaka. Vrijednosti prikazane s razlikom od prethodnog razdoblja. Izvor: FRED (Federal Reserve Economic Data)."

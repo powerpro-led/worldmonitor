@@ -124,7 +124,7 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   Forecast: 'panels-intel',
   HeroSpotlight: 'panels-intel', Insights: 'panels-intel',
   McpData: 'panels-intel',
-  Monitor: 'panels-intel', PinnedWebcams: 'panels-intel',
+  Monitor: 'panels-intel',
   Prediction: 'panels-intel', ProgressCharts: 'panels-intel',
   RegionalIntelligenceBoard: 'panels-intel',
   Regulation: 'panels-intel',

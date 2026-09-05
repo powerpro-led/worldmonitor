@@ -2,7 +2,7 @@
  * Regression guard for the accessibility fixes in issue #4373:
  *   - aria-required-children: the "+" add button must NOT be a child of the
  *     role="tablist" element (PanelTabBar).
- *   - color-contrast: footer copyright, DEFCON badge, and live/webcam "active"
+ *   - color-contrast: footer copyright, DEFCON badge, and live "active"
  *     pills must clear WCAG AA 4.5:1.
  *   - select-name: #regionSelect and .cascade-select must carry aria-labels.
  *   - bypass: a <main> landmark and a skip link must exist.
@@ -194,9 +194,9 @@ describe('color-contrast — DEFCON badge', () => {
   });
 });
 
-// --- 6. live / webcam "active" pill contrast -------------------------------
+// --- 6. live "active" pill contrast -----------------------------------------
 
-describe('color-contrast — live/webcam active pills', () => {
+describe('color-contrast — live active pills', () => {
   it('--red-strong clears AA with white text', () => {
     const red = cssToken('red-strong');
     assert.ok(contrastRatio('#ffffff', red) >= 4.5,
@@ -206,12 +206,7 @@ describe('color-contrast — live/webcam active pills', () => {
   it('the known active/critical pills use --red-strong, not the failing --red', () => {
     for (const sel of [
       '.live-channel-btn.active',
-      '.webcam-region-btn.active',
-      '.webcam-view-btn.active',
-      '.webcam-feed-btn.active',
       '.focal-point-urgency.critical',
-      // hover state: the base rule sets white text, this swaps to a red bg
-      '.webcam-preview-play:hover',
     ]) {
       const block = css.match(
         new RegExp(`${sel.replace(/[.]/g, '\\.')}\\s*\\{([^}]*)\\}`),

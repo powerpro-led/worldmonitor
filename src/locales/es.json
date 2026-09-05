@@ -343,8 +343,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalías"
     },
-    "liveWebcams": "Cámaras en Vivo",
-    "windyWebcams": "Cámara en Vivo Windy",
     "groceryBasket": "Índice de Canasta de Abarrotes",
     "groceryItem": "Artículo",
     "bigmacDesc": "Precios del Big Mac en países de Medio Oriente (Índice Big Mac)",
@@ -701,20 +699,6 @@
       "showingMatches": "Mostrando {{count}} de {{total}} coincidencias",
       "match": "fósforo",
       "matches": "partidos"
-    },
-    "webcams": {
-      "regions": {
-        "all": "TODOS",
-        "mideast": "MEDIO ORIENTE",
-        "europe": "EUROPA",
-        "americas": "AMÉRICAS",
-        "asia": "ASIA",
-        "space": "ESPACIO"
-      },
-      "paused": "Cámaras en pausa",
-      "pausedIdle": "Cámaras en pausa — mueva el ratón para reanudar",
-      "play": "Reproducir",
-      "previewStatus": "Vista previa en vivo"
     },
     "regulation": {
       "timeline": "Línea de tiempo",
@@ -1587,8 +1571,6 @@
       "badgeAnimDesc": "Animar insignias de actualización en encabezados de paneles",
       "headlineMemoryLabel": "Memoria de titulares",
       "headlineMemoryDesc": "Recordar titulares vistos para resaltar nuevos",
-      "streamAlwaysOnLabel": "Reproducir automáticamente transmisiones en vivo en el panel",
-      "streamAlwaysOnDesc": "Inicia Live News y Live Webcams automáticamente cuando están visibles. Déjalo desactivado para cargar video solo después de hacer clic en Reproducir.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -2004,9 +1986,6 @@
         "failedToLoad": "Error al cargar"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Cámaras en vivo</strong> Transmisiones en vivo desde ubicaciones geopolíticamente significativas en todo el mundo: zonas de conflicto, capitales, cruces fronterizos y puntos de estrangulamiento estratégicos. Transmisiones de YouTube y redes públicas."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Indicadores macro</strong> Indicadores macroeconómicos clave para EE.UU. y la zona euro: CPI, desempleo, GDP y tasas de bancos centrales. Valores mostrados con delta del período anterior. Fuente: FRED (Datos Económicos de la Reserva Federal)."
     },
@@ -2027,9 +2006,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Curva de rendimiento &amp; Tasas</strong> Curva de rendimiento del Tesoro de EE.UU. (2Y, 5Y, 10Y, 30Y) y diferenciales de tasas clave incluyendo el indicador de inversión 10Y-2Y. También muestra tasas de la zona euro (EURIBOR, ESTR). Una curva invertida históricamente precede a recesiones. Fuente: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Fija una cámara web desde el mapa"
     },
     "breakthroughsTicker": {
       "noData": "Sin avances científicos aún"

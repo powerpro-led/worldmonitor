@@ -270,8 +270,6 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/infrastructure/v1/get-ip-geo': 'no-store',
   '/api/infrastructure/v1/reverse-geocode': 'slow',
   '/api/infrastructure/v1/get-bootstrap-data': 'no-store',
-  '/api/webcam/v1/get-webcam-image': 'no-store',
-  '/api/webcam/v1/list-webcams': 'no-store',
 
   '/api/consumer-prices/v1/get-consumer-price-overview': 'slow',
   '/api/consumer-prices/v1/get-consumer-price-basket-series': 'slow',

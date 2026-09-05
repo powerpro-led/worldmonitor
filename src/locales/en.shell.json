@@ -166,8 +166,6 @@
     "techReadiness": "Tech Readiness Index",
     "gccInvestments": "GCC Investments",
     "geoHubs": "Geopolitical Hubs",
-    "liveWebcams": "Live Webcams",
-    "windyWebcams": "Windy Live Webcam",
     "gulfEconomies": "Gulf Economies",
     "groceryBasket": "Grocery Index",
     "groceryItem": "Item",
@@ -620,9 +618,6 @@
       "infoTooltip": "<strong>Liquidity Shifts</strong> High-liquidity positioning and daily shift monitor for oil, gold, silver, equity index futures, and top US stocks. COT asset-manager net and leveraged-funds net vs daily price change.",
       "title": "Liquidity Shifts"
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live Webcams</strong> Live feeds from geopolitically significant locations worldwide: conflict zones, capital cities, border crossings, and strategic chokepoints. Streams sourced from YouTube and public networks."
-    },
     "macroSignals": {
       "infoTooltip": "<strong>BTC Regime</strong> Composite signal dashboard for Bitcoin positioning and risk appetite:<ul><li><strong>Liquidity</strong>: Net Fed liquidity proxy</li><li><strong>Flow</strong>: BTC vs QQQ 5-day returns</li><li><strong>Regime</strong>: QQQ vs XLP rotation (risk-on/off)</li><li><strong>BTC Trend</strong>: Price vs SMA50/200, Mayer Multiple</li><li><strong>Hash Rate</strong>: 30-day network hash change</li><li><strong>Fear & Greed</strong>: Market sentiment index</li></ul>This panel is for regime and positioning, not broad macro data."
     },
@@ -747,9 +742,6 @@
       "sortBy": "Sort by",
       "sortNewest": "Newest",
       "sortRelevance": "Relevance"
-    },
-    "webcams": {
-      "previewStatus": "Live preview"
     }
   },
   "modals": {

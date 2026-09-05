@@ -46,7 +46,6 @@ import type { GpsJamHex } from '@/services/gps-interference';
 import type { SatellitePosition } from '@/services/satellites';
 import type { IranEvent } from '@/services/conflict';
 import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
-import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
 import type { TrafficAnomaly as ProtoTrafficAnomaly, DdosLocationHit } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
 import type { AcledConflictEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
 import type { DiseaseOutbreakItem } from '@/services/disease-outbreaks';
@@ -205,7 +204,6 @@ export class MapContainer {
   private cachedEscalationFlights: MilitaryFlight[] | null = null;
   private cachedEscalationVessels: MilitaryVessel[] | null = null;
   private cachedImageryScenes: ImageryScene[] | null = null;
-  private cachedWebcams: Array<WebcamEntry | WebcamCluster> | null = null;
   private cachedTrafficAnomalies: ProtoTrafficAnomaly[] | null = null;
   private cachedDdosLocations: DdosLocationHit[] | null = null;
   private cachedChokepointData: GetChokepointStatusResponse | null | undefined;
@@ -667,11 +665,6 @@ export class MapContainer {
     if (this.cachedTrafficAnomalies) this.setTrafficAnomalies(this.cachedTrafficAnomalies);
     if (this.cachedDdosLocations) this.setDdosLocations(this.cachedDdosLocations);
     if (this.cachedChokepointData !== undefined) this.setChokepointData(this.cachedChokepointData);
-    if (this.cachedWebcams) {
-      if (this.useGlobe) this.globeMap?.setWebcams(this.cachedWebcams);
-      else if (this.useDeckGL) this.deckGLMap?.setWebcams(this.cachedWebcams);
-      else this.svgMap?.setWebcams(this.cachedWebcams);
-    }
     for (const [layer, loading] of this.layerLoadingState) this.setLayerLoading(layer, loading);
     for (const [layer, hasData] of this.layerReadyState) this.setLayerReady(layer, hasData);
     if (this.cachedScenarioState !== undefined) this.applyScenarioState(this.cachedScenarioState);
@@ -832,13 +825,6 @@ export class MapContainer {
     this.cachedImageryScenes = scenes;
     if (this.useGlobe) { this.globeMap?.setImageryScenes(scenes); return; }
     if (this.useDeckGL) { this.deckGLMap?.setImageryScenes(scenes); }
-  }
-
-  public setWebcams(markers: Array<WebcamEntry | WebcamCluster>): void {
-    this.cachedWebcams = markers;
-    if (this.useGlobe) { this.globeMap?.setWebcams(markers); return; }
-    if (this.useDeckGL) { this.deckGLMap?.setWebcams(markers); }
-    else { this.svgMap?.setWebcams(markers); }
   }
 
   public setWeatherAlerts(alerts: WeatherAlert[]): void {

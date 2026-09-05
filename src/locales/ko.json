@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "이상 현상"
     },
-    "liveWebcams": "라이브 웹캠",
-    "windyWebcams": "Windy 라이브 웹캠",
     "groceryBasket": "식료품 지수",
     "groceryItem": "품목",
     "bigmacDesc": "중동 국가의 빅맥 가격(빅맥 지수)",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "웹캠 일시정지됨",
-      "pausedIdle": "웹캠 일시정지됨 — 마우스를 움직여 재개",
-      "regions": {
-        "all": "전체",
-        "mideast": "중동",
-        "europe": "유럽",
-        "americas": "미주",
-        "asia": "아시아",
-        "space": "우주"
-      },
-      "play": "재생",
-      "previewStatus": "라이브 미리보기"
-    },
     "positiveNewsFeed": {
       "noStories": "이 카테고리에 아직 기사가 없습니다"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "패널 헤더의 업데이트 배지 애니메이션",
       "headlineMemoryLabel": "헤드라인 메모리",
       "headlineMemoryDesc": "본 헤드라인을 기억하여 새 기사 강조",
-      "streamAlwaysOnLabel": "대시보드에서 라이브 스트림 자동 재생",
-      "streamAlwaysOnDesc": "Live News와 Live Webcams가 표시될 때 자동으로 시작합니다. 동영상을 재생 클릭 후에만 로드하려면 꺼 둡니다.",
       "analysisFrameworksLabel": "분석 프레임워크",
       "analysisFrameworksActivePerPanel": "패널당 활성",
       "analysisFrameworksSkillLibrary": "스킬 라이브러리",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "로드 실패"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>실시간 웹캠</strong> 전 세계 지정학적으로 중요한 장소의 실시간 피드: 분쟁 지역, 수도, 국경 검문소, 전략적 병목지점. YouTube 및 공개 네트워크의 스트림."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>매크로 지표</strong> 미국 및 유로존의 주요 거시경제 지표: CPI, 실업률, GDP, 중앙은행 금리. 이전 기간 대비 델타와 함께 표시. 출처: FRED (연방준비제도 경제 데이터)."
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>수익률 곡선 &amp; 금리</strong> 미국 국채 수익률 곡선(2Y, 5Y, 10Y, 30Y) 및 10Y-2Y 역전 지표를 포함한 주요 금리 스프레드. 유로존 금리(EURIBOR, ESTR)도 표시. 역전된 곡선은 역사적으로 경기 침체에 선행. 출처: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "지도에서 웹캠 고정"
     },
     "breakthroughsTicker": {
       "noData": "과학 돌파구 없음"

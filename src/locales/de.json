@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalien"
     },
-    "liveWebcams": "Live-Webcams",
-    "windyWebcams": "Windy Live-Webcam",
     "groceryBasket": "Lebensmittelindex",
     "groceryItem": "Artikel",
     "bigmacDesc": "Big-Mac-Preise in Ländern des Nahen Ostens (Big-Mac-Index)",
@@ -699,20 +697,6 @@
       "showingMatches": "Es werden {{count}} von {{total}} Übereinstimmungen angezeigt",
       "match": "übereinstimmen",
       "matches": "Streichhölzer"
-    },
-    "webcams": {
-      "regions": {
-        "all": "ALLE",
-        "mideast": "NAHOST",
-        "europe": "EUROPA",
-        "americas": "AMERIKA",
-        "asia": "ASIEN",
-        "space": "WELTRAUM"
-      },
-      "paused": "Webcams pausiert",
-      "pausedIdle": "Webcams pausiert — Maus bewegen zum Fortsetzen",
-      "play": "Abspielen",
-      "previewStatus": "Live-Vorschau"
     },
     "regulation": {
       "timeline": "Zeitleiste",
@@ -1585,8 +1569,6 @@
       "badgeAnimDesc": "Update-Badges in Panel-Kopfzeilen animieren",
       "headlineMemoryLabel": "Schlagzeilen-Speicher",
       "headlineMemoryDesc": "Gesehene Schlagzeilen merken, um neue hervorzuheben",
-      "streamAlwaysOnLabel": "Live-Streams im Dashboard automatisch abspielen",
-      "streamAlwaysOnDesc": "Startet Live News und Live Webcams automatisch, sobald sie sichtbar sind. Deaktiviert lassen, damit Videos erst nach Klick auf Abspielen geladen werden.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "Fehler beim Laden"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Live-Webcams</strong> Liveübertragungen von geopolitisch bedeutsamen Orten weltweit: Konfliktzonen, Hauptstädte, Grenzübergänge und strategische Engpässe. Streams von YouTube und öffentlichen Netzwerken."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Makro-Indikatoren</strong> Wichtige makroökonomische Indikatoren für die USA und den Euroraum: CPI, Arbeitslosigkeit, GDP und Zentralbankzinsen. Werte mit Delta zum Vorperiodenzeitraum. Quelle: FRED (Federal Reserve Economic Data)."
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Zinsstrukturkurve &amp; Zinsen</strong> US-Treasury-Zinsstrukturkurve (2Y, 5Y, 10Y, 30Y) und wichtige Zinsspreads einschließlich des 10Y-2Y-Inversionsindikators. Zeigt auch Euroraum-Zinsen (EURIBOR, ESTR). Eine invertierte Kurve geht historisch Rezessionen voraus. Quelle: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Webcam von der Karte hinzufügen"
     },
     "breakthroughsTicker": {
       "noData": "Noch keine wissenschaftlichen Durchbrüche"

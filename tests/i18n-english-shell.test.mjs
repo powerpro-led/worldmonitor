@@ -230,7 +230,6 @@ describe('English i18n shell split', () => {
       'components.newsPanel.sortBy',
       'components.newsPanel.sortNewest',
       'components.newsPanel.sortRelevance',
-      'components.webcams.previewStatus',
       'dashboardTabs.defaultName',
       ...eagerChromeKeys(),
     ];

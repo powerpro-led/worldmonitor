@@ -344,8 +344,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomalie"
     },
-    "liveWebcams": "Live Webkamery",
-    "windyWebcams": "Windy Live Webkamera",
     "groceryBasket": "Indeks Koszyka Spożywczego",
     "groceryItem": "Artykuł",
     "bigmacDesc": "Ceny Big Maca w krajach Bliskiego Wschodu (Big Mac Index)",
@@ -703,20 +701,6 @@
       "showingMatches": "Wyświetlanie {{count}} z {{total}} dopasowań",
       "match": "mecz",
       "matches": "zapałki"
-    },
-    "webcams": {
-      "regions": {
-        "all": "WSZYSTKIE",
-        "mideast": "BLISKI WSCHÓD",
-        "europe": "EUROPA",
-        "americas": "AMERYKI",
-        "asia": "AZJA",
-        "space": "KOSMOS"
-      },
-      "paused": "Kamery wstrzymane",
-      "pausedIdle": "Kamery wstrzymane — przesuń mysz, aby wznowić",
-      "play": "Odtwórz",
-      "previewStatus": "Podgląd na żywo"
     },
     "regulation": {
       "timeline": "Oś czasu",
@@ -1506,8 +1490,6 @@
       "badgeAnimDesc": "Animuj odznaki aktualizacji w nagłówkach paneli",
       "headlineMemoryLabel": "Pamięć nagłówków",
       "headlineMemoryDesc": "Zapamiętuj widziane nagłówki, aby wyróżnić nowe",
-      "streamAlwaysOnLabel": "Automatycznie odtwarzaj transmisje na żywo na pulpicie",
-      "streamAlwaysOnDesc": "Automatycznie uruchamia Live News i Live Webcams, gdy są widoczne. Pozostaw wyłączone, aby wideo ładowało się dopiero po kliknięciu Odtwórz.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -2012,9 +1994,6 @@
         "failedToLoad": "Nie udało się załadować"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Kamery na żywo</strong> Transmisje na żywo z geopolitycznie istotnych miejsc na całym świecie: strefy konfliktu, stolice, przejścia graniczne i strategiczne wąskie gardła. Transmisje z YouTube i sieci publicznych."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Wskaźniki makro</strong> Kluczowe wskaźniki makroekonomiczne dla USA i strefy euro: CPI, bezrobocie, GDP i stopy banków centralnych. Wartości z deltą w stosunku do poprzedniego okresu. Źródło: FRED (Federal Reserve Economic Data)."
     },
@@ -2035,9 +2014,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Krzywa dochodowości &amp; Stopy</strong> Krzywa dochodowości US Treasury (2Y, 5Y, 10Y, 30Y) i kluczowe spready stóp, w tym wskaźnik inwersji 10Y-2Y. Pokazuje również stopy strefy euro (EURIBOR, ESTR). Odwrócona krzywa historycznie poprzedza recesje. Źródło: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Przypnij kamerę internetową z mapy"
     },
     "breakthroughsTicker": {
       "noData": "Brak przełomów naukowych"

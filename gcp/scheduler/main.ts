@@ -265,8 +265,6 @@ const CADENCES: Record<string, Cadence> = {
  *                            consumer-prices-core's publish.ts is the writer.
  *   seed-iran-events       — header: "Iran-events domain sunset (war ended
  *                            2026-07). Default OFF" + manually re-seeded.
- *   seed-webcams           — health alarm removed by operator decision
- *                            (session 26); also needs WINDY_API_KEY, unset.
  *   seed-chokepoint-flows  — NOT an orphan: scripts/ais-relay.cjs:6566 spawns it
  *                            via execFile. Caught only after registering it — a
  *                            name match in a long-running service's source is
@@ -276,7 +274,7 @@ const CADENCES: Record<string, Cadence> = {
  *                            seed-cyber-threats only to say a standalone cron
  *                            owns them, which is why those three ARE registered).
  */
-const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events', 'seed-webcams', 'seed-chokepoint-flows'] as const;
+const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events', 'seed-chokepoint-flows'] as const;
 void ORPHANS_NOT_SCHEDULED;
 
 function runScriptOnce(entryRelativePath: string, extraArgs: string[] = []): () => Promise<void> {

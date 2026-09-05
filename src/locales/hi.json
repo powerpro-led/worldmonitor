@@ -403,8 +403,6 @@
     "techReadiness": "तकनीकी तैयारी सूचकांक",
     "gccInvestments": "जीसीसी निवेश",
     "geoHubs": "भूराजनीतिक केंद्र",
-    "liveWebcams": "लाइव वेबकैम",
-    "windyWebcams": "हवा वाले लाइव वेबकैम",
     "gulfEconomies": "खाड़ी की अर्थव्यवस्थाएं",
     "groceryBasket": "किराना सूची",
     "groceryItem": "सामान",
@@ -759,23 +757,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "वेबकैम रुके हुए हैं",
-      "pausedIdle": "वेबकैम रुके हुए हैं — फिर से चालू करने के लिए माउस हिलाएँ",
-      "regions": {
-        "all": "सभी",
-        "mideast": "मिडिल ईस्ट",
-        "europe": "यूरोप",
-        "americas": "अमेरिका",
-        "asia": "एशिया",
-        "space": "अंतरिक्ष"
-      },
-      "play": "चलाएं",
-      "previewStatus": "लाइव पूर्वावलोकन"
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "मैप से वेबकैम पिन करें"
-    },
     "positiveNewsFeed": {
       "noStories": "इस श्रेणी में अभी कोई खबर नहीं"
     },
@@ -1425,8 +1406,6 @@
       "analysisFrameworksFromAgentskills": "agentskills.io से",
       "analysisFrameworksPasteJson": "JSON चिपकाएँ",
       "analysisFrameworksSaveToLibrary": "पुस्तकालय में सहेजें",
-      "streamAlwaysOnLabel": "डैशबोर्ड पर लाइव स्ट्रीम अपने-आप चलाएं",
-      "streamAlwaysOnDesc": "Live News और Live Webcams दिखाई देने पर अपने-आप शुरू करता है। वीडियो को केवल Play क्लिक करने के बाद लोड करने के लिए इसे बंद रखें.",
       "frameworkNote": "केवल क्लाइंट-जनित विश्लेषण पर लागू",
       "loadingServerInsights": "सर्वर इंटेलिजेंस लोड हो रहा है...",
       "usingCachedBrief": "कैश्ड संक्षिप्त उपयोग हो रहा है...",
@@ -2186,9 +2165,6 @@
         "unavailable": "हर्मुज डेटा उपलब्ध नहीं",
         "failedToLoad": "लोड करने में विफल"
       }
-    },
-    "liveWebcams": {
-      "infoTooltip": "<strong>लाइव वेबकैम</strong> दुनिया भर के भू-राजनीतिक महत्वपूर्ण स्थानों से लाइव फीड: संघर्ष क्षेत्र, राजधानी शहर, सीमा पारगमन, और रणनीतिक चोकपॉइंट। स्रोत: YouTube और सार्वजनिक नेटवर्क।"
     },
     "macroTiles": {
       "infoTooltip": "<strong>मैक्रो सूचकांक</strong> अमेरिका और यूरो क्षेत्र के प्रमुख मैक्रो आर्थिक संकेत: CPI, बेरोजगारी, GDP, और केंद्रीय बैंक दरें। मान पिछले काल अंतर के साथ दिखाए गए। स्रोत: FRED (फेडरल रिजर्व आर्थिक डेटा)।"

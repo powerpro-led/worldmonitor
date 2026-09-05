@@ -344,8 +344,6 @@
       "ddos": "DDoS",
       "anomalies": "Anomálie"
     },
-    "liveWebcams": "Živé webkamery",
-    "windyWebcams": "Windy živá webkamera",
     "groceryBasket": "Index potravin",
     "groceryItem": "Položka",
     "bigmacDesc": "Ceny Big Macu v zemích Středního východu (Big Mac Index)",
@@ -695,20 +693,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "regions": {
-        "all": "VŠE",
-        "mideast": "BLÍZKÝ VÝCHOD",
-        "europe": "EVROPA",
-        "americas": "AMERIKA",
-        "asia": "ASIE",
-        "space": "VESMÍR"
-      },
-      "paused": "Webkamery pozastaveny",
-      "pausedIdle": "Webkamery pozastaveny — pohněte myší pro obnovení",
-      "play": "Přehrát",
-      "previewStatus": "Živý náhled"
-    },
     "monitor": {
       "placeholder": "Klíčová slova (oddělená čárkou)",
       "add": "+ Přidat monitor",
@@ -1261,8 +1245,6 @@
       "badgeAnimDesc": "Animovat odznáčky aktualizací v záhlaví panelů",
       "headlineMemoryLabel": "Paměť titulků",
       "headlineMemoryDesc": "Zapamatovat si zobrazené titulky pro zvýraznění nových",
-      "streamAlwaysOnLabel": "Automaticky přehrávat živé streamy na dashboardu",
-      "streamAlwaysOnDesc": "Spustí Live News a Live Webcams automaticky, když jsou viditelné. Nechte vypnuto, aby se video načetlo až po kliknutí na Přehrát.",
       "globeRenderScaleOptions": {
         "1": "Eco (1x)",
         "2": "4K (2x)",
@@ -2012,9 +1994,6 @@
         "failedToLoad": "Načtení se nezdařilo"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Živé kamery</strong> Živé přenosy z geopoliticky významných míst po celém světě: konfliktní zóny, hlavní města, hraniční přechody a strategické úzké profily. Streamy z YouTube a veřejných sítí."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Makro ukazatele</strong> Klíčové makroekonomické ukazatele pro USA a eurozónu: CPI, nezaměstnanost, GDP a sazby centrálních bank. Hodnoty s rozdílem oproti předchozímu období. Zdroj: FRED (Ekonomická data Federálního rezervního systému)."
     },
@@ -2035,9 +2014,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Výnosová křivka &amp; Sazby</strong> Výnosová křivka US Treasury (2Y, 5Y, 10Y, 30Y) a klíčové úrokové spready včetně indikátoru inverze 10Y-2Y. Zobrazuje také sazby eurozóny (EURIBOR, ESTR). Invertovaná křivka historicky předchází recesím. Zdroj: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Připněte webkameru z mapy"
     },
     "breakthroughsTicker": {
       "noData": "Zatím žádné vědecké objevy"

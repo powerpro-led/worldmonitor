@@ -269,7 +269,6 @@ export const DEFAULT_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -331,7 +330,6 @@ export const MOBILE_DEFAULT_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 

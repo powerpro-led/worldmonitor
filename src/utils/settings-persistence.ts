@@ -23,8 +23,6 @@ const SETTINGS_KEY_PREFIXES: readonly string[] = [
   'worldmonitor-active-channel',
   'worldmonitor-runtime-feature-toggles',
   'wm-globe-render-scale',
-  'wm-live-streams-always-on',
-  'worldmonitor-webcam-prefs',
   'wm-map-theme:',
   'map-height',
   'map-pinned',

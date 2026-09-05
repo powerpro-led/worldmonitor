@@ -27,7 +27,6 @@ export * from './MobileWarningModal';
 export * from './MobilePanelNav';
 export * from './PizzIntIndicator';
 export * from './LlmStatusIndicator';
-export * from './PinnedWebcamsPanel';
 export * from './CIIPanel';
 export * from './CascadePanel';
 export * from './StrategicRiskPanel';

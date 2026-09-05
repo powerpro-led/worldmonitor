@@ -23,7 +23,6 @@ const IRAN_ATTACKS_ENABLED = typeof window !== 'undefined' && import.meta.env.VI
 // Desired order: AI Insights, AI Strategic Posture, cii, strategic-risk, then rest
 const FULL_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Map', enabled: true, priority: 1 },
-  'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   'threat-timeline': { name: 'Threat Timeline', enabled: true, priority: 1 },
   'strategic-posture': { name: 'AI Strategic Posture', enabled: true, priority: 1 },
@@ -185,7 +184,6 @@ const FULL_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -250,7 +248,6 @@ const FULL_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -259,7 +256,6 @@ const FULL_MOBILE_MAP_LAYERS: MapLayers = {
 // ============================================
 const TECH_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Tech Map', enabled: true, priority: 1 },
-  'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   ai: { name: 'AI/ML News', enabled: true, priority: 1 },
   tech: { name: 'Technology', enabled: true, priority: 1 },
@@ -357,7 +353,6 @@ const TECH_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -419,7 +414,6 @@ const TECH_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -428,7 +422,6 @@ const TECH_MOBILE_MAP_LAYERS: MapLayers = {
 // ============================================
 const FINANCE_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Markets Map', enabled: true, priority: 1 },
-  'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Market Insights', enabled: true, priority: 1 },
   markets: { name: 'Live Markets', enabled: true, priority: 1 },
   'stock-analysis': { name: 'Premium Stock Analysis', enabled: true, priority: 1, premium: 'locked' },
@@ -554,7 +547,6 @@ const FINANCE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -616,7 +608,6 @@ const FINANCE_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -694,7 +685,6 @@ const HAPPY_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -756,7 +746,6 @@ const HAPPY_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: false,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -860,7 +849,6 @@ const COMMODITY_MAP_LAYERS: MapLayers = {
   miningSites: true,
   processingPlants: true,
   commodityPorts: true,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -922,7 +910,6 @@ const COMMODITY_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: true,
   processingPlants: false,
   commodityPorts: true,
-  webcams: false,
   diseaseOutbreaks: false,
 };
 
@@ -1021,7 +1008,6 @@ const ENERGY_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: true,   // LNG import/export + crude terminals
-  webcams: false,
   diseaseOutbreaks: false,
   storageFacilities: true, // UGS / SPR / LNG / crude hubs (Day 9-10 registry)
   fuelShortages: true,     // Global fuel shortage alerts (Day 11-12 registry)
@@ -1079,7 +1065,6 @@ const ENERGY_MOBILE_MAP_LAYERS: MapLayers = {
   miningSites: false,
   processingPlants: false,
   commodityPorts: true,
-  webcams: false,
   diseaseOutbreaks: false,
   storageFacilities: true,
   fuelShortages: true,
@@ -1329,7 +1314,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   // All variants — essential panels
   core: {
     labelKey: 'header.panelCatCore',
-    panelKeys: ['map', 'windy-webcams', 'insights', 'strategic-posture', 'latest-brief'],
+    panelKeys: ['map', 'insights', 'strategic-posture', 'latest-brief'],
   },
 
   // Full (geopolitical) variant — marketsFinance/topical/dataTracking are

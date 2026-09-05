@@ -340,8 +340,6 @@
       "ddos": "DDoS",
       "anomalies": "Bất thường"
     },
-    "liveWebcams": "Webcam Trực tiếp",
-    "windyWebcams": "Webcam Trực tiếp Windy",
     "groceryBasket": "Chỉ số Rau quả",
     "groceryItem": "Mặt hàng",
     "bigmacDesc": "Giá Big Mac trên các nước Trung Đông (Big Mac Index)",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "Webcam đã tạm dừng",
-      "pausedIdle": "Webcam đã tạm dừng — di chuyển chuột để tiếp tục",
-      "regions": {
-        "all": "TẤT CẢ",
-        "mideast": "TRUNG ĐÔNG",
-        "europe": "CHÂU ÂU",
-        "americas": "CHÂU MỸ",
-        "asia": "CHÂU Á",
-        "space": "KHÔNG GIAN"
-      },
-      "play": "Phát",
-      "previewStatus": "Xem trước trực tiếp"
-    },
     "positiveNewsFeed": {
       "noStories": "Chưa có bài viết trong danh mục này"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "Hoạt ảnh huy hiệu cập nhật trên tiêu đề bảng",
       "headlineMemoryLabel": "Bộ nhớ tiêu đề",
       "headlineMemoryDesc": "Ghi nhớ tiêu đề đã xem để làm nổi bật tin mới",
-      "streamAlwaysOnLabel": "Tự động phát luồng trực tiếp trên bảng điều khiển",
-      "streamAlwaysOnDesc": "Tự động khởi động Live News và Live Webcams khi chúng hiển thị. Tắt tùy chọn này để chỉ tải video sau khi bạn nhấp Phát.",
       "analysisFrameworksLabel": "Khung phân tích",
       "analysisFrameworksActivePerPanel": "Hoạt động theo bảng điều khiển",
       "analysisFrameworksSkillLibrary": "Thư viện kỹ năng",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "Không tải được"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>Webcam trực tiếp</strong> Luồng phát trực tiếp từ các địa điểm có ý nghĩa địa chính trị trên toàn thế giới: vùng xung đột, thủ đô, cửa khẩu biên giới và các điểm nghẽn chiến lược. Luồng từ YouTube và mạng công cộng."
-    },
     "macroTiles": {
       "infoTooltip": "<strong>Chỉ số vĩ mô</strong> Các chỉ số kinh tế vĩ mô chính cho Hoa Kỳ và khu vực đồng Euro: CPI, thất nghiệp, GDP và lãi suất ngân hàng trung ương. Giá trị hiển thị với delta so với kỳ trước. Nguồn: FRED (Federal Reserve Economic Data)."
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>Đường cong lợi suất &amp; Lãi suất</strong> Đường cong lợi suất US Treasury (2Y, 5Y, 10Y, 30Y) và chênh lệch lãi suất chính bao gồm chỉ báo đảo ngược 10Y-2Y. Cũng hiển thị lãi suất khu vực đồng Euro (EURIBOR, ESTR). Đường cong đảo ngược theo lịch sử thường đi trước suy thoái. Nguồn: FRED."
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "Ghim một camera từ bản đồ"
     },
     "breakthroughsTicker": {
       "noData": "Chưa có bước đột phá khoa học nào"

@@ -341,8 +341,6 @@
       "ddos": "DDoS 攻击",
       "anomalies": "异常"
     },
-    "liveWebcams": "实时网络摄像头",
-    "windyWebcams": "Windy 实时网络摄像头",
     "groceryBasket": "食品杂货指数",
     "groceryItem": "商品",
     "bigmacDesc": "中东国家的巨无霸汉堡价格（巨无霸指数）",
@@ -691,20 +689,6 @@
     }
   },
   "components": {
-    "webcams": {
-      "paused": "摄像头已暂停",
-      "pausedIdle": "摄像头已暂停 — 移动鼠标以恢复",
-      "regions": {
-        "all": "全部",
-        "mideast": "中东",
-        "europe": "欧洲",
-        "americas": "美洲",
-        "asia": "亚洲",
-        "space": "太空"
-      },
-      "play": "播放",
-      "previewStatus": "实时预览"
-    },
     "positiveNewsFeed": {
       "noStories": "此类别暂无报道"
     },
@@ -1276,8 +1260,6 @@
       "badgeAnimDesc": "在面板标题中显示更新徽章动画",
       "headlineMemoryLabel": "标题记忆",
       "headlineMemoryDesc": "记住已阅标题以突出显示新内容",
-      "streamAlwaysOnLabel": "在仪表板上自动播放直播流",
-      "streamAlwaysOnDesc": "当 Live News 和 Live Webcams 可见时自动启动。保持关闭则仅在点击“播放”后加载视频。",
       "analysisFrameworksLabel": "分析框架",
       "analysisFrameworksActivePerPanel": "每个面板激活",
       "analysisFrameworksSkillLibrary": "技能库",
@@ -1996,9 +1978,6 @@
         "failedToLoad": "加载失败"
       }
     },
-    "liveWebcams": {
-      "infoTooltip": "<strong>实时摄像头</strong> 来自全球地缘政治重要地点的直播：冲突区、首都、边境口岸和战略咽喉要道。流媒体来自YouTube和公共网络。"
-    },
     "macroTiles": {
       "infoTooltip": "<strong>宏观指标</strong> 美国和欧元区关键宏观经济指标：CPI、失业率、GDP和央行利率。显示值含与前期的差值。来源：FRED（联邦储备经济数据）。"
     },
@@ -2019,9 +1998,6 @@
     },
     "yieldCurve": {
       "infoTooltip": "<strong>收益率曲线 &amp; 利率</strong> 美国国债收益率曲线（2Y、5Y、10Y、30Y）和关键利率利差，包括10Y-2Y倒挂指标。还显示欧元区利率（EURIBOR、ESTR）。倒挂曲线在历史上通常先于经济衰退出现。来源：FRED。"
-    },
-    "pinnedWebcams": {
-      "pinFromMap": "从地图固定网络摄像头"
     },
     "breakthroughsTicker": {
       "noData": "暂无科学突破"

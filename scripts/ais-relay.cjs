@@ -6560,74 +6560,6 @@ function startClimateNewsSeedLoop() {
   startBootSeedLoop('ClimateNewsSeed', 'relay:heartbeat:climate-news', CLIMATE_NEWS_SEED_INTERVAL_MS, seedClimateNews, (e) => console.warn('[ClimateNewsSeed] Initial seed error:', e?.message || e), (e) => console.warn('[ClimateNewsSeed] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// Chokepoint Flow Calibration — delegated to standalone seed script
-// Reads portwatch DWT data → computes live mb/d flow ratios per chokepoint.
-// Runs every 6h (matching portwatch seed cadence).
-// ─────────────────────────────────────────────────────────────
-
-const CHOKEPOINT_FLOWS_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
-const CHOKEPOINT_FLOWS_SEED_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
-const CHOKEPOINT_FLOWS_SEED_RETRY_MS = 20 * 60 * 1000; // retry in 20 min on failure
-const CHOKEPOINT_FLOWS_SEED_SCRIPT = path.join(__dirname, 'seed-chokepoint-flows.mjs');
-
-let chokepointFlowsSeedInFlight = false;
-let chokepointFlowsRetryTimer = null;
-
-function runChokepointFlowsSeedScript() {
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, [CHOKEPOINT_FLOWS_SEED_SCRIPT], {
-      env: process.env,
-      timeout: CHOKEPOINT_FLOWS_SEED_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
-    }, (err, stdout, stderr) => {
-      relayLogScriptOutput('[ChokepointFlows]', stdout);
-      if (stderr) {
-        const trimmedErr = String(stderr).trim();
-        if (trimmedErr) {
-          for (const line of trimmedErr.split('\n')) console.warn(`[ChokepointFlows] ${line}`);
-        }
-      }
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-}
-
-async function seedChokepointFlows() {
-  if (chokepointFlowsSeedInFlight) {
-    console.log('[ChokepointFlows] Skipped (in-flight)');
-    return;
-  }
-  chokepointFlowsSeedInFlight = true;
-  if (chokepointFlowsRetryTimer) { clearTimeout(chokepointFlowsRetryTimer); chokepointFlowsRetryTimer = null; }
-  const t0 = Date.now();
-  try {
-    await runChokepointFlowsSeedScript();
-    const durMs = Date.now() - t0;
-    console.log(`[ChokepointFlows] Completed in ${(durMs / 1000).toFixed(1)}s`);
-    // Heartbeat: success-only write so the health endpoint can alarm at +8h
-    // instead of +12h (seed-meta threshold). This catches the failure mode
-    // where the child process dies at import (ERR_MODULE_NOT_FOUND) and
-    // never refreshes seed-meta.energy:chokepoint-flows. TTL=3x interval.
-    upstashSet('relay:heartbeat:chokepoint-flows', { fetchedAt: Date.now(), recordCount: 1, durMs }, 18 * 3600).catch(() => {});
-  } catch (e) {
-    const message = e?.killed ? 'timeout' : (e?.message || e);
-    console.warn('[ChokepointFlows] Seed error:', message);
-    chokepointFlowsRetryTimer = setTimeout(() => { seedChokepointFlows().catch(() => {}); }, CHOKEPOINT_FLOWS_SEED_RETRY_MS);
-  } finally {
-    chokepointFlowsSeedInFlight = false;
-  }
-}
-
-function startChokepointFlowsSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[ChokepointFlows] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[ChokepointFlows] Seed loop starting (interval ${CHOKEPOINT_FLOWS_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('ChokepointFlows', 'relay:heartbeat:chokepoint-flows', CHOKEPOINT_FLOWS_SEED_INTERVAL_MS, seedChokepointFlows, (e) => console.warn('[ChokepointFlows] Initial seed error:', e?.message || e), (e) => console.warn('[ChokepointFlows] Seed error:', e?.message || e));
-}
 
 // ─────────────────────────────────────────────────────────────
 // PizzINT Seed — Pentagon Pizza Index + GDELT tensions → Redis
@@ -11694,7 +11626,6 @@ server.listen(PORT, () => {
   startSocialVelocitySeedLoop();
   startWsbTickersSeedLoop();
   startClimateNewsSeedLoop();
-  startChokepointFlowsSeedLoop();
   startPizzintSeedLoop();
 });
 

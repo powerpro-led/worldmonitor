@@ -251,6 +251,15 @@ const CADENCES: Record<string, Cadence> = {
   // runs and the cold-hole bug returns. */10 leaves a 5min margin.
   // ──────────────────────────────────────────────────────────────────────
   'seed-news-digest': { kind: 'cron', expr: '*/10 * * * *' },
+  // ──────────────────────────────────────────────────────────────────────
+  // 2026-09-05 (session 61) — PLATFORM_ARCHITECTURE.md P14 Phase 2.
+  // Previously invoked only via scripts/ais-relay.cjs's own execFile
+  // wrapper — see the (now-removed) ORPHANS_NOT_SCHEDULED entry below this
+  // map, which documented the exact gap this closes. Cadence matches the
+  // interval ais-relay's own wrapper used (CHOKEPOINT_FLOWS_SEED_INTERVAL_MS
+  // = 6h, "matching portwatch seed cadence").
+  // ──────────────────────────────────────────────────────────────────────
+  'seed-chokepoint-flows': { kind: 'cron', expr: '0 */6 * * *' },
 };
 
 /**
@@ -265,16 +274,12 @@ const CADENCES: Record<string, Cadence> = {
  *                            consumer-prices-core's publish.ts is the writer.
  *   seed-iran-events       — header: "Iran-events domain sunset (war ended
  *                            2026-07). Default OFF" + manually re-seeded.
- *   seed-chokepoint-flows  — NOT an orphan: scripts/ais-relay.cjs:6566 spawns it
- *                            via execFile. Caught only after registering it — a
- *                            name match in a long-running service's source is
- *                            ambiguous between a comment and a real invocation,
- *                            and ais-relay.cjs contains BOTH shapes (its :11656
- *                            block names seed-aviation / seed-energy-spine /
- *                            seed-cyber-threats only to say a standalone cron
- *                            owns them, which is why those three ARE registered).
+ *
+ *   seed-chokepoint-flows used to be listed here too (ais-relay.cjs spawned
+ *   it via execFile, never independently scheduled) — resolved session 61,
+ *   see its own CADENCES entry above and PLATFORM_ARCHITECTURE.md P14 Phase 2.
  */
-const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events', 'seed-chokepoint-flows'] as const;
+const ORPHANS_NOT_SCHEDULED = ['seed-recall-benchmark', 'seed-consumer-prices', 'seed-iran-events'] as const;
 void ORPHANS_NOT_SCHEDULED;
 
 function runScriptOnce(entryRelativePath: string, extraArgs: string[] = []): () => Promise<void> {

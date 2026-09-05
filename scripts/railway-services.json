@@ -553,5 +553,11 @@
       "APP_DOMAIN"
     ],
     "documentedAt": "scripts/seed-news-digest.mjs (header docblock declares */10 cron) + PLATFORM_ARCHITECTURE.md Workstream 7 \u2014 list-feed-digest had no seeder; warms news:digest:v1:<variant>:<lang> so the operator mirror carries it"
+  },
+  {
+    "entry": "scripts/seed-chokepoint-flows.mjs",
+    "deployMode": "nixpacks-root-scripts",
+    "service": "seed-chokepoint-flows",
+    "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 (session 61) \u2014 previously invoked only via scripts/ais-relay.cjs's own execFile wrapper (6h interval), never independently scheduled; gcp/scheduler/main.ts's own ORPHANS_NOT_SCHEDULED comment already documented this exact gap. Now registered directly; the ais-relay wrapper is deleted."
   }
 ]

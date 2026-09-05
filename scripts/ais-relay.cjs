@@ -4106,46 +4106,6 @@ async function startClassifySeedLoop() {
   startBootSeedLoop('Classify', 'seed-meta:classify', CLASSIFY_SEED_INTERVAL_MS, seedClassify, (e) => console.warn('[Classify] Initial seed error:', e?.message || e), (e) => console.warn('[Classify] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// Service Statuses Seed — warm-pings Vercel RPC every 15 min
-// so service statuses are always cached (TTL is 30 min).
-// ─────────────────────────────────────────────────────────────
-const SERVICE_STATUSES_SEED_INTERVAL_MS = 15 * 60 * 1000; // 15 min (TTL/2)
-const SERVICE_STATUSES_RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/list-service-statuses`;
-
-async function seedServiceStatuses() {
-  try {
-    // GET, not POST (2026-08-23): the generated GET handler ignores any body
-    // and reads `status` from the query string (defaulting to UNSPECIFIED,
-    // which is exactly what an empty '{}' POST body produced anyway) — this
-    // route is GET-only, so a POST 405'd. Production's real gateway
-    // (server/gateway.ts) has a POST->GET compatibility fallback for exactly
-    // this "stale client" case, but vite.config.ts's local-dev sebufApiPlugin
-    // is a separate, simpler router that doesn't implement that fallback, so
-    // the 405 was local-dev-only. Using GET directly sidesteps needing the
-    // fallback in either environment.
-    const resp = await fetch(SERVICE_STATUSES_RPC_URL, {
-      headers: warmPingHeaders(),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!resp.ok) {
-      console.warn(`[ServiceStatuses] Seed ping failed: HTTP ${resp.status}${RELAY_API_KEY ? '' : ' (WORLDMONITOR_RELAY_KEY not set — 401 expected; set it on the relay AND the Vercel api project)'}`);
-      return;
-    }
-    const data = await resp.json();
-    const count = data?.statuses?.length || 0;
-    console.log(`[ServiceStatuses] Seed ping OK — ${count} statuses`);
-    // seed-meta is written by listServiceStatuses handler only when fresh data
-    // is scraped; writing it here would mark fallback responses as fresh.
-  } catch (e) {
-    console.warn('[ServiceStatuses] Seed ping error:', e?.message || e);
-  }
-}
-
-function startServiceStatusesSeedLoop() {
-  console.log(`[ServiceStatuses] Seed loop starting (interval ${SERVICE_STATUSES_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('ServiceStatuses', 'seed-meta:infra:service-statuses', SERVICE_STATUSES_SEED_INTERVAL_MS, seedServiceStatuses, (e) => console.warn('[ServiceStatuses] Initial seed error:', e?.message || e), (e) => console.warn('[ServiceStatuses] Seed error:', e?.message || e));
-}
 
 
 
@@ -10325,7 +10285,6 @@ server.listen(PORT, () => {
   startTemporalAnomaliesWarmPingLoop();
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
-  startServiceStatusesSeedLoop();
 
   startGscpiSeedLoop();
   startSatelliteSeedLoop();

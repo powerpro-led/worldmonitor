@@ -41,6 +41,37 @@ function relayConstMinutes(name: string): number {
   return evalNumberExpression(match[1]) / 60_000;
 }
 
+// Resolve a gcp/scheduler/main.ts CADENCES entry to minutes. Handles the two
+// shapes that file uses: `{ kind: 'every', rate: 'N units' }` and the simple
+// `{ kind: 'cron', expr: '<m> */N * * *' }` / `'*/N * * * *'` forms. Several
+// seed loops that ais-relay.cjs used to own (and whose interval constants this
+// test read via relayConstMinutes) moved to standalone crons in P14 Phase 2 —
+// their authoritative cadence now lives here, not in ais-relay.cjs.
+function schedulerCadenceMinutes(service: string): number {
+  const schedSource = readSource('gcp/scheduler/main.ts');
+  const entry = schedSource.match(
+    new RegExp(`['"]${service}['"]\\s*:\\s*\\{([^}]+)\\}`),
+  );
+  assert.ok(entry, `gcp/scheduler/main.ts CADENCES must define ${service}`);
+  const spec = entry[1];
+  const rate = spec.match(/rate:\s*['"](\d+)\s+(second|minute|hour|day)s?['"]/);
+  if (rate) {
+    const n = Number(rate[1]);
+    const unit = rate[2];
+    return unit === 'second' ? n / 60 : unit === 'minute' ? n : unit === 'hour' ? n * 60 : n * 24 * 60;
+  }
+  const expr = spec.match(/expr:\s*['"]([^'"]+)['"]/);
+  assert.ok(expr, `${service} CADENCES entry has neither a recognized rate nor expr`);
+  const parts = expr[1].trim().split(/\s+/);
+  // minute field `*/N` -> every N minutes; hour field `*/N` with minute `0` -> every N hours.
+  const [minF, hourF] = parts;
+  const minStep = minF.match(/^\*\/(\d+)$/);
+  if (minStep) return Number(minStep[1]);
+  const hourStep = hourF.match(/^\*\/(\d+)$/);
+  if (hourStep && minF === '0') return Number(hourStep[1]) * 60;
+  throw new Error(`schedulerCadenceMinutes: unsupported cron expr "${expr[1]}" for ${service}`);
+}
+
 function relayFunctionConstNumber(functionName: string, name: string): number {
   const start = relaySource.indexOf(`async function ${functionName}(`);
   assert.notEqual(start, -1, `scripts/ais-relay.cjs must define ${functionName}()`);
@@ -52,7 +83,9 @@ function relayFunctionConstNumber(functionName: string, name: string): number {
 }
 
 function cyberRollingWindowMinutes(): number {
-  return relayFunctionConstNumber('seedCyberThreats', 'days') * 24 * 60;
+  // Was relayFunctionConstNumber('seedCyberThreats', 'days'); that loop moved
+  // to scripts/seed-cyber-threats.mjs (removed from ais-relay.cjs in S61).
+  return constNumber('scripts/seed-cyber-threats.mjs', 'DEFAULT_DAYS') * 24 * 60;
 }
 
 function relayEnvDefaultMinutes(name: string): number {
@@ -196,11 +229,17 @@ describe('layer explanation metadata', () => {
     assertDuration(renderedFreshnessText('ucdpEvents'), /every\s+([0-9]+)\s+(hour)s?/i, ucdpCadenceMin, 'UCDP seed cadence');
     assert.equal(healthMaxStale('ucdpEvents'), ucdpCadenceMin + 60, 'UCDP health budget should be cadence plus one hour grace');
 
-    assertDuration(renderedFreshnessText('cyberThreats'), /every\s+([0-9]+)\s+(hour)s?/i, relayConstMinutes('CYBER_SEED_INTERVAL_MS'), 'cyber relay seed cadence');
+    // Cyber seed moved to the standalone scripts/seed-cyber-threats.mjs cron
+    // (removed from ais-relay.cjs in session 61) — cadence source is now
+    // gcp/scheduler/main.ts, not a CYBER_SEED_INTERVAL_MS constant.
+    const cyberCadenceMin = schedulerCadenceMinutes('seed-cyber-threats');
+    assertDuration(renderedFreshnessText('cyberThreats'), /every\s+([0-9]+)\s+(hour)s?/i, cyberCadenceMin, 'cyber seed cadence');
     assertDuration(renderedFreshnessText('cyberThreats'), /([0-9]+)-\s*(day)\s+rolling window/i, cyberRollingWindowMinutes(), 'cyber IOC rolling window');
-    assert.equal(healthMaxStale('cyberThreats'), relayConstMinutes('CYBER_SEED_INTERVAL_MS') * 2, 'cyber health budget should stay 2x relay cadence');
+    assert.equal(healthMaxStale('cyberThreats'), cyberCadenceMin * 2, 'cyber health budget should stay 2x seed cadence');
 
-    assertDuration(renderedFreshnessText('ciiChoropleth'), /every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('CII_WARM_PING_INTERVAL_MS'), 'CII warm-ping cadence');
+    // CII warm-ping consolidated into scripts/seed-rpc-warmpings.mjs in
+    // session 62 (P14 Phase 2) — cadence source is now gcp/scheduler/main.ts.
+    assertDuration(renderedFreshnessText('ciiChoropleth'), /every\s+([0-9]+)\s+(minute)s?/i, schedulerCadenceMinutes('seed-rpc-warmpings'), 'CII warm-ping cadence');
     assertDuration(renderedFreshnessText('ciiChoropleth'), /([0-9]+)-\s*(minute)\s+freshness budget/i, healthMaxStale('riskScores'), 'CII health freshness budget');
 
     assertDuration(renderedFreshnessText('ais'), /every\s+([0-9]+)\s+(second)s?/i, relayEnvDefaultMinutes('SNAPSHOT_INTERVAL_MS'), 'AIS relay snapshot cadence');
@@ -213,7 +252,9 @@ describe('layer explanation metadata', () => {
 
     for (const layer of ['waterways', 'tradeRoutes'] as const) {
       const text = renderedFreshnessText(layer);
-      assertDuration(text, /every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('CHOKEPOINT_WARM_PING_INTERVAL_MS'), `${layer} chokepoint warm-ping cadence`);
+      // Chokepoint status warm-ping consolidated into
+      // scripts/seed-rpc-warmpings.mjs in session 62 (P14 Phase 2).
+      assertDuration(text, /every\s+([0-9]+)\s+(minute)s?/i, schedulerCadenceMinutes('seed-rpc-warmpings'), `${layer} chokepoint warm-ping cadence`);
       assertDuration(text, /refresh\s+every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('TRANSIT_SUMMARY_INTERVAL_MS'), `${layer} transit-summary cadence`);
     }
   });

@@ -269,6 +269,12 @@ const CADENCES: Record<string, Cadence> = {
   // "Published monthly; seeded daily to catch fresh releases").
   // ──────────────────────────────────────────────────────────────────────
   'seed-gscpi': { kind: 'every', rate: '1 days' },
+  // 2026-09-05 (session 62) — P14 Phase 2. Consolidates four near-identical
+  // ais-relay.cjs warm-ping loops (CII 8m / Chokepoints 30m / CableHealth
+  // 30m / TemporalAnomalies 15m) into one script on the tightest cadence.
+  // See scripts/seed-rpc-warmpings.mjs's header for why over-pinging the
+  // 30-min ones is harmless.
+  'seed-rpc-warmpings': { kind: 'every', rate: '8 minutes' },
 };
 
 /**

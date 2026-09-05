@@ -183,17 +183,12 @@ const SEEDERS = [
   ['Market', "'seed-meta:market:stocks'", 'MARKET_SEED_INTERVAL_MS', 'seedAllMarketData'],
   ['PositiveEvents', "'seed-meta:positive-events:geo'", 'POSITIVE_EVENTS_INTERVAL_MS', 'seedPositiveEvents'],
   ['Classify', "'seed-meta:classify'", 'CLASSIFY_SEED_INTERVAL_MS', 'seedClassify'],
-  // Internal warm-pings — gated on the seed-meta key their own RPC handler writes,
-  // so frequent relay recycling no longer re-pings these endpoints on every boot.
-  // (Previously excluded; the endpoints self-limit, so gating is risk-free here —
-  // a missing key fails open to an immediate ping — and also dedupes the boot ping
-  // against organic traffic that already kept the cache warm.)
-  ['CII', "'seed-meta:intelligence:risk-scores'", 'CII_WARM_PING_INTERVAL_MS', 'seedCiiWarmPing'],
-  ['Chokepoints', "'seed-meta:supply_chain:chokepoints'", 'CHOKEPOINT_WARM_PING_INTERVAL_MS', 'seedChokepointWarmPing'],
-  ['CableHealth', "'seed-meta:cable-health'", 'CABLE_HEALTH_WARM_PING_INTERVAL_MS', 'seedCableHealthWarmPing'],
-  // Added 2026-08-19 (session 26): folded in from the retired seed-infra.mjs
-  // (its only non-redundant target -- see TASKS.md "orphaned crons" item 5).
-  ['TemporalAnomalies', "'seed-meta:temporal:anomalies'", 'TEMPORAL_ANOMALIES_WARM_PING_INTERVAL_MS', 'seedTemporalAnomaliesWarmPing'],
+  // The four internal RPC warm-pings that used to be gated here (CII 8m,
+  // Chokepoints 30m, CableHealth 30m, TemporalAnomalies 15m) were
+  // consolidated into one standalone cron, scripts/seed-rpc-warmpings.mjs,
+  // in P14 Phase 2 (session 62 — see PLATFORM_ARCHITECTURE.md). Each RPC
+  // handler still owns its own seed-meta key; nothing in ais-relay.cjs
+  // warm-pings them any more.
   ['CorridorRisk', "'seed-meta:supply_chain:corridorrisk'", 'CORRIDOR_RISK_SEED_INTERVAL_MS', 'seedCorridorRisk'],
   ['USNI', "'seed-meta:military:usni-fleet'", 'USNI_SEED_INTERVAL_MS', 'seedUsniFleet'],
   ['ShippingStress', "'seed-meta:supply_chain:shipping_stress'", 'SHIPPING_STRESS_INTERVAL_MS', 'seedShippingStress'],
@@ -266,20 +261,13 @@ test('every relay seed loop and warm-ping loop is routed through startBootSeedLo
   );
 });
 
-// ── Internal warm-pings (ServiceStatuses, CII, Chokepoints, CableHealth) are
-// gated like every other fixed-schedule seeder — each routes through
-// startBootSeedLoop on the seed-meta key its RPC handler writes (asserted in the
-// SEEDERS table above). They must NOT fire an unconditional immediate boot ping,
-// so a relay reboot storm can't re-ping these endpoints on every recycle. ────────
-test('internal warm-pings no longer fire an unconditional immediate boot ping', () => {
-  for (const fn of ['seedServiceStatuses', 'seedCiiWarmPing', 'seedChokepointWarmPing', 'seedCableHealthWarmPing']) {
-    assert.doesNotMatch(
-      relaySource,
-      new RegExp(`${fn}\\(\\)\\.catch`),
-      `${fn} must be scheduled via startBootSeedLoop, not an ungated boot ping`,
-    );
-  }
-});
+// The dedicated "internal warm-pings no longer fire an unconditional immediate
+// boot ping" test that lived here is gone: ServiceStatuses was removed from
+// ais-relay.cjs in session 61, and the last four RPC warm-pings (CII,
+// Chokepoints, CableHealth, TemporalAnomalies) moved to the standalone
+// scripts/seed-rpc-warmpings.mjs in session 62 (P14 Phase 2). No warm-ping loop
+// remains in ais-relay.cjs, and the general "every seed/warm-ping loop routes
+// through startBootSeedLoop" test above still covers any that come back.
 
 test('real-time pollers are NOT gated (must run continuously on every boot)', () => {
   for (const label of ['Telegram', 'Oref', 'OREF']) {

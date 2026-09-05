@@ -16,14 +16,6 @@ function extractObjectEntry(source, entryName) {
   return { key: match[1], minutes: Number(match[2].replaceAll('_', '')) };
 }
 
-function extractSourceRange(source, startNeedle, endNeedle) {
-  const start = source.indexOf(startNeedle);
-  assert.notEqual(start, -1, `missing ${startNeedle}`);
-  const end = source.indexOf(endNeedle, start);
-  assert.notEqual(end, -1, `missing ${endNeedle}`);
-  return source.slice(start, end);
-}
-
 test('seed-health CII risk score freshness mirrors api/health riskScores', () => {
   const seedHealth = readRepoFile('api/seed-health.js');
   const health = readRepoFile('api/health.js');
@@ -67,34 +59,34 @@ test('seed-health CII risk score freshness mirrors api/health riskScores', () =>
   );
 });
 
-test('relay CII warm-ping delegates risk-score health count to the RPC handler', () => {
-  const relay = readRepoFile('scripts/ais-relay.cjs');
+test('CII warm-ping delegates risk-score health count to the RPC handler', () => {
+  // The CII warm-ping moved from ais-relay.cjs to the consolidated standalone
+  // cron scripts/seed-rpc-warmpings.mjs in P14 Phase 2 (session 62). Contract
+  // is unchanged: the warm-ping only GETs the RPC (with a cache-buster); the
+  // get-risk-scores handler owns seed-meta:intelligence:risk-scores and its
+  // signal-coverage recordCount.
+  const warmPing = readRepoFile('scripts/seed-rpc-warmpings.mjs');
   const handler = readRepoFile('server/worldmonitor/intelligence/v1/get-risk-scores.ts');
-  const warmPing = extractSourceRange(
-    relay,
-    'async function seedCiiWarmPing()',
-    'function startCiiWarmPingLoop()',
-  );
 
   assert.doesNotMatch(
     warmPing,
     /upstashSet\(\s*['"]seed-meta:intelligence:risk-scores/,
-    'relay warm-ping must not overwrite the handler signal-coverage count with the structural CII row count',
+    'warm-ping must not overwrite the handler signal-coverage count with the structural CII row count',
   );
   assert.doesNotMatch(
     warmPing,
-    /recordCount:\s*(?:count|data\?\.ciiScores\?\.length)/,
-    'relay warm-ping must not derive seed-meta recordCount from ciiScores.length',
+    /recordCount:/,
+    'warm-ping writes no Redis keys — the RPC handler owns seed-meta',
   );
   assert.match(
     warmPing,
-    /fetch\(ciiWarmPingUrl\(\)/,
-    'relay warm-ping must bypass CDN cache so the handler can refresh its own seed-meta on fresh fetches',
+    /path:\s*'\/api\/intelligence\/v1\/get-risk-scores'/,
+    'seed-rpc-warmpings must still warm the get-risk-scores RPC',
   );
   assert.match(
-    relay,
+    warmPing,
     /_wm_warm_ping=/,
-    'CII warm-ping URL must carry a private cache-busting query parameter',
+    'warm-ping URL must carry a private cache-busting query parameter so the handler refreshes its own seed-meta on a fresh fetch',
   );
   assert.match(
     handler,

@@ -44,6 +44,7 @@ describe('relay warm-ping internal auth', () => {
         '/api/infrastructure/v1/list-service-statuses',
         '/api/infrastructure/v1/list-temporal-anomalies',
         '/api/intelligence/v1/get-risk-scores',
+        '/api/news/v1/list-feed-digest',
         '/api/supply-chain/v1/get-chokepoint-status',
       ],
     );
@@ -83,14 +84,21 @@ describe('relay warm-ping internal auth', () => {
 // wired into BOTH the key-check bypass and the entitlement skip so the bypass
 // can't silently drift to a forgeable check or grant entitlement access.
 describe('relay warm-ping auth wiring (source guardrail)', () => {
-  it('keeps the active Service Statuses relay loop on shared warm-ping auth headers', async () => {
-    const src = await readFile(new URL('../scripts/ais-relay.cjs', import.meta.url), 'utf8');
-    assert.match(src, /const SERVICE_STATUSES_RPC_URL = `\$\{resolveApiOrigin\(process\.env\.APP_DOMAIN\)\}\/api\/infrastructure\/v1\/list-service-statuses`/);
-    assert.match(
-      src,
-      /fetch\(SERVICE_STATUSES_RPC_URL,\s*\{[\s\S]{0,240}?headers: warmPingHeaders\(\{ 'Content-Type': 'application\/json' \}\)/,
-      'Service Statuses warm-ping must keep sending the relay key via warmPingHeaders()',
-    );
+  // The relay warm-ping callers moved out of scripts/ais-relay.cjs during P14
+  // Phase 2: Service Statuses to scripts/seed-service-statuses.mjs (session
+  // 61), and the CII / chokepoint-status / cable-health / temporal-anomalies
+  // pings to scripts/seed-rpc-warmpings.mjs (session 62). Each must still send
+  // X-WorldMonitor-Key = WORLDMONITOR_RELAY_KEY or the gateway 401s the ping.
+  it('standalone warm-ping crons still send the relay key when configured', async () => {
+    for (const file of ['scripts/seed-service-statuses.mjs', 'scripts/seed-rpc-warmpings.mjs']) {
+      const src = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+      assert.match(src, /process\.env\.WORLDMONITOR_RELAY_KEY/, `${file} must read WORLDMONITOR_RELAY_KEY`);
+      assert.match(
+        src,
+        /if\s*\([^)]*RELAY[^)]*KEY[^)]*\)[^;]*['"]X-WorldMonitor-Key['"]\s*\]\s*=/,
+        `${file} must set the X-WorldMonitor-Key header only when the relay key is configured`,
+      );
+    }
   });
 
   it('uses timingSafeEqual (no direct equality) and is wired into both gates', async () => {

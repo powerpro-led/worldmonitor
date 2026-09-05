@@ -13,12 +13,13 @@ function readScript(relativePath) {
 
 describe('warm-ping seed scripts', () => {
   it('sends the app Origin header for infrastructure warm-pings', () => {
-    // seed-infra.mjs retired 2026-08-19 (session 26) -- its one non-redundant
-    // target (list-temporal-anomalies) folded into ais-relay.cjs's own
-    // warm-ping loop, see TASKS.md's "orphaned crons" item 5.
-    const src = readScript('scripts/ais-relay.cjs');
+    // History: seed-infra.mjs retired 2026-08-19 (session 26) -> its one
+    // non-redundant target (list-temporal-anomalies) folded into
+    // ais-relay.cjs's own warm-ping loop -> then, P14 Phase 2 (session 62),
+    // that loop plus the CII / chokepoint-status / cable-health pings
+    // consolidated into the standalone scripts/seed-rpc-warmpings.mjs cron.
+    const src = readScript('scripts/seed-rpc-warmpings.mjs');
     assert.match(src, /Origin:\s*resolveAppOrigin\(process\.env\.APP_DOMAIN\)/);
-    assert.match(src, /method:\s*'POST'/);
     assert.match(src, /\/api\/infrastructure\/v1\/list-temporal-anomalies/);
   });
 
@@ -33,10 +34,10 @@ describe('warm-ping seed scripts', () => {
   // The fleet convention (see seed-service-statuses.mjs) is exit(0) + a
   // grep-able WARN marker for log-alerting, NOT a non-zero exit on total
   // failure. seed-infra.mjs dropped from this list 2026-08-19 (session 26,
-  // retired -- see the test above) -- its warm-ping now lives inside
-  // ais-relay.cjs, a long-running relay process that doesn't call
-  // process.exit() at all, so this convention doesn't apply to it.
-  for (const script of ['scripts/seed-military-maritime-news.mjs']) {
+  // retired -- see the test above). seed-rpc-warmpings.mjs added 2026-09-05
+  // (session 62, P14 Phase 2) — it took over the CII / chokepoint-status /
+  // cable-health / temporal-anomalies pings from ais-relay.cjs.
+  for (const script of ['scripts/seed-military-maritime-news.mjs', 'scripts/seed-rpc-warmpings.mjs']) {
     it(`${script} exits 0 (best-effort) and never hard-crashes on total warm-ping failure`, () => {
       const src = readScript(script);
       assert.match(

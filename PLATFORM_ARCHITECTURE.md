@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-05 (session 63) — **P14 Phase 2 loop extraction: 3 more straight ports out of `ais-relay.cjs` (18 of 27 gone).** Continued the S62 batch. Extracted, each its own commit + live smoke-tested + `git stash -u` regression-diffed (0 new): **Satellites** → `scripts/seed-satellites.mjs` (CelesTrak TLE, every 2h, `cbb78e2`); **USNI-fleet** → `scripts/seed-usni-fleet.mjs` (every 6h, HTML parse stays in `scripts/lib/usni-fleet-parser.cjs`, 7-day stale key as a `runSeed` extraKey, `35b068d`); **PizzINT** → `scripts/seed-pizzint.mjs` (pizzint.watch + GDELT tensions, every 10min, `a4db79d`). `tsc --noEmit` clean repo-wide; `relay-boot-seed-freshness-guard` green after each; the 3 pre-existing `railway-registry`/`nixpacks-import-graph`/`no-escape-import` failures diffed identical against a clean-tree baseline. **The S62 handoff's tier-1 list was wrong on 3 of 6** — verified against the actual loop bodies this session: **Classify** calls `publishNotificationEvent({eventType:'rss_alert'})` *and* depends on ~400 lines of relay-local scoring machinery (`RELAY_SOURCE_TIERS`, `relayComputeImportanceScore`, relay recency/tier gates, `classifyFetchLlm`+`CLASSIFY_LLM_PROVIDERS`, `matchCountryNamesInText`, `upstashMGet`) — it's a notification-migration + big-dependency job, the largest single loop in the file, not a straight port; **Transit** (`seedChokepointTransits`) reads `chokepointCrossings`, an **in-process Map fed by the relay's live AIS WebSocket vessel stream** — a fetch-based cron cannot reproduce it (would publish all-zero counts); **TransitSummary** merges portwatch (Redis, portable) + `latestCorridorRiskData` (in-process, Redis-hydratable) + `chokepointCrossings` (same AIS blocker). **Remaining 9 loops:** PositiveEvents/SocialVelocity/WsbTickers (rate-limited — GDELT 5.5s throttle / Reddit ban risk — port throttle verbatim); CorridorRisk + ShippingStress (notification migration, full UCDP/Weather treatment); **Classify → reclassify to notification tier, own session**; **Transit + TransitSummary → NOT extractable as crons** — either leave in `ais-relay.cjs` (they consume the relay's core AIS function) or design a new split (relay flushes `chokepointCrossings` to Redis, standalone reads it) — operator's call; Market stays (needs `seed-sector-summary.mjs` first); Oref stays (real-time poller, belongs with WS-core/Telegram, blocked on cross-org-secrets decision).
 - **As of:** 2026-09-05 (session 62, later) — **P14 Phase 2 loop extraction underway: 5 more loops out of `ais-relay.cjs` (15 of 27 gone).** After the UCDP/Weather notification migration below, started on the 17 "genuinely unique, no standalone sibling exists" loops the S61 audit flagged. Cross-checked all 17 against `gcp/scheduler/main.ts`'s `CADENCES` (exhaustive — built from `railway-services.json`) to confirm none are quietly covered; they aren't, so each extraction is a **new** `scripts/seed-*.mjs` + registry + `CADENCES` entry, not a check-and-delete. Done so far, each its own commit: **GSCPI** → `scripts/seed-gscpi.mjs` (1:1, `5d03aed`); **CII / Chokepoints / CableHealth / TemporalAnomalies RPC warm-pings** → one consolidated `scripts/seed-rpc-warmpings.mjs` on an 8-min cadence (`fb64f12` — a deliberate deviation from the 1:1 template: they're four near-identical GET-only pings that write no Redis, and over-pinging the 30-min ones is harmless since each RPC handler serves from its own cache). Both waves also swept up **4 chronically-red tests** left broken by S61's Cyber/ServiceStatuses removals (same P14 work, earlier phase): `layer-explanations.test.mts` (added a `schedulerCadenceMinutes()` helper to read `CADENCES` instead of deleted `ais-relay.cjs` constants), `relay-warm-ping-auth.test.mts`, `seed-health-risk-scores.test.mjs`, `seed-warm-ping-origin.test.mjs`. `tsc --noEmit` clean; full `test:data` diffed clean-tree vs. branch — 0 new regressions, 3–4 pre-existing failures fixed per wave. **Remaining 10 loops** (Market stays — deferred, needs `seed-sector-summary.mjs` first): Satellites, PositiveEvents, Classify, USNI-fleet, SocialVelocity, WsbTickers, PizzINT, Transit, TransitSummary (no notifications — straight ports); **CorridorRisk + ShippingStress publish notifications** — need the same migration treatment UCDP/Weather got. Reddit-sourced (SocialVelocity/WsbTickers) and GDELT-sourced (PositiveEvents) ones carry rate-limit/ban risk — port their existing throttle logic faithfully.
 - **As of:** 2026-09-05 (session 62) — **P14 Phase 2 continued: UCDP and Weather's notification logic ported to their standalone scripts, both loops now deleted from `ais-relay.cjs` for good (10 of 27 gone).** Completes the item session 61 flagged as its next candidate (see the S61 bullet below). `conflict_escalation` (UCDP) and `weather_alert` (NWS) publishing — including their Redis-backed dedup/coalesce-key machinery, ported from the same `wm:events:queue` LPUSH + SETNX pattern `scripts/seed-aviation.mjs` already used — now live in `scripts/seed-ucdp-events.mjs` and `scripts/seed-weather-alerts.mjs`. Two real bugs caught and fixed before this could ship: (1) the standalone weather script never captured the NWS VTEC field its own coalesce-key logic needed — the adjacent-zone dedup would have silently never fired; (2) deleting `ais-relay.cjs`'s writer block also deleted `UCDP_TRAILING_WINDOW_MS`/`UCDP_PAGE_SIZE`, which the *separate*, untouched on-demand `/ucdp-events` relay-reader still referenced — a `node --check` clean but `ReferenceError`-at-runtime landmine, caught only by grepping every identifier the deleted blocks declared for remaining references. 8 test files updated to source-grep the new files instead of the deleted `ais-relay.cjs` functions (`tests/ucdp-seed-resilience.test.mjs`, `tests/ucdp-retention-window.test.mjs`, `tests/documentation-alignment-guardrails.test.mjs`, `tests/notification-relay-{payload-audit,coalesce-key,country-filter}.test.mjs`, `tests/relay-boot-seed-freshness-guard.test.mjs`, `tests/layer-explanations.test.mts`); 3 dead ais-relay functions/constants that only the deleted loops used (`ucdpVersionRank`/`ucdpVersionNewer`, `deriveWeatherCoalesceKey`) removed along with them, since the standalone UCDP writer's discovery is sequential-by-construction and doesn't need version-ranking at all. Verified: `tsc --noEmit` clean repo-wide; full `npm run test:data` at its pre-existing noise floor (95 fail — identical set to the session-61 baseline, confirmed by diffing failing-test names across two runs — 0 new regressions). Committed `069ea81`.
 - **As of:** 2026-09-05 (session 61) — **P14 Phase 2 started: 8 of 27 `startBootSeedLoop` loops removed from `ais-relay.cjs`.** Full loop-by-loop audit (redundant-duplicate vs. genuinely-unique) completed and recorded below; TheaterPosture, ServiceStatuses, Spending, WorldBank, ClimateNewsSeed, ChokepointFlows, TechEvents, and the already-dead Cyber loop deleted (each a confirmed pure duplicate of an already-independently-scheduled `scripts/seed-*.mjs`), `-1848` net lines. **UCDP and Weather were also deleted then restored same-session** — both turned out to also publish live notifications (`conflict_escalation`, severe weather alerts) that no standalone script replicates; deleting them was a real regression caught by the test suite, not by the initial audit (which only checked Redis-key duplication). See commits `629df49`/`7febde9`. Market's `seedAllMarketData` (a 9-way bundle) was investigated and left alone — 8/9 sub-seeds are covered elsewhere but `market:sectors` has no standalone replacement. Remaining Workstream 7 items: the rest of P14 Phase 2 (WS core + Telegram poller extraction, blocked on a cross-org secrets decision — see below), the 21 direct-fetch handlers, and `cloudFallback`.
@@ -290,6 +291,15 @@ data-source fetching and holds no data-source keys — it is a read replica.
       - **CII / Chokepoints / CableHealth / TemporalAnomalies RPC warm-pings** (`fb64f12`) → ONE consolidated `scripts/seed-rpc-warmpings.mjs` (deviation from 1:1). All four were GET-only, wrote no Redis (the RPC handlers own their `seed-meta` keys), and differed only in URL + interval (8/30/30/15 min). Runs all four every 8 min — over-pinging the slower ones is harmless (handler-side caching absorbs it). `warmPingHeaders()`/`RELAY_API_KEY` deleted from `ais-relay.cjs` (no other caller). `map-layer-definitions.ts` waterways/tradeRoutes freshness copy updated "every 30 minutes" → "every 8 minutes".
       - **Test debt swept in these two waves:** `layer-explanations.test.mts` (new `schedulerCadenceMinutes()` helper — reads `CADENCES` rate/simple-cron; re-pointed CII + chokepoint + the long-broken CYBER assertions), `relay-warm-ping-auth.test.mts` (stale 5-path endpoint list → 6; ais-relay source-grep → the standalone crons), `seed-health-risk-scores.test.mjs` + `seed-warm-ping-origin.test.mjs` (retargeted to `seed-rpc-warmpings.mjs`; added it to the exit(0)-invariant enforcement list). Net: 3–4 pre-existing red tests fixed per wave, 0 new regressions (diffed clean-tree-vs-branch each time; the lone "new" name `renewable-energy-last-known-good` fails identically on the clean tree — a timing flake).
       - **Remaining 10** (Market excluded — still needs `seed-sector-summary.mjs` first): Satellites, PositiveEvents, Classify, USNI-fleet, SocialVelocity, WsbTickers, PizzINT, Transit, TransitSummary (no notifications, straight ports); **CorridorRisk + ShippingStress call `publishNotificationEvent`** → same migration treatment as UCDP/Weather. GDELT- (PositiveEvents) and Reddit-sourced (SocialVelocity/WsbTickers) ones carry rate-limit/ban risk — port their existing throttle logic faithfully.
+      - **S63 — 3 straight ports done, 3 of the S62 "straight port" list re-tiered after reading the loop bodies.**
+        - **Satellites** (`cbb78e2`) → `scripts/seed-satellites.mjs`. `SAT_NAME_FILTERS` / `satClassify` / TLE parse verbatim; `https.request` → `fetch` + post-hoc 2MB guard; dropped the 20-min in-loop retry (next 2h cron tick is the retry — `seed-gscpi.mjs` precedent). `CADENCES` `every 2 hours`, `maxStaleMin: 240`. Live: 191 catalog → 98 recon TLEs.
+        - **USNI-fleet** (`35b068d`) → `scripts/seed-usni-fleet.mjs`. HTML parse delegated verbatim to `scripts/lib/usni-fleet-parser.cjs` (unchanged). `ytFetchViaProxy` → `_proxy-utils.cjs` `resolveProxyConfig`/`proxyFetch`. 7-day `usni-fleet:sebuf:stale:v1` = a `runSeed` `extraKey`. `every 6 hours`, `maxStaleMin: 720`. Live: 42 vessels / 3 CSGs / 10 regions.
+        - **PizzINT** (`a4db79d`) → `scripts/seed-pizzint.mjs`. Location mapping / DEFCON thresholds / GDELT tension-pair shaping verbatim; GDELT batch stays non-fatal (pizzint.watch `/api/gdelt/batch` currently 400s — same as the relay); `zeroIsValid: true` keeps the unconditional publish. `every 10 minutes`, `maxStaleMin: 30`. Live: 6 locations, `success:true`.
+        - **Classify — NOT a straight port.** Calls `publishNotificationEvent({eventType:'rss_alert'})` (→ notification tier) *and* depends on ~400 lines of relay-local scoring machinery (`RELAY_SOURCE_TIERS`, `relayComputeImportanceScore`, the `RELAY_DIPLOMACY_*` / tier-4 / recency gates, `classifyFetchLlm` + `CLASSIFY_LLM_PROVIDERS`, `classifyCacheKey`, `matchCountryNamesInText`, `upstashMGet`) + a 5-variant staggered ~12-min loop with a per-title Redis LLM cache. Largest single loop in the file. Needs its own session.
+        - **Transit** (`seedChokepointTransits`) — **not extractable as a cron.** Reads `chokepointCrossings`, an in-process `Map` populated by the relay's live AIS WebSocket vessel stream (geofence-crossing detection, `ais-relay.cjs:~4960`). A fetch-based standalone would publish all-zero counts.
+        - **TransitSummary** — merges `PORTWATCH_REDIS_KEY` (portable) + `latestCorridorRiskData` (in-process, Redis-hydratable) + `chokepointCrossings` (the AIS blocker). Same problem for the transit-count half.
+        - **Decision needed (operator):** Classify → own session. Transit + TransitSummary → leave in `ais-relay.cjs` (they consume the relay's core AIS function), or design a split where the relay periodically flushes `chokepointCrossings` to a Redis key a standalone reads.
+      - **Remaining after S63 (9):** PositiveEvents / SocialVelocity / WsbTickers (rate-limited straight ports — port throttle verbatim); CorridorRisk + ShippingStress (notification migration); Classify (notification tier, own session); Transit + TransitSummary (blocked — see decision above); Market (needs `seed-sector-summary.mjs`). **18 of 27 loops out.**
 - [x] **DONE S57 — `list-feed-digest` seeder.** `scripts/seed-news-digest.mjs`: a nixpacks-root-scripts warm-ping job (NOT a re-implementation — `scripts/` can't import `server/` and `buildDigest` isn't exported). It HTTP-pings `/api/news/v1/list-feed-digest?variant=&lang=` per `(variant, lang)` pair (env `NEWS_DIGEST_SEED_VARIANTS`=`full`, `NEWS_DIGEST_SEED_LANGS`=`en,zh`; `en` first so `zh` reuses the warmed `rss:feed:v8:*` per-feed caches) — the RPC runs `buildDigest`, `setCachedJson`s `news:digest:v1:<variant>:<lang>` (which also fires the mirror notify) and stamps a fresh `generatedAt` (what the panels read for freshness, so no `seed-meta:` write here). Registered in `railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` at **`*/10 * * * *`** — a hard constraint, not an inference: must stay under `list-feed-digest.ts`'s 900s `news:digest:v1` TTL or the cold-hole bug returns. `classifyKey('news:digest:v1:*')` was already `'mirror'` — no W4 change. Exit-code policy: 0 on any success (partial failure self-heals next tick), 1 only if every ping fails. Unit test: `tests/seed-news-digest.test.mjs` (10 cases). **The sidecar startup warm-ping (`local-api-server.mjs` ~2546) is removed** — it was already inert whenever `WS_RELAY_URL` was unset (`/api/news/v1/` is `cloudPreferred` then), i.e. in exactly the config the pivot backend runs; the digest now arrives over the mirror.
 - [ ] Work the remaining 21 direct-fetch handlers + 9 shared modules case by case → move server-side or accept degraded-offline. By domain: aviation (3), market (4), military (2), infrastructure (3), intelligence (3), economic, displacement, maritime, sanctions, imagery, research (1 each); shared: `aviation/_shared`, `cyber/_shared`, `market/_shared`, `trade/_shared`, `unrest/_shared`, `news/_feeds`, `economic/_bis-shared`, `military/_wingbits-aircraft-details`, `supply-chain/_bilateral-hs4-lazy`.
 - [ ] `cloudFallback` — with a real per-org cloud origin now existing, decide whether operator backends may use it (probably still off; a miss = "not synced yet").
@@ -309,6 +319,77 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 63 — 2026-09-05
+
+Continued the S62 P14 Phase 2 loop-extraction batch. Started from the S62
+handoff's "tier 1 = 6 straight ports" (Satellites, Classify, USNI-fleet,
+PizzINT, Transit, TransitSummary) but **read every loop body first** — and
+three of the six were mis-tiered:
+
+- **Classify** — calls `publishNotificationEvent({eventType:'rss_alert'})`, so
+  it's a notification-migration job, not a straight port. It also drags in
+  ~400 lines of relay-local scoring machinery (`RELAY_SOURCE_TIERS`,
+  `relayComputeImportanceScore`, the `RELAY_DIPLOMACY_*`/tier-4/recency gates,
+  `classifyFetchLlm` + `CLASSIFY_LLM_PROVIDERS`, `classifyCacheKey`,
+  `matchCountryNamesInText`, `upstashMGet`) plus a 5-variant staggered
+  ~12-min loop with a per-title Redis LLM cache. It's the single largest loop
+  in the file. Reclassified to the notification tier; needs its own session.
+- **Transit** (`seedChokepointTransits`) — reads `chokepointCrossings`, an
+  **in-process `Map` populated by the relay's live AIS WebSocket vessel
+  stream** (geofence-crossing detection at `ais-relay.cjs:~4960`). A
+  fetch-based standalone cron has no AIS feed and would publish all-zero
+  transit counts. Not extractable as-is.
+- **TransitSummary** — merges three inputs: `PORTWATCH_REDIS_KEY` (Redis,
+  portable), `latestCorridorRiskData` (in-process, but Redis-hydratable from
+  `CORRIDOR_RISK_REDIS_KEY`), and `chokepointCrossings` again (the AIS
+  blocker). Same problem for the transit-count half.
+
+Recommendation recorded in the Status block: Classify → own session; Transit
++ TransitSummary → either leave in `ais-relay.cjs` (they consume the relay's
+reason for existing) or design a different split where the relay periodically
+flushes `chokepointCrossings` to a Redis key a standalone script reads.
+Operator's call.
+
+**The 3 genuine straight ports, each its own commit:**
+
+- **Satellites** (`cbb78e2`) → `scripts/seed-satellites.mjs`. `SAT_NAME_FILTERS`,
+  `satClassify`, TLE triple-line parse ported verbatim; `https.request` →
+  `fetch` + post-hoc 2MB guard. `runSeed('intelligence','satellites',
+  'intelligence:satellites:tle:v1', …)`, `every 2 hours`, `maxStaleMin: 240`.
+  The relay's 20-min in-loop retry is dropped (runSeed extends last-good TTL
+  on failure; next tick is the retry — same as `seed-gscpi.mjs`). Live-fetched
+  both CelesTrak GP catalogs: 191 entries → 98 matched recon TLEs.
+- **USNI-fleet** (`35b068d`) → `scripts/seed-usni-fleet.mjs`. HTML parsing
+  delegated verbatim to `scripts/lib/usni-fleet-parser.cjs` (already
+  standalone CJS, test-covered). `ytFetchViaProxy` fallback → the
+  `_proxy-utils.cjs` `resolveProxyConfig`/`proxyFetch` idiom the other
+  extracted loops use. 7-day `usni-fleet:sebuf:stale:v1` fallback is a
+  `runSeed` `extraKey` (same payload, longer TTL, no separate meta).
+  `every 6 hours`, `maxStaleMin: 720`. Live-fetched the real Fleet Tracker
+  post: 42 vessels, 3 CSGs, 10 regions.
+- **PizzINT** (`a4db79d`) → `scripts/seed-pizzint.mjs`. Location mapping,
+  DEFCON thresholds, GDELT tension-pair shaping ported verbatim. GDELT batch
+  fetch stays non-fatal (pizzint.watch's `/api/gdelt/batch` currently 400s —
+  the relay loop tolerates this identically, `tensionPairs` just stays `[]`).
+  `zeroIsValid: true` preserves the loop's unconditional publish. `every 10
+  minutes`, `maxStaleMin: 30`. Live-fetched `/api/dashboard-data`: 6 locations,
+  `success:true`.
+
+Each: new `scripts/seed-*.mjs` + `railway-services.json` (`nixpacks-root-repo`)
+entry + `gcp/scheduler/main.ts` `CADENCES` entry; loop + all local identifiers
++ boot call site deleted from `ais-relay.cjs`; every deleted identifier
+grepped repo-wide for stray refs (none — all were loop-local; PizzINT's
+generically-named `GDELT_BATCH_API`/`DEFAULT_GDELT_PAIRS` had no other
+readers); removed from `tests/relay-boot-seed-freshness-guard.test.mjs`'s
+`SEEDERS`. `tsc --noEmit` clean repo-wide after each. `relay-boot-seed-
+freshness-guard` green (24→23→22 as `SEEDERS` shrank). The 3 pre-existing
+`railway-services-registry-coverage` / `nixpacks-seeder-import-graph` /
+`scripts-railway-nixpacks-no-escape-import` failures diffed byte-identical
+against a `git stash -u` clean-tree baseline — 0 new regressions.
+
+`main` @ `a4db79d` (well ahead of `origin/main`, not pushed). **18 of 27
+loops out of `ais-relay.cjs`.**
 
 ### Session 62 — 2026-09-05
 

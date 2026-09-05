@@ -18,7 +18,11 @@
 //
 // Deviations from upstream: this header; the fn_link_bridge_identity_if_needed
 // path reference below points at the migration instead of the platform repo's
-// declarative-schema file. Otherwise byte-for-byte.
+// declarative-schema file; and (S57 correction) the `.rpc()` call below is
+// schema-scoped to `worldmonitor` (upstream calls it unscoped, i.e. `public`)
+// — see supabase/migrations/20260904130000_github_identity_bridge.sql's own
+// header for why WorldMonitor keeps every Supabase object out of `public`.
+// Otherwise byte-for-byte.
 // Platform-repo doc references (docs/plans/2026-07-31-github-identity-bridge.md)
 // are left intact — that design doc lives upstream.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,7 +115,11 @@ async function linkExistingIdentityIfAny(
 	gh: { id: number; login?: string; email?: string | null; name?: string | null; avatar_url?: string | null },
 ): Promise<void> {
 	try {
-		const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+		// db.schema: link_bridge_identity_if_needed lives in `worldmonitor`, not
+		// PostgREST's default `public` — see the header's Deviations note.
+		const supabase = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+			db: { schema: "worldmonitor" },
+		});
 		const { data, error } = await supabase.rpc("link_bridge_identity_if_needed", {
 			p_github_id: String(gh.id),
 			p_login: gh.login ?? null,

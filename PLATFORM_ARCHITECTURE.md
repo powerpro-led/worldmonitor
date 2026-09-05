@@ -13,9 +13,9 @@ walmart, …), each an isolated instance."
 
 ## Status
 
-- **As of:** 2026-09-04 (session 57) — **Workstream 3 (per-operator LLM keys) fully shipped** (Parts A backend, B dashboard `ai` tab, C hard-disable visibility), alongside W4 + 2 + OQ-P6→P14 + W7's `list-feed-digest` seeder. **OQ-P7 resolved and P13 reviewed** (doc-only) — Workstream 5 has no remaining operator-gated blocker. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
+- **As of:** 2026-09-04 (session 57) — **Workstream 3 (per-operator LLM keys) fully shipped** (Parts A backend, B dashboard `ai` tab, C hard-disable visibility), alongside W4 + 2 + OQ-P6→P14 + W7's `list-feed-digest` seeder. **OQ-P7 resolved and P13 reviewed** (doc-only). **Then: a real test tenant (`mosiq`) provisioned by hand for the first time** — W1's and W2's migrations + both edge functions validated live against a real Supabase project; **P15 found and fixed** (every WorldMonitor Supabase object now lives in a dedicated `worldmonitor` schema, not `public`). Workstream 5 has no remaining operator-gated blocker. Prior: S56 reviewed the architecture, then shipped Workstreams R and 1.
 - **Prior work state:** `main` @ `46273e8` at S57 start. Local App Initiative Phases 0/1/3/4 complete + tested; **Phase 2's loopback control panel REVERTED** (`d39344f`); **config broker built** (`f09915f`); **mirror is now a denylist** (S57); **`github-identity-bridge` vendored into `supabase/`** (S57). `v2.13.0` **not tagged**, on hold (P12).
-- **⚠ Nothing in Workstream 1 has ever run against a real Supabase project.** The edge function is unrun (no `deno` here; `tsconfig.json` covers only `src/`, so it has no local gate at all) and the migration has only been exercised in a throwaway postgres. Both get their first real execution in Workstream 5.
+- **RESOLVED S57 — Workstreams 1 and 2 both validated against a real Supabase project** (`mosiq`, a hand-provisioned test tenant — see the S57 session log). Both migrations apply cleanly, both edge functions deploy and respond live and correctly. `register-provider.ts`, a full GitHub sign-in round trip, and `local-config`'s Upstash-backed secrets remain untested (need `deno`, a real GitHub token, and a real Upstash DB respectively — none available this session) — those are Workstream 5's real remaining gate, not "has anything run at all."
 - **S56 review verdict: architecture holds.** Corrections folded into R, 1, 2, 4, 5, 7 and P6. **OQ-P6 and OQ-P7 both RESOLVED S57** — see P14 and the resolved-questions section; no open sub-questions remain.
 - **OQ-P1–6 resolved** (OQ-P1 re-opened S56 as OQ-P6, re-closed S57): Cloud Run · Supabase-CLI-scripted provisioning · `app_metadata.wm_admin` · no `settings.html` in the operator bundle · no-LLM-key hard-disables chat · **one shared AIS ingest across all orgs, everything else scheduled at `min-instances: 0`, zero pinned instances per org (P14)**.
 - **START HERE: Workstream 5 (deploy pipeline)** — everything remaining waits on it. **Both prior blockers cleared S57:** OQ-P7 resolved (`pipeline_config` wins, 5-min hydration) and P13 reviewed (accepted as designed). Nothing operator-gated remains before starting W5.
@@ -63,6 +63,7 @@ data-source fetching and holds no data-source keys — it is a read replica.
 | **P13** | **Revocation = ban or delete the operator's Supabase user.** The `local-config` broker verifies via service role, on every call, that the caller still exists and is not banned; the local backend drops its cached credential on a 401/403. **Decided during Workstream 1's implementation, reviewed and accepted S57.** | P4 promises that removing someone "propagates within the hour", but nothing in the design actually changed when access was withdrawn: `worldmonitor-org-gate` is a **before-user-created** hook, so it runs once at signup and dropping someone from the GitHub org never touches their Supabase user. A broker checking only "is this JWT valid?" would revoke nobody and the hourly re-fetch would be decorative. Alternatives rejected: re-checking live GitHub membership needs a stored GitHub token or a per-org PAT we don't have; an `org_members` table contradicts OQ-P3's explicit no-extra-tables stance for the admin flag. Membership itself needs no check — each org has its own project, so holding a live user in it *is* membership. **Review note (S57):** revocation is per-org-project — an operator moved between orgs must be banned in the OLD project explicitly, not just added to the new one, or their local mirror keeps refreshing against the org they left until the next hourly broker check. State this in the admin runbook. | S56, reviewed S57 |
 | **P12** | **`v2.13.0` stays untagged, on hold.** The install mechanics (bundled Node, `curl\|sh`, service, CI) are done and tested, but the config UX the bundle currently ships (`settings.html` Backend section, `org.env` with Upstash creds, `/api/local-config`) is being replaced. Tag only after Workstreams 1–4 + R land. | Don't ship a dead-on-arrival config flow. Supersedes D12's "all four phases cohere" gate. | S55 |
 | **P14** | **No pinned instances in a per-org deploy. Resolves OQ-P6.** (a) **AIS WebSocket ingest** (`wss://stream.aisstream.io`, the ONE genuinely persistent connection in the stack) runs as **one shared service across all orgs** — public vessel data, identical for every tenant — fanning parsed output into each org's Upstash via that org's write token. New standalone deploy target (own GCP service, own GH Environment, own `AISSTREAM_API_KEY`, a registry of `{org → upstash write url+token}`). (b) **Everything else that was "long-running"** becomes scheduled at `min-instances: 0`, per org: `digest-notifications` → Cloud Scheduler job; `publish-bootstrap-tiers` → two Cloud Scheduler jobs (2m/10m); `process-simulation-tasks` + `process-deep-forecast-tasks` + `scenario-worker` → **one merged `queue-worker.mjs`**, scheduled `--once` (both flows are already async pending→poll, so queue latency ~1–2m is fine); `ais-relay.cjs`'s **28 `startBootSeedLoop` seed/warm-ping loops** → entries in `gcp/scheduler/main.ts`'s `CADENCES` map (many already there or shadowed as "ais-relay backup"); **Telegram MTProto poller** → scheduled `--once` + a Redis lock (concurrency 1, or `AUTH_KEY_DUPLICATED`). (c) **Phasing:** Phase 1 (ships with W5) does digest/bootstrap/queue-worker; `ais-relay.cjs` runs unchanged as a single pinned `min-instances:1` **per org** as a stopgap. Phase 2 (overlaps W7) decomposes `ais-relay.cjs` — 28 loops → `CADENCES`, extract the ~150-line WS core → the shared service, extract Telegram → scheduled. End state: **0 pinned per org.** | The "6 long-running services" were an artifact of Railway's "a container is a container" model — under inspection they are 1 WebSocket + ~30 timer loops + 3 async queue drains. Cloud Run + Cloud Scheduler (OQ-P1) is built to separate those. Sharing the AIS ingest is the one place cross-tenant coupling enters, and it is acceptable *because* the data is public and identical — the per-org-isolation argument that holds for tenant data is materially weaker here. | S57 |
+| **P15** | **Every WorldMonitor object in a tenant's Supabase project lives in a dedicated `worldmonitor` schema, never `public`.** Corrects W1/W2, which had put `pipeline_config` + `wm_is_admin()` + `link_bridge_identity_if_needed()` in `public` with no explicit schema decision ever recorded. Applies to every future table/function/trigger this repo adds to a tenant project. **Schema exposure IS scriptable, folded into the migration itself** — `alter role authenticator set pgrst.db_schemas = 'public, worldmonitor'; notify pgrst, 'reload schema';`, confirmed live against a real hosted Supabase project (S57): before it, a REST call against the new schema 404s `PGRST106 "Invalid schema"`; the schema-cache reload notify is separately required or a freshly-migrated table 404s `PGRST205` even once the schema itself is exposed. No dashboard/Management-API step needed, contrary to what W1/W2's provisioning notes originally assumed. | (1) Matches the convention the pre-pivot single-tenant fork already uses (see the `supabase-worldmonitor-schema-access` memory note) — one convention, not two. (2) Keeps `public` free for a tenant project to someday host a sibling product's schema (e.g. `platform`) without collision, if a project is ever shared rather than fully dedicated. (3) A schema outside `public` gets NONE of Supabase's default grants — forces every grant to be explicit rather than incidental, the same lesson that memory note already learned the hard way once. | S57 |
 
 ---
 
@@ -541,6 +542,54 @@ Workstream 5.
   project, not just adding to the new one — flagged for the admin runbook.
 - **No open sub-questions remain.** Workstream 5 has no operator-gated
   blocker left.
+
+**Then a real tenant org was provisioned by hand for the first time ever** —
+the validation Workstreams 1 and 2 had been waiting on since S56.
+
+- **Project `mosiq`** (ref `lntyjouahofgewtkmpyi`, org "kc electronic industrial
+  inc", region us-west-1) created as a standalone test tenant, separate from
+  the current single-tenant fork's live project (`BIOVITA_BOTANICS`, untouched).
+- **W1's `pipeline_config` migration and W2's `github_identity_bridge`
+  migration both applied successfully** — the first time either has run
+  against a real Supabase project rather than a throwaway container.
+- **P15 found and fixed during this pass**: both migrations had put their
+  objects in `public` with no explicit schema decision ever recorded,
+  diverging from the convention the pre-pivot single-tenant fork already uses
+  (a dedicated `worldmonitor` schema — see decisions table). Corrected in the
+  repo's migration files (this session, before Workstream 5 or any real org
+  could depend on the wrong schema) and re-validated end-to-end against
+  `mosiq`: `worldmonitor.pipeline_config` and `worldmonitor.link_bridge_
+  identity_if_needed()` exist with correct grants (`information_schema.
+  routine_privileges` shows only `service_role` + owner on the function, as
+  the migration's own verification query says it should); `public` is
+  confirmed clean (`PGRST205` on a REST probe — nothing left there).
+  **Schema exposure turned out to be scriptable**, contrary to what the
+  original provisioning notes assumed (dashboard/Management-API only) —
+  `alter role authenticator set pgrst.db_schemas = 'public, worldmonitor';
+  notify pgrst, 'reload schema';` works from plain SQL, confirmed live. Folded
+  into `pipeline_config`'s migration so Workstream 5 needs zero extra
+  provisioning step for it.
+- **Both edge functions deployed and proven live**:
+  - `local-config` — `ACTIVE`, `verify_jwt: true`. Unauthenticated/malformed
+    calls correctly rejected by Supabase's OWN platform-level gateway before
+    function code even runs (`UNAUTHORIZED_NO_AUTH_HEADER` /
+    `UNAUTHORIZED_INVALID_JWT_FORMAT`) — confirms `verify_jwt: true` deploys
+    as designed.
+  - `github-identity-bridge` — `ACTIVE`, `verify_jwt: false`. Discovery
+    (`/.well-known/openid-configuration`) and `/jwks` both return correct,
+    live 200s; the `jwks` response's `kid` matches the freshly-generated
+    `OIDC_SIGNING_KID` exactly, proving the 5 function secrets (RS256 keypair
+    via the PROVISIONING.md `jose` step, 3 `openssl rand` values, set via the
+    already-authenticated local `supabase` CLI) are wired correctly end to end.
+- **Still not exercised** (needs things outside any tool available this
+  session): `register-provider.ts` (needs `deno`, not installed locally); a
+  real GitHub OAuth token for a full `/tickets` → `/authorize` → `/token`
+  round trip; `local-config`'s 3 secrets (`WM_UPSTASH_REST_URL`,
+  `WM_UPSTASH_READONLY_TOKEN`, `WM_APP_DOMAIN`) need a real Upstash test DB,
+  which no Supabase MCP tool can create. These remain the concrete next steps
+  if the manual-provisioning validation continues.
+- **`mosiq` is intentionally left live** as the reusable test tenant for that
+  continuation — not torn down.
 
 ### Session 56 — 2026-09-04
 

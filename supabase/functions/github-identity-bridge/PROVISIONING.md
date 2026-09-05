@@ -59,8 +59,18 @@ sign-in blip.
 ## Deploy sequence (per org)
 
 ```bash
-# 1. SQL — creates public.link_bridge_identity_if_needed (idempotent)
+# 1. SQL — creates worldmonitor.link_bridge_identity_if_needed (idempotent).
+#    Every WorldMonitor object in this project lives in the `worldmonitor`
+#    schema, not `public` (S57 correction — see the migration's own header).
 supabase db push          # applies supabase/migrations/*, incl. 20260904130000_github_identity_bridge.sql
+
+# 1b. Expose the schema — step 1 (pipeline_config's migration) already does
+#     this via `alter role authenticator set pgrst.db_schemas = ...` +
+#     `notify pgrst, 'reload schema'`, confirmed working against a real hosted
+#     Supabase project (S57) — no dashboard/Management-API step needed. Listed
+#     here only so a `db push` run that skips 20260904120000_pipeline_config.sql
+#     (a partial re-apply, a future migration reorder) doesn't silently leave
+#     the bridge's `.rpc()` call 404ing with PGRST106 "Invalid schema".
 
 # 2. Function secrets
 supabase secrets set \

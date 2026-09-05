@@ -128,3 +128,8 @@ api/widget-agent.js
 
 # transient: test:sidecar points LOCAL_CONFIG_DB_PATH here (never actually written)
 .test-no-config.db
+
+# Supabase CLI local link state (project ref, pooler URL, version cache) —
+# written by `supabase link` / `supabase secrets set`. Never canonical repo
+# config; each dev's local link target differs.
+supabase/.temp/

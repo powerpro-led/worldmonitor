@@ -8,16 +8,26 @@
 -- Upstream keeps this as a DECLARATIVE-SCHEMA file (edit there, `supabase db
 -- diff` to a migration). WorldMonitor has no declarative-schema setup — W1
 -- established plain forward-only migrations — so it is vendored directly AS a
--- migration here. The function body below is byte-for-byte from upstream;
--- `CREATE OR REPLACE` + the REVOKE/GRANT make re-application idempotent. To
--- update: re-copy the upstream file's body and bump the SHA above.
+-- migration here. The function body below is byte-for-byte from upstream
+-- apart from the schema qualifier (upstream's `public.` -> `worldmonitor.`,
+-- see the note below); `CREATE OR REPLACE` + the REVOKE/GRANT make
+-- re-application idempotent. To update: re-copy the upstream file's body and
+-- bump the SHA above.
+--
+-- SCHEMA: `worldmonitor`, not `public` (S57 correction, same rationale as the
+-- pipeline_config migration — see its own header). `worldmonitor.wm_is_admin()`
+-- already created that schema; this migration only needs it to exist first if
+-- it ever runs alone, hence `create schema if not exists` repeated here too.
 --
 -- The multi-org deploy workflow (Workstream 5) applies this to each tenant's
--- Supabase project with `supabase db push`, alongside deploying the function.
+-- Supabase project with `supabase db push`, alongside deploying the function
+-- AND adding `worldmonitor` to that project's exposed-schemas API setting
+-- (not reachable via SQL — see pipeline_config's migration for why).
 --
 -- ───────────────────────────── upstream comment ─────────────────────────────
 --
--- Function: public.link_bridge_identity_if_needed(text, text, text, text, text)
+-- Function: worldmonitor.link_bridge_identity_if_needed(text, text, text, text, text)
+-- (upstream: public.link_bridge_identity_if_needed — see the SCHEMA note above)
 --
 -- Called by the github-identity-bridge Edge Function's POST /tickets handler,
 -- before minting a ticket, so GoTrue's normal custom-provider OIDC sign-in
@@ -45,7 +55,9 @@
 -- Function's own (service-role-key) caller.
 --
 
-CREATE OR REPLACE FUNCTION "public"."link_bridge_identity_if_needed"(
+create schema if not exists worldmonitor;
+
+CREATE OR REPLACE FUNCTION "worldmonitor"."link_bridge_identity_if_needed"(
     "p_github_id" "text",
     "p_login" "text",
     "p_email" "text",
@@ -110,16 +122,19 @@ begin
 end;
 $_$;
 
-ALTER FUNCTION "public"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") OWNER TO "postgres";
+ALTER FUNCTION "worldmonitor"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") OWNER TO "postgres";
 
--- This project's default privileges auto-grant EXECUTE on new `public`-schema
--- functions to anon/authenticated directly (not merely via PUBLIC) --
--- confirmed live via the security advisor after the first deploy of this
--- function flagged exactly that. REVOKE ALL FROM PUBLIC alone does not undo
--- those direct grants; anon/authenticated must be named explicitly. Verify
--- with `select grantee, privilege_type from information_schema.routine_privileges
--- where routine_schema='public' and routine_name='link_bridge_identity_if_needed'`
--- -- should list only service_role (+ postgres as owner) after this.
-REVOKE ALL ON FUNCTION "public"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") FROM PUBLIC, "anon", "authenticated";
+-- Postgres grants EXECUTE on every new function to the PUBLIC pseudo-role by
+-- default, independent of which schema it lives in (this is separate from —
+-- and in addition to — the schema-level auto-grant Supabase applies only to
+-- the `public` schema, which worldmonitor does not receive at all; see
+-- pipeline_config's migration). REVOKE ALL FROM PUBLIC alone does not undo a
+-- ROLE-level direct grant if one was ever added by hand, so anon/authenticated
+-- are named explicitly too, matching the verification query upstream already
+-- documents: `select grantee, privilege_type from information_schema.routine_
+-- privileges where routine_schema='worldmonitor' and routine_name=
+-- 'link_bridge_identity_if_needed'` should list only service_role
+-- (+ postgres as owner) after this.
+REVOKE ALL ON FUNCTION "worldmonitor"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") FROM PUBLIC, "anon", "authenticated";
 
-GRANT ALL ON FUNCTION "public"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") TO "service_role";
+GRANT ALL ON FUNCTION "worldmonitor"."link_bridge_identity_if_needed"("p_github_id" "text", "p_login" "text", "p_email" "text", "p_name" "text", "p_avatar_url" "text") TO "service_role";

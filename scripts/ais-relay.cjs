@@ -5006,99 +5006,6 @@ async function startWeatherSeedLoop() {
   startBootSeedLoop('Weather', 'seed-meta:weather:alerts', WEATHER_SEED_INTERVAL_MS, seedWeatherAlerts, (e) => console.warn('[Weather] Initial seed error:', e?.message || e), (e) => console.warn('[Weather] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// USASpending Seed — federal awards → Redis every 60 min
-// ─────────────────────────────────────────────────────────────
-const SPENDING_SEED_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const SPENDING_REDIS_KEY = 'economic:spending:v1';
-const SPENDING_CACHE_TTL = 7200; // 2h — must outlive the 1h seed interval
-let spendingSeedInFlight = false;
-
-function getDateDaysAgo(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().split('T')[0];
-}
-
-const AWARD_TYPE_MAP = {
-  A: 'contract', B: 'contract', C: 'contract', D: 'contract',
-  '02': 'grant', '03': 'grant', '04': 'grant', '05': 'grant', '06': 'grant', '10': 'grant',
-  '07': 'loan', '08': 'loan',
-};
-
-async function seedUsaSpending() {
-  if (spendingSeedInFlight) return;
-  spendingSeedInFlight = true;
-  const t0 = Date.now();
-  try {
-    const periodStart = getDateDaysAgo(7);
-    const periodEnd = new Date().toISOString().split('T')[0];
-    const spendingUrl = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
-    const spendingBody = JSON.stringify({
-      filters: {
-        time_period: [{ start_date: periodStart, end_date: periodEnd }],
-        award_type_codes: ['A', 'B', 'C', 'D'],
-      },
-      fields: ['Award ID', 'Recipient Name', 'Award Amount', 'Awarding Agency', 'Description', 'Start Date', 'Award Type'],
-      limit: 15, order: 'desc', sort: 'Award Amount',
-    });
-    let data;
-    try {
-      const resp = await fetch(spendingUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(20_000),
-        body: spendingBody,
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      data = await resp.json();
-    } catch (directErr) {
-      if (!PROXY_URL) { console.warn(`[Spending] Seed failed: ${directErr.message}`); return; }
-      console.warn(`[Spending] Direct failed (${directErr.message}) — retrying via proxy`);
-      const { proxyFetch } = require('./_proxy-utils.cjs');
-      const proxy = { ...parseProxyUrl(PROXY_URL), tls: true };
-      const result = await proxyFetch(spendingUrl, proxy, {
-        method: 'POST', body: spendingBody,
-        headers: { 'Content-Type': 'application/json', 'User-Agent': CHROME_UA },
-        accept: 'application/json', timeoutMs: 20_000,
-      });
-      if (!result.ok) { console.warn(`[Spending] Proxy also failed: HTTP ${result.status}`); return; }
-      data = JSON.parse(result.buffer.toString('utf8'));
-    }
-    const results = data.results || [];
-    const awards = results.map((r) => ({
-      id: String(r['Award ID'] || ''),
-      recipientName: String(r['Recipient Name'] || 'Unknown'),
-      amount: Number(r['Award Amount']) || 0,
-      agency: String(r['Awarding Agency'] || 'Unknown'),
-      description: String(r.Description || '').slice(0, 200),
-      startDate: String(r['Start Date'] || ''),
-      awardType: AWARD_TYPE_MAP[String(r['Award Type'] || '')] || 'other',
-    }));
-    if (awards.length === 0) {
-      console.warn('[Spending] No awards returned — preserving last good data');
-      return;
-    }
-    const totalAmount = awards.reduce((s, a) => s + a.amount, 0);
-    const payload = { awards, totalAmount, periodStart, periodEnd, fetchedAt: Date.now() };
-    const ok1 = await envelopeWrite(SPENDING_REDIS_KEY, payload, SPENDING_CACHE_TTL, { recordCount: awards.length, sourceVersion: 'usaspending' });
-    const ok2 = await upstashSet('seed-meta:economic:spending', { fetchedAt: Date.now(), recordCount: awards.length }, 604800);
-    console.log(`[Spending] Seeded ${awards.length} awards, $${(totalAmount / 1e6).toFixed(1)}M (redis: ${ok1 && ok2 ? 'OK' : 'PARTIAL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  } catch (e) {
-    console.warn('[Spending] Seed error:', e?.message || e);
-  } finally {
-    spendingSeedInFlight = false;
-  }
-}
-
-async function startSpendingSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[Spending] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[Spending] Seed loop starting (interval ${SPENDING_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('Spending', 'seed-meta:economic:spending', SPENDING_SEED_INTERVAL_MS, seedUsaSpending, (e) => console.warn('[Spending] Initial seed error:', e?.message || e), (e) => console.warn('[Spending] Seed error:', e?.message || e));
-}
 
 // ─────────────────────────────────────────────────────────────
 // GSCPI seed — NY Fed Global Supply Chain Pressure Index
@@ -11080,7 +10987,6 @@ server.listen(PORT, () => {
   startTheaterPostureSeedLoop();
 
   startWeatherSeedLoop();
-  startSpendingSeedLoop();
   startGscpiSeedLoop();
   startSatelliteSeedLoop();
   startCorridorRiskSeedLoop();

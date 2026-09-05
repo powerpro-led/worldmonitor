@@ -6487,78 +6487,6 @@ async function startWsbTickersSeedLoop() {
   startBootSeedLoop('WsbTickers', 'seed-meta:intelligence:wsb-tickers', WSB_TICKERS_INTERVAL_MS, seedWsbTickers, e => console.warn('[WsbTickers] Initial seed error:', e?.message || e), e => console.warn('[WsbTickers] Seed error:', e?.message || e));
 }
 
-// ─────────────────────────────────────────────────────────────
-// Climate News Intelligence — delegated to standalone seed script
-// ─────────────────────────────────────────────────────────────
-
-const CLIMATE_NEWS_SEED_INTERVAL_MS = 30 * 60 * 1000;
-const CLIMATE_NEWS_SEED_TIMEOUT_MS = 4 * 60 * 1000;
-const CLIMATE_NEWS_SEED_RETRY_MS = 20 * 60 * 1000;
-const CLIMATE_NEWS_SEED_SCRIPT = path.join(__dirname, 'seed-climate-news.mjs');
-
-let climateNewsSeedInFlight = false;
-let climateNewsRetryTimer = null;
-
-function relayLogScriptOutput(prefix, stream) {
-  if (!stream) return;
-  const trimmed = String(stream).trim();
-  if (!trimmed) return;
-  for (const line of trimmed.split('\n')) console.log(`${prefix} ${line}`);
-}
-
-function runClimateNewsSeedScript() {
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, [CLIMATE_NEWS_SEED_SCRIPT], {
-      env: process.env,
-      timeout: CLIMATE_NEWS_SEED_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
-    }, (err, stdout, stderr) => {
-      relayLogScriptOutput('[ClimateNewsSeed]', stdout);
-      if (stderr) {
-        const trimmedErr = String(stderr).trim();
-        if (trimmedErr) {
-          for (const line of trimmedErr.split('\n')) console.warn(`[ClimateNewsSeed] ${line}`);
-        }
-      }
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-}
-
-async function seedClimateNews() {
-  if (climateNewsSeedInFlight) {
-    console.log('[ClimateNewsSeed] Skipped (in-flight)');
-    return;
-  }
-  climateNewsSeedInFlight = true;
-  if (climateNewsRetryTimer) { clearTimeout(climateNewsRetryTimer); climateNewsRetryTimer = null; }
-  const t0 = Date.now();
-  try {
-    await runClimateNewsSeedScript();
-    const durMs = Date.now() - t0;
-    console.log(`[ClimateNewsSeed] Completed in ${(durMs / 1000).toFixed(1)}s`);
-    // Heartbeat: success-only write so the health endpoint can alarm on a
-    // stalled loop before the 90min seed-meta threshold fires. TTL=3x interval
-    // (90min) lets two consecutive cycles miss before the key evaporates.
-    upstashSet('relay:heartbeat:climate-news', { fetchedAt: Date.now(), recordCount: 1, durMs }, 90 * 60).catch(() => {});
-  } catch (e) {
-    const message = e?.killed ? 'timeout' : (e?.message || e);
-    console.warn('[ClimateNewsSeed] Seed error:', message);
-    climateNewsRetryTimer = setTimeout(() => { seedClimateNews().catch(() => {}); }, CLIMATE_NEWS_SEED_RETRY_MS);
-  } finally {
-    climateNewsSeedInFlight = false;
-  }
-}
-
-function startClimateNewsSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[ClimateNewsSeed] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[ClimateNewsSeed] Seed loop starting (interval ${CLIMATE_NEWS_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop('ClimateNewsSeed', 'relay:heartbeat:climate-news', CLIMATE_NEWS_SEED_INTERVAL_MS, seedClimateNews, (e) => console.warn('[ClimateNewsSeed] Initial seed error:', e?.message || e), (e) => console.warn('[ClimateNewsSeed] Seed error:', e?.message || e));
-}
 
 
 // ─────────────────────────────────────────────────────────────
@@ -11625,7 +11553,6 @@ server.listen(PORT, () => {
   startShippingStressSeedLoop();
   startSocialVelocitySeedLoop();
   startWsbTickersSeedLoop();
-  startClimateNewsSeedLoop();
   startPizzintSeedLoop();
 });
 

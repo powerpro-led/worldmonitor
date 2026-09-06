@@ -103,8 +103,17 @@ function assertEnv() {
   }
 }
 
-function createReadClient() {
-  return new Redis({ url: UPSTASH_URL, token: UPSTASH_READONLY_TOKEN });
+// Reads env fresh (module-const fallback) so a caller reached AFTER the P4
+// credential broker populated the env — e.g. the on-demand /api/local-sync-refresh
+// endpoint — still gets a working client even when this module was imported
+// before the broker ran.
+export function createReadClient() {
+  const url = process.env.UPSTASH_REDIS_REST_URL || UPSTASH_URL;
+  const token = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN || UPSTASH_READONLY_TOKEN;
+  if (!url || !token) {
+    throw new Error('UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_READONLY_TOKEN not set');
+  }
+  return new Redis({ url, token });
 }
 
 function readCursor() {

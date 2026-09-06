@@ -32,6 +32,9 @@ import {
 } from './config-store.mjs';
 // Brokered Upstash credential (P4) — see local-config-broker.mjs.
 import { startBrokerRefreshLoop } from './local-config-broker.mjs';
+// Same denylist classifier the mirror rescan + push listener use — keeps
+// POST /api/local-sync-refresh from being asked to pull a non-mirrored key.
+import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
 
 // Fill process.env from ~/.worldmonitor/config.db for any Supabase / Upstash /
 // OpenRouter key `node --env-file` didn't already set. Must run before
@@ -761,6 +764,33 @@ const moduleCache = new Map();
 const failedImports = new Set();
 const fallbackCounts = new Map();
 const cloudPreferred = new Set();
+
+// Lazy handle on runWithUsageScope (re-exported by server/_shared/redis.js —
+// the same compiled module this file already dynamically imports for the MCP
+// redisPipeline path). Wrapping the handler call in a scope that carries a
+// `mirrorKeys` Set is what lets readCachedJson() report which mirror keys a
+// request touched, which the response then advertises as X-WM-Mirror-Keys.
+// Degrades to a plain pass-through if the import fails (older/partial bundle) —
+// the header is simply omitted and the periodic full reconciliation still
+// covers freshness.
+let _runWithUsageScope = null;
+async function getRunWithUsageScope() {
+  if (_runWithUsageScope) return _runWithUsageScope;
+  try {
+    const mod = await import('../../server/_shared/redis.js');
+    _runWithUsageScope = typeof mod.runWithUsageScope === 'function'
+      ? mod.runWithUsageScope
+      : (_scope, fn) => fn();
+  } catch {
+    _runWithUsageScope = (_scope, fn) => fn();
+  }
+  return _runWithUsageScope;
+}
+
+// A key refreshed via /api/local-sync-refresh is parked here so a panel that
+// re-renders and re-requests can't spawn a fresh Upstash read every frame.
+const syncRefreshCooldown = new Map();
+const SYNC_REFRESH_COOLDOWN_MS = 10_000;
 
 // Routes/prefixes that should always proxy to cloud. The sidecar lacks
 // WS_RELAY_URL (Yahoo/Finnhub relay) and seeded Redis data. These routes
@@ -2095,6 +2125,71 @@ async function dispatch(requestUrl, req, routes, context) {
     return json({ error: 'invalid JSON' }, 400);
   }
 
+  // On-demand targeted pull of specific mirror keys from Upstash into the local
+  // SQLite mirror — the backend half of a per-panel "not synced yet → Refresh"
+  // button. The client passes the key(s) it learned from the response's
+  // X-WM-Mirror-Keys header. Reuses sync-listener.mjs's applyChange() (the
+  // exact single-key fetch+upsert the live push path runs), so a pulled row is
+  // byte-identical to what the periodic full reconciliation would have written.
+  // Not a full rescan — that stays on its own interval.
+  if (requestUrl.pathname === '/api/local-sync-refresh') {
+    if (req.method !== 'POST') return json({ error: 'POST required' }, 405);
+    if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) {
+      return json({ error: 'mirror sync is not configured on this backend' }, 503);
+    }
+    const rawBody = await readBody(req);
+    let requested;
+    try {
+      const parsed = JSON.parse(rawBody?.toString() || '{}');
+      requested = Array.isArray(parsed.keys) ? parsed.keys : null;
+    } catch {
+      return json({ error: 'expected { keys: string[] }' }, 400);
+    }
+    if (!requested) return json({ error: 'expected { keys: string[] }' }, 400);
+
+    const keys = [...new Set(
+      requested.filter(k => typeof k === 'string' && k.length > 0 && k.length <= 512),
+    )];
+    if (keys.length === 0) return json({ error: 'no valid keys' }, 400);
+    if (keys.length > 16) return json({ error: 'too many keys (max 16)' }, 400);
+
+    const now = Date.now();
+    const refreshed = [];
+    const skipped = [];
+    const eligible = [];
+    for (const key of keys) {
+      if (!isMirroredKey(key)) { skipped.push({ key, reason: 'not-mirrored' }); continue; }
+      if (now - (syncRefreshCooldown.get(key) || 0) < SYNC_REFRESH_COOLDOWN_MS) {
+        skipped.push({ key, reason: 'cooldown' });
+        continue;
+      }
+      eligible.push(key);
+    }
+
+    if (eligible.length > 0) {
+      try {
+        const { applyChange, createReadClient } = await import('./sync-listener.mjs');
+        const redis = createReadClient();
+        for (const key of eligible) {
+          try {
+            // type:'string' — every mirror-backed *display* key is a JSON blob.
+            // The rare zset/hash pipeline internals aren't panel primaries and
+            // stay on the periodic full reconciliation.
+            await applyChange(redis, { key, type: 'string' });
+            syncRefreshCooldown.set(key, Date.now());
+            refreshed.push(key);
+          } catch (err) {
+            skipped.push({ key, reason: err?.message || 'read failed' });
+          }
+        }
+      } catch (err) {
+        return json({ error: `sync module unavailable: ${err?.message || err}` }, 500);
+      }
+    }
+
+    return json({ refreshed, skipped });
+  }
+
   if (requestUrl.pathname === '/api/local-validate-secret') {
     if (req.method !== 'POST') {
       return json({ error: 'POST required' }, 405);
@@ -2223,7 +2318,22 @@ async function dispatch(requestUrl, req, routes, context) {
       body,
     });
 
-    const response = await mod.default(request);
+    // Run the handler inside a usage scope carrying a `mirrorKeys` Set so
+    // readCachedJson()/getRawJson() can report which mirror-backed keys this
+    // request touched. Stamped onto the response below as X-WM-Mirror-Keys.
+    const mirrorKeys = new Set();
+    const runWithUsageScope = await getRunWithUsageScope();
+    const response = await runWithUsageScope(
+      {
+        ctx: { waitUntil: () => {} },
+        requestId: 'sidecar',
+        customerId: null,
+        route: requestUrl.pathname,
+        tier: 0,
+        mirrorKeys,
+      },
+      () => mod.default(request),
+    );
     if (!(response instanceof Response)) {
       logOnce(context.logger, requestUrl.pathname, 'handler returned non-Response');
       if (context.cloudFallback) {
@@ -2231,6 +2341,12 @@ async function dispatch(requestUrl, req, routes, context) {
         if (cloudResponse) return cloudResponse;
       }
       return json({ error: 'Handler returned invalid response', endpoint: requestUrl.pathname }, 500);
+    }
+
+    if (mirrorKeys.size > 0 && mirrorKeys.size <= 16) {
+      // Best-effort: a handler that built its Response with an immutable
+      // Headers throws here — the client just doesn't get the hint that call.
+      try { response.headers.set('X-WM-Mirror-Keys', [...mirrorKeys].join(',')); } catch { /* immutable headers */ }
     }
 
     if (!response.ok && context.cloudFallback) {
@@ -2288,7 +2404,12 @@ const FULL_RECONCILIATION_INTERVAL_MS = 6 * 60 * 60_000; // 6h
  */
 /** @returns {() => void} stop fn — clears the recurring interval (see close()). */
 function startFullReconciliationLoop(context) {
-  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return () => {};
+  // Both halves of the credential are required — a token with no URL (a partial
+  // P4-broker state, or a test that only sets the token) would otherwise spawn
+  // a local-sync.mjs child that FATALs on every interval.
+  if (context.mode !== 'tauri-sidecar'
+    || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN
+    || !process.env.UPSTASH_REDIS_REST_URL) return () => {};
 
   const scriptPath = path.join(__dirname, 'local-sync.mjs');
   const runOnce = () => {
@@ -2316,7 +2437,9 @@ function startFullReconciliationLoop(context) {
  */
 /** @returns {Promise<() => void>} stop fn — aborts the reconnect loop + in-flight SSE connection (see close()). */
 async function startSyncListener(context) {
-  if (context.mode !== 'tauri-sidecar' || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN) return () => {};
+  if (context.mode !== 'tauri-sidecar'
+    || !process.env.UPSTASH_REDIS_REST_READONLY_TOKEN
+    || !process.env.UPSTASH_REDIS_REST_URL) return () => {};
   try {
     const { runForever } = await import('./sync-listener.mjs');
     const controller = new AbortController();
@@ -2459,6 +2582,7 @@ export async function createLocalApiServer(options = {}) {
       || requestUrl.pathname === '/api/local-env-update'
       || requestUrl.pathname === '/api/local-env-update-batch'
       || requestUrl.pathname === '/api/local-validate-secret'
+      || requestUrl.pathname === '/api/local-sync-refresh'
       || requestUrl.pathname === '/api/local-llm-config';
 
     try {
@@ -2470,6 +2594,14 @@ export async function createLocalApiServer(options = {}) {
       const corsOrigin = getSidecarCorsOrigin(req);
       headers['access-control-allow-origin'] = corsOrigin;
       headers['vary'] = appendVary(headers['vary'], 'Origin');
+      // The webview iframe is a different origin, so a custom response header is
+      // invisible to its JS unless explicitly exposed. X-WM-Mirror-Keys is the
+      // per-panel "which key feeds me" hint the Refresh-from-cloud button reads.
+      if (headers['x-wm-mirror-keys']) {
+        headers['access-control-expose-headers'] = appendVary(
+          headers['access-control-expose-headers'], 'X-WM-Mirror-Keys',
+        );
+      }
 
       if (!skipRecord) {
         recordTraffic({

@@ -1,7 +1,18 @@
 import { unwrapEnvelope } from './seed-envelope';
 import { getRpcNoStoreReasonFromPayload } from './cache-contract';
-import { buildUpstreamEvent, getUsageScope, sendToAxiom } from './usage';
+import { buildUpstreamEvent, getUsageScope, recordMirrorKeyRead, sendToAxiom } from './usage';
 import { notifyKeyChanged, notifyPipelineWrites } from './sync-notify';
+// isMirroredKey — same cross-dir import sync-notify.ts already uses (esbuild
+// inlines it; the tsx dev path resolves the .mjs directly). Used only to keep
+// the X-WM-Mirror-Keys capture (recordMirrorKeyRead) limited to keys the
+// operator mirror would actually carry — bookkeeping keys (seed-meta:, rl:, …)
+// never reach a refresh button.
+import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
+
+// Re-exported so the sidecar (vscode-extension/sidecar/local-api-server.mjs),
+// which already dynamically imports THIS module's compiled twin, can wrap
+// handler calls in a usage scope without a second server import path.
+export { runWithUsageScope } from './usage';
 
 /**
  * Hand a fire-and-forget sync-notify promise to the current request's
@@ -86,6 +97,11 @@ export function __resetKeyPrefixCacheForTests(): void {
 type CacheReadResult = { status: 'hit'; value: unknown } | { status: 'miss' } | { status: 'error'; error: unknown };
 
 async function readCachedJson(key: string, raw = false): Promise<CacheReadResult> {
+  // Capture BEFORE the hit/miss branch — the refresh button wants the key even
+  // when a stale-but-present row was served, and even on the sidecar path. The
+  // isMirroredKey filter only runs when a capturing scope is active (sidecar).
+  recordMirrorKeyRead(key, isMirroredKey);
+
   if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
     try {
       const { sidecarCacheGet } = await import('./sidecar-cache');
@@ -144,6 +160,7 @@ function logCacheReadError(key: string, err: unknown): void {
  * the prefix system) must use this to read the same key they wrote.
  */
 export async function getRawJson(key: string): Promise<unknown | null> {
+  recordMirrorKeyRead(key, isMirroredKey);
   if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
     const { sidecarCacheGet } = await import('./sidecar-cache');
     return sidecarCacheGet(key);

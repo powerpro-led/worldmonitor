@@ -509,6 +509,15 @@ export interface UsageScope {
   customerId: string | null;
   route: string;
   tier: number;
+  /**
+   * Collects the mirror-backed cache keys read while serving this request, so
+   * the transport can stamp them onto the response as `X-WM-Mirror-Keys`. An
+   * operator client that renders a "not synced yet" panel then knows exactly
+   * which key(s) to hand `POST /api/local-sync-refresh`. Only set by callers
+   * that want the capture (the sidecar); left undefined on the cloud gateway
+   * path, where `recordMirrorKeyRead()` is a no-op.
+   */
+  mirrorKeys?: Set<string>;
 }
 
 type ALSLike<T> = {
@@ -537,6 +546,26 @@ export async function runWithUsageScope<R>(scope: UsageScope, fn: () => R | Prom
 
 export function getUsageScope(): UsageScope | undefined {
   return scopeStore?.getStore();
+}
+
+/**
+ * Note that the current request read `key` from the mirror-backed cache.
+ * Collected into `UsageScope.mirrorKeys` when the active scope opted in (the
+ * sidecar). No-op outside a request scope (cron, seed scripts) or when the
+ * scope carries no `mirrorKeys` set (the cloud gateway path) — the `mirrorKeys`
+ * check is first so those paths pay nothing beyond one ALS lookup. `filter` (if
+ * given) decides whether the key is mirror-eligible; skipped entirely when
+ * there's no set to add to. Never throws.
+ */
+export function recordMirrorKeyRead(key: string, filter?: (k: string) => boolean): void {
+  try {
+    const set = getUsageScope()?.mirrorKeys;
+    if (!set) return;
+    if (filter && !filter(key)) return;
+    set.add(key);
+  } catch {
+    /* no scope / runtime without ALS — capture simply skips */
+  }
 }
 
 // ---------- Sink ----------

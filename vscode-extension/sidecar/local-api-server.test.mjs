@@ -2530,3 +2530,83 @@ test('session refresh is skipped when the token still has plenty of runway', asy
     await localApi.cleanup();
   }
 });
+
+test('/api/local-sync-refresh — GET is 405', async () => {
+  const localApi = await setupApiDir({});
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() {}, warn() {}, error() {} },
+  });
+  const { port } = await app.start();
+  try {
+    const res = await authFetch(`http://127.0.0.1:${port}/api/local-sync-refresh`);
+    assert.equal(res.status, 405);
+  } finally {
+    await app.close();
+    await localApi.cleanup();
+  }
+});
+
+test('/api/local-sync-refresh — 503 when mirror sync is not configured', async () => {
+  const prev = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+  delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+  const localApi = await setupApiDir({});
+  const app = await createLocalApiServer({
+    port: 0,
+    mode: 'tauri-sidecar',
+    apiDir: localApi.apiDir,
+    logger: { log() {}, warn() {}, error() {} },
+  });
+  const { port } = await app.start();
+  try {
+    const res = await authFetch(`http://127.0.0.1:${port}/api/local-sync-refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ keys: ['military:flights:v1'] }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    if (prev === undefined) delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_READONLY_TOKEN = prev;
+    await app.close();
+    await localApi.cleanup();
+  }
+});
+
+test('/api/local-sync-refresh — validates the keys array', async () => {
+  const prev = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+  process.env.UPSTASH_REDIS_REST_READONLY_TOKEN = 'ro-test-token';
+  const localApi = await setupApiDir({});
+  const app = await createLocalApiServer({
+    port: 0,
+    mode: 'tauri-sidecar',
+    apiDir: localApi.apiDir,
+    logger: { log() {}, warn() {}, error() {} },
+  });
+  const { port } = await app.start();
+  const call = (payload) => authFetch(`http://127.0.0.1:${port}/api/local-sync-refresh`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  try {
+    assert.equal((await call({})).status, 400, 'missing keys → 400');
+    assert.equal((await call({ keys: [] })).status, 400, 'empty keys → 400');
+    assert.equal((await call({ keys: Array.from({ length: 17 }, (_, i) => `x:v${i}`) })).status, 400, '>16 keys → 400');
+
+    // A denied (non-mirrored) key is filtered before any Upstash call — the
+    // handler returns 200 with it listed under `skipped`, no sync-listener import.
+    const res = await call({ keys: ['seed-meta:whatever'] });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.refreshed, []);
+    assert.equal(body.skipped[0].key, 'seed-meta:whatever');
+    assert.equal(body.skipped[0].reason, 'not-mirrored');
+  } finally {
+    if (prev === undefined) delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_READONLY_TOKEN = prev;
+    await app.close();
+    await localApi.cleanup();
+  }
+});

@@ -449,7 +449,7 @@ const SEED_META = {
   // news-intelligence aggregate (includes GDELT-derived signal) and is seeded every 30min;
   // 720min keeps the same generous 2-missed-tick budget the old entry carried.
   gdeltIntel:       { key: 'seed-meta:news:insights',             maxStaleMin: 720 },
-  telegramFeed:     { key: 'seed-meta:intelligence:telegram-feed:v1', maxStaleMin: 10 }, // 60s poll interval; 10min grace catches poll failures before they go stale in the panel
+  telegramFeed:     { key: 'seed-meta:intelligence:telegram-feed:v1', maxStaleMin: 10 }, // scripts/seed-telegram.mjs runs every 5min (was a 60s in-relay loop pre-session-67); 10min grace catches a missed tick before the panel goes stale
   digestNotifications: { key: 'seed-meta:digest:last-run',          maxStaleMin: 90 }, // Railway digest-notifications cron runs every 30min; 90 = 3x cadence and detects a dead cron before daily digests are missed.
   forecasts:        { key: 'seed-meta:forecast:predictions',       maxStaleMin: 90 },
   forecastsBootstrap: { key: 'seed-meta:forecast:predictions-bootstrap', maxStaleMin: 90 }, // Same cron. Monitored separately: the fast tier now hydrates from the dashboard list, and a transform/write failure there must not hide behind a healthy canonical key (#5300).

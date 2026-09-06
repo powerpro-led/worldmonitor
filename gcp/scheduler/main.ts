@@ -343,6 +343,22 @@ const CADENCES: Record<string, Cadence> = {
   // maxStaleMin is 60; the canonical TTL was raised 1200s→7200s so it clears
   // that gate strictly (tests/seed-ttl-outlives-staleness-fleet.test.mjs).
   'seed-classify': { kind: 'every', rate: '15 minutes' },
+  // 2026-09-07 (session 67) — P14 Phase 2 tail (Workstream 7): the Telegram
+  // MTProto poll loop moved out of scripts/ais-relay.cjs to
+  // scripts/seed-telegram.mjs as a per-org Cloud Scheduler `--once` job
+  // (decision P18 — Telegram creds are not public data and cannot ride the
+  // one shared AIS-ingest deploy). Hand-rolled, not runSeed: it merges a
+  // rolling window of the last N message objects into
+  // intelligence:telegram-feed:v1 and persists per-channel read cursors to
+  // Redis (intelligence:telegram-feed:cursor:v1) so a one-shot job dedupes
+  // across ticks the way the long-lived relay process did in memory. A
+  // concurrency-1 Redis lock (intelligence:telegram-poll, TTL 5min) makes an
+  // overrunning tick a no-op — a second live MTProto session invalidates the
+  // first with AUTH_KEY_DUPLICATED. Cadence is 5min, NOT the relay loop's 60s
+  // TELEGRAM_POLL_INTERVAL_MS: each `--once` run reconnects a fresh MTProto
+  // session (seconds of overhead + FLOOD_WAIT risk on a 60s cadence), and
+  // 5min still clears api/health.js's SEED_META.telegramFeed.maxStaleMin (10).
+  'seed-telegram': { kind: 'every', rate: '5 minutes' },
 };
 
 /**

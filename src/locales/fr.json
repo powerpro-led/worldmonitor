@@ -2969,7 +2969,11 @@
     "all": "Tous",
     "loadingGiving": "Chargement des données de dons...",
     "rateLimitedMarket": "Données de marché temporairement limitées — nouvelle tentative automatique",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Affichage",

@@ -2951,7 +2951,11 @@
     "retry": "Опитайте отново",
     "refresh": "Обновяване",
     "all": "Всички",
-    "cancel": "Отмяна"
+    "cancel": "Отмяна",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Дисплей",

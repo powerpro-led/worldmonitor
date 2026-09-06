@@ -91,6 +91,38 @@ export function getMirrorKeyHint(pathname: string): string[] | null {
   return hit.keys.slice();
 }
 
+/**
+ * Every mirror key touched by an RPC seen in the last `maxAgeMs` (default the
+ * standard hint TTL), freshest RPC's keys first, deduped and capped at 16 — the
+ * exact shape {@link refreshMirrorKeys} accepts. `pathPrefix` narrows to RPCs
+ * under one domain (e.g. `/api/economic/v1/`); omit it and a caller gets every
+ * live hint, which — for a panel that has *just* failed to render — is
+ * dominated by that panel's own RPCs. Returns `[]` outside a sidecar runtime.
+ */
+export function getRecentMirrorKeyHints(
+  opts?: { pathPrefix?: string; maxAgeMs?: number },
+): string[] {
+  if (!isSidecarBackedRuntime()) return [];
+  const maxAge = opts?.maxAgeMs ?? HINT_TTL_MS;
+  const prefix = opts?.pathPrefix;
+  const now = Date.now();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  // `hints` iterates oldest→newest (insertion order, re-set on every hit);
+  // walk it newest→oldest so the most recently seen RPC's keys sort first.
+  for (const [pathname, hint] of [...hints.entries()].reverse()) {
+    if (now - hint.ts > maxAge) continue;
+    if (prefix && !pathname.startsWith(prefix)) continue;
+    for (const key of hint.keys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+      if (out.length >= 16) return out;
+    }
+  }
+  return out;
+}
+
 export interface MirrorRefreshResult {
   refreshed: string[];
   skipped: Array<{ key: string; reason: string }>;

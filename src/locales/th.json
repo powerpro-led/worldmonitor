@@ -2951,7 +2951,11 @@
     "retry": "ลองใหม่",
     "refresh": "รีเฟรช",
     "all": "ทั้งหมด",
-    "cancel": "ยกเลิก"
+    "cancel": "ยกเลิก",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "การแสดงผล",

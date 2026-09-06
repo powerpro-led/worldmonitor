@@ -3019,7 +3019,11 @@
     "currentVariant": "(वर्तमान)",
     "retry": "पुनः प्रयास करें",
     "refresh": "रिफ्रेश करें",
-    "all": "सभी"
+    "all": "सभी",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "connectivity": {
     "offlineCached": "ऑफ़लाइन — {{freshness}} का सेव किया हुआ डेटा दिखा रहा है।",

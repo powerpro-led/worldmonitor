@@ -2951,7 +2951,11 @@
     "retry": "Thử lại",
     "refresh": "Làm mới",
     "all": "Tất cả",
-    "cancel": "Hủy"
+    "cancel": "Hủy",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Hiển thị",

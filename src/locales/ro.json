@@ -2969,7 +2969,11 @@
     "retry": "Reîncercați",
     "refresh": "Actualizează",
     "all": "Toate",
-    "cancel": "Anulare"
+    "cancel": "Anulare",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Afișare",

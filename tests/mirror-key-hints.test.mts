@@ -15,6 +15,7 @@ import { describe, it, before, after, beforeEach, mock } from 'node:test';
 const {
   recordMirrorKeyHint,
   getMirrorKeyHint,
+  getRecentMirrorKeyHints,
   refreshMirrorKeys,
   __clearMirrorKeyHintsForTests,
 } = await import('@/services/mirror-key-hints');
@@ -75,6 +76,49 @@ describe('mirror-key-hints', () => {
     });
   });
 
+  describe('getRecentMirrorKeyHints', () => {
+    it('unions keys across every live hint, freshest path first', () => {
+      recordMirrorKeyHint('/api/a/v1/x', resWith('a:1'));
+      recordMirrorKeyHint('/api/b/v1/y', resWith('b:1, b:2'));
+      assert.deepEqual(getRecentMirrorKeyHints(), ['b:1', 'b:2', 'a:1']);
+    });
+
+    it('dedupes a key recorded on more than one path', () => {
+      recordMirrorKeyHint('/api/a/v1/x', resWith('shared:1'));
+      recordMirrorKeyHint('/api/b/v1/y', resWith('shared:1, b:2'));
+      assert.deepEqual(getRecentMirrorKeyHints(), ['shared:1', 'b:2']);
+    });
+
+    it('filters to a pathPrefix', () => {
+      recordMirrorKeyHint('/api/economic/v1/get-macro', resWith('economic:1'));
+      recordMirrorKeyHint('/api/market/v1/get-quote', resWith('market:1'));
+      assert.deepEqual(
+        getRecentMirrorKeyHints({ pathPrefix: '/api/economic/v1/' }),
+        ['economic:1'],
+      );
+    });
+
+    it('excludes hints older than maxAgeMs', async () => {
+      recordMirrorKeyHint('/api/a/v1/x', resWith('a:1'));
+      await new Promise((r) => setTimeout(r, 5));
+      assert.deepEqual(getRecentMirrorKeyHints({ maxAgeMs: 1 }), []);
+    });
+
+    it('caps the union at 16 keys', () => {
+      for (let i = 0; i < 30; i++) {
+        recordMirrorKeyHint(`/api/a/v1/x${i}`, resWith(`k:${i}`));
+      }
+      assert.equal(getRecentMirrorKeyHints().length, 16);
+    });
+
+    it('returns a fresh array each call', () => {
+      recordMirrorKeyHint('/api/a/v1/x', resWith('a:1'));
+      const first = getRecentMirrorKeyHints();
+      first.push('injected');
+      assert.deepEqual(getRecentMirrorKeyHints(), ['a:1']);
+    });
+  });
+
   describe('refreshMirrorKeys', () => {
     let fetchMock: ReturnType<typeof mock.method<typeof globalThis, 'fetch'>>;
     before(() => {
@@ -120,6 +164,7 @@ describe('mirror-key-hints — not a sidecar runtime', () => {
     __clearMirrorKeyHintsForTests();
     recordMirrorKeyHint('/api/x/v1/y', resWith('x:v1'));
     assert.equal(getMirrorKeyHint('/api/x/v1/y'), null);
+    assert.deepEqual(getRecentMirrorKeyHints(), []);
     assert.equal(await refreshMirrorKeys(['x:v1']), null);
   });
 });

@@ -2696,7 +2696,11 @@
     "all": "Alla",
     "loadingGiving": "Laddar global givmildhetsdata",
     "rateLimitedMarket": "Marknadsdata tillfälligt otillgänglig (hastighetsbegränsad) — försöker igen snart",
-    "cancel": "Avbryt"
+    "cancel": "Avbryt",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "header": {
     "world": "VÄRLD",

@@ -2951,7 +2951,11 @@
     "retry": "Επανάληψη",
     "refresh": "Ανανέωση",
     "all": "Όλα",
-    "cancel": "Ακύρωση"
+    "cancel": "Ακύρωση",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Οθόνη",

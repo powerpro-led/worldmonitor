@@ -2951,7 +2951,11 @@
     "retry": "Retry",
     "refresh": "Refresh",
     "all": "全部",
-    "cancel": "取消"
+    "cancel": "取消",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "显示",

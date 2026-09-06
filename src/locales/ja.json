@@ -2951,7 +2951,11 @@
     "retry": "Retry",
     "refresh": "Refresh",
     "all": "すべて",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "ディスプレイ",

@@ -2987,7 +2987,11 @@
     "all": "Wszystkie",
     "loadingGiving": "Ładowanie danych o globalnej dobroczynności",
     "rateLimitedMarket": "Dane rynkowe tymczasowo niedostępne (limit zapytań) — ponowna próba wkrótce",
-    "cancel": "Anuluj"
+    "cancel": "Anuluj",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "preferences": {
     "display": "Wyświetlanie",

@@ -10,6 +10,8 @@ import { getAuthState } from '@/services/auth-state';
 import { signInWithGithub } from '@/services/auth-provider';
 import { dataFreshness, type PanelFreshnessSummary } from '@/services/data-freshness';
 import { formatPanelFreshnessDisplay } from '@/services/panel-freshness-display';
+import { getRecentMirrorKeyHints, refreshMirrorKeys } from '@/services/mirror-key-hints';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 import {
   clearPanelColSpan,
   clearPanelSpan,
@@ -900,6 +902,73 @@ export class Panel {
       }, 1000);
     }
     replaceChildren(this.content, h('div', { className: 'panel-error-state' }, ...children));
+  }
+
+  /**
+   * Error state, but sidecar-aware. In a sidecar-backed runtime where a recent
+   * RPC advertised `X-WM-Mirror-Keys` (the mirror row(s) the handler read), this
+   * renders a "not synced yet" state with a **Refresh from cloud** button that
+   * pulls exactly those keys from Upstash into the local SQLite mirror
+   * ({@link refreshMirrorKeys}) and then re-runs `onRetry`. Everywhere else —
+   * no sidecar, or no hint recorded — it is byte-for-byte `showError(message,
+   * onRetry)`, so a panel may call this unconditionally in its failure branch.
+   *
+   * `opts.pathPrefix` scopes the hint lookup to one RPC domain
+   * (e.g. `/api/economic/v1/`); omit it to draw on every live hint.
+   */
+  public showUnavailable(
+    message?: string,
+    onRetry?: () => void,
+    opts?: { pathPrefix?: string },
+  ): void {
+    if (this._locked) return;
+
+    const keys = isSidecarBackedRuntime()
+      ? getRecentMirrorKeyHints({ pathPrefix: opts?.pathPrefix })
+      : [];
+    if (keys.length === 0) {
+      this.showError(message, onRetry);
+      return;
+    }
+
+    this.clearRetryCountdown();
+    this.setErrorState(true);
+    if (onRetry !== undefined) this.retryCallback = onRetry;
+
+    const radarEl = h('div', { className: 'panel-loading-radar panel-error-radar' },
+      h('div', { className: 'panel-radar-sweep' }),
+      h('div', { className: 'panel-radar-dot error' }),
+    );
+    const msgEl = h('div', { className: 'panel-error-msg' }, message || t('common.notSyncedYet'));
+    const btn = h('button', {
+      type: 'button',
+      className: 'panel-error-retry-btn',
+      dataset: { panelRetry: '' },
+    }, t('common.refreshFromCloud')) as HTMLButtonElement;
+    const noteEl = h('div', { className: 'panel-error-countdown' });
+    noteEl.hidden = true;
+
+    btn.addEventListener('click', () => {
+      void (async () => {
+        btn.disabled = true;
+        btn.textContent = t('common.refreshing');
+        noteEl.hidden = true;
+        const result = await refreshMirrorKeys(keys);
+        if (result && result.refreshed.length > 0) {
+          this.resetRetryBackoff();
+          this.retryCallback?.();
+          return;
+        }
+        btn.disabled = false;
+        btn.textContent = t('common.refreshFromCloud');
+        noteEl.textContent = t('common.stillUnavailable');
+        noteEl.hidden = false;
+      })();
+    });
+
+    replaceChildren(this.content,
+      h('div', { className: 'panel-error-state' }, radarEl, msgEl, btn, noteEl),
+    );
   }
 
   public resetRetryBackoff(): void {

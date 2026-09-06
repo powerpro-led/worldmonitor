@@ -3019,7 +3019,11 @@
     "currentVariant": "(jelenlegi)",
     "retry": "Újra próbálás",
     "refresh": "Frissítés",
-    "all": "Összes"
+    "all": "Összes",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "connectivity": {
     "offlineCached": "Offline — {{freshness}} időpontjából származó gyorsítótárazott adatok megjelenítése.",

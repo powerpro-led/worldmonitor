@@ -2712,7 +2712,11 @@
     "all": "Todos",
     "loadingGiving": "Carregando dados de doações...",
     "rateLimitedMarket": "Dados de mercado temporariamente limitados — tentando novamente automaticamente",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "notSyncedYet": "Not synced to this device yet",
+    "refreshFromCloud": "Refresh from cloud",
+    "refreshing": "Refreshing…",
+    "stillUnavailable": "Still unavailable — try again shortly"
   },
   "header": {
     "world": "MUNDO",

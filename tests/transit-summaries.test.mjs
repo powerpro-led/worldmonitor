@@ -8,16 +8,27 @@ import {
   CANONICAL_CHOKEPOINTS,
   corridorRiskNameToId,
 } from '../server/worldmonitor/supply-chain/v1/_chokepoint-ids.ts';
+import {
+  detectTrafficAnomaly as seedDetectTrafficAnomaly,
+  buildSummaryRow,
+  RELAY_NAME_TO_ID as SEED_RELAY_NAME_TO_ID,
+  ID_TO_RELAY_NAME as SEED_ID_TO_RELAY_NAME,
+  CHOKEPOINT_THREAT_LEVELS as SEED_THREAT_LEVELS,
+} from '../scripts/seed-transit-summaries.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 const relaySrc = readFileSync(resolve(root, 'scripts/ais-relay.cjs'), 'utf-8');
-// CorridorRisk seeding was extracted from ais-relay.cjs to this standalone cron
-// in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md). TransitSummary
-// itself stays relay-local (it consumes the live AIS chokepointCrossings Map),
-// so the seedTransitSummaries assertions below still read relaySrc; only the
-// corridor-risk fetch/shape/name-map assertions moved to corridorSrc.
+// P14 Phase 2 (session 63): CorridorRisk seeding → scripts/seed-corridor-risk.mjs.
+// P14 Phase 2 tail (session 67): the TransitSummary merge → the per-org
+// scripts/seed-transit-summaries.mjs (supersedes P16's "relay-local forever" for
+// the summary half — the merge's portwatch + corridor-risk inputs are per-org,
+// not in the now-shared relay's store). seedChokepointTransits (pure-AIS counts)
+// stays in ais-relay.cjs. So: transit-summary assertions read transitSummarySrc;
+// corridor-risk fetch/shape/name-map assertions read corridorSrc; OREF + the
+// envelopeRead helper still read relaySrc.
 const corridorSrc = readFileSync(resolve(root, 'scripts/seed-corridor-risk.mjs'), 'utf-8');
+const transitSummarySrc = readFileSync(resolve(root, 'scripts/seed-transit-summaries.mjs'), 'utf-8');
 const handlerSrc = readFileSync(resolve(root, 'server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts'), 'utf-8');
 
 function makeDays(count, dailyTotal, startOffset) {
@@ -36,297 +47,141 @@ function makeDays(count, dailyTotal, startOffset) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. seedTransitSummaries relay source analysis
+// 1. seed-transit-summaries.mjs — the per-org merge cron (P14 Phase 2 tail)
 // ---------------------------------------------------------------------------
-describe('seedTransitSummaries (relay)', () => {
-  it('defines seedTransitSummaries function', () => {
-    assert.match(relaySrc, /async function seedTransitSummaries\(\)/);
+describe('seed-transit-summaries.mjs source invariants', () => {
+  it('writes the compact summary key + seed-meta', () => {
+    assert.match(transitSummarySrc, /supply_chain:transit-summaries:v1/);
+    assert.match(transitSummarySrc, /seed-meta:supply_chain:transit-summaries/);
   });
 
-  it('writes to supply_chain:transit-summaries:v1 Redis key', () => {
-    assert.match(relaySrc, /supply_chain:transit-summaries:v1/);
+  it('reads the bridged pure-AIS counts key (not an in-process Map)', () => {
+    assert.match(transitSummarySrc, /const CHOKEPOINT_TRANSIT_KEY = 'supply_chain:chokepoint_transits:v1'/);
+    assert.match(transitSummarySrc, /readCanonicalValue\(CHOKEPOINT_TRANSIT_KEY\)/);
+    // no live reference to the in-process Map (a comment mentions it by name)
+    assert.doesNotMatch(transitSummarySrc, /chokepointCrossings\.(get|set|has)\(/);
   });
 
-  it('writes seed-meta for transit-summaries', () => {
-    assert.match(relaySrc, /seed-meta:supply_chain:transit-summaries/);
+  it('reads portwatch + corridor-risk from the ORG Upstash via readCanonicalValue', () => {
+    assert.match(transitSummarySrc, /readCanonicalValue\(PORTWATCH_REDIS_KEY\)/);
+    assert.match(transitSummarySrc, /readCanonicalValue\(CORRIDOR_RISK_REDIS_KEY\)/);
   });
 
-  it('compact summary object includes all stat fields (history split out)', () => {
-    assert.match(relaySrc, /todayTotal:/);
-    assert.match(relaySrc, /todayTanker:/);
-    assert.match(relaySrc, /todayCargo:/);
-    assert.match(relaySrc, /todayOther:/);
-    assert.match(relaySrc, /wowChangePct:/);
-    assert.match(relaySrc, /riskLevel:/);
-    assert.match(relaySrc, /incidentCount7d:/);
-    assert.match(relaySrc, /disruptionPct:/);
-    assert.match(relaySrc, /anomaly/);
+  it('iterates the canonical chokepoint ID set, not Object.entries(pw)', () => {
+    assert.match(transitSummarySrc, /CANONICAL_IDS\s*=\s*Object\.keys\(CHOKEPOINT_THREAT_LEVELS\)/);
+    assert.match(transitSummarySrc, /for \(const cpId of CANONICAL_IDS\)/);
+    assert.doesNotMatch(transitSummarySrc, /for \(const \[cpId[^\]]*\] of Object\.entries\(pw\)\)/);
   });
 
-  it('compact summary object does NOT inline history (payload-split guard)', () => {
-    // Matches the `summaries[cpId] = { ... }` block specifically — history
-    // belongs to the per-id key now, not the compact summary.
-    const block = relaySrc.match(/summaries\[cpId\]\s*=\s*\{([\s\S]*?)\};/);
-    assert.ok(block, 'compact summary assignment not found');
-    assert.doesNotMatch(block[1], /\bhistory:/);
+  it('records actual portwatch coverage (pwCovered) in seed-meta + envelope', () => {
+    assert.match(transitSummarySrc, /let pwCovered = 0/);
+    assert.match(transitSummarySrc, /if \(cpData\) pwCovered\+\+/);
+    assert.match(transitSummarySrc, /recordCount: pwCovered/);
+    assert.match(transitSummarySrc, /coverage shortfall/);
   });
 
-  it('writes per-id history keys via envelopeWrite', () => {
-    assert.match(relaySrc, /TRANSIT_SUMMARY_HISTORY_KEY_PREFIX/);
-    assert.match(relaySrc, /supply_chain:transit-summaries:history:v1:/);
-    // Per-id payload includes chokepointId, history, fetchedAt
-    assert.match(relaySrc, /chokepointId:\s*cpId,\s*history,\s*fetchedAt:\s*now/);
+  it('writes one per-id history key per canonical chokepoint via writeExtraKey', () => {
+    assert.match(transitSummarySrc, /const TRANSIT_SUMMARY_HISTORY_KEY_PREFIX = 'supply_chain:transit-summaries:history:v1:'/);
+    assert.match(transitSummarySrc, /await writeExtraKey\(\s*`\$\{TRANSIT_SUMMARY_HISTORY_KEY_PREFIX\}\$\{cpId\}`/);
+    assert.match(transitSummarySrc, /chokepointId: cpId, history, fetchedAt: now/);
   });
 
-  it('iterates the canonical chokepoint ID set (not Object.entries(pw))', () => {
-    // Partial-coverage regression guard: iterating over whatever pw carries
-    // silently drops missing chokepoints. RPC sees a partial summaries shape
-    // and caches zero-state rows for 5 min since upstreamUnavailable only
-    // fires on fully-empty. Writer must emit all 13 canonical IDs with
-    // zero-state fill for missing upstream data.
-    assert.match(relaySrc, /CANONICAL_IDS\s*=\s*Object\.keys\(CHOKEPOINT_THREAT_LEVELS\)/);
-    assert.match(relaySrc, /for\s*\(const cpId of CANONICAL_IDS\)/);
-    assert.doesNotMatch(relaySrc, /for\s*\(const \[cpId, cpData\] of Object\.entries\(pw\)\)/);
+  it('empty-portwatch early return is non-silent (logs key + reason)', () => {
+    const mainBody = transitSummarySrc.match(/export async function main\(\)\s*\{([\s\S]*?)\nif \(process\.argv/)?.[1] || '';
+    assert.doesNotMatch(mainBody, /Object\.keys\(pw\)\.length === 0\) \{\s*return;/);
+    assert.match(mainBody, /console\.warn\(`\[TransitSummary\] Skipped — \$\{PORTWATCH_REDIS_KEY\} empty or absent/);
   });
 
-  it('records actual upstream coverage (pwCovered) in seed-meta + envelope', () => {
-    // seed-meta recordCount must reflect pwCovered, not the always-13 canonical
-    // shape size — otherwise health.js can't distinguish healthy 13/13 from
-    // partial-upstream 10/13.
-    assert.match(relaySrc, /let\s+pwCovered\s*=\s*0/);
-    assert.match(relaySrc, /if\s*\(cpData\)\s*pwCovered\+\+/);
-    assert.match(relaySrc, /recordCount:\s*pwCovered/);
-    assert.match(relaySrc, /coverage shortfall/);
+  it('does not advance seed-meta on a failed canonical write', () => {
+    const mainBody = transitSummarySrc.match(/export async function main\(\)\s*\{([\s\S]*?)\nif \(process\.argv/)?.[1] || '';
+    assert.match(mainBody, /if \(!published\) \{[\s\S]*throw new Error\('transit-summaries canonical write failed'\)/);
+    assert.match(mainBody, /await writeSeedMeta\(TRANSIT_SUMMARY_REDIS_KEY, pwCovered/);
   });
 
-  it('reads latestCorridorRiskData for riskLevel/incidentCount7d/disruptionPct', () => {
-    assert.match(relaySrc, /latestCorridorRiskData\?\.\[cpId\]/);
-    assert.match(relaySrc, /cr\?\.riskLevel/);
-    assert.match(relaySrc, /cr\?\.incidentCount7d/);
-    assert.match(relaySrc, /cr\?\.disruptionPct/);
+  it('runs on a 10-minute cadence with a TTL that clears the 30-min health gate', () => {
+    // gcp/scheduler/main.ts CADENCES: seed-transit-summaries every 10 minutes.
+    // TTL 3600 > maxStaleMin 30 * 60 (1800) strictly — seed-ttl-outlives-staleness-fleet.
+    assert.match(transitSummarySrc, /const TRANSIT_SUMMARY_TTL = 3600/);
+    const scheduler = readFileSync(resolve(root, 'gcp/scheduler/main.ts'), 'utf-8');
+    assert.match(scheduler, /'seed-transit-summaries':\s*\{\s*kind:\s*'every',\s*rate:\s*'10 minutes'\s*\}/);
+  });
+});
+
+describe('buildSummaryRow — the AIS × portwatch × corridor-risk merge', () => {
+  it('passes the bridged AIS counts straight through when total > 0', () => {
+    const row = buildSummaryRow('hormuz_strait', { history: [], wowChangePct: 3 }, { tanker: 4, cargo: 2, other: 1, total: 7 }, undefined);
+    assert.equal(row.todayTotal, 7);
+    assert.equal(row.todayTanker, 4);
+    assert.equal(row.todayCargo, 2);
+    assert.equal(row.todayOther, 1);
+    assert.equal(row.wowChangePct, 3);
   });
 
-  it('reads pw from Redis for history and wowChangePct', () => {
-    // After canonical-coverage refactor, cpData is nullable (missing upstream),
-    // so access is `cpData?.history` / `cpData?.wowChangePct` with zero-state
-    // fallback for missing IDs.
-    assert.match(relaySrc, /cpData\?\.history/);
-    assert.match(relaySrc, /cpData\?\.wowChangePct/);
+  it('treats a zero-total AIS entry as no data (todayTotal 0)', () => {
+    const row = buildSummaryRow('suez', { history: [] }, { tanker: 0, cargo: 0, other: 0, total: 0 }, undefined);
+    assert.equal(row.todayTotal, 0);
   });
 
-  it('calls detectTrafficAnomalyRelay with local history binding', () => {
-    // history is bound from `cpData?.history ?? []` before the anomaly call,
-    // so detectTrafficAnomalyRelay runs on a concrete array even when the
-    // canonical chokepoint is missing from this cycle's portwatch payload.
-    assert.match(relaySrc, /const history = cpData\?\.history \?\? \[\]/);
-    assert.match(relaySrc, /detectTrafficAnomalyRelay\(history,\s*threatLevel\)/);
+  it('zero-state fills every field when portwatch is missing this chokepoint', () => {
+    const row = buildSummaryRow('panama', undefined, null, undefined);
+    assert.equal(row.dataAvailable, false);
+    assert.equal(row.todayTotal, 0);
+    assert.equal(row.wowChangePct, 0);
+    assert.equal(row.riskLevel, '');
+    assert.deepEqual(row.anomaly, { dropPct: 0, signal: false });
   });
 
-  it('wraps summaries in { summaries, fetchedAt } envelope', () => {
-    assert.match(relaySrc, /\{\s*summaries,\s*fetchedAt:\s*now\s*\}/);
+  it('dataAvailable is true whenever the portwatch entry exists, even with 0 traffic', () => {
+    const row = buildSummaryRow('suez', { history: [] }, null, undefined);
+    assert.equal(row.dataAvailable, true);
+    assert.equal(row.todayTotal, 0);
   });
 
-  it('PortWatch data is read via envelopeRead (unwraps {_seed, data} contract-mode shape)', () => {
-    // envelopeRead takes an optional onFailure reason callback (added so the
-    // empty-read early return can log WHY, not just THAT, portwatch was
-    // empty) — match the call regardless of that second argument.
-    assert.match(relaySrc, /const pw = await envelopeRead\(PORTWATCH_REDIS_KEY[,)]/);
-    assert.doesNotMatch(relaySrc, /const pw = await upstashGet\(PORTWATCH_REDIS_KEY\)/);
+  it('maps corridor-risk fields (riskLevel / incidentCount7d / disruptionPct / summaries)', () => {
+    const row = buildSummaryRow('bab_el_mandeb', { history: [] }, null, {
+      riskLevel: 'critical', incidentCount7d: 9, disruptionPct: 40,
+      riskSummary: 'Houthi attacks ongoing', riskReportAction: 'reroute',
+    });
+    assert.equal(row.riskLevel, 'critical');
+    assert.equal(row.incidentCount7d, 9);
+    assert.equal(row.disruptionPct, 40);
+    assert.equal(row.riskSummary, 'Houthi attacks ongoing');
+    assert.equal(row.riskReportAction, 'reroute');
   });
 
-  it('picks up corridor-risk data via Redis hydration (no longer kicked directly by the corridor seed)', () => {
-    // Pre-S63 the relay's seedCorridorRisk() called seedTransitSummaries()
-    // inline right after writing supply_chain:corridorrisk:v1. That loop is now
-    // scripts/seed-corridor-risk.mjs (a standalone cron) which cannot reach
-    // this relay-internal function, so the "[CorridorRisk] Seeded … →
-    // seedTransitSummaries()" kick is gone and TransitSummary instead
-    // Redis-hydrates the key on its own 10-min tick — asserted by the "reads
-    // CorridorRisk from Redis when latestCorridorRiskData is null" block below.
-    assert.doesNotMatch(relaySrc, /\[CorridorRisk\] Seeded[\s\S]{0,200}seedTransitSummaries/);
-    assert.match(relaySrc, /if\s*\(\s*!latestCorridorRiskData\s*\)/);
+  it('runs detectTrafficAnomaly on the portwatch history for war_zone chokepoints', () => {
+    const history = [...makeDays(7, 5, 0), ...makeDays(30, 100, 7)]; // ~95% drop
+    const row = buildSummaryRow('hormuz_strait', { history }, null, undefined); // hormuz = war_zone
+    assert.equal(row.anomaly.signal, true);
+    assert.ok(row.anomaly.dropPct >= 90);
   });
 
-  it('runs on 10 minute interval', () => {
-    assert.match(relaySrc, /TRANSIT_SUMMARY_INTERVAL_MS\s*=\s*10\s*\*\s*60\s*\*\s*1000/);
+  it('the compact row never inlines the history array (payload-split guard)', () => {
+    const row = buildSummaryRow('suez', { history: makeDays(40, 10, 0) }, null, undefined);
+    assert.equal('history' in row, false);
+  });
+});
+
+describe('seed-transit-summaries.mjs id/name maps', () => {
+  it('RELAY_NAME_TO_ID covers every canonical chokepoint', () => {
+    const mapped = new Set(Object.values(SEED_RELAY_NAME_TO_ID).filter(Boolean));
+    for (const cp of CANONICAL_CHOKEPOINTS) {
+      assert.ok(mapped.has(cp.id), `RELAY_NAME_TO_ID missing canonical id ${cp.id}`);
+    }
   });
 
-  it('has TTL >= 6x seed interval (survives multiple missed pings)', () => {
-    assert.match(relaySrc, /TRANSIT_SUMMARY_TTL\s*=\s*[3-9]\d{3}/);
+  it('ID_TO_RELAY_NAME is the inverse of the non-null RELAY_NAME_TO_ID entries', () => {
+    for (const [name, id] of Object.entries(SEED_RELAY_NAME_TO_ID)) {
+      if (id == null) continue;
+      assert.equal(SEED_ID_TO_RELAY_NAME[id], name);
+    }
   });
 
-  it('empty-portwatch early return is non-silent (logs key + reason, not a bare `return;`)', () => {
-    // Regression guard for the 2026-07 incident: this early return fired on
-    // every 10-min tick for 4d20h with zero log output (UPSTASH_ENABLED was
-    // false in-container), so the dead scheduler was invisible until a live
-    // audit caught it via the never-populated Redis key. A bare early
-    // `return;` here must never come back.
-    const fnBody = relaySrc.match(/async function seedTransitSummaries\(\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-    assert.doesNotMatch(fnBody, /length === 0\) return;/);
-    assert.match(fnBody, /console\.warn\(`\[TransitSummary\] Skipped — \$\{PORTWATCH_REDIS_KEY\}/);
-    // The logged reason must distinguish "Upstash disabled" from "read
-    // failed" from "key genuinely empty" — three different root causes that
-    // all look identical from the caller's perspective otherwise.
-    assert.match(fnBody, /!UPSTASH_ENABLED/);
-    assert.match(fnBody, /pwFailureReason/);
-  });
-
-  // ---------------------------------------------------------------------------
-  // Behavioral seeding — runs the real seedTransitSummaries body (extracted
-  // from source, not reimplemented) in a sandbox with mocked
-  // envelopeRead/envelopeWrite/upstashSet. No network, no real Upstash. The
-  // regex assertions above only prove the source SHAPE is wired correctly —
-  // they still pass even if the scheduler silently never populates Redis
-  // (the exact 2026-07 incident class). These tests actually invoke the
-  // function and assert on the writes it produces.
-  // ---------------------------------------------------------------------------
-
-  function extractConstLine(name) {
-    const m = relaySrc.match(new RegExp(`const ${name} = [^;]+;`));
-    assert.ok(m, `${name} definition not found in relaySrc`);
-    return m[0];
-  }
-
-  function extractObjectConst(name) {
-    const m = relaySrc.match(new RegExp(`const ${name} = \\{[\\s\\S]*?\\n\\};`));
-    assert.ok(m, `${name} definition not found in relaySrc`);
-    return m[0];
-  }
-
-  const seedFnBody = relaySrc.match(/async function seedTransitSummaries\(\)\s*\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(seedFnBody, 'seedTransitSummaries body not found');
-  const anomalyFnBody = relaySrc.match(/function detectTrafficAnomalyRelay\(history, threatLevel\)\s*\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(anomalyFnBody, 'detectTrafficAnomalyRelay body not found');
-
-  // Assembled in dependency order from real extracted source snippets, not
-  // hand-copied literals — a future rename/edit in ais-relay.cjs breaks this
-  // extraction (loud) instead of silently testing stale duplicated code.
-  const seedHarnessSrc = [
-    extractConstLine('PORTWATCH_REDIS_KEY'),
-    extractConstLine('CORRIDOR_RISK_REDIS_KEY'),
-    extractConstLine('TRANSIT_SUMMARY_REDIS_KEY'),
-    extractConstLine('TRANSIT_SUMMARY_HISTORY_KEY_PREFIX'),
-    extractConstLine('TRANSIT_SUMMARY_TTL'),
-    extractConstLine('TRANSIT_WINDOW_MS'),
-    extractObjectConst('CHOKEPOINT_THREAT_LEVELS'),
-    extractObjectConst('RELAY_NAME_TO_ID'),
-    'let latestCorridorRiskData = null;',
-    `function detectTrafficAnomalyRelay(history, threatLevel) {${anomalyFnBody}\n}`,
-    `async function seedTransitSummaries() {${seedFnBody}\n}`,
-    'return seedTransitSummaries;',
-  ].join('\n');
-
-  // Fresh sandbox per call — `latestCorridorRiskData` resets like a cold
-  // relay restart instead of leaking state between tests.
-  function buildSeedTransitSummaries({ envelopeRead, envelopeWrite, upstashSet, upstashEnabled = true, warn = () => {}, log = () => {} }) {
-    // eslint-disable-next-line no-new-func
-    const factory = new Function(
-      'envelopeRead', 'envelopeWrite', 'upstashSet', 'console', 'UPSTASH_ENABLED', 'chokepointCrossings',
-      seedHarnessSrc,
+  it('CHOKEPOINT_THREAT_LEVELS keys == the canonical id set', () => {
+    assert.deepEqual(
+      Object.keys(SEED_THREAT_LEVELS).sort(),
+      CANONICAL_CHOKEPOINTS.map((c) => c.id).sort(),
     );
-    return factory(envelopeRead, envelopeWrite, upstashSet, { warn, log }, upstashEnabled, new Map());
-  }
-
-  const ALL_CANONICAL_IDS = [
-    'suez', 'malacca_strait', 'hormuz_strait', 'bab_el_mandeb', 'panama',
-    'taiwan_strait', 'cape_of_good_hope', 'gibraltar', 'bosphorus',
-    'korea_strait', 'dover_strait', 'kerch_strait', 'lombok_strait',
-  ];
-
-  it('populated portwatch actually produces the compact summary key, all 13 per-id history keys, and a seed-meta write', async () => {
-    const fakePortwatch = {
-      suez: { history: makeDays(40, 120, 0), wowChangePct: 4.2 },
-      hormuz_strait: { history: makeDays(3, 10, 0), wowChangePct: -1 },
-    };
-    const writes = [];
-    const metaWrites = [];
-    const seed = buildSeedTransitSummaries({
-      envelopeRead: async key => (key === 'supply_chain:portwatch:v1' ? fakePortwatch : null),
-      envelopeWrite: async (key, data, ttlSeconds, meta) => { writes.push({ key, data, ttlSeconds, meta }); return true; },
-      upstashSet: async (key, data, ttlSeconds) => { metaWrites.push({ key, data, ttlSeconds }); },
-    });
-
-    await seed();
-
-    const summaryWrites = writes.filter(w => w.key === 'supply_chain:transit-summaries:v1');
-    assert.equal(summaryWrites.length, 1, 'expected exactly one write to the compact summary key');
-    const { summaries } = summaryWrites[0].data;
-    assert.deepEqual(Object.keys(summaries).sort(), [...ALL_CANONICAL_IDS].sort());
-    assert.equal(summaries.suez.dataAvailable, true);
-    assert.equal(summaries.hormuz_strait.dataAvailable, true);
-    // Chokepoint missing from this cycle's portwatch payload still publishes
-    // a zero-state row instead of vanishing (partial-coverage regression).
-    assert.equal(summaries.panama.dataAvailable, false);
-    assert.equal(summaries.panama.todayTotal, 0);
-    assert.equal(summaryWrites[0].meta.recordCount, 2, 'recordCount must reflect pwCovered, not the always-13 shape');
-    assert.equal(summaryWrites[0].ttlSeconds, 3600);
-
-    const historyWrites = writes.filter(w => w.key.startsWith('supply_chain:transit-summaries:history:v1:'));
-    assert.equal(historyWrites.length, 13, 'one history write per canonical chokepoint, covered or not');
-    const suezHistory = historyWrites.find(w => w.key === 'supply_chain:transit-summaries:history:v1:suez');
-    assert.deepEqual(suezHistory.data.history, fakePortwatch.suez.history);
-    assert.equal(suezHistory.data.chokepointId, 'suez');
-    const panamaHistory = historyWrites.find(w => w.key === 'supply_chain:transit-summaries:history:v1:panama');
-    assert.deepEqual(panamaHistory.data.history, []);
-
-    assert.equal(metaWrites.length, 1, 'seed-meta must actually be written so health checks see it');
-    assert.equal(metaWrites[0].key, 'seed-meta:supply_chain:transit-summaries');
-    assert.equal(metaWrites[0].data.recordCount, 2);
-    assert.equal(metaWrites[0].ttlSeconds, 604800);
-  });
-
-  it('empty portwatch writes NOTHING to Redis — the exact "scheduler wired but keys never populate" failure class this suite must catch', async () => {
-    const writes = [];
-    const metaWrites = [];
-    const warnings = [];
-    const seed = buildSeedTransitSummaries({
-      envelopeRead: async () => null,
-      envelopeWrite: async (key, data, ttlSeconds, meta) => { writes.push({ key, data, ttlSeconds, meta }); return true; },
-      upstashSet: async (key, data, ttlSeconds) => { metaWrites.push({ key, data, ttlSeconds }); },
-      warn: msg => warnings.push(msg),
-    });
-
-    await seed();
-
-    assert.equal(writes.length, 0, 'no Redis writes should occur when portwatch is empty');
-    assert.equal(metaWrites.length, 0, 'no seed-meta write should occur when portwatch is empty');
-    assert.equal(warnings.length, 1, 'the skip must log, not fail silently');
-    assert.match(warnings[0], /\[TransitSummary\] Skipped — supply_chain:portwatch:v1 unavailable/);
-    assert.match(warnings[0], /key empty or absent — upstream seeder has not written it yet/);
-  });
-
-  it('disabled Upstash skip reason is exercised behaviorally', async () => {
-    const warnings = [];
-    const seed = buildSeedTransitSummaries({
-      envelopeRead: async () => null,
-      envelopeWrite: async () => { throw new Error('must not write when portwatch is unavailable'); },
-      upstashSet: async () => { throw new Error('must not write seed-meta when portwatch is unavailable'); },
-      upstashEnabled: false,
-      warn: msg => warnings.push(msg),
-    });
-
-    await seed();
-
-    assert.equal(warnings.length, 1, 'the skip must log even when Redis is disabled');
-    assert.match(warnings[0], /Upstash Redis disabled/);
-    assert.match(warnings[0], /UPSTASH_REDIS_REST_URL\/UPSTASH_ALLOW_INSECURE_HTTP/);
-  });
-
-  it('portwatch read-failure skip reason is exercised behaviorally', async () => {
-    const warnings = [];
-    const seed = buildSeedTransitSummaries({
-      envelopeRead: async (_key, onFailure) => {
-        onFailure('HTTP 500 from redis-rest');
-        return null;
-      },
-      envelopeWrite: async () => { throw new Error('must not write when portwatch read failed'); },
-      upstashSet: async () => { throw new Error('must not write seed-meta when portwatch read failed'); },
-      warn: msg => warnings.push(msg),
-    });
-
-    await seed();
-
-    assert.equal(warnings.length, 1, 'the skip must log the read failure reason');
-    assert.match(warnings[0], /read failed: HTTP 500 from redis-rest/);
   });
 });
 
@@ -562,13 +417,12 @@ describe('corridor risk name map alignment with canonical IDs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. detectTrafficAnomalyRelay sync with _scoring.mjs version
+// 5. seed-transit-summaries.mjs's detectTrafficAnomaly stays in sync with
+//    server/.../_scoring.mjs (the CJS→ESM duplicate the loop carried moved
+//    with it out of ais-relay.cjs).
 // ---------------------------------------------------------------------------
-describe('detectTrafficAnomalyRelay sync with _scoring.mjs', () => {
-  // Extract the relay copy of detectTrafficAnomalyRelay
-  const fnMatch = relaySrc.match(/function detectTrafficAnomalyRelay\(history, threatLevel\)\s*\{([\s\S]*?)\n\}/);
-  assert.ok(fnMatch, 'detectTrafficAnomalyRelay not found in relay source');
-  const relayFn = new Function('history', 'threatLevel', fnMatch[1]);
+describe('detectTrafficAnomaly (seed-transit-summaries) sync with _scoring.mjs', () => {
+  const relayFn = seedDetectTrafficAnomaly;
 
   it('matches _scoring.mjs for war_zone with large drop', () => {
     const history = [...makeDays(7, 5, 0), ...makeDays(30, 100, 7)];
@@ -702,23 +556,23 @@ describe('detectTrafficAnomaly edge cases (_scoring.mjs)', () => {
 // ---------------------------------------------------------------------------
 // 7. CHOKEPOINT_THREAT_LEVELS sync between relay and handler
 // ---------------------------------------------------------------------------
-describe('CHOKEPOINT_THREAT_LEVELS relay-handler sync', () => {
-  const relayBlock = relaySrc.match(/CHOKEPOINT_THREAT_LEVELS\s*=\s*\{([^}]+)\}/)?.[1] || '';
-
-  it('relay defines threat levels for all 13 canonical chokepoints', () => {
+describe('CHOKEPOINT_THREAT_LEVELS seeder-handler sync', () => {
+  // CHOKEPOINT_THREAT_LEVELS moved from ais-relay.cjs to
+  // scripts/seed-transit-summaries.mjs with the TransitSummary merge (P14
+  // Phase 2 tail). Assert against the seeder's exported map now.
+  it('seeder defines threat levels for all 13 canonical chokepoints', () => {
     for (const cp of CANONICAL_CHOKEPOINTS) {
-      assert.match(relayBlock, new RegExp(`${cp.id}:\\s*'`),
-        `Missing threat level for ${cp.id} in relay`);
+      assert.ok(cp.id in SEED_THREAT_LEVELS, `Missing threat level for ${cp.id} in seed-transit-summaries.mjs`);
     }
   });
 
-  it('relay threat levels match handler CHOKEPOINTS config', () => {
+  it('seeder threat levels match the handler CHOKEPOINTS config', () => {
     for (const cp of CANONICAL_CHOKEPOINTS) {
-      const relayMatch = relayBlock.match(new RegExp(`${cp.id}:\\s*'(\\w+)'`));
+      const seedLevel = SEED_THREAT_LEVELS[cp.id];
       const handlerMatch = handlerSrc.match(new RegExp(`id:\\s*'${cp.id}'[^}]*threatLevel:\\s*'(\\w+)'`));
-      if (relayMatch && handlerMatch) {
-        assert.equal(relayMatch[1], handlerMatch[1],
-          `Threat level mismatch for ${cp.id}: relay=${relayMatch[1]} handler=${handlerMatch[1]}`);
+      if (seedLevel && handlerMatch) {
+        assert.equal(seedLevel, handlerMatch[1],
+          `Threat level mismatch for ${cp.id}: seeder=${seedLevel} handler=${handlerMatch[1]}`);
       }
     }
   });
@@ -747,61 +601,43 @@ describe('handler transit data strategy', () => {
   });
 });
 
-describe('seedTransitSummaries Redis reads', () => {
-  it('always reads PortWatch fresh from Redis (no in-memory cache guard)', () => {
-    assert.doesNotMatch(relaySrc, /if\s*\(\s*!latestPortwatchData\s*\)/);
-    assert.match(relaySrc, /envelopeRead\(PORTWATCH_REDIS_KEY[,)]/);
+describe('seed-transit-summaries.mjs Redis reads', () => {
+  it('reads portwatch first, before the early-return guard', () => {
+    const mainBody = transitSummarySrc.match(/export async function main\(\)\s*\{([\s\S]*?)\nif \(process\.argv/)?.[1] || '';
+    const readPos = mainBody.indexOf('readCanonicalValue(PORTWATCH_REDIS_KEY)');
+    const earlyReturnPos = mainBody.indexOf('Object.keys(pw).length === 0');
+    assert.ok(readPos > 0, 'portwatch read not found in main()');
+    assert.ok(earlyReturnPos > 0, 'portwatch early-return guard not found');
+    assert.ok(readPos < earlyReturnPos, 'portwatch read must come before the early return');
   });
 
-  it('reads CorridorRisk from Redis when latestCorridorRiskData is null', () => {
-    assert.match(relaySrc, /if\s*\(\s*!latestCorridorRiskData\s*\)/);
-    assert.match(relaySrc, /envelopeRead\(CORRIDOR_RISK_REDIS_KEY\)/);
-    assert.match(relaySrc, /Hydrated CorridorRisk from Redis/);
+  it('reads all three inputs through the shared envelope-aware reader (readCanonicalValue), never a raw GET', () => {
+    // Regression guard: PR #3097 migrated producers to {_seed, data}. A raw GET
+    // iterates those wrapper keys as chokepoint IDs and silently zeroes the
+    // transit chart. readCanonicalValue unwraps.
+    assert.match(transitSummarySrc, /readCanonicalValue\(PORTWATCH_REDIS_KEY\)/);
+    assert.match(transitSummarySrc, /readCanonicalValue\(CORRIDOR_RISK_REDIS_KEY\)/);
+    assert.match(transitSummarySrc, /readCanonicalValue\(CHOKEPOINT_TRANSIT_KEY\)/);
+    assert.doesNotMatch(transitSummarySrc, /upstashGet\(/);
   });
 
-  it('PortWatch Redis read unwraps contract-mode envelope (reader parity with producer)', () => {
-    // Regression guard: PR #3097 migrated producers to {_seed, data}. A raw
-    // upstashGet iterates those wrapper keys as chokepoint IDs and silently
-    // zeroes the transit chart for every chokepoint.
-    assert.doesNotMatch(relaySrc, /const pw = await upstashGet\(PORTWATCH_REDIS_KEY\)/);
-    assert.doesNotMatch(relaySrc, /const persisted = await upstashGet\(CORRIDOR_RISK_REDIS_KEY\)/);
+  it('has no in-process cache guard — every run re-reads portwatch and corridor-risk fresh', () => {
+    // The relay loop cached corridor-risk in a module `latestCorridorRiskData`
+    // and only re-read on null. A --once cron has no cross-tick memory, so the
+    // guard is gone.
+    assert.doesNotMatch(transitSummarySrc, /latestCorridorRiskData/);
+    assert.doesNotMatch(transitSummarySrc, /if \(!latest/);
   });
+});
 
-  // The 'loadWsbTickerSet reads market:stocks-bootstrap:v1 via envelopeRead'
-  // guard that used to live here was removed in P14 Phase 2 (session 64): the
-  // WsbTickers loop moved to scripts/seed-wsb-tickers.mjs in session 63
-  // (aa8ef32), where loadWsbTickerSet reads the key through
-  // _seed-utils.mjs::readCanonicalValue (the shared envelope-aware reader).
-  // The envelope-unwrap contract for that key is now covered by
-  // tests/forecasts-ticker-set-envelope-unwrap.test.mjs. It never belonged in
-  // the transit-summaries suite — it was a cross-cutting source-grep squatter.
-
+describe('ais-relay.cjs OREF Redis reads (still relay-local)', () => {
   it('OREF bootstrap reads OREF_REDIS_KEY via envelopeRead (parity with orefPersistHistory)', () => {
     // Regression guard (Greptile review PR #3139): orefPersistHistory() writes via
     // envelopeWrite. Reading raw left cached.history undefined, so OREF history
     // was never restored across relay restarts — every cold start hit the
-    // upstream API unnecessarily.
+    // upstream API unnecessarily. Oref stayed in ais-relay.cjs (P14 Phase 2 tail).
     assert.match(relaySrc, /const cached = await envelopeRead\(OREF_REDIS_KEY\)/);
     assert.doesNotMatch(relaySrc, /const cached = await upstashGet\(OREF_REDIS_KEY\)/);
-  });
-
-  it('PortWatch Redis read is the first statement (before early return)', () => {
-    const fnBody = relaySrc.match(/async function seedTransitSummaries\(\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-    const readPos = fnBody.indexOf('envelopeRead(PORTWATCH_REDIS_KEY');
-    const earlyReturnPos = fnBody.indexOf('if (!pw ||');
-    assert.ok(readPos > 0, 'envelopeRead(PORTWATCH_REDIS_KEY not found in function body');
-    assert.ok(earlyReturnPos > 0, 'pw early return not found');
-    assert.ok(readPos < earlyReturnPos, 'Redis read must come before the early return');
-  });
-
-  it('PortWatch data is assigned directly from Redis (no stale in-memory cache)', () => {
-    const fnBody = relaySrc.match(/async function seedTransitSummaries\(\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-    assert.match(fnBody, /const pw = await envelopeRead\(PORTWATCH_REDIS_KEY[,)]/);
-  });
-
-  it('assigns hydrated data back to latestCorridorRiskData', () => {
-    const fnBody = relaySrc.match(/async function seedTransitSummaries\(\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-    assert.match(fnBody, /latestCorridorRiskData\s*=\s*persisted/);
   });
 });
 

@@ -359,6 +359,16 @@ const CADENCES: Record<string, Cadence> = {
   // session (seconds of overhead + FLOOD_WAIT risk on a 60s cadence), and
   // 5min still clears api/health.js's SEED_META.telegramFeed.maxStaleMin (10).
   'seed-telegram': { kind: 'every', rate: '5 minutes' },
+  // 2026-09-07 (session 67) — P14 Phase 2 tail: the TransitSummary merge moved
+  // out of scripts/ais-relay.cjs to this per-org cron. It SUPERSEDES decision
+  // P16 for the summary half — P16 assumed a per-org relay, but the relay is
+  // now ONE shared deploy and this merge's other inputs (supply_chain:portwatch:v1
+  // + supply_chain:corridorrisk:v1) are per-org. It reads the bridged pure-AIS
+  // supply_chain:chokepoint_transits:v1 (from scripts/sync-ais-results.mjs) +
+  // the org's own portwatch + corridor-risk. Cadence matches the deleted loop's
+  // TRANSIT_SUMMARY_INTERVAL_MS (10min); TTL 3600 already clears
+  // api/health.js's SEED_META.transitSummaries.maxStaleMin (30).
+  'seed-transit-summaries': { kind: 'every', rate: '10 minutes' },
 };
 
 /**

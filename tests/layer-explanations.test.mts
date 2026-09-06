@@ -255,7 +255,10 @@ describe('layer explanation metadata', () => {
       // Chokepoint status warm-ping consolidated into
       // scripts/seed-rpc-warmpings.mjs in session 62 (P14 Phase 2).
       assertDuration(text, /every\s+([0-9]+)\s+(minute)s?/i, schedulerCadenceMinutes('seed-rpc-warmpings'), `${layer} chokepoint warm-ping cadence`);
-      assertDuration(text, /refresh\s+every\s+([0-9]+)\s+(minute)s?/i, relayConstMinutes('TRANSIT_SUMMARY_INTERVAL_MS'), `${layer} transit-summary cadence`);
+      // TransitSummary merge moved from ais-relay.cjs to the per-org
+      // scripts/seed-transit-summaries.mjs cron in session 67 (P14 Phase 2 tail);
+      // its authoritative cadence now lives in gcp/scheduler/main.ts CADENCES.
+      assertDuration(text, /refresh\s+every\s+([0-9]+)\s+(minute)s?/i, schedulerCadenceMinutes('seed-transit-summaries'), `${layer} transit-summary cadence`);
     }
   });
 

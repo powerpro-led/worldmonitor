@@ -70,31 +70,34 @@ describe('portwatchNameToId', () => {
 });
 
 import { readFileSync } from 'node:fs';
-const relaySrc = readFileSync('scripts/ais-relay.cjs', 'utf8');
+// CHOKEPOINT_THREAT_LEVELS + RELAY_NAME_TO_ID moved from ais-relay.cjs to
+// scripts/seed-transit-summaries.mjs with the TransitSummary merge
+// (P14 Phase 2 tail, session 67 — supersedes P16 for the summary half).
 const handlerSrc = readFileSync('server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts', 'utf8');
+const { CHOKEPOINT_THREAT_LEVELS: SEED_THREAT_LEVELS, RELAY_NAME_TO_ID: SEED_RELAY_NAME_TO_ID } =
+  await import('../scripts/seed-transit-summaries.mjs');
 
-describe('relay CHOKEPOINT_THREAT_LEVELS sync', () => {
+describe('seed-transit-summaries CHOKEPOINT_THREAT_LEVELS sync', () => {
 
-  it('relay has a threat level entry for every canonical chokepoint', () => {
+  it('has a threat level entry for every canonical chokepoint', () => {
     for (const cp of CANONICAL_CHOKEPOINTS) {
-      assert.match(relaySrc, new RegExp(`${cp.id}:\\s*'`), `Missing relay threat level for ${cp.id}`);
+      assert.ok(cp.id in SEED_THREAT_LEVELS, `Missing threat level for ${cp.id}`);
     }
   });
 
-  it('relay threat levels match handler CHOKEPOINTS config', () => {
-    const relayBlock = relaySrc.match(/CHOKEPOINT_THREAT_LEVELS\s*=\s*\{([^}]+)\}/)?.[1] || '';
+  it('threat levels match the handler CHOKEPOINTS config', () => {
     for (const cp of CANONICAL_CHOKEPOINTS) {
-      const relayMatch = relayBlock.match(new RegExp(`${cp.id}:\\s*'(\\w+)'`));
+      const seedLevel = SEED_THREAT_LEVELS[cp.id];
       const handlerMatch = handlerSrc.match(new RegExp(`id:\\s*'${cp.id}'[^}]*threatLevel:\\s*'(\\w+)'`));
-      if (relayMatch && handlerMatch) {
-        assert.equal(relayMatch[1], handlerMatch[1], `Threat level mismatch for ${cp.id}: relay=${relayMatch[1]} handler=${handlerMatch[1]}`);
+      if (seedLevel && handlerMatch) {
+        assert.equal(seedLevel, handlerMatch[1], `Threat level mismatch for ${cp.id}: seeder=${seedLevel} handler=${handlerMatch[1]}`);
       }
     }
   });
 
-  it('relay RELAY_NAME_TO_ID covers all canonical chokepoints', () => {
+  it('RELAY_NAME_TO_ID covers all canonical chokepoints', () => {
     for (const cp of CANONICAL_CHOKEPOINTS) {
-      assert.match(relaySrc, new RegExp(`'${cp.relayName}':\\s*'${cp.id}'`), `Missing relay name mapping for ${cp.relayName} -> ${cp.id}`);
+      assert.equal(SEED_RELAY_NAME_TO_ID[cp.relayName], cp.id, `Missing name mapping for ${cp.relayName} -> ${cp.id}`);
     }
   });
 });

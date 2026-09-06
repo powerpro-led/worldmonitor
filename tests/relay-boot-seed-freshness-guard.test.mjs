@@ -204,14 +204,20 @@ const SEEDERS = [
   // in P14 Phase 2 (session 62 — see PLATFORM_ARCHITECTURE.md). Each RPC
   // handler still owns its own seed-meta key; nothing in ais-relay.cjs
   // warm-pings them any more.
-  // Transit + TransitSummary are the INTENDED FINAL residents of this list —
-  // P14 Phase 2 loop extraction is complete at 25 of 27, and these two stay in
-  // ais-relay.cjs permanently by decision (session 64; PLATFORM_ARCHITECTURE.md
-  // P16). Both read the live in-process AIS `chokepointCrossings` Map, which a
-  // standalone cron cannot reproduce. Do NOT "finish the extraction" — see the
-  // block comment on seedChokepointTransits in scripts/ais-relay.cjs.
+  // Transit (seedChokepointTransits) is the SINGLE intended final resident of
+  // this list. It reads the live in-process AIS `chokepointCrossings` Map,
+  // which a standalone cron cannot reproduce, and ais-relay.cjs IS the shared
+  // AIS-ingest service (P14a) — a timer riding it is cohesion, not per-org
+  // pinned debt. Do NOT "finish the extraction" — see the block comment on
+  // seedChokepointTransits in scripts/ais-relay.cjs.
+  //
+  // TransitSummary (seedTransitSummaries) LEFT this list in P14 Phase 2 tail
+  // (session 67). P16 kept it here on the assumption of a per-org relay; with
+  // the relay now ONE shared deploy, its portwatch + corridor-risk inputs
+  // (per-org keys) aren't in this store, so the merge moved to the per-org
+  // scripts/seed-transit-summaries.mjs. Its shape/merge contracts are asserted
+  // there in tests/transit-summaries.test.mjs.
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
-  ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
   // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,
   // ChokepointFlows, and Cyber were removed from ais-relay.cjs entirely in
   // session 61 (PLATFORM_ARCHITECTURE.md P14 Phase 2) — each was a pure
@@ -267,8 +273,9 @@ const SEEDERS = [
   // existed. Their notification contracts are asserted against the new files in
   // tests/notification-relay-payload-audit.test.mjs; the fetch/shape contracts
   // in tests/corridorrisk-upstream.test.mjs and tests/transit-summaries.test.mjs.
-  // CORRIDOR_RISK_REDIS_KEY + `latestCorridorRiskData` stay in ais-relay.cjs —
-  // the relay-local TransitSummary loop still Redis-hydrates them.
+  // PORTWATCH_REDIS_KEY / CORRIDOR_RISK_REDIS_KEY / `latestCorridorRiskData`
+  // left ais-relay.cjs in session 67 with the TransitSummary merge — the
+  // shared relay had no per-org portwatch/corridor-risk to read.
 ];
 
 for (const [label, metaKey, intervalConst, seedFn] of SEEDERS) {

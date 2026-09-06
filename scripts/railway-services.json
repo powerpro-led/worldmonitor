@@ -142,6 +142,12 @@
     "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 tail / decision P18 — Telegram MTProto poll loop extracted from scripts/ais-relay.cjs as a per-org --once job (session 67)"
   },
   {
+    "entry": "scripts/seed-transit-summaries.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "seed-transit-summaries",
+    "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 tail — the TransitSummary merge extracted from scripts/ais-relay.cjs to a per-org cron (supersedes P16 for the summary half; session 67)"
+  },
+  {
     "entry": "scripts/seed-fx-yoy.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-fx-yoy",

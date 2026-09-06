@@ -11,6 +11,7 @@ const root = resolve(__dirname, '..');
 const src = readFileSync(resolve(root, 'server/worldmonitor/supply-chain/v1/_portwatch-upstream.ts'), 'utf-8');
 const relaySrc = readFileSync(resolve(root, 'scripts/ais-relay.cjs'), 'utf-8');
 const seederSrc = readFileSync(resolve(root, 'scripts/seed-portwatch.mjs'), 'utf-8');
+const transitSummarySrc = readFileSync(resolve(root, 'scripts/seed-transit-summaries.mjs'), 'utf-8');
 
 function classifyVesselType(name) {
   const lower = name.toLowerCase();
@@ -112,10 +113,15 @@ describe('PortWatch standalone seeder (seed-portwatch.mjs)', () => {
     assert.doesNotMatch(relaySrc, /function startPortWatchSeedLoop/);
   });
 
-  it('relay reads PORTWATCH_REDIS_KEY fresh every seedTransitSummaries cycle (no stale in-memory guard)', () => {
-    assert.match(relaySrc, /supply_chain:portwatch:v1/);
-    assert.doesNotMatch(relaySrc, /let latestPortwatchData/);
-    assert.doesNotMatch(relaySrc, /if\s*\(\s*!latestPortwatchData\s*\)/);
+  it('the TransitSummary merge reads PORTWATCH_REDIS_KEY fresh every cycle (no stale in-memory guard)', () => {
+    // The merge moved from ais-relay.cjs to the per-org
+    // scripts/seed-transit-summaries.mjs in P14 Phase 2 tail (session 67) — the
+    // shared relay had no per-org portwatch to read. It reads the key fresh via
+    // the shared envelope-aware reader on every --once invocation.
+    assert.doesNotMatch(relaySrc, /supply_chain:portwatch:v1/);
+    assert.match(transitSummarySrc, /const PORTWATCH_REDIS_KEY = 'supply_chain:portwatch:v1'/);
+    assert.match(transitSummarySrc, /readCanonicalValue\(PORTWATCH_REDIS_KEY\)/);
+    assert.doesNotMatch(transitSummarySrc, /latestPortwatchData/);
   });
 });
 

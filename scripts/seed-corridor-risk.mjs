@@ -20,10 +20,10 @@
  * PLATFORM_ARCHITECTURE.md session 63). Two deliberate deviations from the
  * relay loop:
  *   1. The relay kicked seedTransitSummaries() immediately after a successful
- *      corridor-risk write. A standalone cron cannot reach that relay-internal
- *      function; TransitSummary already Redis-hydrates supply_chain:corridorrisk:v1
- *      on its own 10-min tick when its in-process copy is null, so the only
- *      change is that corridor data reaches transit summaries on the next
+ *      corridor-risk write. That merge is now the per-org
+ *      scripts/seed-transit-summaries.mjs cron (P14 Phase 2 tail, session 67),
+ *      which re-reads supply_chain:corridorrisk:v1 fresh on every 10-min --once
+ *      invocation — so corridor data reaches transit summaries on the next
  *      TransitSummary tick instead of instantly.
  *   2. Unlike ais-relay's long-lived process, this is a one-shot invocation, so
  *      the only dedup guard on the notification is the Redis-backed SETNX inside

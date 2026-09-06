@@ -4,12 +4,20 @@ import type {
   ListTelegramFeedRequest,
   ListTelegramFeedResponse,
 } from '../../../../src/generated/server/worldmonitor/intelligence/v1/service_server';
-import { getRelayBaseUrl, getRelayHeaders } from './_relay';
+import { getCachedJson } from '../../../_shared/redis';
 
-interface TelegramRelayMessage {
+// The Telegram feed used to be pulled live over HTTP from the AIS relay
+// (`${WS_RELAY_URL}/telegram/feed`). P14 Phase 2 tail / decision P18 moved the
+// MTProto poller out to the per-org `scripts/seed-telegram.mjs` `--once` job,
+// which writes a rolling window of the last N messages into this Redis key.
+// This handler now reads that key (mirror-aware via getCachedJson) and does
+// the topic/channel/limit filtering the relay's `GET /telegram` route did.
+const FEED_KEY = 'intelligence:telegram-feed:v1';
+
+interface TelegramFeedItem {
   id?: string | number;
-  channelId?: string | number;
   channel?: string;
+  channelId?: string | number;
   channelName?: string;
   channelTitle?: string;
   text?: string;
@@ -22,12 +30,11 @@ interface TelegramRelayMessage {
   topic?: string;
 }
 
-interface TelegramRelayResponse {
+interface TelegramFeedCache {
   enabled?: boolean;
-  messages?: TelegramRelayMessage[];
-  items?: TelegramRelayMessage[];
+  updatedAt?: string | null;
   count?: number;
-  error?: string;
+  items?: TelegramFeedItem[];
 }
 
 function toTimestampMs(value: string | number | undefined): number {
@@ -58,53 +65,54 @@ function toHttpUrl(value: unknown): string {
 }
 
 /**
- * ListTelegramFeed fetches OSINT messages from the Telegram relay.
+ * ListTelegramFeed serves OSINT messages from the mirrored
+ * `intelligence:telegram-feed:v1` rolling window (written by
+ * scripts/seed-telegram.mjs).
  */
 export const listTelegramFeed: IntelligenceServiceHandler['listTelegramFeed'] = async (
   _ctx: ServerContext,
   req: ListTelegramFeedRequest,
 ): Promise<ListTelegramFeedResponse> => {
-  const relayBaseUrl = getRelayBaseUrl();
-  if (!relayBaseUrl) {
-    return { enabled: false, messages: [], count: 0, error: 'WS_RELAY_URL not configured' };
-  }
-
-  const params = new URLSearchParams();
-  const limit = Math.max(1, Math.min(200, req.limit || 50));
-  params.set('limit', String(limit));
-  if (req.topic) params.set('topic', req.topic);
-  if (req.channel) params.set('channel', req.channel);
-
-  const url = `${relayBaseUrl}/telegram/feed?${params.toString()}`;
+  let cache: TelegramFeedCache | null;
   try {
-    const response = await fetch(url, {
-      headers: getRelayHeaders(),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) {
-      return { enabled: false, messages: [], count: 0, error: `Relay HTTP ${response.status}` };
-    }
-
-    const data = (await response.json()) as TelegramRelayResponse;
-    const relayMessages = Array.isArray(data.messages) ? data.messages : (data.items || []);
-    const messages = relayMessages.map((message) => ({
-      id: toText(message.id),
-      channelId: toText(message.channelId),
-      channelName: toText(message.channelName || message.channelTitle || message.channel),
-      text: toText(message.text),
-      timestampMs: toTimestampMs(message.timestampMs ?? message.timestamp ?? message.ts),
-      mediaUrls: Array.isArray(message.mediaUrls) ? message.mediaUrls.map(toHttpUrl).filter(Boolean) : [],
-      sourceUrl: toHttpUrl(message.sourceUrl || message.url),
-      topic: toText(message.topic),
-    }));
-
-    return {
-      enabled: data.enabled ?? true,
-      messages,
-      count: messages.length,
-      error: data.error || '',
-    };
+    cache = (await getCachedJson(FEED_KEY, true)) as TelegramFeedCache | null;
   } catch (error) {
-    return { enabled: false, messages: [], count: 0, error: String(error) };
+    return { enabled: false, messages: [], count: 0, error: `telegram feed unavailable: ${String(error)}` };
   }
+
+  if (!cache || !Array.isArray(cache.items)) {
+    // Key absent = the per-org Telegram poll job has not written yet (or is
+    // disabled). Not a hard error — a distinct "not synced" state.
+    return { enabled: false, messages: [], count: 0, error: 'telegram feed not synced' };
+  }
+
+  const limit = Math.max(1, Math.min(200, req.limit || 50));
+  const topic = (req.topic || '').trim().toLowerCase();
+  const channel = (req.channel || '').trim().toLowerCase();
+
+  const filtered = cache.items
+    .filter((item) => {
+      if (topic && String(item.topic || '').toLowerCase() !== topic) return false;
+      if (channel && String(item.channel || '').toLowerCase() !== channel) return false;
+      return true;
+    })
+    .slice(0, limit);
+
+  const messages = filtered.map((message) => ({
+    id: toText(message.id),
+    channelId: toText(message.channelId),
+    channelName: toText(message.channelName || message.channelTitle || message.channel),
+    text: toText(message.text),
+    timestampMs: toTimestampMs(message.timestampMs ?? message.timestamp ?? message.ts),
+    mediaUrls: Array.isArray(message.mediaUrls) ? message.mediaUrls.map(toHttpUrl).filter(Boolean) : [],
+    sourceUrl: toHttpUrl(message.sourceUrl || message.url),
+    topic: toText(message.topic),
+  }));
+
+  return {
+    enabled: cache.enabled ?? true,
+    messages,
+    count: messages.length,
+    error: '',
+  };
 };

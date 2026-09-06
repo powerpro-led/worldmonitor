@@ -1,10 +1,17 @@
 // @ts-check
-import { getRelayBaseUrl, getRelayHeaders, fetchWithTimeout, buildRelayResponse } from './_relay.js';
+import { readJsonFromUpstash } from './_upstash-json.js';
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import { jsonResponse } from './_json-response.js';
-import { captureSilentError } from './_sentry-edge.js';
 
 export const config = { runtime: 'edge' };
+
+// The Telegram feed was pulled live over HTTP from the AIS relay
+// (`${WS_RELAY_URL}/telegram/feed`). P14 Phase 2 tail / decision P18 moved the
+// MTProto poller to the per-org `scripts/seed-telegram.mjs` `--once` job, which
+// writes a rolling window of the last N messages into this Redis key. This
+// route now reads that key (sidecar/mirror-aware via readJsonFromUpstash) and
+// does the topic/channel/limit filtering the relay's `GET /telegram` route did.
+const FEED_KEY = 'intelligence:telegram-feed:v1';
 
 const EPOCH_ISO = new Date(0).toISOString();
 
@@ -167,63 +174,43 @@ export default async function handler(req) {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  const relayBaseUrl = getRelayBaseUrl();
-  if (!relayBaseUrl) {
-    return jsonResponse({ error: 'WS_RELAY_URL is not configured' }, 503, corsHeaders);
-  }
+  const url = new URL(req.url);
+  const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+  const topic = (url.searchParams.get('topic') || '').trim().toLowerCase();
+  const channel = (url.searchParams.get('channel') || '').trim().toLowerCase();
 
+  let cache;
   try {
-    const url = new URL(req.url);
-    const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
-    const topic = (url.searchParams.get('topic') || '').trim();
-    const channel = (url.searchParams.get('channel') || '').trim();
-    const params = new URLSearchParams();
-    params.set('limit', String(limit));
-    if (topic) params.set('topic', topic);
-    if (channel) params.set('channel', channel);
-
-    const relayUrl = `${relayBaseUrl}/telegram/feed?${params}`;
-    const response = await fetchWithTimeout(relayUrl, {
-      headers: getRelayHeaders({ Accept: 'application/json' }),
-    }, 15000);
-
-    const body = await response.text();
-
-    let cacheControl = 'public, max-age=30, s-maxage=120, stale-while-revalidate=60, stale-if-error=120';
-    if (!response.ok) {
-      return buildRelayResponse(response, body, {
-        'Cache-Control': 'no-store',
-        ...corsHeaders,
-      });
-    }
-
-    try {
-      const parsed = /** @type {RawTelegramFeedResponse} */ (JSON.parse(body));
-      const normalized = normalizeTelegramFeed(parsed);
-      if (normalized.count === 0) {
-        cacheControl = 'public, max-age=0, s-maxage=15, stale-while-revalidate=10';
-      }
-      return buildRelayResponse(response, JSON.stringify(normalized), {
-        'Cache-Control': cacheControl,
-        ...corsHeaders,
-      });
-    } catch (normalizeError) {
-      // Fall through to the raw relay body so a shape change upstream still
-      // serves data, but never silently: clients receive an un-normalized
-      // payload, which is a bug worth an alert.
-      console.warn('[telegram-feed] normalization failed:', normalizeError?.message || String(normalizeError));
-      void captureSilentError(normalizeError, { tags: { route: 'api/telegram-feed', step: 'normalize' } });
-    }
-
-    return buildRelayResponse(response, body, {
-      'Cache-Control': cacheControl,
-      ...corsHeaders,
-    });
+    cache = /** @type {RawTelegramFeedResponse | null} */ (await readJsonFromUpstash(FEED_KEY));
   } catch (error) {
-    const isTimeout = error?.name === 'AbortError';
     return jsonResponse({
-      error: isTimeout ? 'Relay timeout' : 'Relay request failed',
+      error: 'Telegram feed unavailable',
       details: error?.message || String(error),
-    }, isTimeout ? 504 : 502, { 'Cache-Control': 'no-store', ...corsHeaders });
+    }, 503, { 'Cache-Control': 'no-store', ...corsHeaders });
   }
+
+  const rawItems = cache && Array.isArray(cache.items) ? cache.items : [];
+  const filtered = rawItems
+    .filter((item) => {
+      if (topic && String(item.topic || '').toLowerCase() !== topic) return false;
+      if (channel && String(item.channel || '').toLowerCase() !== channel) return false;
+      return true;
+    })
+    .slice(0, limit);
+
+  const normalized = normalizeTelegramFeed({
+    source: 'telegram',
+    earlySignal: true,
+    // Key absent = the per-org Telegram poll job has not written yet (or is
+    // disabled) — a distinct "not synced" state, not a hard error.
+    enabled: cache ? cache.enabled !== false : false,
+    updatedAt: cache?.updatedAt ?? null,
+    items: filtered,
+  });
+
+  const cacheControl = normalized.count === 0
+    ? 'public, max-age=0, s-maxage=15, stale-while-revalidate=10'
+    : 'public, max-age=30, s-maxage=120, stale-while-revalidate=60, stale-if-error=120';
+
+  return jsonResponse(normalized, 200, { 'Cache-Control': cacheControl, ...corsHeaders });
 }

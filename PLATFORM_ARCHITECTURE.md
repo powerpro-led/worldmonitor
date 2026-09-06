@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-06 (session 64) — **P14 Phase 2: the Classify seed loop is out (25 of 27 gone).** `main` @ `<this doc commit>` (code `f05f7f3`, after `65417f9`; well ahead of `origin/main`, NOT pushed). The largest single loop in `ais-relay.cjs` — a **notification migration**, not a straight port. New **`scripts/seed-classify.mjs`** (**hand-rolled**, `export async function main()` + `acquireLockSafely`, NOT `runSeed` — the loop writes N individual `classify:sebuf:v6:<hash>` cache keys, a *conditional* `news:threat:summary:v1` canonical, and emits `rss_alert` notifications mid-run per LLM batch; none of that fits `runSeed`'s one-canonical-key model and its ~12-min inter-variant stagger blows the ~4-min fetch-phase deadline). Ported verbatim: the `rss_alert` `publishNotificationEvent` (inline-Upstash LPUSH+SETNX copy from `seed-corridor-risk.mjs`, `surface: 'seed-classify'`, importanceScore recomputed from the post-LLM level), the whole `relay*` importance-score block (`relayComputeImportanceScore` + `RELAY_SOURCE_TIERS` + diplomacy/flashpoint keyword tables), the `THREAT_COUNTRY_*` attribution tables + `matchCountryNamesInText`, `classifyCacheKey` (`classify:sebuf:v6:`), and the `CLASSIFY_LLM_PROVIDERS` ollama→openrouter→groq chain. **Deviations:** `classifyInFlight` module flag → a 20-min Redis lock (`news:classify`) so a 15-min tick that overruns is skipped; `news:threat:summary:v1` write via `atomicPublish` (adds the sync-notify nudge) with TTL raised **1200s→7200s** to clear `api/health.js`'s `newsThreatSummary.maxStaleMin` (60min) strictly per `tests/seed-ttl-outlives-staleness-fleet.test.mjs`; **`seed-meta:classify` dropped** — grep found no reader outside the relay's own boot gate (`seed-meta:news:threat-summary` still written, unconditionally, every run). `-671` lines from `ais-relay.cjs` (also deleted: the now-orphan `upstashMGet`; **KEPT**: `publishNotificationEvent` + `upstashSetNx/Lpush/Del` + the `@notification-source: domain` header — still used by the OREF `oref_siren` producer). `RELAY_GATES_READY` now read by the cron. New `scripts/railway-services.json` + `gcp/scheduler/main.ts` `CADENCES` entry (`every 15 minutes`). Tests: `relay-importance-recompute.test.mjs` → renamed `classify-importance-recompute.test.mjs` + retargeted; `importance-score-parity` + `diplomacy-keywords-parity` + `news-classify-cache-prefix-audit` retargeted from `ais-relay.cjs` to `seed-classify.mjs`; `notification-relay-payload-audit` PRODUCER_FILES +1; `relay-boot-seed-freshness-guard` SEEDERS −1 (+ its "every seed loop routes through startBootSeedLoop" test relaxed — zero named wrapper functions is now the expected state, Transit/TransitSummary call `startBootSeedLoop` inline). `tsc --noEmit` + `typecheck:api` + `biome` + `lint:boundaries` clean; full `test:data` run **twice** on-branch + diffed name-for-name against a clean `65417f9` `git stash -u` baseline (run twice) — **0 new regressions** (`readBootstrapTierObject` is the ±1/run `cancelledByParent` flake — flipped in/out of the *baseline* itself across the two runs; `railway-registry` / `nixpacks-import-graph` / `no-escape-import` = the documented pre-existing `process-*-tasks`/`scenario-worker` Dockerfile set). Live-smoke-tested against prod Upstash (`APP_DOMAIN=worldmonitor.app`). **Remaining 2 loops:** Transit + TransitSummary — blocked on the in-process-AIS decision below (operator's call). Oref stays (real-time poller, WS-core/Telegram extraction, blocked on cross-org-secrets).
 - **As of:** 2026-09-06 (session 63, later-3) — **P14 Phase 2: the Market seed loop is out (24 of 27 gone).** `main` @ `<pending doc commit>` (after `a8f6c64`; well ahead of `origin/main`, NOT pushed). `seedAllMarketData` was a 9-way bundle — 8 sub-seeds already had standalone/bundle coverage, so extracting the 9th (`seedSectorSummary` → new **`scripts/seed-sector-summary.mjs`**, `runSeed`, `every 15min`, `e91333c`) unblocked deleting the whole loop: **`a8f6c64`, −1064 lines** from `ais-relay.cjs` (9 `seedXxx` fns + `seedAllMarketData`/`Once` + `startMarketDataSeedLoop` + the equity trading-day gate + the entire Yahoo crumb/chart/curl-proxy stack + `fetchYahooChartDirect` + `fetchFinnhubQuoteDirect` + `parseSectorValuation` + `CHINA_COUNTRY_STOCK_SYMBOL` + the `./shared/market-*.cjs` / `./_country-stock-index.mjs` require()s). **NOT a straight port — it published `market_alert` notifications** (equity/commodity/crypto moves; the S61 "Market: investigated, left alone" note never audited its `publishNotificationEvent` calls). Caught on the regression diff by `notification-relay-coalesce-key.test.mjs` — the exact trap the standing rules warn about. Ported to a new **`scripts/shared/market-alert-coalesce-key.cjs`** (`marketAlertCoalesceKey` verbatim) + new **`scripts/shared/market-alert-notify.mjs`** (one shared `dispatchMarketAlerts()` publisher — 3 call sites, so it lives once) invoked from each of the 3 market seeds' `afterPublish` with its own thresholds (equity/commodity ≥5%/crit ≥10%, crypto ≥10%/crit ≥20%; top 3 by |move|; `dedupTtl 3600`); all 3 tagged `@notification-source: domain`. Fallout: `Dockerfile.relay` −4 dead COPYs; `.env.example` −`DISABLE_RELAY_MARKET_SEED`/`MARKET_YAHOO_REFRESH_INTERVAL_MS`. 9 test files retargeted from source-grepping the deleted relay market code to the standalone seeds / new shared modules; `relay-boot-seed-freshness-guard` SEEDERS −1. `tsc --noEmit` + `typecheck:api` + `biome` + `lint-boundaries` clean; full `test:data` run **twice** on-branch + diffed name-for-name against a clean `ee013e3` `git stash -u` baseline — **0 new regressions** (`readBootstrapTierObject` is the ±1/run `cancelledByParent` flake; `railway-registry` / `nixpacks-import-graph` / `no-escape-import` are the documented pre-existing `process-*-tasks`/`scenario-worker` Dockerfile failures). **Remaining 3 loops:** Classify (notification tier + ~400-line dependency port, own session); Transit + TransitSummary (blocked on the in-process-AIS decision below — operator's call). Oref stays (real-time poller, WS-core/Telegram extraction, blocked on cross-org-secrets).
 - **As of:** 2026-09-05 (session 63, later-2) — **P14 Phase 2: CorridorRisk + ShippingStress notification migration done (23 of 27 gone).** `main` @ `886d295` (after `ee013e3`; well ahead of `origin/main`, NOT pushed). Both loops published notifications → same UCDP/Weather treatment: the `>=50`-score `corridor_risk` and `>=75`-score `shipping_stress` publishers moved to the new standalone crons with the Redis data. No standalone sibling existed for either → each a new `scripts/seed-*.mjs` on the `runSeed` contract + an `afterPublish` hook carrying the publisher (inline-Upstash `publishNotificationEvent` copied from `seed-weather-alerts.mjs`) + `railway-services.json` + `CADENCES` entry. **`seed-corridor-risk.mjs`** — fetch/Cloudflare-guard/`CORRIDOR_RISK_NAME_MAP`/risk-level derivation verbatim; `every 1h`; TTL 14400 already clears the 120-min health gate (**no ratchet bump this time** — the `seed-ttl-outlives-staleness-fleet` trap that bit USNI/PizzINT/PositiveEvents was checked and both keys pass). **`seed-shipping-stress.mjs`** — carrier basket + `40 - avgChange*3` score verbatim; Yahoo fetch now via the shared `scripts/_yahoo-fetch.mjs` + `parseYahooChart` (not ais-relay's `fetchYahooChartDirect`, which stays for the Market loop); the relay's 20-min `setTimeout` retry dropped → `runSeed` RETRY-on-empty + next 15-min tick; TTL 3600 clears the 45-min gate. **KEPT in `ais-relay.cjs`:** `CORRIDOR_RISK_REDIS_KEY` + `latestCorridorRiskData` — the relay-local TransitSummary loop (consumes the live AIS `chokepointCrossings` Map) Redis-hydrates `supply_chain:corridorrisk:v1` on its own 10-min tick, so corridor data still reaches transit summaries — just not instantly (the relay used to kick `seedTransitSummaries()` straight from `seedCorridorRisk`). `-206` lines from `ais-relay.cjs`; every deleted identifier grepped repo-wide (only test files referenced them). Tests: `relay-boot-seed-freshness-guard` SEEDERS −2; `notification-relay-payload-audit` PRODUCER_FILES +2; `corridorrisk-upstream` + `transit-summaries` retargeted the `seedCorridorRisk` assertions to the new file. `tsc --noEmit` + `typecheck:api` + `biome` + `lint-boundaries` clean; full `test:data` diffed name-for-name against a clean `ee013e3` in-place checkout — **identical 25-name failure set, 0 new regressions** (`railway-registry`/`nixpacks-import-graph`/`no-escape-import` = the documented pre-existing set, all about `process-*-tasks`/`scenario-worker` Dockerfiles; `readBootstrapTierObject` = the known flake). **Remaining 4 loops:** Classify (notification tier + ~400-line dependency port, own session); Transit + TransitSummary (blocked on the in-process-AIS decision below — operator's call); Market (needs `seed-sector-summary.mjs` first). Oref stays (real-time poller, WS-core/Telegram extraction, blocked on cross-org-secrets).
 - **As of:** 2026-09-05 (session 63, later) — **P14 Phase 2: 3 rate-limited ports out of `ais-relay.cjs` (21 of 27 gone).** `main` @ `<pending doc commit>` (after `aa8ef32`). **PositiveEvents** → `scripts/seed-positive-events.mjs` (`fe5de39`) — GDELT GKG GeoJSON; the loop's hand-rolled `setTimeout(5_500)` between the 6 theme queries replaced by `_gdelt-fetch.mjs`'s cross-process rate gate (`GDELT_RATE_WINDOW_MS = 5_500` — same floor, now coordinated with the 3 other GDELT seeders + adds the direct→proxy fallback the raw `https.get` lacked); TTL raised 2700→4500 (75min) to clear the 60-min staleness gate the relay's 45-min TTL was silently under; `every 15 minutes`. **WsbTickers** → `scripts/seed-wsb-tickers.mjs` (`aa8ef32`) — `runSeed` contract, ticker regexes/blacklist/aggregation verbatim, reads `market:stocks-bootstrap:v1`; `every 3h`. **SocialVelocity** → `scripts/seed-social-velocity.mjs` (`aa8ef32`) — **hand-rolled** (`export async function main()` + guard, like `seed-gas-storage-countries.mjs`), NOT `runSeed`, because it keeps the bespoke `status:'ok'/'error'` + `errorReason` seed-meta that `api/health.js` classifyKey reads to raise SEED_ERROR immediately on a Reddit fetch failure (no `runSeed` equivalent); canonical write via `atomicPublish`; `every 3h`. **New `scripts/_reddit-hot.cjs`** — the "Reddit data fetch" block (ScrapeCreators→OAuth→public, token single-flight+cooldown, `_normalizeVendorPost`) ported verbatim, `require`d by both. 3 test files retargeted from source-grepping `ais-relay.cjs` (`positive-events-seed-failure`, `social-velocity-seed-health`, `reddit-oauth-fetch`); `relay-boot-seed-freshness-guard` SEEDERS −3. `tsc --noEmit` clean repo-wide; full `test:data` diffed name-for-name against **two** `9bf6bf3` in-place baseline runs — **union of branch failures ⊆ union of baseline failures, 0 new** (the suite flakes ~1 name/run: `readBootstrapTierObject` — a `cancelledByParent` timing flake whose test + module are byte-identical across the diff — and `renewable energy last-known-good` flip in and out on both trees). **Remaining 6 loops:** CorridorRisk + ShippingStress (notification migration, full UCDP/Weather treatment — next); Classify (notification tier + ~400-line dependency port, own session); Transit + TransitSummary (blocked on the in-process-AIS decision below — operator's call); Market (needs `seed-sector-summary.mjs` first). Oref stays (real-time poller, WS-core/Telegram extraction, blocked on cross-org-secrets).
@@ -336,6 +337,98 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 64 — 2026-09-06
+
+**P14 Phase 2 — Classify loop extracted (25 of 27 gone).** The item S63 kept
+flagging as "own session — largest loop, notification + ~400-line dependency
+port." Executed as a notification migration, same family as UCDP / Weather /
+CorridorRisk / ShippingStress / Market.
+
+- **New `scripts/seed-classify.mjs` — hand-rolled, not `runSeed`.** The loop's
+  real output is (a) N per-title `classify:sebuf:v6:<hash>` cache keys, (b) a
+  *conditional* `news:threat:summary:v1` canonical (skipped when a run produces
+  zero country matches), (c) `seed-meta:news:threat-summary` (unconditional),
+  and (d) `rss_alert` notifications emitted mid-run, per LLM batch, for every
+  `critical`/`high` classification. None of that maps onto `runSeed`'s
+  one-canonical-key + `afterPublish` model, and the 5-variant loop's 4×3-min
+  inter-variant stagger (~12-min wall time) far exceeds `runSeed`'s ~4-min
+  fetch-phase deadline. Modeled on `scripts/seed-social-velocity.mjs`
+  (`export async function main()` + `acquireLockSafely` + direct-run guard).
+- **Ported verbatim:** `publishNotificationEvent` (inline-Upstash LPUSH+SETNX,
+  the same copy `seed-corridor-risk.mjs` carries — `surface: 'seed-classify'`,
+  `buildDedupMaterial`/`recordDedupOutcome` from
+  `scripts/shared/notification-dedup.cjs`), the whole `relay*` importance-score
+  block (`relayComputeImportanceScore` + `RELAY_SOURCE_TIERS` +
+  `RELAY_DIPLOMACY_*`/`RELAY_FLASHPOINT_*` tables +
+  `relayHasDiplomacyFlashpointSignal` etc.), `RELAY_GATES_READY` +
+  `RELAY_RECENCY_MS` tier-4/recency publish gates, `THREAT_COUNTRY_NAME_TO_ISO2`
+  + `THREAT_COUNTRY_NAME_ENTRIES` + `AFFECTED_PREFIX_RE` +
+  `matchCountryNamesInText`, `classifyCacheKey` (`classify:sebuf:v6:`, kept
+  byte-identical so `news-classify-cache-prefix-audit` still passes),
+  `CLASSIFY_LLM_PROVIDERS` (ollama→openrouter→groq) + `classifyFetchLlm[Single]`,
+  and the `seedClassifyForVariant` / `seedClassify` loop bodies. Identifier
+  names kept as-is (`relay*`) so `importance-score-parity` can still eval the
+  scorer out of the source by name.
+- **Deviations:** (1) `classifyInFlight` module flag → a 20-min Redis lock on
+  `news:classify` so a 15-min tick that overruns skips instead of doubling.
+  (2) `news:threat:summary:v1` write via `atomicPublish` (bare `envelopeWrite`
+  in the relay) — adds the fast-path `sync-notify` nudge. (3) Canonical TTL
+  raised **1200s → 7200s**: `1200` was a relay-cadence artifact and the relay
+  is exempt from `tests/seed-ttl-outlives-staleness-fleet.test.mjs`, which
+  requires `ttlSeconds` STRICTLY `> maxStaleMin*60` — `newsThreatSummary.maxStaleMin`
+  is 60 → 3600, so 7200 clears it. Checked up front, did not recur. (4)
+  **`seed-meta:classify` dropped** — repo-wide grep found no reader outside the
+  relay's own `startBootSeedLoop` freshness gate; not in `api/health.js`'s
+  `SEED_META`. `seed-meta:news:threat-summary` is still written every run
+  (health treats `newsThreatSummary` as EMPTY-tolerant but STALE-sensitive).
+- **`scripts/ais-relay.cjs` — `-671` lines.** Deleted the whole Classify block
+  (~1610–2223) + the `startClassifySeedLoop()` boot call + the now-orphan
+  `upstashMGet` (grep-confirmed: Classify was its only caller; `envelopeWrite`
+  stays — OREF + Transit + TransitSummary still use it). **KEPT:**
+  `publishNotificationEvent` + `upstashSetNx`/`upstashLpush`/`upstashDel` +
+  `notifySimpleHash` + the `notification-dedup.cjs` require + the
+  `@notification-source: domain` file header — all still live for the OREF
+  `oref_siren` producer at ~1250.
+- **Registration:** `scripts/railway-services.json` + `gcp/scheduler/main.ts`
+  `CADENCES` — `seed-classify` `every 15 minutes`.
+- **Tests:** `tests/relay-importance-recompute.test.mjs` →
+  `git mv` `tests/classify-importance-recompute.test.mjs` + retargeted to
+  `seed-classify.mjs`; `importance-score-parity` + `diplomacy-keywords-parity`
+  (`RELAY_*` literal drift guard) + `news-classify-cache-prefix-audit`
+  retargeted from `ais-relay.cjs` to `seed-classify.mjs`;
+  `notification-relay-payload-audit` PRODUCER_FILES `+1` (`seed-classify.mjs`,
+  `domain`); `relay-boot-seed-freshness-guard` SEEDERS `-1` and its "every
+  seed/warm-ping loop routes through `startBootSeedLoop`" test relaxed — with
+  Classify gone there are **zero** named `start*SeedLoop` wrapper functions
+  left in the relay (Transit/TransitSummary call `startBootSeedLoop` inline),
+  so an empty match list is now the expected state, not a regex-matched-nothing
+  bug. The two `deepEqual([])` checks below still catch any wrapper that comes
+  back ungated.
+- **Two real retargets the baseline diff caught that the plan under-scoped:**
+  `diplomacy-keywords-parity.test.mjs`'s `scripts/ais-relay.cjs RELAY_* literals
+  match canonical JSON` case (the `RELAY_DIPLOMACY_KEYWORDS` /
+  `RELAY_FLASHPOINT_SCORING_KEYWORDS` / `RELAY_DIPLOMACY_FLASHPOINT_PAIRS`
+  literals moved to `seed-classify.mjs`) and the `relay-boot-seed-freshness-guard`
+  wrapper-function assertion above. Neither was in the targeted-test list;
+  only the full `test:data` name-diff surfaced them.
+- **Verification:** `tsc --noEmit` (repo-wide) + `typecheck:api` + `biome check`
+  (10 touched files) + `lint:boundaries` — all clean. Full `test:data` run
+  **twice on-branch** + **twice on a clean `65417f9` `git stash -u` baseline**,
+  failing-test names diffed — **0 new regressions**. `readBootstrapTierObject`
+  is the known `cancelledByParent` ±1/run flake (absent in baseline run 1,
+  present in baseline run 2 — the flake is in the baseline, not the branch).
+  `railway-registry` / `nixpacks-import-graph` / `no-escape-import` are the
+  documented pre-existing `process-*-tasks`/`scenario-worker` Dockerfile
+  failures. Live-smoke-tested: `APP_DOMAIN=worldmonitor.app node --env-file=.env
+  scripts/seed-classify.mjs` against prod Upstash.
+- **Remaining 2 loops:** Transit + TransitSummary — both consume
+  `chokepointCrossings`, the in-process Map fed by the relay's live AIS
+  WebSocket. Blocked on the operator decision (leave in the relay, or the relay
+  periodically flushes the Map to a Redis key a standalone reads). After that:
+  WS-core + Telegram-poller extraction (blocked on cross-org-secrets), the 21
+  direct-fetch handlers + 9 shared modules, then `cloudFallback`. `v2.13.0`
+  still on hold (P12).
 
 ### Session 63 — 2026-09-05
 

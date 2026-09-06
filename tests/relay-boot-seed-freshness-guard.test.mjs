@@ -179,7 +179,12 @@ test('startBootSeedLoop waits the remaining freshness window before first skippe
 // exact-string match pins all four arguments so a future edit can't silently
 // drift the meta key or interval and re-open the boot-abuse hole.
 const SEEDERS = [
-  ['Market', "'seed-meta:market:stocks'", 'MARKET_SEED_INTERVAL_MS', 'seedAllMarketData'],
+  // Market (seedAllMarketData, a 9-way bundle) was removed in P14 Phase 2
+  // (session 63 — see PLATFORM_ARCHITECTURE.md). Every sub-seed now has an
+  // independent cron: seed-market-quotes.mjs (+ China index + equity gate),
+  // seed-commodity-quotes.mjs, seed-sector-summary.mjs (the last piece with no
+  // prior standalone), seed-crypto-sectors.mjs, and gulf/etf/crypto/
+  // stablecoins/token-panels via seed-bundle-market-backup.mjs.
   ['Classify', "'seed-meta:classify'", 'CLASSIFY_SEED_INTERVAL_MS', 'seedClassify'],
   // The four internal RPC warm-pings that used to be gated here (CII 8m,
   // Chokepoints 30m, CableHealth 30m, TemporalAnomalies 15m) were

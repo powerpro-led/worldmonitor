@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 
+/**
+ * @notification-source: domain
+ *   The market_alert notifications published from afterPublish build
+ *   payload.title from structured quote fields (symbol + rounded % move). NOT
+ *   RSS-origin; MUST NOT set payload.description. Enforced by
+ *   tests/notification-relay-payload-audit.test.mjs. The publisher moved here
+ *   from ais-relay.cjs's seedMarketQuotes when the Market loop was decomposed
+ *   in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md).
+ */
+
 import { loadEnvFile, loadSharedConfig, sleep, CHROME_UA, runSeed, parseYahooChart, writeExtraKey, extendExistingTtl, readCanonicalEnvelopeMeta, readSeedSnapshot, writeFreshnessMetadata } from './_seed-utils.mjs';
 import { fetchYahooJson } from './_yahoo-fetch.mjs';
+import { dispatchMarketAlerts } from './shared/market-alert-notify.mjs';
 import { fetchAvBulkQuotes } from './_shared-av.mjs';
 import { fetchInfowayBulkQuotes } from './_shared-infoway.mjs';
 import { CHINA_COUNTRY_STOCK_INDEX_KEY, buildCountryStockIndexSnapshot } from './_country-stock-index.mjs';
@@ -212,6 +223,16 @@ runSeed('market', 'stocks', CANONICAL_KEY, fetchMarketQuotes, {
     // runSeed exits the process on success; required companion writes must be
     // awaited here so the RPC key is published before the terminal exit.
     await writeRequiredCompanionKeys(data);
+    // market_alert: equity moves >= 5% (critical at >= 10%), top 3 by |move|.
+    // Ported verbatim from ais-relay.cjs's seedMarketQuotes.
+    await dispatchMarketAlerts({
+      quotes: data.quotes,
+      assetClass: 'equity',
+      source: 'Equity Market',
+      surface: 'seed-market-quotes',
+      moveThreshold: 5,
+      criticalThreshold: 10,
+    });
   },
 }).catch((err) => {
   const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);

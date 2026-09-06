@@ -62,16 +62,16 @@ describe('market quote refresh resilience', () => {
     }).symbols, ['^GSPC', 'AAPL', 'MSFT']);
   });
 
-  it('wires last-good merging into both market publishers', () => {
-    const relay = readFileSync(new URL('../scripts/ais-relay.cjs', import.meta.url), 'utf8');
+  it('wires last-good merging into the standalone market publisher', () => {
+    // ais-relay.cjs's seedMarketQuotes (the second publisher this test used to
+    // assert against) was removed with the whole Market loop in P14 Phase 2
+    // (session 63 — see PLATFORM_ARCHITECTURE.md). scripts/seed-market-quotes.mjs
+    // is now the sole publisher; its 30-min cron cadence provides the Yahoo
+    // refresh bound the relay's planYahooRefresh / MARKET_YAHOO_REFRESH_INTERVAL_MS
+    // used to provide inside a 5-min loop, so that knob is no longer wired.
     const standalone = readFileSync(new URL('../scripts/seed-market-quotes.mjs', import.meta.url), 'utf8');
-    const envExample = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 
-    assert.match(relay, /previousPayloadPromise = envelopeRead\('market:stocks-bootstrap:v1'\)/);
-    assert.match(relay, /mergeLastGoodQuotes\(MARKET_SYMBOLS, freshQuotes, previousQuotes\)/);
-    assert.match(relay, /MARKET_YAHOO_REFRESH_INTERVAL_MS/);
     assert.match(standalone, /previousPayloadPromise = readSeedSnapshot\(CANONICAL_KEY\)/);
     assert.match(standalone, /mergeLastGoodQuotes\(MARKET_SYMBOLS, quotes, previousQuotes\)/);
-    assert.match(envExample, /MARKET_YAHOO_REFRESH_INTERVAL_MS=/);
   });
 });

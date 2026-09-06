@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 
+/**
+ * @notification-source: domain
+ *   The market_alert notifications published from afterPublish build
+ *   payload.title from structured quote fields (symbol + rounded % move). NOT
+ *   RSS-origin; MUST NOT set payload.description. Enforced by
+ *   tests/notification-relay-payload-audit.test.mjs. Ported from ais-relay.cjs's
+ *   seedCryptoQuotes (P14 Phase 2, session 63 — see PLATFORM_ARCHITECTURE.md).
+ */
+
 import { loadEnvFile, loadSharedConfig, CHROME_UA, runSeed, sleep, fetchCoinPaprikaTickersById, coingeckoEndpoint } from './_seed-utils.mjs';
+import { dispatchMarketAlerts } from './shared/market-alert-notify.mjs';
 
 const cryptoConfig = loadSharedConfig('crypto.json');
 
@@ -139,6 +149,19 @@ runSeed('market', 'crypto', CANONICAL_KEY, fetchCryptoQuotes, {
   declareRecords,
   schemaVersion: 1,
   maxStaleMin: 30,
+  afterPublish: async (data) => {
+    // market_alert: crypto moves >= 10% (critical at >= 20%), top 3 by |move|.
+    // Ported verbatim from ais-relay.cjs's seedCryptoQuotes — higher thresholds
+    // than equity/commodity because 24/7 crypto is routinely more volatile.
+    await dispatchMarketAlerts({
+      quotes: data.quotes,
+      assetClass: 'crypto',
+      source: 'Crypto Market',
+      surface: 'seed-crypto-quotes',
+      moveThreshold: 10,
+      criticalThreshold: 20,
+    });
+  },
 }).catch((err) => {
   const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);

@@ -34,6 +34,17 @@ const seedUcdpEventsSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'seed
 const regionalAlertEmitterSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'regional-snapshot', 'alert-emitter.mjs'), 'utf-8');
 const notificationDedupSrc = readFileSync(resolve(__dirname, '..', 'scripts', 'shared', 'notification-dedup.cjs'), 'utf-8');
 const notificationDedup = require('../scripts/shared/notification-dedup.cjs');
+// market_alert publishing moved out of ais-relay.cjs with the Market seed loop
+// in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md). The coalesce
+// helper is now shared; the single publisher is in market-alert-notify.mjs and
+// is invoked from each of the three market seed crons' afterPublish.
+const marketAlertCoalesceKeySrc = readFileSync(resolve(__dirname, '..', 'scripts', 'shared', 'market-alert-coalesce-key.cjs'), 'utf-8');
+const marketAlertNotifySrc = readFileSync(resolve(__dirname, '..', 'scripts', 'shared', 'market-alert-notify.mjs'), 'utf-8');
+const marketSeedSrcs = [
+  readFileSync(resolve(__dirname, '..', 'scripts', 'seed-market-quotes.mjs'), 'utf-8'),
+  readFileSync(resolve(__dirname, '..', 'scripts', 'seed-commodity-quotes.mjs'), 'utf-8'),
+  readFileSync(resolve(__dirname, '..', 'scripts', 'seed-crypto-quotes.mjs'), 'utf-8'),
+];
 
 describe('notification-relay checkDedup — Slot B coalesce key', () => {
   it('checkDedup signature accepts an optional coalesceKey parameter', () => {
@@ -301,12 +312,12 @@ describe('ais-relay publishNotificationEvent — Slot B publisher dedup', () => 
 describe('market alert producer — asset-family coalesce key', () => {
   it('defines a stable market alert coalesce helper', () => {
     assert.match(
-      aisRelaySrc,
+      marketAlertCoalesceKeySrc,
       /function marketAlertCoalesceKey\(assetClass,\s*identifier,\s*direction,\s*severity\)/,
       'market alerts must build hidden family keys rather than deduping on the rounded subject',
     );
     assert.match(
-      aisRelaySrc,
+      marketAlertCoalesceKeySrc,
       /return `market:\$\{assetClass\}:\$\{stableIdentifier\}:\$\{direction\}:\$\{severity\}`/,
       'market coalesce key must separate asset class, instrument, direction, and severity band',
     );
@@ -315,21 +326,27 @@ describe('market alert producer — asset-family coalesce key', () => {
     // below re-derives this logic inline, so without this assertion the two
     // could drift together silently. PR #4985 review finding #4.
     assert.match(
-      aisRelaySrc,
+      marketAlertCoalesceKeySrc,
       /const stableIdentifier = String\(identifier \|\| 'unknown'\)\.trim\(\)\.toLowerCase\(\)/,
       'market coalesce key must normalize identifier: fallback to unknown, then trim + lowercase',
     );
   });
 
-  it('all market_alert publishers pass coalesceKey through the payload', () => {
-    const marketBlocks = [...aisRelaySrc.matchAll(/eventType:\s*'market_alert'[\s\S]*?dedupTtl:\s*3600,/g)].map(m => m[0]);
-    assert.equal(marketBlocks.length, 3, 'expected equity, commodity, and crypto market_alert producers');
-    for (const block of marketBlocks) {
-      assert.match(
-        block,
-        /coalesceKey:\s*marketAlertCoalesceKey\(/,
-        `market_alert block must pass coalesceKey:\n${block}`,
-      );
+  it('the single market_alert publisher passes coalesceKey through the payload', () => {
+    const block = marketAlertNotifySrc.match(/eventType:\s*'market_alert'[\s\S]*?dedupTtl:\s*3600,/);
+    assert.ok(block, 'market-alert-notify.mjs must contain a market_alert publish block');
+    assert.match(
+      block[0],
+      /coalesceKey:\s*marketAlertCoalesceKey\(/,
+      `market_alert block must pass coalesceKey:\n${block[0]}`,
+    );
+  });
+
+  it('every market seed cron dispatches through the shared publisher', () => {
+    assert.equal(marketSeedSrcs.length, 3, 'expected equity, commodity, and crypto market seed crons');
+    for (const src of marketSeedSrcs) {
+      assert.match(src, /import \{ dispatchMarketAlerts \} from '\.\/shared\/market-alert-notify\.mjs'/);
+      assert.match(src, /await dispatchMarketAlerts\(\{/);
     }
   });
 

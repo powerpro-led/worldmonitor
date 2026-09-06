@@ -34,6 +34,10 @@ const PRODUCER_FILES = [
   { path: 'scripts/seed-weather-alerts.mjs',            expected: 'domain' },
   { path: 'scripts/seed-corridor-risk.mjs',             expected: 'domain' },
   { path: 'scripts/seed-shipping-stress.mjs',           expected: 'domain' },
+  { path: 'scripts/shared/market-alert-notify.mjs',     expected: 'domain' },
+  { path: 'scripts/seed-market-quotes.mjs',             expected: 'domain' },
+  { path: 'scripts/seed-commodity-quotes.mjs',          expected: 'domain' },
+  { path: 'scripts/seed-crypto-quotes.mjs',             expected: 'domain' },
   { path: 'scripts/regional-snapshot/alert-emitter.mjs', expected: 'domain' },
   // Browser-side RSS producer
   { path: 'src/services/breaking-news-alerts.ts',       expected: 'rss' },

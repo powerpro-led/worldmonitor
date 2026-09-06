@@ -121,18 +121,11 @@ describe('closed-market seeding gates (source-textual, #4922d)', () => {
     assert.match(src, /process\.exit\(0\)/, 'closed-market skip is exit 0, never 75');
   });
 
-  it('ais-relay gates the equity block only, with a state-transition log', () => {
-    const src = readSrc('scripts/ais-relay.cjs');
-    assert.match(src, /require\('\.\/shared\/market-hours\.cjs'\)/);
-    assert.match(src, /isMultiMarketEquityTradingDay\(/);
-    assert.match(src, /if \(_marketSeedRun\)/, 'overlong market refreshes must not overlap');
-    // crypto is 24/7 — its seeding call must not sit behind the equity gate
-    assert.match(src, /const cr = await seedCryptoQuotes\(\);/);
-  });
-
-  it('Dockerfile.relay COPYs the new shared helper (scripts/shared/ is copied per-file)', () => {
-    const src = readSrc('Dockerfile.relay');
-    assert.match(src, /COPY scripts\/shared\/closed-market-equity-maintenance\.cjs \.\/scripts\/shared\/closed-market-equity-maintenance\.cjs/);
-    assert.match(src, /COPY scripts\/shared\/market-hours\.cjs \.\/scripts\/shared\/market-hours\.cjs/);
-  });
+  // The relay-side equity gate (require('./shared/market-hours.cjs') +
+  // isMultiMarketEquityTradingDay + the _marketSeedRun overlap guard + the
+  // crypto-outside-the-gate ordering) was deleted with the whole ais-relay.cjs
+  // Market loop in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md), and
+  // Dockerfile.relay no longer COPYs market-hours.cjs /
+  // closed-market-equity-maintenance.cjs. The gate now lives only in
+  // scripts/seed-market-quotes.mjs — asserted by the block above.
 });

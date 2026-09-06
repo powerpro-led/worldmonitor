@@ -69,14 +69,7 @@ test('the Railway market seed maintains the China cache alongside its public sto
   assert.doesNotMatch(handlerSource, /const REDIS_CACHE_KEY = 'market:stock-index:v1';/);
 });
 
-test('the live AIS relay writes the China index only from a fresh one-month Yahoo chart', () => {
-  const source = readFileSync(new URL('../scripts/ais-relay.cjs', import.meta.url), 'utf8');
-
-  assert.match(source, /import\('\.\/_country-stock-index\.mjs'\)/);
-  assert.match(source, /fetchYahooChartDirect\(CHINA_COUNTRY_STOCK_SYMBOL, '\?range=1mo&interval=1d'\)/);
-  assert.match(source, /freshQuotes\.some\(\(quote\) => quote\.symbol === CHINA_COUNTRY_STOCK_SYMBOL\)/);
-  assert.match(source, /upstashSet\(CHINA_COUNTRY_STOCK_INDEX_KEY, snapshot, MARKET_SEED_TTL\)/);
-  assert.match(source, /CHINA_COUNTRY_STOCK_INDEX_KEY,\s*\n\s*buildCountryStockIndexSnapshotFromCloses,/);
-  assert.doesNotMatch(source, /const CHINA_COUNTRY_STOCK_INDEX_KEY = 'market:stock-index:v1:CN';/);
-  assert.match(source, /preserveKeys:\s*\[CHINA_COUNTRY_STOCK_INDEX_KEY\]/);
-});
+// The relay-side China-index writer was deleted with the whole ais-relay.cjs
+// Market loop in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md). Its
+// behavior now lives only in scripts/seed-market-quotes.mjs, covered by the
+// "Railway market seed maintains the China cache" test above.

@@ -43,15 +43,10 @@ COPY scripts/shared/iso2-to-region.json ./scripts/shared/iso2-to-region.json
 # (Slot B dedup-material helper, #4985). Missing it = ERR_MODULE_NOT_FOUND at
 # relay startup. Guarded by tests/dockerfile-relay-imports.test.mjs.
 COPY scripts/shared/notification-dedup.cjs ./scripts/shared/notification-dedup.cjs
-# market-hours.cjs gates the equity portion of the relay market seed loop on
-# the US-equity session (#4922d). Missing it = ERR_MODULE_NOT_FOUND at startup.
-COPY scripts/shared/market-hours.cjs ./scripts/shared/market-hours.cjs
-# market-quote-refresh.cjs prevents partial upstream success from shrinking the
-# bootstrap basket and bounds Yahoo fallback cadence.
-COPY scripts/shared/market-quote-refresh.cjs ./scripts/shared/market-quote-refresh.cjs
-# closed-market-equity-maintenance.cjs keeps the closed-market TTL refresh
-# logic importable/testable for ais-relay.cjs. Missing it = startup crash.
-COPY scripts/shared/closed-market-equity-maintenance.cjs ./scripts/shared/closed-market-equity-maintenance.cjs
+# market-hours.cjs / market-quote-refresh.cjs / closed-market-equity-maintenance.cjs
+# were required only by the relay's inline Market seed loop, decomposed into
+# standalone crons in P14 Phase 2 (session 63 — see PLATFORM_ARCHITECTURE.md).
+# They now ship only with scripts/seed-market-quotes.mjs et al., not this image.
 COPY scripts/_seed-utils.mjs ./scripts/_seed-utils.mjs
 # sync-domains.mjs is transitively imported by _seed-utils.mjs (the mirrored-
 # key allowlist for the local operator real-time sync push nudge). Missing
@@ -67,9 +62,9 @@ COPY scripts/shared/sync-domains.mjs ./scripts/shared/sync-domains.mjs
 # guards this COPY list against future regressions.
 COPY scripts/_seed-envelope-source.mjs ./scripts/_seed-envelope-source.mjs
 COPY scripts/_seed-contract.mjs ./scripts/_seed-contract.mjs
-# ais-relay dynamically imports this helper to write the China country index
-# companion cache from a one-month Yahoo chart.
-COPY scripts/_country-stock-index.mjs ./scripts/_country-stock-index.mjs
+# _country-stock-index.mjs was dynamically imported only by the relay's Market
+# seed loop (China country-index companion cache); that loop moved to
+# scripts/seed-market-quotes.mjs in P14 Phase 2 (session 63).
 COPY scripts/_country-resolver.mjs ./scripts/_country-resolver.mjs
 COPY scripts/_climate-news-helpers.mjs ./scripts/_climate-news-helpers.mjs
 COPY scripts/seed-climate-news.mjs ./scripts/seed-climate-news.mjs

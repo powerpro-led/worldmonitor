@@ -91,11 +91,13 @@ describe('China A/H-share market coverage (#5272)', () => {
     assert.deepEqual(railwayMirror, canonical);
   });
 
-  it('makes the long-running Railway relay consume stock symbols and metadata from the shared config', () => {
-    const relay = readText('scripts/ais-relay.cjs');
-    assert.match(relay, /const _stockCfg = requireShared\('stocks\.json'\)/);
-    assert.match(relay, /const MARKET_SYMBOLS = _stockCfg\.symbols\.map\(\(s\) => s\.symbol\)/);
-    assert.match(relay, /const MARKET_META = new Map\(_stockCfg\.symbols\.map/);
+  it('makes the standalone market-quotes seed consume stock symbols from the shared config', () => {
+    // The long-running ais-relay.cjs Market loop was decomposed in P14 Phase 2
+    // (session 63 — see PLATFORM_ARCHITECTURE.md); scripts/seed-market-quotes.mjs
+    // is now the sole equity-quote publisher and reads the same shared config.
+    const seed = readText('scripts/seed-market-quotes.mjs');
+    assert.match(seed, /const stocksConfig = loadSharedConfig\('stocks\.json'\)/);
+    assert.match(seed, /const MARKET_SYMBOLS = stocksConfig\.symbols\.map\(s => s\.symbol\)/);
   });
 
   it('keeps available quotes when one requested China symbol is unavailable', async () => {

@@ -111,14 +111,9 @@ describe('fetchCoinPaprikaTickersById', () => {
   });
 });
 
-describe('ais-relay CoinPaprika fallback', () => {
-  it('does not fetch the full CoinPaprika ticker catalog in the primary market seed path', () => {
-    const src = readFileSync(new URL('../scripts/ais-relay.cjs', import.meta.url), 'utf8');
-
-    assert.doesNotMatch(src, /api\.coinpaprika\.com\/v1\/tickers\?quotes=USD/);
-    assert.match(src, /api\.coinpaprika\.com\/v1\/tickers\/\$\{encodeURIComponent\(id\)\}\?quotes=USD/);
-    assert.match(src, /async function _fetchCoinPaprikaTickersById\(paprikaIds\)/);
-    assert.match(src, /const _PAPRIKA_FETCH_CONCURRENCY = 4/);
-    assert.match(src, /allSettledWithConcurrency\(misses, _PAPRIKA_FETCH_CONCURRENCY/);
-  });
-});
+// The relay's private _fetchCoinPaprikaTickersById copy went away with the
+// whole ais-relay.cjs Market loop in P14 Phase 2 (session 63 — see
+// PLATFORM_ARCHITECTURE.md). scripts/seed-crypto-quotes.mjs is now the sole
+// crypto-quote publisher and uses the shared fetchCoinPaprikaTickersById from
+// _seed-utils.mjs, whose targeted-per-id / bounded-fanout contract is the
+// subject of the fetchCoinPaprikaTickersById describe block above.

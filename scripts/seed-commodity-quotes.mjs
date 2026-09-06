@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 
+/**
+ * @notification-source: domain
+ *   The market_alert notifications published from afterPublish build
+ *   payload.title from structured quote fields (name/symbol + rounded % move).
+ *   NOT RSS-origin; MUST NOT set payload.description. Enforced by
+ *   tests/notification-relay-payload-audit.test.mjs. Ported from ais-relay.cjs's
+ *   seedCommodityQuotes (P14 Phase 2, session 63 — see PLATFORM_ARCHITECTURE.md).
+ */
+
 import { loadEnvFile, loadSharedConfig, sleep, runSeed, parseYahooChart, writeExtraKey, writeExtraKeyWithMeta } from './_seed-utils.mjs';
 import { fetchYahooJson } from './_yahoo-fetch.mjs';
+import { dispatchMarketAlerts } from './shared/market-alert-notify.mjs';
 import { AV_PHYSICAL_MAP, fetchAvPhysicalCommodity, fetchAvBulkQuotes } from './_shared-av.mjs';
 
 const commodityConfig = loadSharedConfig('commodities.json');
@@ -321,6 +331,18 @@ runSeed('market', 'commodities', CANONICAL_KEY, fetchCommodityQuotes, {
     if (!data) return;
     await writeRequiredCompanionKeys(data);
     await writeOptionalGoldExtended();
+    // market_alert: commodity moves >= 5% (critical at >= 10%), top 3 by |move|.
+    // Ported verbatim from ais-relay.cjs's seedCommodityQuotes (title uses the
+    // display name when present).
+    await dispatchMarketAlerts({
+      quotes: data.quotes,
+      assetClass: 'commodity',
+      source: 'Commodity Market',
+      surface: 'seed-commodity-quotes',
+      moveThreshold: 5,
+      criticalThreshold: 10,
+      titleSubject: (q) => q.name || q.symbol,
+    });
   },
 }).catch((err) => {
   const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);

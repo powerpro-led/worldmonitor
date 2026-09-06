@@ -767,13 +767,14 @@ describe('seedTransitSummaries Redis reads', () => {
     assert.doesNotMatch(relaySrc, /const persisted = await upstashGet\(CORRIDOR_RISK_REDIS_KEY\)/);
   });
 
-  it('loadWsbTickerSet reads market:stocks-bootstrap:v1 via envelopeRead', () => {
-    // Regression guard (Greptile review PR #3139): market:stocks-bootstrap:v1 is
-    // written via envelopeWrite at lines 1867 + dual-write elsewhere. Reading raw
-    // left data.quotes undefined, silently disabling WSB ticker matching.
-    assert.match(relaySrc, /envelopeRead\('market:stocks-bootstrap:v1'\)/);
-    assert.doesNotMatch(relaySrc, /upstashGet\('market:stocks-bootstrap:v1'\)/);
-  });
+  // The 'loadWsbTickerSet reads market:stocks-bootstrap:v1 via envelopeRead'
+  // guard that used to live here was removed in P14 Phase 2 (session 64): the
+  // WsbTickers loop moved to scripts/seed-wsb-tickers.mjs in session 63
+  // (aa8ef32), where loadWsbTickerSet reads the key through
+  // _seed-utils.mjs::readCanonicalValue (the shared envelope-aware reader).
+  // The envelope-unwrap contract for that key is now covered by
+  // tests/forecasts-ticker-set-envelope-unwrap.test.mjs. It never belonged in
+  // the transit-summaries suite — it was a cross-cutting source-grep squatter.
 
   it('OREF bootstrap reads OREF_REDIS_KEY via envelopeRead (parity with orefPersistHistory)', () => {
     // Regression guard (Greptile review PR #3139): orefPersistHistory() writes via

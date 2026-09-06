@@ -204,6 +204,12 @@ const SEEDERS = [
   // in P14 Phase 2 (session 62 — see PLATFORM_ARCHITECTURE.md). Each RPC
   // handler still owns its own seed-meta key; nothing in ais-relay.cjs
   // warm-pings them any more.
+  // Transit + TransitSummary are the INTENDED FINAL residents of this list —
+  // P14 Phase 2 loop extraction is complete at 25 of 27, and these two stay in
+  // ais-relay.cjs permanently by decision (session 64; PLATFORM_ARCHITECTURE.md
+  // P16). Both read the live in-process AIS `chokepointCrossings` Map, which a
+  // standalone cron cannot reproduce. Do NOT "finish the extraction" — see the
+  // block comment on seedChokepointTransits in scripts/ais-relay.cjs.
   ['Transit', "'seed-meta:supply_chain:chokepoint_transits'", 'CHOKEPOINT_TRANSIT_INTERVAL_MS', 'seedChokepointTransits'],
   ['TransitSummary', "'seed-meta:supply_chain:transit-summaries'", 'TRANSIT_SUMMARY_INTERVAL_MS', 'seedTransitSummaries'],
   // TheaterPosture, ServiceStatuses, Spending, TechEvents, WB, ClimateNewsSeed,

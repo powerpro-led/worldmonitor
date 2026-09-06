@@ -2651,6 +2651,21 @@ setInterval(() => {
   }
 }, SNAPSHOT_INTERVAL_MS).unref?.();
 
+// ─────────────────────────────────────────────────────────────
+// Transit + TransitSummary — PERMANENTLY relay-local (P14 Phase 2 decision,
+// session 64; PLATFORM_ARCHITECTURE.md decision P16). NOT an unfinished
+// extraction TODO.
+//
+// Both loops read `chokepointCrossings` (declared ~line 2017), a Map that is
+// filled ONLY by the live AIS message handler (~line 2142) as vessels cross
+// chokepoint geofences on the `wss://stream.aisstream.io` stream. A standalone
+// `--once` cron has no socket, would start with an empty Map, and would publish
+// all-zero transit counts — actively worse than not running. A consumer of an
+// in-process producer belongs next to that producer; `ais-relay.cjs` IS the
+// shared AIS-ingest service (P14a), so this is cohesion, not debt. The other 25
+// startBootSeedLoop loops were fetch-and-compute jobs with an external URL as
+// their only input and moved to scripts/seed-*.mjs; these two cannot.
+// ─────────────────────────────────────────────────────────────
 async function seedChokepointTransits() {
   const now = Date.now();
   const transits = {};
@@ -2725,6 +2740,11 @@ function detectTrafficAnomalyRelay(history, threatLevel) {
   return { dropPct, signal: dropPct >= 50 && isHighThreat };
 }
 
+// PERMANENTLY relay-local — see the block comment on seedChokepointTransits
+// above (P14 Phase 2 decision, session 64; PLATFORM_ARCHITECTURE.md P16). This
+// one merges portwatch (Redis, portable) + latestCorridorRiskData (Redis,
+// portable) + `chokepointCrossings` (in-process AIS Map, NOT portable) — the
+// last input is the blocker.
 async function seedTransitSummaries() {
   let pwFailureReason = null;
   const pw = await envelopeRead(PORTWATCH_REDIS_KEY, (reason) => { pwFailureReason = reason; });

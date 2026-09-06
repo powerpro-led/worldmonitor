@@ -88,7 +88,15 @@ const DENY_PREFIXES = [
   //          summary:* and classify:* are NOT here — they are the whole
   //          point of a shared mirror and stay 'mirror')
   'relay:',
-  'cf:',
+  // `cf:cache:` — Cloudflare cache-purge bookkeeping, NOT display data.
+  // Scoped narrowly on purpose: the ONLY other `cf:` keys in the store are
+  // `cf:radar:ddos:v1` / `cf:radar:traffic-anomalies:v1` (Cloudflare Radar —
+  // the sole data source for the DDoS + traffic-anomaly infra panels, pure
+  // Redis readers with no fetch fallback). A blanket `cf:` deny (the shape it
+  // had until 2026-09-06 / session 65) left both panels permanently blank on
+  // the operator mirror — a name-based misclassification the Workstream 4
+  // "read the real keys" audit missed. See sync-domains.test.mjs.
+  'cf:cache:',
   'shared:',
   'ci-sebuf:',
   'wm-smoke-test:',

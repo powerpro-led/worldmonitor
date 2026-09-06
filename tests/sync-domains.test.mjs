@@ -45,7 +45,7 @@ describe('classifyKey — denylist model', () => {
       'rate:global',
       'llm:direct-usage:u1:2026-09-04',
       'relay:ais:window',
-      'cf:cache:purge',
+      'cf:cache:purge', // cf:cache: only — NOT a blanket cf: deny (see regression block below)
       'shared:config:v1',
       'ci-sebuf:probe',
       'wm-smoke-test:ping',
@@ -108,6 +108,23 @@ describe('classifyKey — denylist model', () => {
     it('marks the shared brief:llm: subtree plain mirror', () => {
       assert.equal(classifyKey('brief:llm:description:abcdef'), 'mirror');
       assert.equal(isMirroredKey('brief:llm:description:abcdef'), true);
+    });
+  });
+
+  // Regression: `cf:radar:*` is Cloudflare Radar DISPLAY data (the DDoS +
+  // traffic-anomaly infra panels), written by scripts/seed-internet-outages.mjs.
+  // Its handlers are pure Redis readers with no fetch fallback. A blanket `cf:`
+  // deny (the shape until session 65) left both panels permanently blank on the
+  // operator mirror. The deny is now scoped to `cf:cache:` (cache-purge
+  // bookkeeping) only.
+  describe('cf: deny is scoped to cf:cache: (regression)', () => {
+    it('mirrors Cloudflare Radar panel data', () => {
+      assert.equal(classifyKey('cf:radar:ddos:v1'), 'mirror');
+      assert.equal(classifyKey('cf:radar:traffic-anomalies:v1'), 'mirror');
+      assert.equal(isMirroredKey('cf:radar:ddos:v1'), true);
+    });
+    it('still denies cf:cache: purge bookkeeping', () => {
+      assert.equal(classifyKey('cf:cache:purge'), 'deny');
     });
   });
 

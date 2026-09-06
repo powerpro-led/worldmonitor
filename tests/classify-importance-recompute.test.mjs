@@ -1,14 +1,15 @@
 /**
- * Regression test: scripts/ais-relay.cjs must recompute importanceScore from
+ * Regression test: scripts/seed-classify.mjs must recompute importanceScore from
  * the post-LLM level when publishing rss_alert events — never reuse the
  * stale digest score (docs/internal/scoringDiagnostic.md §2, §9 Step 1).
  *
- * The relay is a large CommonJS script with side effects at require time, so
- * we verify the contract by reading the source and asserting the publish site
- * calls relayComputeImportanceScore(level, …) rather than reading
- * meta.importanceScore.
+ * The classify publish path (this contract) lived in scripts/ais-relay.cjs until
+ * P14 Phase 2, session 64, when the loop was extracted to scripts/seed-classify.mjs
+ * (see PLATFORM_ARCHITECTURE.md). We verify the contract by reading the source
+ * and asserting the publish site calls relayComputeImportanceScore(level, …)
+ * rather than reading meta.importanceScore.
  *
- * Run: node --test tests/relay-importance-recompute.test.mjs
+ * Run: node --test tests/classify-importance-recompute.test.mjs
  */
 
 import { describe, it } from 'node:test';
@@ -19,11 +20,11 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const relaySrc = readFileSync(
-  resolve(__dirname, '..', 'scripts', 'ais-relay.cjs'),
+  resolve(__dirname, '..', 'scripts', 'seed-classify.mjs'),
   'utf-8',
 );
 
-describe('ais-relay importanceScore publish path', () => {
+describe('seed-classify importanceScore publish path', () => {
   it('carries corroborationCount into allTitles', () => {
     assert.match(
       relaySrc,

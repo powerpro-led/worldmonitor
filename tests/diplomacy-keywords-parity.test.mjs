@@ -129,15 +129,16 @@ test('server/worldmonitor/news/v1/list-feed-digest.ts sources keywords from cano
 });
 
 // Drift guards for the two intentionally-untouched mirror sites.
-// ais-relay.cjs is the Railway-deployed monolith (refactoring it
-// would break its bundled deploy assumptions); parallel-analysis.ts
+// scripts/seed-classify.mjs carries the relay* importance-score literals
+// (moved verbatim out of ais-relay.cjs when the Classify loop was extracted
+// in P14 Phase 2, session 64 — see PLATFORM_ARCHITECTURE.md); parallel-analysis.ts
 // is a client-side ML helper with a narrower scope (flashpoint only).
 // They keep their inline literals — but the literals MUST match the
 // canonical JSON, so future edits in either file fail this test
 // unless the JSON is updated in lockstep.
 
-test('scripts/ais-relay.cjs RELAY_* literals match canonical JSON', async () => {
-  const src = await readFromRoot('scripts/ais-relay.cjs');
+test('scripts/seed-classify.mjs RELAY_* literals match canonical JSON', async () => {
+  const src = await readFromRoot('scripts/seed-classify.mjs');
   assert.deepEqual(
     parseStringArrayLiteral(src, 'RELAY_DIPLOMACY_KEYWORDS'),
     canonical.diplomacyKeywords,

@@ -1,11 +1,13 @@
 /**
- * Parity test: the relay-inlined importance scorer (scripts/ais-relay.cjs)
+ * Parity test: the cron-inlined importance scorer (scripts/seed-classify.mjs)
  * must produce identical output to the canonical digest scorer
  * (server/worldmonitor/news/v1/list-feed-digest.ts).
  *
- * Background: PR #2604 introduced importanceScore in the digest. The relay
- * republishes classified headlines as rss_alert events and must carry a score
- * recomputed from the post-LLM threat level (see docs/internal/scoringDiagnostic.md).
+ * Background: PR #2604 introduced importanceScore in the digest. The classify
+ * cron (scripts/seed-classify.mjs, extracted from ais-relay.cjs in P14 Phase 2,
+ * session 64) republishes classified headlines as rss_alert events and must
+ * carry a score recomputed from the post-LLM threat level
+ * (see docs/internal/scoringDiagnostic.md).
  * Both sides load SOURCE_TIERS from shared/source-tiers.json (same bytes), so
  * tier-map parity is structural. This test covers SEVERITY_SCORES, SCORE_WEIGHTS,
  * and computeImportanceScore() itself — the pieces still duplicated until a
@@ -29,7 +31,7 @@ const digestSrc = readFileSync(
   'utf-8',
 );
 const relaySrc = readFileSync(
-  resolve(repoRoot, 'scripts/ais-relay.cjs'),
+  resolve(repoRoot, 'scripts/seed-classify.mjs'),
   'utf-8',
 );
 const clusteringSrc = readFileSync(
@@ -50,9 +52,9 @@ const sharedSourceTiers = JSON.parse(
 // Canonical diplomacy/flashpoint keyword set. As of the centralization
 // PR, digest / clustering / brief-filter all consume this JSON directly,
 // so the test uses it as the oracle instead of re-parsing each consumer's
-// (now-import-backed) literal. The relay (ais-relay.cjs) still inlines
-// its own copy — drift between the canonical JSON and the relay literal
-// is asserted further below.
+// (now-import-backed) literal. The classify cron (scripts/seed-classify.mjs)
+// still inlines its own copy — drift between the canonical JSON and that
+// literal is asserted further below.
 const sharedDiplomacyKeywords = JSON.parse(
   readFileSync(resolve(repoRoot, 'shared/diplomacy-keywords.json'), 'utf-8'),
 );

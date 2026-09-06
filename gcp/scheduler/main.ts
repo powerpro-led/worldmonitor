@@ -330,6 +330,19 @@ const CADENCES: Record<string, Cadence> = {
   // = 3x}. Both data-key TTLs (14400s / 3600s) already clear those gates.
   'seed-corridor-risk': { kind: 'every', rate: '1 hours' },
   'seed-shipping-stress': { kind: 'every', rate: '15 minutes' },
+  // 2026-09-06 (session 64) — P14 Phase 2, loop extraction as a NOTIFICATION
+  // migration: ais-relay.cjs's startClassifySeedLoop moved to
+  // scripts/seed-classify.mjs (hand-rolled, not runSeed — it writes N
+  // classify:sebuf: cache keys, a conditional news:threat:summary:v1 canonical,
+  // and emits rss_alert notifications mid-run). The rss_alert publisher, the
+  // relay* importance-score block, the threat-country attribution tables, and
+  // the CLASSIFY_LLM_PROVIDERS fallback chain moved with it. Cadence matches the
+  // deleted loop's CLASSIFY_SEED_INTERVAL_MS (15min); one run takes ~12min
+  // (4×3min inter-variant stagger) and a Redis lock (TTL 20min) makes an
+  // overrunning tick a no-op. api/health.js's SEED_META.newsThreatSummary
+  // maxStaleMin is 60; the canonical TTL was raised 1200s→7200s so it clears
+  // that gate strictly (tests/seed-ttl-outlives-staleness-fleet.test.mjs).
+  'seed-classify': { kind: 'every', rate: '15 minutes' },
 };
 
 /**

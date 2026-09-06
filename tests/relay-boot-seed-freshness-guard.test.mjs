@@ -185,7 +185,19 @@ const SEEDERS = [
   // seed-commodity-quotes.mjs, seed-sector-summary.mjs (the last piece with no
   // prior standalone), seed-crypto-sectors.mjs, and gulf/etf/crypto/
   // stablecoins/token-panels via seed-bundle-market-backup.mjs.
-  ['Classify', "'seed-meta:classify'", 'CLASSIFY_SEED_INTERVAL_MS', 'seedClassify'],
+  // Classify was removed in P14 Phase 2 (session 64 — see
+  // PLATFORM_ARCHITECTURE.md) as a notification migration — ported to
+  // scripts/seed-classify.mjs (hand-rolled, not runSeed; every 15min with a
+  // 20-min Redis lock so an overrunning ~12-min run skips the next tick). The
+  // rss_alert publisher, the relay* importance-score block, the threat-country
+  // attribution tables, and the CLASSIFY_LLM_PROVIDERS chain moved with it. Its
+  // scoring/recompute contract is now asserted against the new file in
+  // tests/importance-score-parity.test.mjs and
+  // tests/classify-importance-recompute.test.mjs; its notification-source tag in
+  // tests/notification-relay-payload-audit.test.mjs. `seed-meta:classify` was
+  // dropped (no reader outside this gate); `news:threat:summary:v1` is still the
+  // canonical output.
+  //
   // The four internal RPC warm-pings that used to be gated here (CII 8m,
   // Chokepoints 30m, CableHealth 30m, TemporalAnomalies 15m) were
   // consolidated into one standalone cron, scripts/seed-rpc-warmpings.mjs,
@@ -270,7 +282,14 @@ test('every relay seed loop and warm-ping loop is routed through startBootSeedLo
     .map(([, name]) => name)
     .filter((name) => name !== 'startBootSeedLoop');
 
-  assert.ok(seedLoopNames.length > 0, 'expected to find relay seed/warm-ping loop functions');
+  // As of P14 Phase 2 session 64 (Classify extracted — see
+  // PLATFORM_ARCHITECTURE.md) there may be ZERO named start*SeedLoop wrapper
+  // functions left in ais-relay.cjs: Transit / TransitSummary call
+  // startBootSeedLoop inline at the boot site (asserted individually above),
+  // and every other loop has moved to a standalone scripts/seed-*.mjs. An
+  // empty list is therefore expected, not a regex-matched-nothing bug — the
+  // two deepEqual([]) checks below stay correct (vacuously) and catch any
+  // wrapper that comes back ungated or on a raw setInterval.
 
   const rawIntervalSeedLoops = [];
   const ungatedSeedLoops = [];

@@ -5,14 +5,16 @@
 //      (CLASSIFY_CACHE_PREFIX constant + buildClassifyCacheKey helper)
 //   2. server/worldmonitor/news/v1/list-feed-digest.ts — digest reader
 //      (now imports buildClassifyCacheKey from the shared module above)
-//   3. scripts/ais-relay.cjs — relay reader+writer (independent inline
-//      helper, cannot import from .ts)
+//   3. scripts/seed-classify.mjs — the classify cron's reader+writer
+//      (independent inline helper, cannot import from .ts). This helper
+//      lived in scripts/ais-relay.cjs until the loop was extracted in P14
+//      Phase 2, session 64 (see PLATFORM_ARCHITECTURE.md).
 //
 // When the prefix is bumped (v3 → v4 → v5 …), all three sites MUST update
 // in lockstep. This static-analysis test fails if any literal `classify:
 // sebuf:vN:` string in the repo doesn't match the current canonical
-// version — preventing the relay from getting silently left behind on
-// the previous prefix (which would mean it keeps writing+reading poisoned
+// version — preventing the classify cron from getting silently left behind
+// on the previous prefix (which would mean it keeps writing+reading poisoned
 // entries at the old key while the digest reads from the new one).
 
 import { describe, it } from 'node:test';

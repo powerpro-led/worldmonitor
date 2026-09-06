@@ -130,6 +130,12 @@
     "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
   },
   {
+    "entry": "scripts/seed-classify.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "seed-classify",
+    "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
+  },
+  {
     "entry": "scripts/seed-fx-yoy.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-fx-yoy",

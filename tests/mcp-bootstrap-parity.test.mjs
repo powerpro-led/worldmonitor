@@ -141,7 +141,7 @@ const EXCLUDED_FROM_MCP = new Map([
   ['temporal:anomalies:v1',
     'on-demand: RPC cache populated only after first user query — deferred to a future temporal-analysis tool.'],
   ['news:threat:summary:v1',
-    'on-demand: relay-classify-only, written only when classify produces country matches (matches api/health.js:468 ON_DEMAND_KEYS rationale). Underlying news inputs already exposed via get_news_intelligence.'],
+    'on-demand: written by the classify cron (scripts/seed-classify.mjs) only when it produces country matches (matches api/health.js:468 ON_DEMAND_KEYS rationale). Underlying news inputs already exposed via get_news_intelligence.'],
   ['resilience:ranking:v25',
     'on-demand: RPC cache populated after Pro ranking requests (matches api/health.js:469 ON_DEMAND_KEYS rationale). Deferred to a future resilience tool.'],
   ['forecast:simulation-package:latest',

@@ -463,9 +463,17 @@ tree on `:46125` (`worldmonitor-local run --port 46125`). Results:
   (`incidentCount7d:18`, `wowChangePct:2.4`, `riskLevel:critical`) that Tier-1's
   `seed-transit-summaries.mjs` wrote — seeder → local Redis → SQLite mirror → RPC
   handler chain intact end to end.
-- **Not verified here:** the W3 *frontend* AI tab (`dist/` is from Sep 3, predates
-  `llm-key-settings.ts` Sep 4 — needs `npm run build`); the `settings.html` bundle
-  prune (a `build-release-bundle.mjs` step, not active in a repo/dev run).
+- **W3 frontend AI tab — VERIFIED (S68, `npm run build` + Playwright headless).**
+  Clean `npm run build` (`APP_DOMAIN=localhost:3000`, 31 s, no errors — the
+  `1b3fdbe` hreflang fix holds for a non-`worldmonitor.app` domain). W3 code is
+  in the fresh bundle (`dist/assets/UnifiedSettings-*.js`: `/api/local-llm-config`
+  GET+PUT, `renderLlmKeySettings`, `us-tab-ai`). Loaded `/?embed=vscode` (→
+  `__wmVsCodeApi` shim → `isVsCodeEmbedRuntime()` true), opened settings: tab bar
+  is `SETTINGS · PANELS · SOURCES · NOTIFICATIONS · AI`; the AI panel renders 4
+  fields (OpenRouter key + Clear, Groq key + Clear, Ollama URL, Ollama model) +
+  SAVE, with the "stored only on this machine" privacy copy. Screenshot clean.
+- **Still not verified:** the `settings.html` bundle prune (a
+  `build-release-bundle.mjs` step, not active in a repo/dev run).
 - **Incidental, pre-existing (not S68 changes):** this box's `config.db` holds
   placeholder brokered values (`https://org.upstash.io`, `APP_DOMAIN=org.example`)
   from an old test; since `UPSTASH_REDIS_REST_URL` is a `BROKERED_CONFIG_KEY`,

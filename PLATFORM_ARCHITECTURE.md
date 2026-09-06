@@ -442,6 +442,40 @@ shim + `.env` already on local Redis). Ran 8 extracted seeders live against it:
   tests were retargeted from `ais-relay.cjs` source-greps to the standalone
   scripts and still assert the same behaviour; that is the source-level diff.
 
+**Tier-2 local validation — the standalone backend end to end (no code changed).**
+`:46123` was occupied by a stale `wmtest`-user backend (the abandoned S48
+fresh-user test, ~6 days up, old bundle) so ran `john`'s backend from the repo
+tree on `:46125` (`worldmonitor-local run --port 46125`). Results:
+
+- `/api/health` (with the loopback token — every `/api/*` needs it; "credential-free"
+  in the changelog means *no Upstash creds*, not *no auth*) → **200, real verdict
+  computed from the local SQLite mirror**, zero Redis creds. `UNHEALTHY` only
+  because this box's mirror is cold.
+- `GET /` → dashboard HTML (46 KB), `__WM_RUNTIME_CONFIG` injected (Model B). The
+  S68 launcher-fix target serves.
+- `/api/local-config` GET+POST (with token) → **404 `No local handler`** —
+  Workstream R's route removal confirmed at runtime.
+- `/api/local-llm-config` (W3 backend) → full GET→PUT→GET→Clear→GET round-trip:
+  Ollama URL set flips `anyProviderConfigured` true, persists to `config.db` +
+  live env, Clear on empty string unsets it; secrets never return a `value`;
+  401 without token.
+- `get-chokepoint-status` RPC → returns the **exact `transitSummary`**
+  (`incidentCount7d:18`, `wowChangePct:2.4`, `riskLevel:critical`) that Tier-1's
+  `seed-transit-summaries.mjs` wrote — seeder → local Redis → SQLite mirror → RPC
+  handler chain intact end to end.
+- **Not verified here:** the W3 *frontend* AI tab (`dist/` is from Sep 3, predates
+  `llm-key-settings.ts` Sep 4 — needs `npm run build`); the `settings.html` bundle
+  prune (a `build-release-bundle.mjs` step, not active in a repo/dev run).
+- **Incidental, pre-existing (not S68 changes):** this box's `config.db` holds
+  placeholder brokered values (`https://org.upstash.io`, `APP_DOMAIN=org.example`)
+  from an old test; since `UPSTASH_REDIS_REST_URL` is a `BROKERED_CONFIG_KEY`,
+  `config.db` overrides `.env`'s local-shim URL (P4 precedence — working as
+  designed) so the backend's `sync-listener` DNS-fails against `org.upstash.io`.
+  Fix: `worldmonitor-local config unset` those three, or re-login. Also: the
+  `config list` CLI's "`.env` … override anything stored here" line is wrong for
+  the 3 brokered keys. Also: a stale `wmtest` backend + two generations of
+  orphaned `nitric` `gcp/api`+`gcp/scheduler` tsx processes are still running.
+
 ### Session 67 — 2026-09-07
 
 **WS-core + Telegram extraction — the P14 Phase 2 tail, and the last of

@@ -792,27 +792,18 @@ async function getRunWithUsageScope() {
 const syncRefreshCooldown = new Map();
 const SYNC_REFRESH_COOLDOWN_MS = 10_000;
 
-// Routes/prefixes that should always proxy to cloud. The sidecar lacks
-// WS_RELAY_URL (Yahoo/Finnhub relay) and seeded Redis data. These routes
-// return 200-with-empty-data locally, so normal cloudFallback won't trigger.
-const cloudPreferredPrefixes = !process.env.WS_RELAY_URL
-  ? [
-    '/api/market/v1/',
-    '/api/economic/v1/',
-    '/api/infrastructure/v1/',
-    '/api/news/v1/',
-    '/api/research/v1/',
-    '/api/military/v1/',
-  ]
-  : [];
-const cloudPreferredExact = !process.env.WS_RELAY_URL
-  ? new Set(['/api/bootstrap'])
-  : new Set();
-
+// The static "always proxy these 6 prefixes + /api/bootstrap to cloud" list
+// was retired 2026-09-06 (session 65 — platform decision CF-A). It only ever
+// took effect when cloudFallback was ON, and by then Workstream 4's denylist
+// mirror + the S57–S64 seeder fleet had made every one of those domains serve
+// from the local SQLite mirror anyway — the list was dead in the default
+// (cloudFallback OFF) config and redundant in the opt-in one. A mirror miss is
+// now "not synced yet" (with the per-panel Refresh-from-cloud button), never a
+// silent always-proxy. `isCloudPreferred()` now only reports routes this
+// process LEARNED were cloud-only via a successful cloudFallback (the adaptive
+// Set below) — empty unless LOCAL_API_CLOUD_FALLBACK=true.
 function isCloudPreferred(pathname) {
-  if (cloudPreferred.has(pathname)) return true;
-  if (cloudPreferredExact.has(pathname)) return true;
-  return cloudPreferredPrefixes.some(p => pathname.startsWith(p));
+  return cloudPreferred.has(pathname);
 }
 
 const TRAFFIC_LOG_MAX = 200;
@@ -2755,10 +2746,11 @@ export async function createLocalApiServer(options = {}) {
       // operator backend does no fetching: `news:digest:v1:<variant>:<lang>`
       // is produced by scripts/seed-news-digest.mjs in the org's cloud deploy
       // and arrives over the mirror like any other seeded key, so the sidecar
-      // serves it straight from SQLite with no crawl. The old ping was also
-      // already inert whenever `WS_RELAY_URL` was unset — `/api/news/v1/` is
-      // `cloudPreferred` then and `isCloudPreferred()` short-circuited it —
-      // which is exactly the configuration the pivot backend runs in.)
+      // serves it straight from SQLite with no crawl. The old ping was already
+      // inert in the pivot config regardless — `/api/news/v1/` was on the
+      // static cloud-preferred list (retired S65 / decision CF-A), and even
+      // now a cold `news:digest:v1` is a mirror "not synced yet" the Refresh
+      // button covers, not a crawl the sidecar performs.)
 
       // Local operator real-time sync — see startFullReconciliationLoop() /
       // startSyncListener()'s own comments for what each does and why

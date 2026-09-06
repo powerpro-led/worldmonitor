@@ -369,6 +369,14 @@ const CADENCES: Record<string, Cadence> = {
   // TRANSIT_SUMMARY_INTERVAL_MS (10min); TTL 3600 already clears
   // api/health.js's SEED_META.transitSummaries.maxStaleMin (30).
   'seed-transit-summaries': { kind: 'every', rate: '10 minutes' },
+  // 2026-09-07 (session 67) — P14 Phase 2 tail / decision P17: bridges the
+  // shared AIS-ingest service's pure-AIS output
+  // (supply_chain:chokepoint_transits:v1 + its seed-meta) from the shared "AIS
+  // results" Upstash into THIS org's Upstash, so seed-transit-summaries above
+  // (and get-chokepoint-status via the operator mirror) read it locally. Every
+  // ~2min — within the ~30-60s streaming staleness P8 already accepts. Copies
+  // bytes, computes nothing; not a seeder.
+  'sync-ais-results': { kind: 'every', rate: '2 minutes' },
 };
 
 /**

@@ -148,6 +148,12 @@
     "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 tail — the TransitSummary merge extracted from scripts/ais-relay.cjs to a per-org cron (supersedes P16 for the summary half; session 67)"
   },
   {
+    "entry": "scripts/sync-ais-results.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "sync-ais-results",
+    "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 tail / decision P17 — bridges supply_chain:chokepoint_transits:v1 from the shared AIS-results Upstash into each org's Upstash (session 67)"
+  },
+  {
     "entry": "scripts/seed-fx-yoy.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-fx-yoy",

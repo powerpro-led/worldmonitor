@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyKey, isMirroredKey } from '../scripts/shared/sync-domains.mjs';
+import { classifyKey, isMirroredKey, isAisResultsKey, AIS_RESULTS_KEYS } from '../scripts/shared/sync-domains.mjs';
 
 // Workstream 4 (PLATFORM_ARCHITECTURE.md P6): the old SYNC_PREFIXES allowlist
 // is gone. classifyKey() is default-allow with three states; isMirroredKey()
@@ -138,5 +138,36 @@ describe('classifyKey — denylist model', () => {
   it('mirrors the hyphen-spelled supply-chain families', () => {
     assert.equal(classifyKey('supply-chain:exposure:US:27:v1'), 'mirror');
     assert.equal(classifyKey('supply-chain:cost-shock:US:hormuz:v1'), 'mirror');
+  });
+
+  // P14 Phase 2 tail / decision P17 — the AIS-results bridge namespace. A
+  // SEPARATE concern from classifyKey (mirror classification): these are the
+  // keys scripts/sync-ais-results.mjs copies from the shared "AIS results"
+  // Upstash into each org's Upstash. The shared AIS deploy holds only its own
+  // credentials and never writes into a tenant DB.
+  describe('isAisResultsKey — the shared→org bridge namespace', () => {
+    it('matches the chokepoint-transits canonical + its seed-meta', () => {
+      assert.equal(isAisResultsKey('supply_chain:chokepoint_transits:v1'), true);
+      assert.equal(isAisResultsKey('seed-meta:supply_chain:chokepoint_transits'), true);
+    });
+    it('does not match the per-org-computed transit summaries or anything else', () => {
+      assert.equal(isAisResultsKey('supply_chain:transit-summaries:v1'), false);
+      assert.equal(isAisResultsKey('supply_chain:portwatch:v1'), false);
+      assert.equal(isAisResultsKey('supply_chain:corridorrisk:v1'), false);
+      assert.equal(isAisResultsKey('relay:oref:history:v1'), false);
+      assert.equal(isAisResultsKey(''), false);
+      assert.equal(isAisResultsKey(null), false);
+    });
+    it('every bridge key is itself mirror-eligible (so operators see it once it lands in the org DB)', () => {
+      for (const k of AIS_RESULTS_KEYS) {
+        // the canonical mirrors; the seed-meta is denied from the mirror
+        // (bookkeeping) but is still bridged for api/health.js on the org side.
+        if (k.startsWith('seed-meta:')) {
+          assert.equal(classifyKey(k), 'deny');
+        } else {
+          assert.equal(classifyKey(k), 'mirror');
+        }
+      }
+    });
   });
 });

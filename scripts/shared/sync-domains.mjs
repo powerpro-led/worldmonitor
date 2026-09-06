@@ -189,6 +189,37 @@ export function classifyKey(key) {
 }
 
 /**
+ * ---------------------------------------------------------------------------
+ * AIS-results bridge namespace (P14 Phase 2 tail / decision P17).
+ *
+ * SEPARATE CONCERN from classifyKey() above. classifyKey answers "does this
+ * key belong in the operator's local SQLite mirror". This answers "is this
+ * key produced by the ONE shared AIS-ingest deploy (ais-relay.cjs) and
+ * therefore copied by scripts/sync-ais-results.mjs from the shared 'AIS
+ * results' Upstash into each org's own Upstash".
+ *
+ * The shared AIS service holds only its own credentials (P17) — it does not
+ * write into any tenant's DB. Its pure-AIS output is bridged per-org instead.
+ * Currently just the chokepoint-transit counts (seedChokepointTransits);
+ * everything else the relay emits (Oref history, the /ais/snapshot HTTP body)
+ * is either denied from the mirror or served over WS_RELAY_URL directly.
+ *
+ * A key matches if it EQUALS an entry or starts with an entry that ends in
+ * ':' (prefix form) — mirrors the flat startsWith() style used above.
+ * ---------------------------------------------------------------------------
+ */
+export const AIS_RESULTS_KEYS = [
+  'supply_chain:chokepoint_transits:v1',
+  'seed-meta:supply_chain:chokepoint_transits',
+];
+
+/** @param {unknown} key @returns {boolean} */
+export function isAisResultsKey(key) {
+  if (typeof key !== 'string' || key.length === 0) return false;
+  return AIS_RESULTS_KEYS.some((k) => key === k || (k.endsWith(':') && key.startsWith(k)));
+}
+
+/**
  * True only for keys that are safe to push on the fast path — i.e. exactly
  * the 'mirror' state. 'deny' and 'mirror-filtered' both return false: the
  * former is never mirrored at all, the latter reaches the local mirror only

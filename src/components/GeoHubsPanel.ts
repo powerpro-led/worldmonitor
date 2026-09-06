@@ -70,7 +70,7 @@ export class GeoHubsPanel extends Panel {
 
   private render(): void {
     if (this.activities.length === 0) {
-      this.showError(t('common.noActiveGeoHubs'));
+      this.showNotSynced(t('common.noActiveGeoHubs'));
       return;
     }
 

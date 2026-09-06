@@ -910,15 +910,24 @@ export class Panel {
    * renders a "not synced yet" state with a **Refresh from cloud** button that
    * pulls exactly those keys from Upstash into the local SQLite mirror
    * ({@link refreshMirrorKeys}) and then re-runs `onRetry`. Everywhere else —
-   * no sidecar, or no hint recorded — it is byte-for-byte `showError(message,
-   * onRetry)`, so a panel may call this unconditionally in its failure branch.
+   * no sidecar, or no hint recorded — it is byte-for-byte
+   * `showError(message, onRetry, autoRetrySeconds)`, so a panel may swap a
+   * `showError(...)` call for `showNotSynced(...)` with no other change.
    *
-   * `opts.pathPrefix` scopes the hint lookup to one RPC domain
+   * Named `showNotSynced`, not `showUnavailable`: several panels
+   * (DailyMarketBrief, GlobalProcurement, Giving, MarketImplications, …) already
+   * define their own bespoke `showUnavailable()` for a "feature needs live data"
+   * state — this mirror-gap variant is distinct from those.
+   *
+   * `autoRetrySeconds` only applies to the `showError` fall-through — the
+   * "not synced yet" state has no countdown (the operator drives it with the
+   * button). `opts.pathPrefix` scopes the hint lookup to one RPC domain
    * (e.g. `/api/economic/v1/`); omit it to draw on every live hint.
    */
-  public showUnavailable(
+  public showNotSynced(
     message?: string,
     onRetry?: () => void,
+    autoRetrySeconds?: number,
     opts?: { pathPrefix?: string },
   ): void {
     if (this._locked) return;
@@ -927,7 +936,7 @@ export class Panel {
       ? getRecentMirrorKeyHints({ pathPrefix: opts?.pathPrefix })
       : [];
     if (keys.length === 0) {
-      this.showError(message, onRetry);
+      this.showError(message, onRetry, autoRetrySeconds);
       return;
     }
 

@@ -142,7 +142,7 @@ export class EnergyDisruptionsPanel extends Panel {
       // match" rather than as an error. Conflating the two previously
       // showed a retry button on what was a legitimate empty state.
       if (live.upstreamUnavailable) {
-        this.showError('Energy disruptions log unavailable', () => void this.fetchData());
+        this.showNotSynced('Energy disruptions log unavailable', () => void this.fetchData());
         return;
       }
       this.data = live;
@@ -150,7 +150,7 @@ export class EnergyDisruptionsPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError('Energy disruptions log error', () => void this.fetchData());
+      this.showNotSynced('Energy disruptions log error', () => void this.fetchData());
     }
   }
 

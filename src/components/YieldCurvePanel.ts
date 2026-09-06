@@ -282,7 +282,7 @@ export class YieldCurvePanel extends Panel {
 
       const validCount = this._current.filter(p => p.value !== null).length;
       if (validCount === 0) {
-        if (!this._hasData) this.showError('No yield data available', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('No yield data available', () => void this.fetchData());
         return false;
       }
 
@@ -290,7 +290,7 @@ export class YieldCurvePanel extends Panel {
       this._render();
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : 'Failed to load yield curve', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : 'Failed to load yield curve', () => void this.fetchData());
       return false;
     }
   }

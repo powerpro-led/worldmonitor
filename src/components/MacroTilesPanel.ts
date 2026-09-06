@@ -316,7 +316,7 @@ export class MacroTilesPanel extends Panel {
       const hasEu = this._eurostat !== null;
       const hasChina = isChinaLaunchReady(this._china);
       if (!hasUs && !hasEu && !hasChina) {
-        if (!this._hasData) this.showError('Macro data unavailable', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('Macro data unavailable', () => void this.fetchData());
         return false;
       }
       if (!hasUs && this._tab === 'us') this._tab = hasChina ? 'cn' : 'eu';
@@ -326,7 +326,7 @@ export class MacroTilesPanel extends Panel {
       this._render();
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
       return false;
     }
   }

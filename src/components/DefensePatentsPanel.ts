@@ -91,7 +91,7 @@ export class DefensePatentsPanel extends Panel {
     }
 
     if (this.error) {
-      this.showError(this.error, () => this.refresh());
+      this.showNotSynced(this.error, () => this.refresh());
       return;
     }
 

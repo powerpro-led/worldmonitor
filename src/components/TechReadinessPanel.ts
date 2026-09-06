@@ -99,7 +99,7 @@ export class TechReadinessPanel extends Panel {
         this.renderTerminalError();
         return;
       }
-      this.showError(
+      this.showNotSynced(
         t('common.failedTechReadiness'),
         () => void this.refresh(true),
         Math.round(delayMs / 1000),

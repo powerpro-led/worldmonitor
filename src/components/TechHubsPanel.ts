@@ -92,7 +92,7 @@ export class TechHubsPanel extends Panel {
 
   private render(): void {
     if (this.activities.length === 0) {
-      this.showError(t('common.noActiveTechHubs'));
+      this.showNotSynced(t('common.noActiveTechHubs'));
       return;
     }
 

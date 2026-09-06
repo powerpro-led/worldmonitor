@@ -116,7 +116,7 @@ export class GlobalProcurementPanel extends Panel {
     this.loading = false;
     this.data = null;
     this.setCount(0);
-    this.showError('Procurement opportunities are currently unavailable.', () => this.request({ ...this.filters }, false), 60);
+    this.showNotSynced('Procurement opportunities are currently unavailable.', () => this.request({ ...this.filters }, false), 60);
   }
 
   public clear(): void {

@@ -89,7 +89,7 @@ export class StrategicRiskPanel extends Panel {
       await this.refresh();
     } catch (error) {
       console.error('[StrategicRiskPanel] Init error:', error);
-      this.showError(t('common.failedRiskOverview'), () => void this.refresh());
+      this.showNotSynced(t('common.failedRiskOverview'), () => void this.refresh());
     }
   }
 
@@ -141,7 +141,7 @@ export class StrategicRiskPanel extends Panel {
       this.overview = null;
       this.alerts = [];
       this.setDataBadge('unavailable');
-      this.showError(t('common.failedRiskOverview'), () => void this.refresh());
+      this.showNotSynced(t('common.failedRiskOverview'), () => void this.refresh());
       console.warn('[StrategicRiskPanel] Canonical backend risk scores unavailable');
       return false;
     }
@@ -491,7 +491,7 @@ export class StrategicRiskPanel extends Panel {
       this.attachEventListeners();
     } catch (e: unknown) {
       console.error('[StrategicRiskPanel] Render error:', e);
-      this.showError(t('common.failedRiskOverview'), () => this.refresh());
+      this.showNotSynced(t('common.failedRiskOverview'), () => this.refresh());
     }
   }
 

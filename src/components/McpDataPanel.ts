@@ -120,7 +120,7 @@ export class McpDataPanel extends Panel {
       this.renderResult(data.result ?? {});
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.showError(msg);
+      this.showNotSynced(msg);
     }
   }
 
@@ -253,7 +253,7 @@ export class McpDataPanel extends Panel {
         } else if (!resultHtml) {
           this.cachedWidgetHtml = null;
           this.lastJsonHash = null;
-          this.showError(t('mcp.visualizationFailed'));
+          this.showNotSynced(t('mcp.visualizationFailed'));
         }
       }
     } catch (err) {
@@ -261,7 +261,7 @@ export class McpDataPanel extends Panel {
       this.cachedWidgetHtml = null;
       this.lastJsonHash = null;
       const msg = err instanceof Error ? err.message : t('mcp.visualizationFailed');
-      this.showError(msg);
+      this.showNotSynced(msg);
     } finally {
       clearTimeout(timeoutId);
       this.pendingHash = null;

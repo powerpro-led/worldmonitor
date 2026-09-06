@@ -245,7 +245,7 @@ export class StrategicRiskRefreshHarness {
     this.badgeCalls.push({ state, detail });
   }
 
-  public showError(message: string, retry: () => void): void {
+  public showNotSynced(message: string, retry: () => void): void {
     this.errorCalls.push({ message, retry });
   }
 
@@ -427,7 +427,7 @@ describe('frontend CII source of truth', () => {
       'const cachedRiskScores = await fetchCachedRiskScores(this.signal);',
       'const localOverview = calculateStrategicRiskOverview(',
     );
-    assert.match(refreshBody, /if \(!cachedRiskScores\) \{[\s\S]*this\.setDataBadge\('unavailable'\);[\s\S]*this\.showError\(t\('common\.failedRiskOverview'\)[\s\S]*return false;/);
+    assert.match(refreshBody, /if \(!cachedRiskScores\) \{[\s\S]*this\.setDataBadge\('unavailable'\);[\s\S]*this\.showNotSynced\(t\('common\.failedRiskOverview'\)[\s\S]*return false;/);
     assert.doesNotMatch(refreshBody, /using local fallback|setDataBadge\('live'/);
     assert.match(refreshBody, /this\.applyCachedRiskOverview\(cachedRiskScores, localOverview\);/);
     assert.doesNotMatch(src, /usedCachedScores|getLearningProgress\(/);

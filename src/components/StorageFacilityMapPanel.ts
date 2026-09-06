@@ -231,7 +231,7 @@ export class StorageFacilityMapPanel extends Panel {
       const live = await getSupplyChainClient().listStorageFacilities({ facilityType: '' });
       if (!this.element?.isConnected) return;
       if (live.upstreamUnavailable || !live.facilities?.length) {
-        this.showError('Storage registry unavailable', () => void this.fetchData());
+        this.showNotSynced('Storage registry unavailable', () => void this.fetchData());
         return;
       }
       this.data = live;
@@ -246,7 +246,7 @@ export class StorageFacilityMapPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError('Storage registry error', () => void this.fetchData());
+      this.showNotSynced('Storage registry error', () => void this.fetchData());
     }
   }
 

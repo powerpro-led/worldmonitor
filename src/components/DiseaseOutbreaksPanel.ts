@@ -108,7 +108,7 @@ export class DiseaseOutbreaksPanel extends Panel {
     try {
       const data = await fetchDiseaseOutbreaks();
       if (!data.outbreaks?.length) {
-        if (!this._hasData) this.showError(t('components.diseaseOutbreaks.errors.noData'), () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced(t('components.diseaseOutbreaks.errors.noData'), () => void this.fetchData());
         return false;
       }
       this._outbreaks = [...data.outbreaks].sort((a, b) => {
@@ -122,7 +122,7 @@ export class DiseaseOutbreaksPanel extends Panel {
       this._render();
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : t('components.diseaseOutbreaks.errors.failedToLoad'), () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : t('components.diseaseOutbreaks.errors.failedToLoad'), () => void this.fetchData());
       return false;
     }
   }

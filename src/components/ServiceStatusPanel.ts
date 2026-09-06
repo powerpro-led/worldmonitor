@@ -80,7 +80,7 @@ export class ServiceStatusPanel extends Panel {
     }
 
     if (this.error) {
-      this.showError(this.error, () => { this.loading = true; this.render(); void this.fetchStatus(); });
+      this.showNotSynced(this.error, () => { this.loading = true; this.render(); void this.fetchStatus(); });
       return;
     }
 

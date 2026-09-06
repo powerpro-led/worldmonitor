@@ -57,6 +57,10 @@ async function loadGivingPanel(): Promise<GivingPanelConstructor> {
           this.testState.error = true;
           this.content.innerHTML = 'unavailable';
         }
+        showNotSynced() {
+          this.testState.error = true;
+          this.content.innerHTML = 'unavailable';
+        }
         setErrorState(value) { this.testState.error = value; }
         setCount(value) { this.testState.count = value; }
         destroy() { this.testState.destroyed = true; }

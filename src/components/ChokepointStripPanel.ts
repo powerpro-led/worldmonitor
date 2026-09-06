@@ -81,13 +81,13 @@ export class ChokepointStripPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError(t('components.chokepointStrip.errors.unavailable'), () => void this.fetchData());
+      this.showNotSynced(t('components.chokepointStrip.errors.unavailable'), () => void this.fetchData());
     }
   }
 
   private render(): void {
     if (!this.data?.chokepoints?.length) {
-      this.showError(t('components.chokepointStrip.errors.noData'), () => void this.fetchData());
+      this.showNotSynced(t('components.chokepointStrip.errors.noData'), () => void this.fetchData());
       return;
     }
 

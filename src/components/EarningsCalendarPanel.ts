@@ -149,14 +149,14 @@ export class EarningsCalendarPanel extends Panel {
       const resp = await client.listEarningsCalendar({ fromDate, toDate });
 
       if (resp.unavailable || !resp.earnings?.length) {
-        if (!this._hasData) this.showError(t('components.earningsCalendar.errors.noData'), () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced(t('components.earningsCalendar.errors.noData'), () => void this.fetchData());
         return false;
       }
 
       this.render(resp.earnings as EarningsEntry[]);
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : t('components.earningsCalendar.errors.failedToLoad'), () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : t('components.earningsCalendar.errors.failedToLoad'), () => void this.fetchData());
       return false;
     }
   }

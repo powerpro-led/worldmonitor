@@ -162,7 +162,7 @@ export class GoldIntelligencePanel extends Panel {
       const data: GoldIntelligenceData = await resp.json();
 
       if (data.unavailable) {
-        if (!this._hasData) this.showError('Gold data unavailable', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('Gold data unavailable', () => void this.fetchData());
         return false;
       }
 
@@ -173,7 +173,7 @@ export class GoldIntelligencePanel extends Panel {
     } catch (e) {
       if (this.isAbortError(e)) return false;
       if (!this.element?.isConnected) return false;
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
       return false;
     }
   }

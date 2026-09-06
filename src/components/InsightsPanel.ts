@@ -505,7 +505,7 @@ export class InsightsPanel extends Panel {
       );
     } catch (error) {
       console.error('[InsightsPanel] Error:', error);
-      this.showError();
+      this.showNotSynced();
     }
   }
 

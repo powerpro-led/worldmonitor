@@ -240,7 +240,7 @@ export class LatestBriefPanel extends Panel {
         return;
       }
       const message = err instanceof Error ? err.message : 'Brief unavailable — try again shortly.';
-      this.showError(message, () => { void this.refresh(); });
+      this.showNotSynced(message, () => { void this.refresh(); });
     } finally {
       this.refreshing = false;
       this.inflightAbort = null;

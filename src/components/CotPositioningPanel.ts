@@ -79,14 +79,14 @@ export class CotPositioningPanel extends Panel {
       const client = await getMarketClient();
       const resp = await client.getCotPositioning({});
       if (resp.unavailable || !resp.instruments || resp.instruments.length === 0) {
-        if (!this._hasData) this.showError('COT data unavailable', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('COT data unavailable', () => void this.fetchData());
         return false;
       }
       this._hasData = true;
       this.render(resp.instruments as CotInstrumentData[], resp.reportDate ?? '');
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
       return false;
     }
   }

@@ -32,13 +32,13 @@ export class GroceryBasketPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError(t('common.failedMarketData'), () => void this.fetchData());
+      this.showNotSynced(t('common.failedMarketData'), () => void this.fetchData());
     }
   }
 
   private renderBasket(data: ListGroceryBasketPricesResponse): void {
     if (!data.countries?.length) {
-      this.showError(t('common.failedMarketData'), () => void this.fetchData());
+      this.showNotSynced(t('common.failedMarketData'), () => void this.fetchData());
       return;
     }
 

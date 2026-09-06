@@ -407,11 +407,22 @@ export class NewsPanel extends Panel {
     super.showError(message, onRetry, autoRetrySeconds);
   }
 
+  public override showNotSynced(
+    message?: string,
+    onRetry?: () => void,
+    autoRetrySeconds?: number,
+    opts?: { pathPrefix?: string },
+  ): void {
+    this.lastRawClusters = null;
+    this.lastRawItems = null;
+    super.showNotSynced(message, onRetry, autoRetrySeconds, opts);
+  }
+
   public renderNews(items: NewsItem[]): void {
     if (items.length === 0) {
       this.renderRequestId += 1; // Cancel in-flight clustering from previous renders.
       this.setDataBadge('unavailable');
-      this.showError(t('common.noNewsAvailable'));
+      this.showNotSynced(t('common.noNewsAvailable'));
       return;
     }
 

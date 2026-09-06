@@ -46,7 +46,7 @@ export class GivingPanel extends Panel {
     this.clearExpiryTimer();
     this.data = null;
     this.setCount(0);
-    this.showError();
+    this.showNotSynced();
   }
 
   public hasData(): boolean {

@@ -38,7 +38,7 @@ export class SocialVelocityPanel extends Panel {
     try {
       const data = await fetchSocialVelocity();
       if (!data.posts?.length) {
-        if (!this._hasData) this.showError('No signal data available', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('No signal data available', () => void this.fetchData());
         return false;
       }
       this._posts = [...data.posts].sort((a, b) => b.velocityScore - a.velocityScore);
@@ -46,7 +46,7 @@ export class SocialVelocityPanel extends Panel {
       this._render();
       return true;
     } catch (e) {
-      if (!this._hasData) this.showError(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced(e instanceof Error ? e.message : 'Failed to load', () => void this.fetchData());
       return false;
     }
   }

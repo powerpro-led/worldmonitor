@@ -112,7 +112,7 @@ export class EconomicCalendarPanel extends Panel {
       const resp = await client.getEconomicCalendar({ fromDate, toDate });
 
       if (resp.unavailable || !resp.events || resp.events.length === 0) {
-        if (!this._hasData) this.showError('Economic calendar data unavailable.', () => void this.fetchData());
+        if (!this._hasData) this.showNotSynced('Economic calendar data unavailable.', () => void this.fetchData());
         return false;
       }
 
@@ -122,7 +122,7 @@ export class EconomicCalendarPanel extends Panel {
       return true;
     } catch (err) {
       if (this.isAbortError(err)) return false;
-      if (!this._hasData) this.showError('Failed to load economic calendar.', () => void this.fetchData());
+      if (!this._hasData) this.showNotSynced('Failed to load economic calendar.', () => void this.fetchData());
       return false;
     }
   }
@@ -154,7 +154,7 @@ export class EconomicCalendarPanel extends Panel {
 
   private _render(): void {
     if (!this._hasData) {
-      this.showError('No upcoming economic events.', () => void this.fetchData());
+      this.showNotSynced('No upcoming economic events.', () => void this.fetchData());
       return;
     }
 

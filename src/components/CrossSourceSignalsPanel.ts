@@ -112,7 +112,7 @@ export class CrossSourceSignalsPanel extends Panel {
   }
 
   public showFetchError(): void {
-    this.showError('Signal data unavailable — upstream feeds unreachable.', () => {/* refreshed by scheduler */});
+    this.showNotSynced('Signal data unavailable — upstream feeds unreachable.', () => {/* refreshed by scheduler */});
   }
 
   private ageSuffix(ts: number): string {
@@ -165,7 +165,7 @@ export class CrossSourceSignalsPanel extends Panel {
   private render(): void {
     if (this.signals.length === 0) {
       if (!this.evaluatedAt) {
-        this.showError('Signal aggregator is initializing. First evaluation runs within 15 minutes.', () => {/* refreshed by scheduler */});
+        this.showNotSynced('Signal aggregator is initializing. First evaluation runs within 15 minutes.', () => {/* refreshed by scheduler */});
       } else {
         this.setSafeContent(unsafeRawHtml('<div style="padding:16px 0;text-align:center;font-size:12px;color:var(--text-dim)">No cross-source signals detected.</div>', 'legacy Panel.setContent() migration'));
       }

@@ -203,21 +203,21 @@ export class FearGreedPanel extends Panel {
       const client = new MarketServiceClient(getRpcBaseUrl(), { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) });
       const resp = await client.getFearGreedIndex({});
       if (resp.unavailable) {
-        if (!this.data) this.showError(t('common.noDataShort'), () => void this.fetchData());
+        if (!this.data) this.showNotSynced(t('common.noDataShort'), () => void this.fetchData());
         return false;
       }
       this.data = resp as FearGreedData;
       this.renderPanel();
       return true;
     } catch (e) {
-      if (!this.data) this.showError(e instanceof Error ? e.message : t('common.failedToLoad'), () => void this.fetchData());
+      if (!this.data) this.showNotSynced(e instanceof Error ? e.message : t('common.failedToLoad'), () => void this.fetchData());
       return false;
     }
   }
 
   private renderPanel(): void {
     if (!this.data) {
-      this.showError(t('common.noDataShort'), () => void this.fetchData());
+      this.showNotSynced(t('common.noDataShort'), () => void this.fetchData());
       return;
     }
 

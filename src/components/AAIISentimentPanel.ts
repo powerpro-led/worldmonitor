@@ -158,13 +158,13 @@ export class AAIISentimentPanel extends Panel {
     } catch { /* fallback below */ }
     // Retry after ~5 minutes so the panel recovers on its own if the seed
     // arrives late (AAII cadence is weekly but the cron can be delayed).
-    this.showError('AAII sentiment data unavailable', () => { void this.fetchData(); }, 300);
+    this.showNotSynced('AAII sentiment data unavailable', () => { void this.fetchData(); }, 300);
     return false;
   }
 
   private renderPanel(): void {
     if (!this.data?.latest) {
-      this.showError(t('common.noDataShort'), () => void this.fetchData());
+      this.showNotSynced(t('common.noDataShort'), () => void this.fetchData());
       return;
     }
 

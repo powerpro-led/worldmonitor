@@ -105,7 +105,7 @@ export class EnergyCrisisPanel extends Panel {
     }
 
     if (this.error || !this.data) {
-      this.showError(this.error || 'No data available', () => void this.fetchData());
+      this.showNotSynced(this.error || 'No data available', () => void this.fetchData());
       return;
     }
 

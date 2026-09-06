@@ -193,13 +193,13 @@ export class OilInventoriesPanel extends Panel {
   public async fetchData(): Promise<void> {
     try {
       const resp = await fetch(toApiUrl('/api/economic/v1/get-oil-inventories'));
-      if (!resp.ok) { this.showError('Oil inventory data unavailable', () => void this.fetchData(), 300); return; }
+      if (!resp.ok) { this.showNotSynced('Oil inventory data unavailable', () => void this.fetchData(), 300); return; }
       const data = (await resp.json()) as OilInventoriesData;
       if (!this.element?.isConnected) return;
       this.render(data);
     } catch {
       if (!this.element?.isConnected) return;
-      this.showError('Oil inventory data unavailable', () => void this.fetchData(), 300);
+      this.showNotSynced('Oil inventory data unavailable', () => void this.fetchData(), 300);
     }
   }
 
@@ -267,7 +267,7 @@ export class OilInventoriesPanel extends Panel {
     }
 
     if (parts.length === 0) {
-      this.showError('Oil inventory data unavailable', () => void this.fetchData(), 300);
+      this.showNotSynced('Oil inventory data unavailable', () => void this.fetchData(), 300);
       return;
     }
 

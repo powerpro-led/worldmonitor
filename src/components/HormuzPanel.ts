@@ -71,7 +71,7 @@ export class HormuzPanel extends Panel {
     try {
       const data = await fetchHormuzTracker();
       if (!data) {
-        this.showError(t('components.hormuzTracker.errors.unavailable'), () => void this.fetchData());
+        this.showNotSynced(t('components.hormuzTracker.errors.unavailable'), () => void this.fetchData());
         return false;
       }
       this.data = data;
@@ -79,7 +79,7 @@ export class HormuzPanel extends Panel {
       this.bindTooltip();
       return true;
     } catch (e) {
-      this.showError(e instanceof Error ? e.message : t('components.hormuzTracker.errors.failedToLoad'), () => void this.fetchData());
+      this.showNotSynced(e instanceof Error ? e.message : t('components.hormuzTracker.errors.failedToLoad'), () => void this.fetchData());
       return false;
     }
   }

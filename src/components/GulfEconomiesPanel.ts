@@ -53,14 +53,14 @@ export class GulfEconomiesPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError(t('common.failedMarketData'), () => void this.fetchData());
+      this.showNotSynced(t('common.failedMarketData'), () => void this.fetchData());
     }
   }
 
   private renderGulf(data: ListGulfQuotesResponse): void {
     if (!data.quotes?.length) {
       const msg = data.rateLimited ? t('common.rateLimitedMarket') : t('common.failedMarketData');
-      this.showError(msg, () => void this.fetchData());
+      this.showNotSynced(msg, () => void this.fetchData());
       return;
     }
 

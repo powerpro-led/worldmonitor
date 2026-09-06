@@ -45,7 +45,7 @@ export class CascadePanel extends Panel {
       this.render();
     } catch (error) {
       console.error('[CascadePanel] Init error:', error);
-      this.showError(t('common.failedDependencyGraph'));
+      this.showNotSynced(t('common.failedDependencyGraph'));
     }
   }
 

@@ -65,13 +65,13 @@ export class ClimateNewsPanel extends Panel {
     } catch (err) {
       if (this.isAbortError(err)) return;
       if (!this.element?.isConnected) return;
-      this.showError(t('components.climateNews.loadError'), () => void this.fetchData());
+      this.showNotSynced(t('components.climateNews.loadError'), () => void this.fetchData());
     }
   }
 
   private renderNewsList(data: ListClimateNewsResponse): void {
     if (!data.items?.length) {
-      this.showError(t('components.climateNews.loadError'), () => void this.fetchData());
+      this.showNotSynced(t('components.climateNews.loadError'), () => void this.fetchData());
       return;
     }
 

@@ -162,15 +162,16 @@ if ($vsix) {
 }
 
 # --- 5. Desktop launcher ----------------------------------------
-# A .url internet shortcut on the Desktop that opens the control panel, with
-# the bundled .ico for its Finder/Explorer icon.
-$panelUrl = 'http://127.0.0.1:46123/settings.html'
+# A .url internet shortcut on the Desktop that opens the local dashboard, with
+# the bundled .ico for its Explorer icon. (settings.html is the cloud admin
+# panel now and is pruned from this bundle -- Workstream R.)
+$dashboardUrl = 'http://127.0.0.1:46123/'
 $desktop = [Environment]::GetFolderPath('Desktop')
 if ($desktop) {
   Say "Adding the Desktop launcher"
   $ico = Join-Path $ScriptDir 'assets\icon.ico'
   $lnk = Join-Path $desktop 'WorldMonitor.url'
-  $lines = @('[InternetShortcut]', "URL=$panelUrl")
+  $lines = @('[InternetShortcut]', "URL=$dashboardUrl")
   if (Test-Path $ico) { $lines += "IconFile=$ico"; $lines += 'IconIndex=0' }
   Set-Content -Path $lnk -Value $lines -Encoding ascii
   Info "created $lnk"
@@ -179,11 +180,11 @@ if ($desktop) {
 # --- done ---------------------------------------------------------
 Say "Done."
 @"
-  Open the backend control panel (config / sign in / status / restart):
-       $panelUrl
+  Open the local dashboard in a browser:
+       $dashboardUrl
   ...or double-click WorldMonitor on your Desktop.
 
-  Headless / no browser? Sign in from the terminal instead:
+  Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login
      One-time operator setup: allowlist  http://127.0.0.1:46124/callback
      under the Supabase project's Auth -> URL Configuration -> Redirect URLs.

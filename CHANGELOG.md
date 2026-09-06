@@ -129,6 +129,9 @@ sign-in, first-run redirect) — all removed (see **Removed**). Operators go fro
 - **`.github/workflows/release.yml`** builds and publishes the whole bundle on a
   `v*` tag with only the default `GITHUB_TOKEN` (Model B means no repo secrets
   in the build).
+- The Desktop launcher opens the local dashboard (`http://127.0.0.1:46123/`);
+  first-run config is `--config org.env` or the installer prompt, and sign-in is
+  `worldmonitor-local login`.
 
 ### Cloud pipeline — infrastructure (scaffold; not yet run against the cloud)
 

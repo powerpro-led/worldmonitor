@@ -31,8 +31,8 @@ That script:
    `~/.worldmonitor/config.db`, registers the background service
    (launchd `LaunchAgent` on macOS · per-user Scheduled Task on Windows, no
    admin rights), and installs the `.vsix` if the `code` CLI is on `PATH`;
-4. drops a **WorldMonitor** launcher on your Desktop that opens the control
-   panel.
+4. drops a **WorldMonitor** launcher on your Desktop that opens the local
+   dashboard (`http://127.0.0.1:46123/`) in your browser.
 
 ### Options
 
@@ -41,42 +41,44 @@ curl -fsSL …/install | sh -s -- --config /path/to/org.env      # pre-seed org 
 curl -fsSL …/install | sh -s -- --app-version 2.13.0            # pin a specific release
 ```
 
-`--config <org.env>` takes a `KEY=value` file with at least `VITE_SUPABASE_URL`
-and `VITE_SUPABASE_PUBLISHABLE_KEY` (both public), plus optionally the Upstash
-REST URL and **read-only** token for a self-refreshing cache. See
-[`org.env.example`](scripts/release/org.env.example). Without it — and without a
-browser to use the control panel — the manual path below prompts for the two
-Supabase values.
+`--config <org.env>` takes a `KEY=value` file with `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` (both public) — that is the whole bootstrap.
+Everything else (this org's Upstash read-only credential, `APP_DOMAIN`) is
+handed to the backend by the `local-config` broker after you sign in. See
+[`org.env.example`](scripts/release/org.env.example). Without `--config`, the
+installer prompts for the two Supabase values.
 
 **Offline / air-gapped:** point `WM_NODE_TARBALL` / `WM_APP_TARBALL`
 (`WM_APP_ZIP` on Windows) at local files and nothing is downloaded.
 
-## First run — configure & sign in
+## First run — sign in
 
-Open the control panel at **`http://127.0.0.1:46123/settings.html`** (or
-double-click the Desktop launcher), go to the **Backend** section:
-
-- paste the Supabase URL + publishable key (skip if an `org.env` pre-seeded
-  them), add the OpenRouter key for AI summary panels and the Upstash
-  read-only URL/token for a self-refreshing cache — **Save** restarts the
-  backend for you;
-- click **Sign in with GitHub** for your personalised Latest Brief.
-
-A fresh install with no Supabase configured redirects the dashboard here on
-first open.
-
-**Headless / no browser:** sign in from the terminal instead —
+The installer already wrote the two Supabase values to `.env` (from `--config`
+or the prompt). The only first-run step is to sign in:
 
 ```sh
 node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs login
 ```
+
+This runs a loopback GitHub OAuth flow in your browser, writes the session to
+`~/.worldmonitor/session.json`, and immediately asks this org's `local-config`
+broker for its Upstash **read-only** credential — so the local cache starts
+refreshing without you ever handling a token. Removing your account from the
+org revokes it within the hour (the backend re-checks the broker hourly and
+drops the credential on a `401`/`403`).
 
 One-time operator setup: the Supabase project must allowlist
 `http://127.0.0.1:46124/callback` under **Auth → URL Configuration → Redirect
 URLs**. Your GitHub account must be in the allow-listed org (org membership is
 the invite).
 
-Then, in VS Code, run **WorldMonitor: Open Local Dashboard**.
+Then either open **`http://127.0.0.1:46123/`** in a browser (or the Desktop
+launcher), or, in VS Code, run **WorldMonitor: Open Local Dashboard**.
+
+**AI summary panels** need a personal LLM key — set `OPENROUTER_API_KEY` (or
+Groq / Ollama) in the dashboard's **Settings → AI** tab inside VS Code, or add
+it to `.env`. It is per-operator; the org's ~26 shared data-source keys stay in
+the cloud and never reach an operator machine.
 
 ## Managing the backend
 
@@ -89,14 +91,16 @@ node scripts/worldmonitor-local.mjs logout      # drop the stored session
 node scripts/worldmonitor-local.mjs uninstall   # remove the service (keeps ~/.worldmonitor/)
 ```
 
-`.env` (in `~/.worldmonitor/app/`) stays authoritative — the service loads it
-with `node --env-file`; `config.db` holds the same allow-listed values in a
-store the control panel can edit. After changing either, `restart`.
+`.env` (in `~/.worldmonitor/app/`) holds the values you set — the service loads
+it with `node --env-file`. `config.db` is the same allow-listed key set in a
+store the `config` subcommand edits and the `local-config` broker writes to;
+for the **brokered** keys (the Upstash read-only URL + token, `APP_DOMAIN`) the
+broker's copy wins over `.env` so a stale token can't shadow a revocation.
+After changing `.env` or a non-brokered `config` value, `restart`.
 
-The service listens on `127.0.0.1:46123` — REST for the dashboard, the control
-panel at `/settings.html`, and `/api/mcp` for a local MCP agent. Log:
-`~/.worldmonitor/local-api.log` (`%USERPROFILE%\.worldmonitor\local-api.log` on
-Windows).
+The service listens on `127.0.0.1:46123` — REST + `dist/` for the dashboard and
+`/api/mcp` for a local MCP agent. Log: `~/.worldmonitor/local-api.log`
+(`%USERPROFILE%\.worldmonitor\local-api.log` on Windows).
 
 ## Upgrading
 
@@ -129,9 +133,9 @@ why it's safe.
 
 | Symptom | Check |
 | --- | --- |
-| Dashboard panels stay empty | `status` shows `backend up`? Without the Upstash URL + read-only token nothing refreshes the cache — set them in the control panel and it restarts for you. |
+| Dashboard panels stay empty | `status` shows `backend up`? The cache only refreshes once you have an Upstash read-only credential — normally the `local-config` broker supplies it at `login` (its output says so, or `config list` shows the token as set). If your org doesn't run the broker, set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_READONLY_TOKEN` in `.env` and `restart`. |
 | Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
-| "Brief service unavailable" | You haven't signed in, or the session expired — sign in again (control panel or `login`). |
+| "Brief service unavailable" | You haven't signed in, or the session expired — run `worldmonitor-local login` again. |
 | Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
 | `login` fails after GitHub consent | Your account isn't in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
 | Windows: `status` shows `task Ready` but `backend DOWN` | The task ran but node exited — check `%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |

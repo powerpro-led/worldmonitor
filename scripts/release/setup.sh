@@ -177,8 +177,9 @@ fi
 
 # ── 5. Desktop launcher ─────────────────────────────────────────────
 # A minimal .app bundle (no terminal window, real Dock icon) that just opens
-# the backend control panel in the default browser.
-PANEL_URL="http://127.0.0.1:46123/settings.html"
+# the local dashboard in the default browser. (settings.html is the cloud
+# admin panel now and is pruned from this bundle — Workstream R.)
+DASHBOARD_URL="http://127.0.0.1:46123/"
 DESKTOP="$HOME/Desktop"
 if [ -d "$DESKTOP" ]; then
   say "Adding the Desktop launcher"
@@ -198,7 +199,7 @@ if [ -d "$DESKTOP" ]; then
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
-  printf '#!/bin/sh\nexec open %s\n' "$PANEL_URL" > "$APP/Contents/MacOS/WorldMonitor"
+  printf '#!/bin/sh\nexec open %s\n' "$DASHBOARD_URL" > "$APP/Contents/MacOS/WorldMonitor"
   chmod +x "$APP/Contents/MacOS/WorldMonitor"
   [ -f "$SCRIPT_DIR/assets/icon.icns" ] && cp "$SCRIPT_DIR/assets/icon.icns" "$APP/Contents/Resources/icon.icns"
   touch "$APP" 2>/dev/null || true   # nudge Finder to pick up the new icon
@@ -208,11 +209,11 @@ fi
 # ── done ─────────────────────────────────────────────────────────────
 say "Done."
 cat <<EOF
-  Open the backend control panel (config · sign in · status · restart):
-       $PANEL_URL
+  Open the local dashboard in a browser:
+       $DASHBOARD_URL
   …or double-click WorldMonitor on your Desktop.
 
-  Headless / no browser? Sign in from the terminal instead:
+  Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login
      One-time operator setup: allowlist  http://127.0.0.1:46124/callback
      under the Supabase project's Auth → URL Configuration → Redirect URLs.

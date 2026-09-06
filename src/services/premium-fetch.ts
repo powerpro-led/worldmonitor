@@ -37,6 +37,7 @@ import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '@/shared/pro-fresh-rpc';
 import { isDesktopRuntime } from './runtime';
 import { APP_ORIGIN } from '@/config/domain';
+import { recordMirrorKeyHint } from '@/services/mirror-key-hints';
 
 /**
  * Test seam — set in unit tests to inject key/token providers without needing
@@ -194,6 +195,7 @@ export async function premiumFetch(
   if (existing.has('Authorization') || existing.has('X-WorldMonitor-Key')) {
     const res = await globalThis.fetch(input, withCredentials(requestInit));
     reportServerError(res, input);
+    recordMirrorKeyHint(input, res);
     return res;
   }
 
@@ -208,6 +210,7 @@ export async function premiumFetch(
         existing.set('X-WorldMonitor-Key', wmKey);
         const res = await globalThis.fetch(input, { ...withCredentials(requestInit), headers: existing });
         reportServerError(res, input);
+        recordMirrorKeyHint(input, res);
         return res;
       }
     } catch { /* not available — fall through */ }
@@ -253,6 +256,7 @@ export async function premiumFetch(
         existing.set('Authorization', `Bearer ${token}`);
         const res = await globalThis.fetch(input, { ...withCredentials(requestInit), headers: existing });
         reportServerError(res, input);
+        recordMirrorKeyHint(input, res);
         return res;
       }
     } catch { /* not signed in — fall through */ }
@@ -265,5 +269,6 @@ export async function premiumFetch(
   // 401, which is correct.
   const res = await globalThis.fetch(input, withCredentials(requestInit));
   reportServerError(res, input);
+  recordMirrorKeyHint(input, res);
   return res;
 }

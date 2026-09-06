@@ -411,6 +411,37 @@ it pointed at `settings.html` was D5 (pre-pivot), never re-decided.
 S68 — `v2.13.0` tagging is now purely a timing call for the operator (no code
 or doc blocker left).
 
+**Tier-1 local validation of the P14 extraction (no code changed).** Local
+Redis stack was already up (`worldmonitor-redis` + the `:8079` Upstash-REST
+shim + `.env` already on local Redis). Ran 8 extracted seeders live against it:
+
+- `seed-gscpi` / `seed-satellites` / `seed-corridor-risk` / `seed-shipping-stress`
+  — all exit 0, fetched live upstream data, wrote a valid contract-mode
+  `{_seed,data}` envelope, advanced seed-meta with the right `sourceVersion`,
+  TTLs clear their staleness gates. **`seed-corridor-risk`'s migrated
+  `publishNotificationEvent` fired** (`[Notify] Dedup hit — corridor_risk …` ×5
+  — the SETNX dedup working, not an error).
+- `seed-telegram --once` (no `TELEGRAM_*`) and `sync-ais-results` (no
+  `AIS_RESULTS_UPSTASH_*`) — both **graceful no-op, exit 0**, neither touches an
+  existing key. The P17/P18 "not configured" paths are benign; `sync-ais-results`
+  only *throws* when configured-but-empty.
+- `seed-transit-summaries` (P20) — both branches: with the canonical
+  `supply_chain:portwatch:v1` absent it **skips the publish and preserves
+  seed-meta**; after seeding `seed-portwatch.mjs` it publishes **13/13** rows +
+  13 `…:history:v1:<id>` keys. Output `data.summaries` is an object keyed by
+  chokepoint id — exact match for the `summaries[cp.id]` read in
+  `get-chokepoint-status.ts:317`. (Note: `seed-bundle-portwatch-port-activity.mjs`
+  is the *port-activity* bundle and never writes the canonical; `seed-portwatch.mjs`
+  / `seed-bundle-portwatch.mjs` does — worth knowing for a cold local mirror.)
+- 205 targeted unit tests green (`corridorrisk-upstream`, `transit-summaries`,
+  `telegram-feed-contract`, `sync-domains`, `relay-boot-seed-freshness-guard`,
+  `seed-telegram`, `sync-ais-results`, `gscpi-shape-extraction`,
+  `telegram-intel-format`).
+- **Not done:** a runtime A/B against `ais-relay.cjs` — those loops are deleted
+  from the current file, so it needs a historical checkout. The S61–S67 parity
+  tests were retargeted from `ais-relay.cjs` source-greps to the standalone
+  scripts and still assert the same behaviour; that is the source-level diff.
+
 ### Session 67 — 2026-09-07
 
 **WS-core + Telegram extraction — the P14 Phase 2 tail, and the last of

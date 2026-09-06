@@ -4,72 +4,175 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
-## [2.13.0] - 2026-09-03
+## [2.13.0] - 2026-09-07
 
-The downloadable bundle is now **org-neutral** — one artifact serves any number
-of organisations, each supplying its own config.
+World Monitor becomes a **multi-tenant platform**. The repo devs operate an
+isolated instance per organisation (its own Supabase project, its own Upstash
+database, its own cloud deploy). Each org's Upstash is the single source of
+truth for that org's dashboard state; the downloadable backend is a pure
+**read-only mirror** of it — it does no data-source fetching and holds no
+data-source keys.
 
-### Browser control panel for the standalone backend
+This supersedes the per-operator control panel that earlier 2.13.0 drafts
+carried (`settings.html` Backend section, `/api/local-config`, in-panel GitHub
+sign-in, first-run redirect) — all removed (see **Removed**). Operators go from
+~27 keys to one.
 
-- **`http://127.0.0.1:46123/settings.html` → Backend** is a self-service
-  control panel for the standalone backend: view/edit the Supabase, Upstash and
-  OpenRouter config (secrets masked, never echoed), see operator identity and
-  service status, and restart. It only appears when the page is served over
-  loopback by the backend (`window.__WM_LOCAL_CONTROL_PANEL`) — the desktop and
-  web builds are unaffected.
-- **`GET/POST/DELETE /api/local-config`** — transport-token-gated, tight 5-key
-  allow-list, per-key shape validation. A write persists to
-  `~/.worldmonitor/config.db` **and** the live `process.env`, then restarts the
-  backend (origins/CSP are captured at module load, so a URL change needs a
-  fresh process).
-- **"Sign in with GitHub" in the panel** replaces `worldmonitor-local login`
-  for end users. `POST /api/local-login` runs the same loopback PKCE flow
-  (now shared code in `vscode-extension/sidecar/local-login.mjs`); the browser
-  opens the consent URL and the backend writes `~/.worldmonitor/session.json`.
-  The CLI `login` stays for headless/server installs.
-- **First-run redirect** — a bundle with no Supabase configured bounces the
-  dashboard to `settings.html?firstrun=1#backend`.
+### Config broker — one login, everything else brokered
 
-- **`dist/` is built with `VITE_SUPABASE_*` unset**, so no organisation's
-  Supabase project is baked into the JS. `src/services/supabase-client.ts`'s
-  `readEnv()` reads `window.__WM_RUNTIME_CONFIG` first and falls back to
-  `import.meta.env` — the cloud web app is unchanged.
+- **`local-config` Supabase Edge Function** (`supabase/functions/local-config`,
+  `verify_jwt: true`). It reads the caller from their JWT, confirms they still
+  exist and are not banned in that org's project, and returns
+  `{ upstashUrl, upstashReadonlyToken, appDomain }`. One shared **read-only**
+  token per org — never a per-user token, never a write token.
+- **The local backend caches the broker response in `~/.worldmonitor/config.db`
+  and re-fetches it hourly** (`vscode-extension/sidecar/local-config-broker.mjs`).
+  A `401`/`403` from the broker, or a `SIGNED_OUT`, drops the cached credential —
+  so removing someone from the org (ban or delete their Supabase user)
+  propagates within the hour. For the brokered keys the cached copy outranks
+  `.env`, so a stale Upstash token in a pre-2.13 `.env` can no longer shadow
+  the broker and silently defeat revocation.
+- **`worldmonitor-local login`** (loopback PKCE, `local-login.mjs`) is again the
+  sign-in path; it seeds the broker cache immediately after the session lands.
+- **`org.env` shrinks to two public values** — `VITE_SUPABASE_URL` +
+  `VITE_SUPABASE_PUBLISHABLE_KEY`. That is the whole bootstrap: a fresh backend
+  only needs to know *which* org's Supabase to authenticate against. The Upstash
+  REST URL + read-only token stay accepted but optional (a manual cache
+  primer); no write credential is ever collected. See `scripts/release/org.env.example`
+  and `scripts/release/SECURITY.md`.
+
+### Two-tier keys
+
+- **Org-admin tier — the ~26 data-source keys** (ACLED, FRED, Finnhub,
+  AISStream, FIRMS, Brave/Exa/SerpAPI, …) live only in that org's Supabase, in a
+  new **`pipeline_config`** table (`{ key, value, updated_at }`, RLS: rows are
+  writable only when `app_metadata.wm_admin` is true, service-role bypass for
+  the worker). They are read only by that org's cloud worker, which hydrates
+  them into its process env at startup and every 5 minutes. They never touch an
+  operator's machine.
+- **Per-operator tier — the LLM key only.** A new **AI** tab in the dashboard's
+  Unified Settings (gear icon → Settings; VS Code embed only) sets
+  `OPENROUTER_API_KEY` / `GROQ_API_KEY` / `OLLAMA_API_URL` / `OLLAMA_MODEL`.
+  `GET/PUT /api/local-llm-config` persists to `config.db` (survives the
+  launchd/Scheduled-Task restarts the backend runs under) and mirrors to
+  `process.env` live — no restart. Secrets are never sent back to the browser
+  (GET reports `{ set }` only); a per-secret **Clear** button is the only way to
+  unset one. The LLM status dot now also shows in the embed and distinguishes
+  "no provider configured" from "LLM offline"; clicking it opens the AI tab.
+  With no provider configured, chat returns a clean `llm_unavailable` and
+  summaries fall back to the browser path.
+
+### Cloud admin panel
+
+- **`settings.html` is removed from the operator bundle** (pruned from the
+  staged `dist/` in `build-release-bundle.mjs` by a fixpoint over the real chunk
+  graph — a name match would have caught shared chunks). It is now served only
+  by the shared Vercel `dist/` build; one build serves every org.
+- Behind a **GitHub-login gate that checks `app_metadata.wm_admin`**. The admin
+  first enters their org's Supabase URL + publishable key once (kept in
+  `localStorage`, on a Supabase client fully separate from the dashboard's own
+  auth session). They then edit four key categories — economy, markets,
+  security, tracking — writing straight into that org's `pipeline_config` with
+  their own session (RLS-enforced; no new SQL). The `ai` category is
+  per-operator and not shown here. Presence of a key is read; its value never
+  is.
+
+### `github-identity-bridge` vendored per-repo
+
+- The bridge is vendored into `supabase/functions/github-identity-bridge/`
+  (byte-for-byte from the platform repo) plus a plain migration; the multi-org
+  deploy deploys it to each tenant's Supabase project. `PROVISIONING.md` is the
+  per-org runbook.
+- **Its issuer is derived at runtime.** VS Code GitHub sign-in
+  (`auth-provider.ts`) builds the Edge Function URL from `getSupabaseUrl()`
+  instead of a hardcoded project ref, so no org's project bakes into `dist/`.
+
+### Read-only mirror — denylist, not allowlist
+
+- The sync layer's `SYNC_PREFIXES` allowlist is replaced by
+  `classifyKey(key) → 'deny' | 'mirror' | 'mirror-filtered'`
+  (`scripts/shared/sync-domains.mjs`). **A brand-new key now mirrors by
+  default** — no more "panel X broke because nobody added the prefix."
+- **Denied:** secrets/tokens/OAuth, `rl:` / `lock:` / `idempotency:` /
+  `session:` / `*:cursor`, the live worker queue (`forecast:simulation-task*`),
+  and internal bookkeeping (`story:`, `wm:`, `cache:`, `digest:`, `seed-meta:`,
+  `baseline:`, `health:`, …). **`brief:` is `mirror-filtered`** — each
+  operator's mirror gets only their own briefs (closes the cross-operator brief
+  leak class).
+
+### Org-neutral bundle
+
+- **`dist/` is built with `VITE_SUPABASE_*` unset**, so no org's Supabase
+  project is baked into the JS. `supabase-client.ts`'s `readEnv()` reads
+  `window.__WM_RUNTIME_CONFIG` first, falls back to `import.meta.env` — the
+  cloud web app is unchanged.
 - **The standalone backend injects `window.__WM_RUNTIME_CONFIG`** (Supabase URL
   + publishable key, from its own `.env`) into every HTML document it serves,
   ahead of the app's module scripts. `<` is escaped so a value can't break out
   of the `<script>` element.
-- **The `github-identity-bridge` issuer is derived at runtime.** VS Code GitHub
-  sign-in (`auth-provider.ts`) no longer hardcodes the Supabase project ref —
-  it builds the Edge Function URL from `getSupabaseUrl()` (the same
-  runtime-config-aware read `supabase-client.ts` uses), so no organisation's
-  project is baked into `dist/`. Each org's bridge lives on its own project.
-- **`install.sh` / `install.ps1` take an `org.env` file** — next to the script,
-  via `--config` / `-Config`, or `$WM_ORG_ENV`. It carries `VITE_SUPABASE_URL` +
-  `VITE_SUPABASE_PUBLISHABLE_KEY` (both public) and optionally the Upstash REST
-  URL + read-only token. With no `org.env` the installer prompts for the two
-  Supabase values. See `org.env.example` and `SECURITY.md` (both shipped in the
-  bundle).
 - `build-release-bundle.mjs` refuses to ship a bundle that contains a real
   `.env` or `org.env`.
 - `APP_DOMAIN` is still baked at build time (non-secret, cosmetic for a
   loopback dashboard). A fully domain-neutral artifact is tracked as follow-up.
 
+### One-command install + bundled runtime
+
+- **`curl -fsSL <release>/install | sh`** (macOS/Linux) /
+  **`irm <release>/install.ps1 | iex`** (Windows). A thin bootstrap fetches and
+  SHA-256-verifies a pinned Node (`v22.23.2`) into `~/.worldmonitor/runtime/`,
+  fetches and verifies the one universal bundle into `~/.worldmonitor/app/`
+  (a sibling dir, so app upgrades don't re-download Node), runs `setup.{sh,ps1}`
+  on that runtime, registers the service, and drops a desktop launcher.
+- **Slim backend `package.json`** (5 runtime deps) — `npm ci --omit=dev` is now
+  ~39 packages / ~19 MB / ~1 s (was 736 / ~1.2 GB / ~5 min). `node_modules` is
+  not shipped.
+- **`.github/workflows/release.yml`** builds and publishes the whole bundle on a
+  `v*` tag with only the default `GITHUB_TOKEN` (Model B means no repo secrets
+  in the build).
+
+### Cloud pipeline — infrastructure (scaffold; not yet run against the cloud)
+
+- **`ais-relay.cjs` is being decomposed.** 26 of its 28 always-on seed /
+  warm-ping loops are now standalone `scripts/seed-*.mjs` crons on Cloud
+  Scheduler cadences. The AIS WebSocket ingest becomes **one shared service
+  across all orgs** (public vessel data) writing to a shared "AIS results"
+  store that each org bridges into its own Upstash
+  (`scripts/sync-ais-results.mjs`, every 2 min). The Telegram MTProto poller
+  becomes a per-org `scripts/seed-telegram.mjs --once` job (every 5 min,
+  concurrency-1 Redis lock). End state: **zero pinned instances per org.**
+- **Multi-org deploy pipeline** — `deploy/orgs/<org>.yml` per-org config, a
+  `nitric.<org>.yaml` generator, `.github/workflows/deploy-org.yml`
+  (`workflow_dispatch(org)` + per-org GitHub Environments for secret isolation),
+  and the `pipeline_config` → worker-env hydration loop.
+- All of the above is wired but **has never been deployed to the cloud target**;
+  each org still runs its own relay in the meantime.
+
+### Removed
+
+- **Cameras** — `PinnedWebcamsPanel`, `api/webcam`, `list-webcams`, the webcam
+  seeder, and all three map renderers' webcam layers, full-stack.
+- **The Phase-2 loopback control panel** — `settings.html`'s Backend section,
+  `GET/POST/DELETE /api/local-config` on the sidecar, the in-panel "Sign in with
+  GitHub", and the first-run redirect. Superseded by the config broker above.
+
 ### Security — local installs no longer take shared write credentials
 
-- **`install.sh` / `install.ps1` no longer prompt for `UPSTASH_REDIS_REST_TOKEN`
-  (the full read/write token) or `OPENROUTER_API_KEY`.** A local instance was
-  only ever asked for the full token so `/api/health`'s snapshot cache would
-  work — but that handler *writes* `health:*` keys and a lock to shared Redis,
-  so every operator's laptop could wipe the shared cache. Now the installer
-  asks only for the **read-only** Upstash token (what `local-sync` needs and is
-  built around). OpenRouter is documented as a manual `.env` addition.
+- **The installer no longer prompts for `UPSTASH_REDIS_REST_TOKEN` (the full
+  read/write token) or `OPENROUTER_API_KEY`.** A local instance was only ever
+  asked for the full token so `/api/health`'s snapshot cache would work — but
+  that handler *writes* `health:*` keys and a lock to shared Redis, so every
+  operator's laptop could wipe the shared cache. It now asks only for the
+  **read-only** Upstash token. OpenRouter is a per-operator key set in the AI
+  settings tab.
+- **The ~26 data-source keys never reach an operator machine** — they live only
+  in the org's Supabase `pipeline_config`, read only by the cloud worker.
 - **`api/health.js` runs credential-free under `LOCAL_API_MODE=tauri-sidecar`.**
   It skips the cross-instance snapshot cache + refresh lock and sweeps the
-  registry directly; `redisPipeline`'s sidecar branch now serves that sweep's
-  mixed `GET`/`STRLEN`/`LLEN`/`EXISTS` batch from the SQLite mirror (previously
+  registry directly; `redisPipeline`'s sidecar branch serves that sweep's mixed
+  `GET`/`STRLEN`/`LLEN`/`EXISTS` batch from the SQLite mirror (previously
   GET-only, so the whole batch failed closed → 503 `REDIS_DOWN`). The endpoint
-  now returns a real verdict from local data with zero Redis credentials, and
-  never writes to shared Redis. Edge/production behaviour is unchanged.
+  returns a real verdict from local data with zero Redis credentials and never
+  writes to shared Redis. Edge/production behaviour is unchanged.
 
 ## [2.12.0] - 2026-09-03
 

@@ -13,21 +13,18 @@ services:
   - match: gcp/scheduler/main.ts
     start: npx tsx watch --env-file=.env $SERVICE_PATH
     runtime: scheduler
-  # P14 Phase 1 (PLATFORM_ARCHITECTURE.md Workstream 5, 2026-09-05): "no
-  # pinned instances per org." ais-relay.cjs is the ONE deliberate exception
-  # — the sole genuinely persistent connection (aisstream.io WebSocket) —
-  # kept pinned as the explicit stopgap
-  # (scripts/generate-nitric-org-stack.mjs's PINNED_SERVICES). The other 5
-  # long-running dev services this block used to list (a digest-notifications
-  # loop wrapper, publish-bootstrap-tiers, and the 3 forecast/scenario queue
-  # consumers below) are gone from here: gcp/scheduler/main.ts now spawns
-  # each of them on a real cadence instead (queue-worker.mjs merges the 3
-  # queue consumers into one scheduled `--once` tick; digest-notifications
-  # and publish-bootstrap-tiers reuse their already-one-shot invocation
-  # modes). This ONLY affects local `nitric start` dev and the not-yet-live
-  # GCP target — Railway's own config (scripts/railway-services.json,
-  # Dockerfile.digest-notifications, Dockerfile.publish-bootstrap-tiers) is
-  # untouched and keeps running these as it always has.
+  # P14 Phase 2 tail (PLATFORM_ARCHITECTURE.md, 2026-09-07): a per-org deploy
+  # now has ZERO pinned instances (generate-nitric-org-stack.mjs's
+  # PINNED_SERVICES is empty). ais-relay.cjs — the sole genuinely persistent
+  # connection (aisstream.io WebSocket) — runs as ONE SHARED deploy instead:
+  # deploy/shared/ais-ingest.yml + nitric.ais-shared.yaml +
+  # .github/workflows/deploy-ais-shared.yml (min-instances: 1 there). Its 28
+  # seed/warm-ping loops are standalone crons (gcp/scheduler/main.ts CADENCES);
+  # Telegram + the TransitSummary merge are per-org `--once` jobs (P18 / P14
+  # Phase 2 tail); the pure-AIS transit counts reach each org via
+  # scripts/sync-ais-results.mjs (P17). This service entry stays here for
+  # local `nitric start` dev (one machine, everything in one process) and is
+  # what the shared stack deploys; per-org stacks leave it at min-instances: 0.
   - match: scripts/ais-relay.cjs
     start: node $SERVICE_PATH
     runtime: relay

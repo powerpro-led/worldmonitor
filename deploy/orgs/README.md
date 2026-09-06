@@ -73,7 +73,16 @@ GH Environment already scopes):
      `OIDC_SIGNING_KID`, `TICKET_SIGNING_SECRET`, `BRIDGE_CLIENT_ID`,
      `BRIDGE_CLIENT_SECRET`.
    - This deploy's own session secret: `WM_SESSION_SECRET`.
-   - Build-time vars (non-secret): `vars.APP_DOMAIN`, `vars.VITE_VARIANT`.
+   - The shared **"AIS results" Upstash**, read-only (P17 — the SAME value
+     for every org): `AIS_RESULTS_UPSTASH_REST_URL`,
+     `AIS_RESULTS_UPSTASH_READONLY_TOKEN`. `scripts/sync-ais-results.mjs`
+     pulls the shared AIS-ingest deploy's output into this org's DB.
+   - This org's **own Telegram** MTProto app + session (P18 — per org, not
+     shared): `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION`.
+     See step 7.
+   - Build-time vars (non-secret): `vars.APP_DOMAIN`, `vars.VITE_VARIANT`,
+     `vars.WS_RELAY_URL` (the shared AIS-ingest deploy's URL —
+     `deploy/shared/ais-ingest.yml`'s `domain`).
    - **Deliberately absent**: none of the ~26 data-source keys (ACLED, FRED,
      Finnhub, …) — those are set live, per org, via the Workstream 6 admin
      panel, into `pipeline_config`, never into this Environment.
@@ -97,17 +106,37 @@ GH Environment already scopes):
    `src/services/auth-provider.ts`'s module doc). Skipping this step means
    the admin panel's "Sign in with GitHub" button fails for every org
    admin visiting `settings.html`.
-7. **Not yet available**: a standalone shared AIS-ingest deploy target (P14
-   part b — one shared Cloud Run service pushing vessel data into every
-   org's Upstash DB). Its WebSocket core still lives embedded inside
-   `scripts/ais-relay.cjs`, run per-org as this deploy's own pinned
-   `min-instances: 1` stopgap (Part 1's `PINNED_SERVICES`, P14 Phase 1) —
-   extracting it into its own service is explicitly Phase 2 work (overlaps
-   Workstream 7, PLATFORM_ARCHITECTURE.md), needing real code that doesn't
-   exist yet. Until then, each org's own `ais-relay.cjs` instance already
-   ingests AIS data for that org independently — no registry, no separate
-   workflow, nothing missing operationally, just not yet consolidated to
-   avoid running N redundant WebSocket connections to the same public feed.
+7. **Register a Telegram app for this org + capture a session string** (P18).
+   The Telegram OSINT poller is NOT shared — Telegram creds aren't public
+   data and each org polls its own channel set. Create a Telegram
+   application at <https://my.telegram.org/apps> (gives `api_id` + `api_hash`),
+   then run `node scripts/telegram/session-auth.mjs` locally with those two
+   values to log in once and print a `StringSession`. Put all three into the
+   `<org>` GH Environment as `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` /
+   `TELEGRAM_SESSION`. `scripts/seed-telegram.mjs` runs every 5 min as a
+   per-org `--once` job with a concurrency-1 Redis lock (a second live
+   session invalidates the first with `AUTH_KEY_DUPLICATED`). If any of the
+   three is unset the job is a clean no-op and the feed panel shows "not
+   synced".
+
+8. **Point this org at the shared AIS-ingest deploy** (P14 / P17). The AIS
+   WebSocket ingest (`scripts/ais-relay.cjs` minus Telegram minus the
+   TransitSummary merge) runs ONCE, shared — see `deploy/shared/README.md` +
+   `.github/workflows/deploy-ais-shared.yml`. This org connects to it two
+   ways, both wired by the GH Environment values from step 2:
+   - `vars.WS_RELAY_URL` = the shared deploy's URL — the per-org RPC
+     handlers (`get-vessel-snapshot`, `list-oref-alerts`, the RSS/market
+     relay fallbacks) reach it directly for the HTTP-pull surfaces.
+   - `AIS_RESULTS_UPSTASH_*` (read-only, shared value) — the per-org
+     `scripts/sync-ais-results.mjs` cron pulls
+     `supply_chain:chokepoint_transits:v1` from the shared "AIS results"
+     Upstash into this org's own DB every 2 min, so
+     `scripts/seed-transit-summaries.mjs` and the operator mirror read it
+     locally.
+   The shared deploy itself is provisioned once (not per org): run
+   `.github/workflows/deploy-ais-shared.yml` with its own `ais-shared` GH
+   Environment. **Scaffold status:** like the rest of the Nitric/GCP target,
+   `nitric up` has not been run against any of this yet.
 
 Re-running `deploy-org.yml` for an existing org is safe — every step it
 performs (`supabase db push`, `supabase functions deploy`, `supabase secrets

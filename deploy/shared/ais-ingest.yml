@@ -1,0 +1,15 @@
+# deploy/shared/ais-ingest.yml — non-secret config for the ONE shared
+# AIS-ingest deploy (P14 / P17). See deploy/shared/README.md.
+#
+# Everything secret (GCP creds, Pulumi token, AISSTREAM_API_KEY, the shared
+# "AIS results" Upstash WRITE creds, the Oref residential-proxy secret,
+# OpenSky OAuth, RELAY_SHARED_SECRET) lives in the `ais-shared` GitHub
+# Environment, never here.
+
+stack: ais-shared            # matches the GH Environment name + nitric.ais-shared.yaml
+domain: relay.worldmonitor.app   # WS_RELAY_URL each org's deploy-org.yml points at;
+                                  # also the CORS allow-list anchor (APP_DOMAIN)
+gcp:
+  projectId: apps-453107     # the shared project (NOT a tenant project — this
+                              # deploy carries no tenant data)
+  region: us-central1        # co-located with the AIS + OpenSky + Yahoo upstreams

@@ -1,0 +1,110 @@
+name: Deploy Shared AIS Ingest (P14 / P17)
+
+# The ONE shared AIS-ingest deploy — scripts/ais-relay.cjs run once for every
+# org (PLATFORM_ARCHITECTURE.md P14 / P16 / P17; deploy/shared/README.md).
+#
+# wss://stream.aisstream.io is the one genuinely persistent connection in the
+# stack and the vessel feed is public + identical per tenant, so it runs
+# shared instead of once per org. This deploy holds ONLY its own credentials —
+# it never writes into a tenant DB. It writes supply_chain:chokepoint_transits:v1
+# into a shared "AIS results" Upstash; each org's deploy runs
+# scripts/sync-ais-results.mjs to pull that into the org's own DB (P17).
+#
+# Manual-only, same rationale as deploy-org.yml / nitric-deploy.yml: an
+# on-push trigger would redeploy live infrastructure on every unrelated merge.
+#
+# Required GH Environment `ais-shared` (see deploy/shared/README.md for the
+# full table):
+#   GCP_CREDENTIALS                                    — SA JSON for the shared GCP project
+#   PULUMI_ACCESS_TOKEN                                 — Nitric's GCP provider deploys via Pulumi
+#   AISSTREAM_API_KEY                                   — the shared aisstream.io key
+#   AIS_RESULTS_UPSTASH_REST_URL / _REST_TOKEN          — shared "AIS results" Upstash, WRITE side
+#   OREF_PROXY_URL (+ OREF_PROXY_AUTH if used)          — residential proxy, Israel exit, for the siren poller
+#   OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET           — OpenSky OAuth for the /opensky proxy route
+#   RELAY_SHARED_SECRET                                 — the x-relay-key every per-org deploy sends
+#   vars.APP_DOMAIN                                     — CORS allow-list derivation
+#
+# SCAFFOLD — never run. Like the rest of the Nitric/GCP target
+# (docs/architecture/nitric-gcp-scaffold.md), `nitric up` has not executed here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to confirm — this (re)deploys the shared AIS-ingest infrastructure.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy shared AIS ingest
+    runs-on: ubuntu-latest
+    environment: ais-shared
+
+    steps:
+      - name: Require explicit confirmation
+        if: ${{ inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}')."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Setup GCP Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Install and configure Pulumi
+        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
+
+      # The relay's runtime env — its OWN credentials only. No tenant secrets.
+      - name: Create shared-ingest env file
+        run: |
+          cat > .env <<EOF
+          AISSTREAM_API_KEY=${{ secrets.AISSTREAM_API_KEY }}
+          AIS_RESULTS_UPSTASH_REST_URL=${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}
+          AIS_RESULTS_UPSTASH_REST_TOKEN=${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}
+          UPSTASH_REDIS_REST_URL=${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN=${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}
+          OREF_PROXY_URL=${{ secrets.OREF_PROXY_URL }}
+          OREF_PROXY_AUTH=${{ secrets.OREF_PROXY_AUTH }}
+          OPENSKY_CLIENT_ID=${{ secrets.OPENSKY_CLIENT_ID }}
+          OPENSKY_CLIENT_SECRET=${{ secrets.OPENSKY_CLIENT_SECRET }}
+          RELAY_SHARED_SECRET=${{ secrets.RELAY_SHARED_SECRET }}
+          APP_DOMAIN=${{ vars.APP_DOMAIN }}
+          EOF
+
+      - name: Cache Nitric Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .nitric/docker-cache
+          key: nitric-docker-ais-shared-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
+          restore-keys: |
+            nitric-docker-ais-shared-${{ runner.os }}-
+
+      - name: Deploy Infrastructure
+        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
+        with:
+          command: up
+          stack-name: ais-shared
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

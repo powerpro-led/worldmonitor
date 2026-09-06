@@ -32,7 +32,7 @@ describe('buildOrgStack()', () => {
     assert.equal(stack.provider, 'nitric/gcp@1.27.6');
   });
 
-  it('scales everything to zero except the pinned ais-relay stopgap (P14 Phase 1)', () => {
+  it('scales EVERY per-org service to zero — no pinned instances (P14 Phase 2 tail)', () => {
     const stack = buildOrgStack({
       org: 'acme',
       domain: 'acme.example.com',
@@ -41,11 +41,11 @@ describe('buildOrgStack()', () => {
       variant: 'full',
     });
     assert.equal(stack.config.default.cloudrun['min-instances'], 0);
-    assert.equal(stack.config['ais-relay'].cloudrun['min-instances'], 1);
-    // Nothing else gets a pinned override — P14's whole point is zero
-    // pinned instances per org beyond the one stopgap.
+    // The ais-relay stopgap (P14 Phase 1) is gone — it's now ONE shared
+    // deploy (nitric.ais-shared.yaml), not per org. Zero per-org overrides.
     const serviceOverrideKeys = Object.keys(stack.config).filter((k) => k !== 'default');
-    assert.deepEqual(serviceOverrideKeys, ['ais-relay']);
+    assert.deepEqual(serviceOverrideKeys, []);
+    assert.equal(stack.config['ais-relay'], undefined);
   });
 });
 
@@ -60,7 +60,7 @@ describe('generate-nitric-org-stack.mjs CLI (against the real mosiq fixture)', (
       const written = parseYaml(readFileSync(outPath, 'utf8'));
       assert.equal(written['gcp-project-id'], 'apps-453107-mosiq');
       assert.equal(written.region, 'us-central1');
-      assert.equal(written.config['ais-relay'].cloudrun['min-instances'], 1);
+      assert.equal(written.config['ais-relay'], undefined, 'no per-org ais-relay pin — it is a shared deploy now');
     } finally {
       rmSync(outPath, { force: true });
     }

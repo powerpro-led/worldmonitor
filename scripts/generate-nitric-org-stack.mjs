@@ -30,15 +30,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, '..');
 
 /**
- * P14 Phase 1's one pinned stopgap: the AIS WebSocket relay is the sole
- * long-running Cloud Run service left per org (everything else P14 moves to
- * `min-instances: 0` + Cloud Scheduler — see gcp/scheduler/main.ts). A
- * scale-to-zero AIS relay would drop its persistent aisstream.io connection
- * between requests, which is the exact failure OQ-P1/P8 exists to avoid.
+ * P14 Phase 2 tail (session 67): a per-org deploy now has ZERO pinned
+ * instances. The AIS WebSocket relay — P14 Phase 1's one stopgap — is no
+ * longer deployed per org: its persistent aisstream.io connection runs as
+ * ONE shared deploy (deploy/shared/ais-ingest.yml + nitric.ais-shared.yaml +
+ * .github/workflows/deploy-ais-shared.yml, min-instances: 1 there). Its 28
+ * seed/warm-ping loops are all standalone crons (gcp/scheduler/main.ts
+ * CADENCES); Telegram + the TransitSummary merge are per-org `--once` jobs
+ * (P18 / P14 Phase 2 tail); the pure-AIS transit counts reach each org via
+ * scripts/sync-ais-results.mjs (P17). Every per-org service scales to zero.
  */
-const PINNED_SERVICES = Object.freeze({
-  'ais-relay': { cloudrun: { 'min-instances': 1 } },
-});
+const PINNED_SERVICES = Object.freeze({});
 
 /** @param {string} org */
 function loadOrgConfig(org) {

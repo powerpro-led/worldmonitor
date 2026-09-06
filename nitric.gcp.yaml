@@ -32,10 +32,13 @@ config:
       min-instances: 0
       max-instances: 10
       concurrency: 80
-  # TODO before real deploy: relay/digest-notifications/publish-bootstrap-tiers
-  # plus process-simulation-tasks/process-deep-forecast-tasks/scenario-worker
-  # (added 2026-08-06, see nitric.yaml) are all long-running processes
-  # (websocket relay, queue consumers, --loop seed, poll/BLMOVE loops) —
-  # min-instances: 0 means Cloud Run can scale them to zero between
-  # requests, which breaks a persistent connection. Needs an explicit
-  # min-instances: 1 override (cost tradeoff — not decided in this pass).
+  # This stack (nitric.gcp.yaml) is the single-tenant dev stack. Per-tenant
+  # stacks come from scripts/generate-nitric-org-stack.mjs and pin NOTHING
+  # (P14 Phase 2 tail, 2026-09-07). The one persistent connection — the
+  # aisstream.io WebSocket in scripts/ais-relay.cjs — runs as ONE shared
+  # deploy via nitric.ais-shared.yaml (min-instances: 1 for `ais-relay`
+  # only). digest-notifications / publish-bootstrap-tiers / the
+  # forecast+scenario queue consumers are all scheduled `--once` now
+  # (gcp/scheduler/main.ts). If this dev stack is ever deployed for real,
+  # `ais-relay` needs the same min-instances: 1 override
+  # nitric.ais-shared.yaml carries.

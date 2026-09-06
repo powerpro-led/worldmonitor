@@ -1,0 +1,43 @@
+# Nitric stack file for the ONE shared AIS-ingest deploy (P14 / P17).
+# Selected by `.github/workflows/deploy-ais-shared.yml` via `nitric up --stack
+# ais-shared`. Non-secret companion config: deploy/shared/ais-ingest.yml.
+#
+# Modeled on nitric.gcp.yaml. The ONLY difference from a per-org stack
+# (scripts/generate-nitric-org-stack.mjs output) is the `ais-relay`
+# min-instances:1 pin below — this is the one place in the whole platform that
+# holds a persistent connection. Everything else in the app image stays at
+# min-instances:0 here too: this deploy exists to run the relay, and an idle
+# api/mcp/scheduler surface on the shared project costs nothing at zero.
+#
+# SCAFFOLD — `nitric up` has NOT been run against this. See
+# docs/architecture/nitric-gcp-scaffold.md + deploy/shared/README.md.
+
+provider: nitric/gcp@1.27.6
+region: us-central1
+gcp-project-id: apps-453107
+
+apis:
+  api:
+    description: "worldmonitor public REST API — ported api/*.ts Vercel Edge handlers"
+  mcp:
+    description: "worldmonitor agent-facing MCP server"
+
+config:
+  default:
+    cloudrun:
+      memory: 512
+      timeout: 60
+      min-instances: 0
+      max-instances: 10
+      concurrency: 80
+  # The one pinned instance in the entire platform. A scale-to-zero AIS relay
+  # drops its persistent aisstream.io WebSocket between requests — the exact
+  # failure OQ-P1/P8 exists to avoid. 1 GB because the relay holds the live
+  # vessel/density/chokepoint aggregates in memory (see its own [Monitor] log).
+  ais-relay:
+    cloudrun:
+      memory: 1024
+      timeout: 300
+      min-instances: 1
+      max-instances: 1
+      concurrency: 80

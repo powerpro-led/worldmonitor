@@ -107,7 +107,10 @@ describe('ais-relay /health operator-monitoring contract preserved (#3812 / #381
     const body = await getHealthHandlerBody();
     assert.match(body, /status:\s*'ok'/, 'must keep status:"ok"');
     assert.match(body, /\bclients:\s*clients\.size/, 'must keep client count');
-    assert.match(body, /\btelegram:\s*\{/, 'must keep telegram diagnostics');
+    // Telegram diagnostics were removed with the poller itself — the MTProto
+    // poll loop moved to scripts/seed-telegram.mjs (P14 Phase 2 tail / P18),
+    // so the relay no longer has any telegramState to report.
+    assert.doesNotMatch(body, /\btelegram:\s*\{/, 'telegram diagnostics gone with the poller');
     assert.match(body, /\boref:\s*\{/, 'must keep oref diagnostics');
     assert.match(body, /\bmemory:\s*\{/, 'must keep memory block');
   });

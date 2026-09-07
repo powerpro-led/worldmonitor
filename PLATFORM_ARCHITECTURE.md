@@ -484,6 +484,42 @@ tree on `:46125` (`worldmonitor-local run --port 46125`). Results:
   the 3 brokered keys. Also: a stale `wmtest` backend + two generations of
   orphaned `nitric` `gcp/api`+`gcp/scheduler` tsx processes are still running.
 
+**W1 config broker (P4) — validated end to end, first against mosiq cloud then
+fully offline (no code changed; config/infra only).**
+
+- **Cloud path (mosiq, `lntyjouahofgewtkmpyi`):** the operator paired both
+  project-scoped Supabase MCPs at user scope, enabled native GitHub OAuth on
+  mosiq + allow-listed `http://127.0.0.1:46124/callback`, and set the
+  `local-config` function secrets (`WM_UPSTASH_*` / `WM_APP_DOMAIN` pointed at
+  the shared "worldmonitor" Upstash `up-dragon-42947` — reused for the test,
+  NOT per-tenant-isolated). `worldmonitor-local login` (ambient
+  `VITE_SUPABASE_*` override, no `.env` edit) → mosiq's first `auth.users` row
+  → `refreshBrokeredConfig` fired. **Before the secrets were set it returned
+  HTTP 500 `server_misconfigured`** and the client correctly kept its cached
+  config + logged "retry hourly" — the P4 fail-closed contract, observed live.
+- **Offline path (local Supabase, `supabase start`):** `.env` repointed at
+  `http://127.0.0.1:54321` (BIOVITA values kept as a commented
+  `[switched-to-local-supabase]` block — this is the "no cloud project in dev"
+  setup); new gitignored `supabase/functions/.env` with `WM_*` pointed at the
+  `:8079` Redis shim; `supabase functions serve` (both functions). A local
+  email-signup user → `local-config` → **HTTP 200
+  `{upstashUrl:"http://127.0.0.1:8079", upstashReadonlyToken:…, appDomain:"localhost:3000",
+  refreshAfterSeconds:3600}`**. Then `refreshBrokeredConfig({force:true})` →
+  `{status:"ok", changed:["UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_READONLY_TOKEN","APP_DOMAIN"]}`
+  → `config.db` placeholders (`org.upstash.io`/`org.example`) **replaced with
+  the working shim values** (also resolves the Tier-2 `sync-listener`
+  DNS-fail incidental above). New `supabase/.gitignore` (`.branches` etc.).
+- **Follow-ups this surfaced:** (1) repo `supabase/migrations/` has **2**
+  migrations, mosiq cloud has **5** — the `_worldmonitor_schema` + `_final`
+  corrections were hand-applied to mosiq in S57 and never committed back.
+  (2) `.env`'s `SUPABASE_JWT_PUBLIC_JWK` is still BIOVITA's ES256 key; local is
+  HS256 — the broker path verifies via a GoTrue network call so it was
+  unaffected, but the main app's offline server-side JWT verify will 401
+  against local until that's addressed (left alone deliberately — out of scope
+  for the broker test). (3) mosiq still lacks the `custom:github-bridge` OIDC
+  provider (the VS Code embed login path) and a `supabase/config.toml` (needed
+  for local GitHub OAuth; `supabase start` ran without one).
+
 ### Session 67 — 2026-09-07
 
 **WS-core + Telegram extraction — the P14 Phase 2 tail, and the last of

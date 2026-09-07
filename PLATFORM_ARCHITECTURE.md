@@ -143,12 +143,22 @@ data-source fetching and holds no data-source keys — it is a read replica.
 > `20260904130000_github_identity_bridge.sql` migration + the three bridge
 > steps in `deploy-org.yml` (Deploy / Set 5 secrets / Register OIDC provider),
 > repointed `deploy/orgs/README.md` + `CHANGELOG.md` at `org-provisioning`, and
-> added runbook step 1a (`org-provisioning/deploy.sh <ref>` before any app).
-> Client side (`auth-provider.ts` etc.) untouched — it only uses the issuer URL
-> and the `BRIDGE_CLIENT_ID` / `BRIDGE_CLIENT_SECRET`, which don't change. **Live DB drops remain
-> sequenced** (P9 row): nothing dropped until `org-provisioning` is published +
-> `deploy.sh` green on mosiq+biovita + worldmonitor's bridge redeploys. The S57
-> checklist below is kept for history.
+> added runbook step 1a. Client side (`auth-provider.ts` etc.) untouched — it
+> only uses the issuer URL and the `BRIDGE_CLIENT_ID` / `BRIDGE_CLIENT_SECRET`,
+> which don't change. **`org-provisioning` is now PUBLISHED** —
+> `github.com/powerpro-led/org-provisioning` (private), default branch `main`
+> (root `0f3301b`), pinned annotated tag **`v0.1.0`**. Function moved to
+> `supabase/functions/github-identity-bridge/` + a minimal `supabase/config.toml`
+> (supabase CLI only resolves functions at `<workdir>/supabase/functions/`);
+> `deploy.sh` passes `--workdir "$SCRIPT_DIR"`, invocation is `./deploy.sh <ref>`
+> from repo root. `deploy-org.yml` **TODO now wired** (`d038ecc`→next commit): a
+> `Check out org-provisioning` step (`@v0.1.0`, needs a repo/org secret
+> `ORG_PROVISIONING_TOKEN`) + a `Provision github-identity-bridge` step running
+> `./deploy.sh` with `SUPABASE_ACCESS_TOKEN` / `SUPABASE_DB_URL` (NEW — direct
+> non-pooled) / `SUPABASE_SERVICE_ROLE_KEY` (`=SUPABASE_SECRET_KEY`) + the 5
+> bridge secrets. **Live DB drops STILL sequenced** (P9 row): nothing dropped
+> until the operator runs `deploy.sh` green on mosiq then biovita + worldmonitor's
+> bridge redeploys from `v0.1.0`. The S57 checklist below is kept for history.
 
 - [x] **DONE S57.** Vendored from platform @ `bafbfb15916c1db973f96a60564f99196c4e4428`:
   - `supabase/functions/github-identity-bridge/{index.ts, register-provider.ts, deno.json}` — `index.ts` + `register-provider.ts` carry a vendor header; bodies verified **byte-for-byte** against upstream (only deviation: `index.ts`'s one comment path reference points at the migration instead of the platform schema file). `deno.json` = `{"imports":{}}` (identical to `local-config`'s).

@@ -29,6 +29,10 @@ name: Deploy Org (Workstream 5)
 #                               deploy/orgs/<org>.yml's supabase.projectRef —
 #                               see that directory's README for why both).
 #   SUPABASE_DB_PASSWORD      — that org's Postgres password (supabase link).
+#   SUPABASE_DB_URL           — that org's DIRECT (non-pooled) Postgres URL,
+#                               e.g. postgresql://postgres:<pw>@db.<ref>.supabase.co:5432/postgres
+#                               — org-provisioning/deploy.sh applies DDL over
+#                               it (pgbouncer transaction mode breaks some DDL).
 #   SUPABASE_URL, SUPABASE_SECRET_KEY, VITE_SUPABASE_URL,
 #   VITE_SUPABASE_PUBLISHABLE_KEY — that org's Supabase API credentials, both
 #                               server- and client-facing.
@@ -39,11 +43,23 @@ name: Deploy Org (Workstream 5)
 #                               local-config edge function's 3 secrets (P4) —
 #                               same Upstash DB, read-only token + this org's
 #                               domain.
-#   (github-identity-bridge's 5 secrets — OIDC_SIGNING_PRIVATE_KEY_JWK,
-#    OIDC_SIGNING_KID, TICKET_SIGNING_SECRET, BRIDGE_CLIENT_ID,
-#    BRIDGE_CLIENT_SECRET — moved to ../org-provisioning/deploy.sh; they stay
-#    in the org's GH Environment, just consumed there, not here.)
+#   OIDC_SIGNING_PRIVATE_KEY_JWK, OIDC_SIGNING_KID, TICKET_SIGNING_SECRET,
+#   BRIDGE_CLIENT_ID, BRIDGE_CLIENT_SECRET — github-identity-bridge's 5
+#                               function secrets. Generate ONCE per org
+#                               (org-provisioning/README.md's keypair step),
+#                               never regenerate (rotating OIDC_SIGNING_* logs
+#                               out every operator). Consumed by the "Provision
+#                               github-identity-bridge" step's call to
+#                               org-provisioning/deploy.sh — not set into the
+#                               project by this repo.
 #   WM_SESSION_SECRET         — this deploy's own session signing secret.
+#
+# Required REPO- or ORG-level secret (same for every org, NOT per-Environment):
+#   ORG_PROVISIONING_TOKEN    — a PAT / fine-grained token with read (contents)
+#                               access to the private powerpro-led/org-provisioning
+#                               repo, so the "Check out org-provisioning" step
+#                               can fetch tag v0.1.0. github.token cannot read
+#                               another private repo.
 #   AIS_RESULTS_UPSTASH_REST_URL, AIS_RESULTS_UPSTASH_READONLY_TOKEN — the
 #                               SHARED "AIS results" Upstash, read-only (P17) —
 #                               same value for every org. scripts/sync-ais-results.mjs
@@ -151,14 +167,39 @@ jobs:
             WM_UPSTASH_READONLY_TOKEN="${{ secrets.WM_UPSTASH_READONLY_TOKEN }}" \
             WM_APP_DOMAIN="${{ secrets.WM_APP_DOMAIN }}"
 
-      # github-identity-bridge deploy + secrets + OIDC-provider registration
-      # USED TO run here (3 steps). Removed 2026-09-07 — the bridge is per-org
-      # infrastructure owned by ../org-provisioning. Provisioning a new org
-      # runs `org-provisioning/deploy.sh <project-ref>` BEFORE this workflow.
-      # TODO (once org-provisioning has a remote + pinned tag): add a step here
-      # that checks it out at that tag and runs ./deploy.sh "$SUPABASE_PROJECT_REF"
-      # — idempotent, so running it on every deploy is harmless. Until then it
-      # is a manual provisioning step. See ORG_PROVISIONING_BRIDGE_HANDOFF.md.
+      # github-identity-bridge (P9 superseded 2026-09-07) — provisioned from the
+      # dedicated ../org-provisioning repo, pinned to a tag. deploy.sh is
+      # idempotent (create-or-replace SQL, secrets set, functions deploy
+      # --no-verify-jwt, register-provider.ts) so running it on every deploy is
+      # harmless; running it once at provisioning time (runbook step 1a) is
+      # tidier. The 5 bridge secrets + SUPABASE_DB_URL stay in the org GH
+      # Environment; they are consumed here, not set into the project by this
+      # repo any more.
+      # NOTE: keeping this in deploy-org.yml re-introduces "worldmonitor
+      # required" for the bridge provisioning step. A platform-only org would
+      # run deploy.sh from a neutral place instead — open question in
+      # ORG_PROVISIONING_BRIDGE_HANDOFF.md.
+      - name: Check out org-provisioning
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: powerpro-led/org-provisioning
+          ref: v0.1.0
+          token: ${{ secrets.ORG_PROVISIONING_TOKEN }}
+          path: org-provisioning
+          persist-credentials: false
+
+      - name: Provision github-identity-bridge
+        working-directory: org-provisioning
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OIDC_SIGNING_PRIVATE_KEY_JWK: ${{ secrets.OIDC_SIGNING_PRIVATE_KEY_JWK }}
+          OIDC_SIGNING_KID: ${{ secrets.OIDC_SIGNING_KID }}
+          TICKET_SIGNING_SECRET: ${{ secrets.TICKET_SIGNING_SECRET }}
+          BRIDGE_CLIENT_ID: ${{ secrets.BRIDGE_CLIENT_ID }}
+          BRIDGE_CLIENT_SECRET: ${{ secrets.BRIDGE_CLIENT_SECRET }}
+        run: ./deploy.sh "${{ vars.SUPABASE_PROJECT_REF }}"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2

@@ -51,18 +51,28 @@ GH Environment already scopes):
 1. Create the org's Supabase project, Upstash database, and GCP project by
    hand (or via each provider's own CLI/console).
 1a. **Deploy `github-identity-bridge` to the new project — BEFORE any app**
-   (P9 superseded 2026-09-07). Run `../org-provisioning/deploy.sh
-   <project-ref>` with the 5 bridge secrets in its env (see
-   `org-provisioning/README.md`). Idempotent: applies the SQL companion, sets
-   the secrets, deploys the function `--no-verify-jwt`, registers the
-   `custom:github-bridge` OIDC provider. This repo no longer does any of that
-   in `deploy-org.yml`.
+   (P9 superseded 2026-09-07). The bridge is owned by the pinned
+   `powerpro-led/org-provisioning` repo (tag `v0.1.0`). `deploy-org.yml`'s
+   **Provision github-identity-bridge** step checks it out and runs
+   `./deploy.sh <project-ref>` for you (idempotent), so for a `worldmonitor`
+   org this happens automatically inside step 4. Run it by hand here only for
+   a **`platform`-only org** (no `worldmonitor` deploy) or to provision the
+   bridge ahead of the first `deploy-org.yml` run:
+   `SUPABASE_ACCESS_TOKEN=… SUPABASE_DB_URL=<direct> SUPABASE_SERVICE_ROLE_KEY=…
+   OIDC_SIGNING_PRIVATE_KEY_JWK=… OIDC_SIGNING_KID=… TICKET_SIGNING_SECRET=…
+   BRIDGE_CLIENT_ID=… BRIDGE_CLIENT_SECRET=… ./deploy.sh <project-ref>`
+   (from an `org-provisioning` checkout at `v0.1.0`; needs `supabase` + `psql`
+   + `deno` + Docker). Applies the SQL companion, sets the secrets, deploys the
+   function `--no-verify-jwt`, registers the `custom:github-bridge` OIDC
+   provider. See `org-provisioning/README.md`.
 2. Create a GH Environment named `<org>` in this repo. See
    `.github/workflows/deploy-org.yml`'s own header for the authoritative,
    exact list of secrets/vars it reads — summarized here:
    - GCP: `GCP_CREDENTIALS` (service-account JSON scoped to the new project).
    - Deploy tooling: `PULUMI_ACCESS_TOKEN`.
    - Supabase CLI: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`,
+     `SUPABASE_DB_URL` (the org's **direct/non-pooled** Postgres URL —
+     `org-provisioning/deploy.sh` applies DDL over it),
      `vars.SUPABASE_PROJECT_REF` (also mirrors `supabase.projectRef` above —
      kept in both places since the workflow needs it as a `vars`/`secrets`
      context value, not just readable from a checked-out file).
@@ -95,6 +105,9 @@ GH Environment already scopes):
    - **Deliberately absent**: none of the ~26 data-source keys (ACLED, FRED,
      Finnhub, …) — those are set live, per org, via the Workstream 6 admin
      panel, into `pipeline_config`, never into this Environment.
+   - **Repo- or org-level secret (not per-Environment):**
+     `ORG_PROVISIONING_TOKEN` — a token with read access to the private
+     `powerpro-led/org-provisioning` repo, for the checkout of tag `v0.1.0`.
 3. Add `deploy/orgs/<org>.yml` (this schema) in a PR.
 4. Run `.github/workflows/deploy-org.yml` via `workflow_dispatch`, selecting
    the `<org>` Environment.

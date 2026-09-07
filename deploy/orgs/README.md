@@ -50,6 +50,13 @@ GH Environment already scopes):
 
 1. Create the org's Supabase project, Upstash database, and GCP project by
    hand (or via each provider's own CLI/console).
+1a. **Deploy `github-identity-bridge` to the new project — BEFORE any app**
+   (P9 superseded 2026-09-07). Run `../org-provisioning/deploy.sh
+   <project-ref>` with the 5 bridge secrets in its env (see
+   `org-provisioning/README.md`). Idempotent: applies the SQL companion, sets
+   the secrets, deploys the function `--no-verify-jwt`, registers the
+   `custom:github-bridge` OIDC provider. This repo no longer does any of that
+   in `deploy-org.yml`.
 2. Create a GH Environment named `<org>` in this repo. See
    `.github/workflows/deploy-org.yml`'s own header for the authoritative,
    exact list of secrets/vars it reads — summarized here:
@@ -66,12 +73,14 @@ GH Environment already scopes):
      `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
    - `local-config`'s 3 broker secrets (P4): `WM_UPSTASH_REST_URL`,
      `WM_UPSTASH_READONLY_TOKEN`, `WM_APP_DOMAIN`.
-   - `github-identity-bridge`'s 5 function secrets — generate ONCE via
-     `supabase/functions/github-identity-bridge/PROVISIONING.md`'s keypair
-     step, do NOT regenerate on every deploy run (rotates the OIDC signing
-     key, logs out every operator): `OIDC_SIGNING_PRIVATE_KEY_JWK`,
-     `OIDC_SIGNING_KID`, `TICKET_SIGNING_SECRET`, `BRIDGE_CLIENT_ID`,
-     `BRIDGE_CLIENT_SECRET`.
+   - `github-identity-bridge`'s 5 function secrets
+     (`OIDC_SIGNING_PRIVATE_KEY_JWK`, `OIDC_SIGNING_KID`,
+     `TICKET_SIGNING_SECRET`, `BRIDGE_CLIENT_ID`, `BRIDGE_CLIENT_SECRET`) —
+     still stored in this Environment, but **consumed by
+     `../org-provisioning/deploy.sh`, not this workflow** (P9 superseded
+     2026-09-07 — the bridge is per-org infra owned by `org-provisioning`).
+     Generate ONCE via `org-provisioning/README.md`'s keypair step; never
+     regenerate (rotates the OIDC signing key → logs out every operator).
    - This deploy's own session secret: `WM_SESSION_SECRET`.
    - The shared **"AIS results" Upstash**, read-only (P17 — the SAME value
      for every org): `AIS_RESULTS_UPSTASH_REST_URL`,
@@ -139,5 +148,7 @@ GH Environment already scopes):
    `nitric up` has not been run against any of this yet.
 
 Re-running `deploy-org.yml` for an existing org is safe — every step it
-performs (`supabase db push`, `supabase functions deploy`, `supabase secrets
-set`, `register-provider.ts`, `nitric up`) is idempotent by design.
+performs (`supabase db push`, `supabase functions deploy local-config`,
+`supabase secrets set`, `nitric up`) is idempotent by design. (The bridge
+deploy + `register-provider.ts` moved to `org-provisioning/deploy.sh`, also
+idempotent.)

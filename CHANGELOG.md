@@ -77,12 +77,15 @@ sign-in, first-run redirect) — all removed (see **Removed**). Operators go fro
   per-operator and not shown here. Presence of a key is read; its value never
   is.
 
-### `github-identity-bridge` vendored per-repo
+### `github-identity-bridge`
 
-- The bridge is vendored into `supabase/functions/github-identity-bridge/`
-  (byte-for-byte from the platform repo) plus a plain migration; the multi-org
-  deploy deploys it to each tenant's Supabase project. `PROVISIONING.md` is the
-  per-org runbook.
+- **The bridge is per-org infrastructure, deployed by a dedicated
+  `org-provisioning` repo — not by this one.** An org is one Supabase project
+  plus whichever of `platform` / `worldmonitor` it wants, independently; the
+  identity bridge is needed by both, so it lives in neither. `worldmonitor` no
+  longer carries a vendored copy or a bridge migration, and `deploy-org.yml` no
+  longer deploys it — provisioning runs `org-provisioning/deploy.sh
+  <project-ref>` once, before any app.
 - **Its issuer is derived at runtime.** VS Code GitHub sign-in
   (`auth-provider.ts`) builds the Edge Function URL from `getSupabaseUrl()`
   instead of a hardcoded project ref, so no org's project bakes into `dist/`.

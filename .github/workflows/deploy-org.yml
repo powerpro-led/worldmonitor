@@ -1,9 +1,14 @@
 name: Deploy Org (Workstream 5)
 
 # Per-tenant deploy pipeline (PLATFORM_ARCHITECTURE.md P1/P10). Provisions one
-# org's Supabase project (pipeline_config + github-identity-bridge, both
-# idempotent) and deploys that org's Cloud Run worker + admin panel via
+# org's Supabase project (pipeline_config migration + the local-config edge
+# function) and deploys that org's Cloud Run worker + admin panel via
 # Nitric, using a stack file generated fresh from that org's
+#
+# NOTE: github-identity-bridge is NO LONGER deployed here (P9 superseded
+# 2026-09-07). It is per-org infrastructure owned by ../org-provisioning and
+# deployed by `org-provisioning/deploy.sh <project-ref>` at provisioning time,
+# BEFORE any app. See ORG_PROVISIONING_BRIDGE_HANDOFF.md.
 # deploy/orgs/<org>.yml (scripts/generate-nitric-org-stack.mjs).
 #
 # Grows .github/workflows/nitric-deploy.yml's GCP-auth / Pulumi / Docker-cache
@@ -34,10 +39,10 @@ name: Deploy Org (Workstream 5)
 #                               local-config edge function's 3 secrets (P4) —
 #                               same Upstash DB, read-only token + this org's
 #                               domain.
-#   OIDC_SIGNING_PRIVATE_KEY_JWK, OIDC_SIGNING_KID, TICKET_SIGNING_SECRET,
-#   BRIDGE_CLIENT_ID, BRIDGE_CLIENT_SECRET — github-identity-bridge's 5
-#                               function secrets (PROVISIONING.md's keypair
-#                               step — generate ONCE per org, not per deploy).
+#   (github-identity-bridge's 5 secrets — OIDC_SIGNING_PRIVATE_KEY_JWK,
+#    OIDC_SIGNING_KID, TICKET_SIGNING_SECRET, BRIDGE_CLIENT_ID,
+#    BRIDGE_CLIENT_SECRET — moved to ../org-provisioning/deploy.sh; they stay
+#    in the org's GH Environment, just consumed there, not here.)
 #   WM_SESSION_SECRET         — this deploy's own session signing secret.
 #   AIS_RESULTS_UPSTASH_REST_URL, AIS_RESULTS_UPSTASH_READONLY_TOKEN — the
 #                               SHARED "AIS results" Upstash, read-only (P17) —
@@ -108,6 +113,9 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
 
+      # Retained for the future `org-provisioning/deploy.sh` checkout step
+      # (deploy.sh runs register-provider.ts under Deno). Currently unused by
+      # this workflow after the bridge steps were removed 2026-09-07.
       - name: Setup Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
 
@@ -116,33 +124,24 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase link --project-ref ${{ vars.SUPABASE_PROJECT_REF }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
 
-      # Applies supabase/migrations/* — pipeline_config (Workstream 1) +
-      # github_identity_bridge (Workstream 2), both idempotent
-      # (`create table if not exists` / `create or replace function`).
-      # Confirmed live against the mosiq test tenant (session 57).
+      # Applies supabase/migrations/* — pipeline_config (Workstream 1) only.
+      # Idempotent (`create table if not exists`). The github_identity_bridge
+      # migration was removed 2026-09-07 (P9 superseded); its SQL companion is
+      # now applied by org-provisioning/deploy.sh.
       - name: Apply migrations
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase db push
 
-      # local-config keeps the CLI default (verify_jwt: true, P4) —
-      # github-identity-bridge is deployed unauthenticated because it IS the
-      # auth provider (PROVISIONING.md's explicit reasoning).
+      # local-config keeps the CLI default (verify_jwt: true, P4).
       - name: Deploy local-config
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase functions deploy local-config
 
-      - name: Deploy github-identity-bridge
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy github-identity-bridge --no-verify-jwt
-
-      # PROVISIONING.md: the bridge's 5 secrets should be generated ONCE per
-      # org at Environment-setup time and stored as GH secrets — regenerating
-      # here on every deploy would rotate the OIDC signing key and log out
-      # every operator (old ID tokens stop verifying once the old `kid`
-      # leaves /jwks).
+      # local-config's 3 secrets (P4). The 5 github-identity-bridge secrets
+      # that used to be set here are now set by org-provisioning/deploy.sh —
+      # they stay in this org's GH Environment, just consumed there.
       - name: Set function secrets
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -150,22 +149,16 @@ jobs:
           supabase secrets set \
             WM_UPSTASH_REST_URL="${{ secrets.WM_UPSTASH_REST_URL }}" \
             WM_UPSTASH_READONLY_TOKEN="${{ secrets.WM_UPSTASH_READONLY_TOKEN }}" \
-            WM_APP_DOMAIN="${{ secrets.WM_APP_DOMAIN }}" \
-            OIDC_SIGNING_PRIVATE_KEY_JWK="${{ secrets.OIDC_SIGNING_PRIVATE_KEY_JWK }}" \
-            OIDC_SIGNING_KID="${{ secrets.OIDC_SIGNING_KID }}" \
-            TICKET_SIGNING_SECRET="${{ secrets.TICKET_SIGNING_SECRET }}" \
-            BRIDGE_CLIENT_ID="${{ secrets.BRIDGE_CLIENT_ID }}" \
-            BRIDGE_CLIENT_SECRET="${{ secrets.BRIDGE_CLIENT_SECRET }}"
+            WM_APP_DOMAIN="${{ secrets.WM_APP_DOMAIN }}"
 
-      # Idempotent — creates the auth.custom_oauth_providers row, or updates
-      # it if it already exists (PROVISIONING.md).
-      - name: Register github-identity-bridge as an OIDC provider
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          BRIDGE_CLIENT_ID: ${{ secrets.BRIDGE_CLIENT_ID }}
-          BRIDGE_CLIENT_SECRET: ${{ secrets.BRIDGE_CLIENT_SECRET }}
-        run: deno run --allow-net --allow-env supabase/functions/github-identity-bridge/register-provider.ts
+      # github-identity-bridge deploy + secrets + OIDC-provider registration
+      # USED TO run here (3 steps). Removed 2026-09-07 — the bridge is per-org
+      # infrastructure owned by ../org-provisioning. Provisioning a new org
+      # runs `org-provisioning/deploy.sh <project-ref>` BEFORE this workflow.
+      # TODO (once org-provisioning has a remote + pinned tag): add a step here
+      # that checks it out at that tag and runs ./deploy.sh "$SUPABASE_PROJECT_REF"
+      # — idempotent, so running it on every deploy is harmless. Until then it
+      # is a manual provisioning step. See ORG_PROVISIONING_BRIDGE_HANDOFF.md.
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2

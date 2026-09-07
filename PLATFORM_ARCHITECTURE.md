@@ -136,6 +136,20 @@ data-source fetching and holds no data-source keys — it is a read replica.
 
 ### Workstream 2 — vendor `github-identity-bridge` (P9)
 
+> **UNWOUND 2026-09-07 (post-S68).** P9 is superseded — the bridge is not a
+> vendored per-repo copy any more, it's a dedicated `../org-provisioning` repo
+> owned by neither app (see the P9 row + `ORG_PROVISIONING_BRIDGE_HANDOFF.md`).
+> This session **removed** `supabase/functions/github-identity-bridge/` + the
+> `20260904130000_github_identity_bridge.sql` migration + the three bridge
+> steps in `deploy-org.yml` (Deploy / Set 5 secrets / Register OIDC provider),
+> repointed `deploy/orgs/README.md` + `CHANGELOG.md` at `org-provisioning`, and
+> added runbook step 1a (`org-provisioning/deploy.sh <ref>` before any app).
+> Client side (`auth-provider.ts` etc.) untouched — it only uses the issuer URL
+> and the `BRIDGE_CLIENT_ID` / `BRIDGE_CLIENT_SECRET`, which don't change. **Live DB drops remain
+> sequenced** (P9 row): nothing dropped until `org-provisioning` is published +
+> `deploy.sh` green on mosiq+biovita + worldmonitor's bridge redeploys. The S57
+> checklist below is kept for history.
+
 - [x] **DONE S57.** Vendored from platform @ `bafbfb15916c1db973f96a60564f99196c4e4428`:
   - `supabase/functions/github-identity-bridge/{index.ts, register-provider.ts, deno.json}` — `index.ts` + `register-provider.ts` carry a vendor header; bodies verified **byte-for-byte** against upstream (only deviation: `index.ts`'s one comment path reference points at the migration instead of the platform schema file). `deno.json` = `{"imports":{}}` (identical to `local-config`'s).
   - `supabase/migrations/20260904130000_github_identity_bridge.sql` — upstream keeps `fn_link_bridge_identity_if_needed.sql` as a **declarative-schema** file; WorldMonitor has no declarative setup, so it is vendored directly as a plain migration (function body byte-for-byte; `CREATE OR REPLACE` + REVOKE/GRANT are idempotent).

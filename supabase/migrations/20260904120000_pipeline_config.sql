@@ -141,7 +141,22 @@ create trigger pipeline_config_set_updated_at
 -- though the table exists and grants are correct; a PostgREST schema-cache
 -- reload notify is also required (below) or the new table 404s with PGRST205
 -- ("not in the schema cache") even once the schema itself is exposed.
--- OVERWRITES the prior value — hardcode the full desired list here if a third
--- schema (e.g. a sibling `platform` schema in a shared project) is ever added.
-alter role authenticator set pgrst.db_schemas = 'public, worldmonitor';
+-- OVERWRITES the prior value — this is a role-level GUC, not additive, so it
+-- must always carry the FULL desired list, not just worldmonitor's own need.
+-- Hardened S69 (2026-09-09): `deploy-org.yml` pushes this file, verbatim, to
+-- SHARED org projects too (mosiq is worldmonitor-only, but biovita also runs
+-- `platform`, which needs `graphql_public`+`storage` exposed for its own
+-- REST/Storage traffic). An earlier version of this line set only
+-- `'public, worldmonitor'`, which on a `db push` against biovita would have
+-- silently dropped `graphql_public`/`storage` for the WHOLE project the
+-- instant this migration ran (platform's own PostgREST-facing features would
+-- 404 project-wide) — confirmed via MCP that biovita's `authenticator` has no
+-- such override today, so this was a live landmine, not a hypothetical one.
+-- Caught first as a LOCAL shared-dev-stack risk (same day, different angle —
+-- see the local `psql`-apply note elsewhere in this migration's history) and
+-- now hardened here too: hardcode the full desired list — mirrors the local
+-- stack's `config.toml` `[api].schemas` exactly (`okr` deliberately excluded,
+-- matching platform's own cloud exposure) — and update it by hand if a
+-- fourth schema is ever added to any project this migration is pushed to.
+alter role authenticator set pgrst.db_schemas = 'public, graphql_public, storage, worldmonitor';
 notify pgrst, 'reload schema';

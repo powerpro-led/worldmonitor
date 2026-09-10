@@ -7,7 +7,7 @@
 # Environment, never here.
 
 stack: ais-shared            # matches the GH Environment name + nitric.ais-shared.yaml
-domain: relay.worldmonitor.app   # WS_RELAY_URL each org's deploy-org.yml points at;
+domain: relay.worldmonitor.app   # WS_RELAY_URL each org's deploy-org.reusable.yml points at;
                                   # also the CORS allow-list anchor (APP_DOMAIN)
 gcp:
   projectId: apps-453107     # the shared project (NOT a tenant project — this

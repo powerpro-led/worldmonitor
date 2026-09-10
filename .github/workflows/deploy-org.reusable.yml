@@ -1,0 +1,284 @@
+name: Deploy Org (reusable)
+
+# worldmonitor's half of the per-org provisioning contract
+# (powerpro-led/org-provisioning docs/PER_ORG_PROVISIONING_CONTRACT.md §5, §5b,
+# §5c — RATIFIED 2026-09-10, org-provisioning v0.2.0). Supersedes the old
+# `deploy-org.yml` (@a0a00a6), which checked out org-provisioning@v0.1.0 and
+# called `./deploy.sh` itself. Under the contract, `org-provisioning`'s
+# `provision-org.yml` owns the registry, the trigger, the identity-bridge
+# deploy, and cross-repo sequencing (calling this file, then platform's own
+# reusable, in `apps:` order); this file does ONLY worldmonitor's own deploy —
+# schema apply, local-config, and the Nitric/Cloud Run deploy.
+#
+# `provision-org.yml` never calls this with `supabase_project_ref: local` —
+# its step 3 "local short-circuit" no-ops before the fan-out for any org still
+# on the shared local stack (contract §4 step 3). So every real invocation
+# here has `target: "cloud"` and a real Supabase project ref.
+#
+# BUILD NOTE (contract, top of doc): a called `workflow_call` workflow does
+# NOT inherit the caller's `environment:` context, only `secrets: inherit` —
+# this job declares `environment: ${{ inputs.org }}` itself so the org's
+# GitHub Environment secrets/vars actually resolve.
+#
+# Required GH Environment (name == `inputs.org`) contents — unchanged from
+# the old deploy-org.yml except where noted:
+#   SUPABASE_ACCESS_TOKEN     — authenticates the `supabase` CLI.
+#   SUPABASE_DB_PASSWORD      — that org's Postgres password (supabase link).
+#   SUPABASE_URL, SUPABASE_SECRET_KEY, VITE_SUPABASE_URL,
+#   VITE_SUPABASE_PUBLISHABLE_KEY — that org's Supabase API credentials, both
+#                               server- and client-facing.
+#   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN — that org's Upstash
+#                               WRITE credentials (the worker's own DB — NOT
+#                               the read-only broker token operators get).
+#   WM_UPSTASH_REST_URL, WM_UPSTASH_READONLY_TOKEN — 2 of local-config's 3
+#                               secrets (P4); the 3rd (the org's app domain)
+#                               now comes from `inputs.domains[0]`, not a
+#                               secret — see the "domains remap" note below.
+#   GCP_CREDENTIALS           — service account JSON scoped to that org's GCP project.
+#   PULUMI_ACCESS_TOKEN       — Nitric's GCP provider deploys via Pulumi.
+#   WM_SESSION_SECRET         — this deploy's own session signing secret.
+#   AIS_RESULTS_UPSTASH_REST_URL, AIS_RESULTS_UPSTASH_READONLY_TOKEN — the
+#                               SHARED "AIS results" Upstash, read-only (P17) —
+#                               same value for every org.
+#   TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION — this org's OWN
+#                               Telegram MTProto app + session string (P18).
+#
+# Retired from the old Environment list (contract §5b "domains remap" +
+# §5c/§7): `vars.APP_DOMAIN` and `secrets.WM_APP_DOMAIN` (folded into
+# `inputs.domains[0]`, passed by org-provisioning's registry); `vars.SUPABASE_PROJECT_REF`
+# and `vars.VITE_VARIANT` (now `inputs.supabase_project_ref` / `inputs.variant`);
+# `ORG_PROVISIONING_TOKEN` (org-level Actions sharing replaces the PAT, contract
+# §7); the 5 github-identity-bridge function secrets + `SUPABASE_DB_URL` stay in
+# the Environment for `org-provisioning/deploy.sh` to read (contract §6a) but
+# this file never reads them — it doesn't check out or call the bridge.
+#
+# `vars.WS_RELAY_URL` (the ONE shared AIS-ingest deploy's URL, same for every
+# org — non-secret) stays a repo-level variable in THIS repo, not per-org —
+# a called reusable workflow's `vars.*` resolves against the repo that DEFINES
+# it, so this is unaffected by anything org-provisioning passes as an input.
+#
+# What this workflow deliberately does NOT set: any of the ~26 data-source
+# keys (ACLED, FRED, Finnhub, ...). Those live in the org's `pipeline_config`
+# table, edited live via the Workstream 6 admin panel, and reach this
+# deploy's running worker via the 5-minute hydration loop
+# (server/_shared/pipeline-config-hydration.ts, OQ-P7) — not via any secret
+# baked in at deploy time.
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Org slug — must match a GH Environment name.'
+        required: true
+        type: string
+      display_name:
+        description: 'Human label — currently unused by this reusable, accepted for interface parity with platform.'
+        required: true
+        type: string
+      supabase_project_ref:
+        description: "That org's Supabase project ref. Never literally `local` here — org-provisioning's provision-org.yml short-circuits before calling this for a local-only org."
+        required: true
+        type: string
+      target:
+        description: 'Always "cloud" when org-provisioning calls this (its provision-org.yml never fans out for a local org).'
+        required: true
+        type: string
+      gcp_project:
+        description: "That org's GCP project id."
+        required: false
+        type: string
+      gcp_region:
+        description: 'Cloud Run region.'
+        required: false
+        type: string
+      domains:
+        description: "That org's domain(s), as a JSON array encoded in a string, e.g. '[\"dashboard.example.com\"]'. Only domains[0] is used — see the domains-remap note above."
+        required: false
+        type: string
+      variant:
+        description: 'Selects VITE_VARIANT at build time.'
+        required: false
+        type: string
+      logo:
+        description: 'Unused by this reusable, accepted for interface parity with platform.'
+        required: false
+        type: string
+
+  # Thin standalone entry point (contract §5c) — for iterating on worldmonitor's
+  # own deploy without going through org-provisioning's registry/orchestration.
+  # Mirrors the workflow_call inputs so the same job runs either way.
+  workflow_dispatch:
+    inputs:
+      org:
+        description: 'Org slug — must match a GH Environment name.'
+        required: true
+      display_name:
+        description: 'Human label — accepted for interface parity, unused.'
+        required: true
+      supabase_project_ref:
+        description: "That org's Supabase project ref (a real ref, not `local`)."
+        required: true
+      target:
+        description: 'Always "cloud" for a standalone run.'
+        required: true
+        default: 'cloud'
+      gcp_project:
+        description: "That org's GCP project id."
+        required: false
+      gcp_region:
+        description: 'Cloud Run region.'
+        required: false
+        default: 'us-central1'
+      domains:
+        description: "That org's domain(s) as a JSON array string, e.g. '[\"dashboard.example.com\"]'."
+        required: false
+      variant:
+        description: 'VITE_VARIANT.'
+        required: false
+        default: 'full'
+      logo:
+        description: 'Unused, accepted for interface parity.'
+        required: false
+      confirm:
+        description: 'Type DEPLOY to confirm — this deploys real infrastructure for the named org.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy worldmonitor for this org
+    runs-on: ubuntu-latest
+    # MUST be declared here — a called workflow_call job does not inherit the
+    # caller's `environment:` context, only its `secrets: inherit` (see the
+    # BUILD NOTE above).
+    environment: ${{ inputs.org }}
+
+    steps:
+      - name: Require explicit confirmation (standalone runs only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}'). Re-run and type DEPLOY to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # domains is a JSON array encoded as a string (contract §5); worldmonitor
+      # only ever needed ONE domain (APP_DOMAIN) — the "domains remap" note
+      # above. jq ships on the ubuntu-latest runner image.
+      - name: Resolve primary domain
+        id: domain
+        run: |
+          value=$(printf '%s' '${{ inputs.domains }}' | jq -Rr 'if length == 0 then "" else (fromjson | .[0] // "") end')
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Generate this org's Nitric stack file
+        run: node scripts/generate-nitric-org-stack.mjs --org=${{ inputs.org }} --gcp-project=${{ inputs.gcp_project }} --gcp-region=${{ inputs.gcp_region }}
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase link --project-ref ${{ inputs.supabase_project_ref }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      # Applies supabase/migrations/* — pipeline_config (Workstream 1), whose
+      # trailing ALTER ROLE authenticator SET pgrst.db_schemas was hardened at
+      # 7170443 to the full schema list, safe for a shared project like
+      # biovita too (contract §2's promotion carve-out). Idempotent
+      # (`create table if not exists`). This reusable is the ONLY consumer of
+      # this project's `schema_migrations` across the whole contract — see
+      # the contract §4 schema-apply table; org-provisioning's `deploy.sh` and
+      # platform's `deploy-schema.sh` both apply via raw SQL and never touch it.
+      - name: Apply migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push
+
+      # local-config keeps the CLI default (verify_jwt: true, P4).
+      - name: Deploy local-config
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy local-config
+
+      # local-config's 3 secrets (P4). WM_APP_DOMAIN now comes from
+      # inputs.domains[0] (the domains-remap note above), not a stored secret.
+      - name: Set function secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase secrets set \
+            WM_UPSTASH_REST_URL="${{ secrets.WM_UPSTASH_REST_URL }}" \
+            WM_UPSTASH_READONLY_TOKEN="${{ secrets.WM_UPSTASH_READONLY_TOKEN }}" \
+            WM_APP_DOMAIN="${{ steps.domain.outputs.value }}"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Setup GCP Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Install and configure Pulumi
+        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
+
+      # Infra credentials this deploy's own worker needs at runtime — NOT the
+      # ~26 data-source keys (those come from pipeline_config, see this
+      # file's header). APP_DOMAIN + VITE_VARIANT now come from inputs
+      # (the vars.* retirement note above), not GH Environment vars.
+      - name: Create org env file
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }}
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          APP_DOMAIN=${{ steps.domain.outputs.value }}
+          VITE_VARIANT=${{ inputs.variant }}
+          WM_SESSION_SECRET=${{ secrets.WM_SESSION_SECRET }}
+          WS_RELAY_URL=${{ vars.WS_RELAY_URL }}
+          AIS_RESULTS_UPSTASH_REST_URL=${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}
+          AIS_RESULTS_UPSTASH_READONLY_TOKEN=${{ secrets.AIS_RESULTS_UPSTASH_READONLY_TOKEN }}
+          TELEGRAM_API_ID=${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH=${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION=${{ secrets.TELEGRAM_SESSION }}
+          EOF
+
+      # Runners are ephemeral, so BuildKit cache mounts start cold every run.
+      # One cache key per org (region/config differ, but the npm-install
+      # layer is identical across every org) — see nitric-deploy.yml for why
+      # this materially speeds up repeat deploys.
+      - name: Cache Nitric Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .nitric/docker-cache
+          key: nitric-docker-${{ inputs.org }}-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
+          restore-keys: |
+            nitric-docker-${{ inputs.org }}-${{ runner.os }}-
+            nitric-docker-${{ runner.os }}-
+
+      - name: Deploy Infrastructure
+        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
+        with:
+          command: up
+          stack-name: ${{ inputs.org }}
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

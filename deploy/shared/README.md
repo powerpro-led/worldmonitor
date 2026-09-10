@@ -28,7 +28,7 @@ The shared deploy holds **only its own credentials** — it never writes into a
 tenant DB. It writes `supply_chain:chokepoint_transits:v1` (+ seed-meta) into a
 shared **"AIS results" Upstash**. Each org's per-org deploy runs
 `scripts/sync-ais-results.mjs` (a `--once` cron, every 2 min) which copies
-those keys into that org's own Upstash. Each org's `deploy-org.yml` also sets
+those keys into that org's own Upstash. Each org's `deploy-org.reusable.yml` also sets
 `WS_RELAY_URL` to this shared deploy's URL so the per-org RPC handlers
 (`get-vessel-snapshot`, `list-oref-alerts`, the market/RSS relay fallbacks)
 reach it directly for the HTTP-pull surfaces.

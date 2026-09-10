@@ -10,7 +10,7 @@ name: Deploy Shared AIS Ingest (P14 / P17)
 # into a shared "AIS results" Upstash; each org's deploy runs
 # scripts/sync-ais-results.mjs to pull that into the org's own DB (P17).
 #
-# Manual-only, same rationale as deploy-org.yml / nitric-deploy.yml: an
+# Manual-only, same rationale as deploy-org.reusable.yml / nitric-deploy.yml: an
 # on-push trigger would redeploy live infrastructure on every unrelated merge.
 #
 # Required GH Environment `ais-shared` (see deploy/shared/README.md for the

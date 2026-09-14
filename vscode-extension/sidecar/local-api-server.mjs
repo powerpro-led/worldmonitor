@@ -2314,16 +2314,36 @@ async function dispatch(requestUrl, req, routes, context) {
     // request touched. Stamped onto the response below as X-WM-Mirror-Keys.
     const mirrorKeys = new Set();
     const runWithUsageScope = await getRunWithUsageScope();
+    // Vercel Edge Functions call a route's default export as
+    // `(request, ctx)` — ctx.waitUntil() is how a handler schedules
+    // fire-and-forget background work (e.g. api/notification-channels.ts's
+    // publishWelcome() on a new channel) without delaying the response.
+    // This was previously only exposed through the ambient usage-scope
+    // AsyncLocalStorage (for server/_shared/redis.ts's getUsageScope()
+    // consumers), never as the handler's actual second argument — so any
+    // route whose own module signature reads `ctx` positionally (the normal
+    // Vercel convention) crashed with "Cannot read properties of undefined
+    // (reading 'waitUntil')" the first time it tried to call it. Found
+    // 2026-09-14 live-testing notification-channels' set-channel action
+    // against the freshly-reconstructed local worldmonitor.* schema — the
+    // underlying DB write succeeded (visible on the next GET) but the
+    // request still 500'd. Same object passed both ways now, so ambient and
+    // positional consumers see identical waitUntil semantics. Matches the
+    // rejection-swallowing shape of the bgTasks.waitUntil helper above
+    // (Promise.resolve(p).catch(() => {})) rather than a bare no-op, so a
+    // background task's error doesn't surface as a process-level unhandled
+    // rejection here either.
+    const ctx = { waitUntil: (p) => { Promise.resolve(p).catch(() => {}); } };
     const response = await runWithUsageScope(
       {
-        ctx: { waitUntil: () => {} },
+        ctx,
         requestId: 'sidecar',
         customerId: null,
         route: requestUrl.pathname,
         tier: 0,
         mirrorKeys,
       },
-      () => mod.default(request),
+      () => mod.default(request, ctx),
     );
     if (!(response instanceof Response)) {
       logOnce(context.logger, requestUrl.pathname, 'handler returned non-Response');
@@ -2709,6 +2729,29 @@ export async function createLocalApiServer(options = {}) {
         } catch (err) {
           context.logger.warn(
             `[local-api] RELAY_URL is not a valid URL; not added to the private-fetch allowlist (relay-backed routes will be SSRF-blocked): ${err.message}`,
+          );
+        }
+      }
+      // LOCAL MODES ONLY, same shape as the Upstash/RELAY_URL allowances above:
+      // every worldmonitor.* Postgres-backed route (server/_shared/supabase-admin.ts's
+      // getSupabaseAdmin(), and the browser client's REST calls proxied through
+      // this sidecar) calls SUPABASE_URL directly. On the shared local Supabase
+      // stack (`supabase start`) that's http://127.0.0.1:54321 — a private
+      // origin the SSRF guard rejects by default, so every account-features
+      // call (user-prefs, followed-countries, notification-channels,
+      // alert-rules, telegram-pairing) 503'd with SERVICE_UNAVAILABLE even
+      // with a fully populated `worldmonitor` schema and valid credentials.
+      // Found 2026-09-14 while live-testing the freshly-reconstructed schema
+      // end to end — every prior verification of these tables (the rolled-back
+      // `psql` transaction, the direct REST curl checks) went straight at
+      // Postgres/PostgREST, bypassing this sidecar entirely, so this gap was
+      // invisible until a real /api/user-prefs request went through it.
+      if ((context.mode === 'docker' || context.mode === 'tauri-sidecar') && process.env.SUPABASE_URL) {
+        try {
+          extraAllowedPrivateOrigins.push(new URL(process.env.SUPABASE_URL).origin);
+        } catch (err) {
+          context.logger.warn(
+            `[local-api] SUPABASE_URL is not a valid URL; not added to the private-fetch allowlist (Postgres-backed routes will be SSRF-blocked): ${err.message}`,
           );
         }
       }

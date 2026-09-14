@@ -92,6 +92,41 @@ describe('llm-key-settings.ts — field contract', () => {
     assert.match(llmKeySrc, /btn\.removeEventListener\('click', handler\)/);
     assert.match(llmKeySrc, /saveBtn\?\.removeEventListener\('click', onSave\)/);
   });
+
+  // VS Code's webview has no native context menu and Cmd/Ctrl+V is unreliably
+  // delivered to the underlying <input> — see fieldRowHtml's comment. An
+  // explicit Paste button (navigator.clipboard.readText() from a real click)
+  // is the workaround; these tests guard its wiring.
+  it('renders a Paste button for every field, not just the secret ones', () => {
+    // Unlike the Clear button (gated on f.secret, see the test above), the
+    // Paste button template is unconditional — one site builds the markup,
+    // a second (the click-handler wiring below) looks it up by the same
+    // attribute; neither is inside an `if (f.secret)` guard.
+    assert.match(llmKeySrc, /const pasteBtn = `<button type="button" class="us-llmkey-paste" data-llmkey-paste="\$\{f\.key\}"/);
+    assert.ok(!/if \(!f\.secret\) continue;\s*\n\s*const btn = container\.querySelector<HTMLButtonElement>\(`\[data-llmkey-paste/.test(llmKeySrc),
+      'the Paste button wiring loop must not skip non-secret fields');
+  });
+
+  it('reads the clipboard on click, feeds the value through onInput() for dirty-tracking, then focuses the field', () => {
+    const onPasteIdx = llmKeySrc.indexOf('const onPaste');
+    assert.ok(onPasteIdx > 0, 'onPaste handler not found');
+    const onPasteBody = llmKeySrc.slice(onPasteIdx, llmKeySrc.indexOf('\n    };', onPasteIdx));
+    assert.match(onPasteBody, /await navigator\.clipboard\.readText\(\)/);
+    assert.match(onPasteBody, /onInput\(key\)\(\{ target: input \} as unknown as Event\)/);
+    assert.match(onPasteBody, /input\.focus\(\)/);
+  });
+
+  it('fails soft on a clipboard read error instead of throwing (permission-denied is expected in some hosts)', () => {
+    const onPasteIdx = llmKeySrc.indexOf('const onPaste');
+    const onPasteBody = llmKeySrc.slice(onPasteIdx, llmKeySrc.indexOf('\n    };', onPasteIdx));
+    assert.match(onPasteBody, /try \{\s*\n\s*text = await navigator\.clipboard\.readText\(\);\s*\n\s*\} catch \{/);
+  });
+
+  it('wires and tears down the Paste buttons alongside the Clear buttons', () => {
+    assert.match(llmKeySrc, /const handler = onPaste\(f\.key\);\s*\n\s*btn\.addEventListener\('click', handler\);/);
+    assert.match(llmKeySrc, /pasteButtons\.push\(\[btn, handler\]\);/);
+    assert.match(llmKeySrc, /for \(const \[btn, handler\] of pasteButtons\) btn\.removeEventListener\('click', handler\);/);
+  });
 });
 
 describe('UnifiedSettings.ts — AI tab wiring', () => {

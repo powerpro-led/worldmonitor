@@ -94,6 +94,15 @@ function fieldRowHtml(f: FieldDef): string {
   const clearBtn = f.secret
     ? `<button type="button" class="us-llmkey-clear" data-llmkey-clear="${f.key}" title="${escapeHtml(t('common.clear', { defaultValue: 'Clear' }))}">${escapeHtml(t('common.clear', { defaultValue: 'Clear' }))}</button>`
     : '';
+  // VS Code's webview has no native right-click context menu and Cmd/Ctrl+V
+  // is unreliably delivered to the underlying <input> — a known limitation
+  // of the host, not something this app's code controls (confirmed: the
+  // only contextmenu-suppressing code in this repo is main.ts's Tauri-only
+  // handler, which is inert here — nothing sets __TAURI__ in the VS Code
+  // embed). navigator.clipboard.readText() from a real click handler still
+  // works in that same webview, so an explicit Paste button is the standard
+  // workaround VS Code extensions use for this exact gap.
+  const pasteBtn = `<button type="button" class="us-llmkey-paste" data-llmkey-paste="${f.key}" title="${escapeHtml(t('common.paste', { defaultValue: 'Paste' }))}">${escapeHtml(t('common.paste', { defaultValue: 'Paste' }))}</button>`;
   return `
     <div class="ai-flow-toggle-row us-llmkey-row" data-llmkey-row="${f.key}">
       <div class="ai-flow-toggle-label-wrap">
@@ -111,6 +120,7 @@ function fieldRowHtml(f: FieldDef): string {
             spellcheck="false"
             style="flex:1"
           >
+          ${pasteBtn}
           ${clearBtn}
         </div>
       </div>
@@ -238,6 +248,38 @@ export function renderLlmKeySettings(): LlmKeySettingsResult {
       clearButtons.push([btn, handler]);
     }
 
+    // Paste workaround for VS Code's webview (see fieldRowHtml's comment) —
+    // reads the clipboard on an explicit click (the one path VS Code's
+    // webview reliably allows), fills the field, and runs it through the
+    // same onInput() dirty-tracking a real keystroke would, so Save behaves
+    // identically either way.
+    const onPaste = (key: LlmConfigKey) => async () => {
+      const input = inputs.get(key);
+      if (!input) return;
+      let text: string;
+      try {
+        text = await navigator.clipboard.readText();
+      } catch {
+        if (saveStatusEl) {
+          saveStatusEl.textContent = t('settings.llmKeys.pasteFailed', { defaultValue: 'Could not read the clipboard — try Cmd/Ctrl+V instead.' });
+          setTimeout(() => { if (!destroyed) saveStatusEl.textContent = ''; }, 4000);
+        }
+        return;
+      }
+      if (destroyed || !text) return;
+      input.value = text.trim();
+      onInput(key)({ target: input } as unknown as Event);
+      input.focus();
+    };
+    const pasteButtons: Array<[HTMLButtonElement, () => void]> = [];
+    for (const f of FIELDS) {
+      const btn = container.querySelector<HTMLButtonElement>(`[data-llmkey-paste="${f.key}"]`);
+      if (!btn) continue;
+      const handler = onPaste(f.key);
+      btn.addEventListener('click', handler);
+      pasteButtons.push([btn, handler]);
+    }
+
     const onSave = async () => {
       if (dirty.size === 0) return;
       if (saveBtn) saveBtn.disabled = true;
@@ -274,6 +316,7 @@ export function renderLlmKeySettings(): LlmKeySettingsResult {
       destroyed = true;
       for (const [input, handler] of inputHandlers) input.removeEventListener('input', handler);
       for (const [btn, handler] of clearButtons) btn.removeEventListener('click', handler);
+      for (const [btn, handler] of pasteButtons) btn.removeEventListener('click', handler);
       saveBtn?.removeEventListener('click', onSave);
     };
   };

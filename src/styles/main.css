@@ -18419,7 +18419,8 @@ a.prediction-link:hover {
   margin-top: 6px;
 }
 
-.us-llmkey-clear {
+.us-llmkey-clear,
+.us-llmkey-paste {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -18429,7 +18430,8 @@ a.prediction-link:hover {
   white-space: nowrap;
 }
 
-.us-llmkey-clear:hover { color: var(--text); border-color: var(--text-dim); }
+.us-llmkey-clear:hover,
+.us-llmkey-paste:hover { color: var(--text); border-color: var(--text-dim); }
 
 .us-llmkey-badge {
   font-size: 10px;

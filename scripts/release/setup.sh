@@ -175,43 +175,13 @@ if [ -n "$VSIX" ]; then
   fi
 fi
 
-# ── 5. Desktop launcher ─────────────────────────────────────────────
-# A minimal .app bundle (no terminal window, real Dock icon) that just opens
-# the local dashboard in the default browser. (settings.html is the cloud
-# admin panel now and is pruned from this bundle — Workstream R.)
-DASHBOARD_URL="http://127.0.0.1:46123/"
-DESKTOP="$HOME/Desktop"
-if [ -d "$DESKTOP" ]; then
-  say "Adding the Desktop launcher"
-  APP="$DESKTOP/WorldMonitor.app"
-  rm -rf "$APP"
-  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-  cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleName</key><string>WorldMonitor</string>
-  <key>CFBundleIdentifier</key><string>com.worldmonitor.launcher</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleExecutable</key><string>WorldMonitor</string>
-  <key>CFBundleIconFile</key><string>icon.icns</string>
-  <key>LSUIElement</key><true/>
-</dict></plist>
-PLIST
-  printf '#!/bin/sh\nexec open %s\n' "$DASHBOARD_URL" > "$APP/Contents/MacOS/WorldMonitor"
-  chmod +x "$APP/Contents/MacOS/WorldMonitor"
-  [ -f "$SCRIPT_DIR/assets/icon.icns" ] && cp "$SCRIPT_DIR/assets/icon.icns" "$APP/Contents/Resources/icon.icns"
-  touch "$APP" 2>/dev/null || true   # nudge Finder to pick up the new icon
-  info "created $APP"
-fi
-
 # ── done ─────────────────────────────────────────────────────────────
+DASHBOARD_URL="http://127.0.0.1:46123/"
 say "Done."
 cat <<EOF
   Open the local dashboard in a browser:
        $DASHBOARD_URL
-  …or double-click WorldMonitor on your Desktop.
+  (bookmark it — there's no Desktop launcher; the CLI below covers the rest)
 
   Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login

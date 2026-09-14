@@ -10,7 +10,6 @@
        (keeps an existing .env across upgrades)
     3. runs the bundle's setup.ps1 with that Node — npm ci, .env, config seed,
        per-user Scheduled Task, VS Code .vsix
-    4. drops a Desktop launcher that opens the backend control panel
 
   Params (optional):
     -Config <org.env>      org config file (forwarded to setup.ps1)
@@ -120,8 +119,7 @@ try {
   } finally { Pop-Location }
 
   Say "Installed."
-  Info "Control panel:  http://127.0.0.1:46123/settings.html"
-  Info "A Desktop launcher (WorldMonitor.url) was added."
+  Info "Dashboard:  http://127.0.0.1:46123/"
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

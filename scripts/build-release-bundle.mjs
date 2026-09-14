@@ -321,11 +321,6 @@ chmodSync(path.join(STAGE, 'setup.sh'), 0o755);
 cpSync(path.join(ROOT, 'scripts', 'release', 'setup.ps1'), path.join(STAGE, 'setup.ps1'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'TESTING.md'), path.join(STAGE, 'TESTING.md'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'SECURITY.md'), path.join(STAGE, 'SECURITY.md'));
-// Desktop-launcher icons (setup.sh / setup.ps1 build the launcher from these).
-mkdirSync(path.join(STAGE, 'assets'), { recursive: true });
-for (const f of ['icon.icns', 'icon.ico']) {
-  cpSync(path.join(ROOT, 'scripts', 'release', 'assets', f), path.join(STAGE, 'assets', f));
-}
 // org.env.example — the per-org config template (Model B). NOTE: never stage a
 // filled org.env / .env; the bundle must ship org-neutral.
 cpSync(path.join(ROOT, 'scripts', 'release', 'org.env.example'), path.join(STAGE, 'org.env.example'));

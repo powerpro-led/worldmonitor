@@ -11,7 +11,6 @@
 #      ~/.worldmonitor/app/  (keeps an existing .env across upgrades)
 #   3. runs the bundle's setup.sh with that Node — npm ci, .env, config seed,
 #      launchd/systemd-user service, VS Code .vsix
-#   4. drops a Desktop launcher that opens the backend control panel
 #
 # Flags (all optional) are forwarded to setup.sh, plus:
 #   --config <org.env>     org config file (also honoured by setup.sh)
@@ -136,5 +135,4 @@ chmod +x setup.sh
 ./setup.sh ${FORWARD[@]+"${FORWARD[@]}"}
 
 say "Installed."
-info "Control panel:  http://127.0.0.1:46123/settings.html"
-info "A Desktop launcher was added — double-click it to open the panel."
+info "Dashboard:  http://127.0.0.1:46123/"

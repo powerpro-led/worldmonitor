@@ -125,16 +125,16 @@ sign-in, first-run redirect) — all removed (see **Removed**). Operators go fro
   SHA-256-verifies a pinned Node (`v22.23.2`) into `~/.worldmonitor/runtime/`,
   fetches and verifies the one universal bundle into `~/.worldmonitor/app/`
   (a sibling dir, so app upgrades don't re-download Node), runs `setup.{sh,ps1}`
-  on that runtime, registers the service, and drops a desktop launcher.
+  on that runtime, and registers the service.
 - **Slim backend `package.json`** (5 runtime deps) — `npm ci --omit=dev` is now
   ~39 packages / ~19 MB / ~1 s (was 736 / ~1.2 GB / ~5 min). `node_modules` is
   not shipped.
 - **`.github/workflows/release.yml`** builds and publishes the whole bundle on a
   `v*` tag with only the default `GITHUB_TOKEN` (Model B means no repo secrets
   in the build).
-- The Desktop launcher opens the local dashboard (`http://127.0.0.1:46123/`);
-  first-run config is `--config org.env` or the installer prompt, and sign-in is
-  `worldmonitor-local login`.
+- No Desktop launcher — open the local dashboard (`http://127.0.0.1:46123/`)
+  in a browser directly; first-run config is `--config org.env` or the
+  installer prompt, and sign-in is `worldmonitor-local login`.
 
 ### Cloud pipeline — infrastructure (scaffold; not yet run against the cloud)
 
@@ -160,6 +160,11 @@ sign-in, first-run redirect) — all removed (see **Removed**). Operators go fro
 - **The Phase-2 loopback control panel** — `settings.html`'s Backend section,
   `GET/POST/DELETE /api/local-config` on the sidecar, the in-panel "Sign in with
   GitHub", and the first-run redirect. Superseded by the config broker above.
+- **The Desktop launcher** (`WorldMonitor.app`/`WorldMonitor.url` and the
+  `.icns`/`.ico` build assets behind them) — operator decision: one platform-
+  specific surface fewer to build, ship, and rehearse an install against. The
+  CLI plus a browser bookmark of `http://127.0.0.1:46123/` cover the same
+  ground.
 
 ### Security — local installs no longer take shared write credentials
 

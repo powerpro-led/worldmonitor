@@ -30,9 +30,11 @@ That script:
 3. installs the ~40 backend npm packages, writes `.env`, seeds
    `~/.worldmonitor/config.db`, registers the background service
    (launchd `LaunchAgent` on macOS · per-user Scheduled Task on Windows, no
-   admin rights), and installs the `.vsix` if the `code` CLI is on `PATH`;
-4. drops a **WorldMonitor** launcher on your Desktop that opens the local
-   dashboard (`http://127.0.0.1:46123/`) in your browser.
+   admin rights), and installs the `.vsix` if the `code` CLI is on `PATH`.
+
+There's no Desktop launcher — the backend runs as a background service once
+installed; open `http://127.0.0.1:46123/` in a browser (bookmark it) or use
+VS Code, as below.
 
 ### Options
 
@@ -72,8 +74,8 @@ One-time operator setup: the Supabase project must allowlist
 URLs**. Your GitHub account must be in the allow-listed org (org membership is
 the invite).
 
-Then either open **`http://127.0.0.1:46123/`** in a browser (or the Desktop
-launcher), or, in VS Code, run **WorldMonitor: Open Local Dashboard**.
+Then either open **`http://127.0.0.1:46123/`** in a browser, or, in VS Code,
+run **WorldMonitor: Open Local Dashboard**.
 
 **AI summary panels** need a personal LLM key — set `OPENROUTER_API_KEY` (or
 Groq / Ollama) in the dashboard's **Settings → AI** tab inside VS Code, or add

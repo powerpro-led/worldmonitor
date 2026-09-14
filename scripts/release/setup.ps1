@@ -161,28 +161,13 @@ if ($vsix) {
   }
 }
 
-# --- 5. Desktop launcher ----------------------------------------
-# A .url internet shortcut on the Desktop that opens the local dashboard, with
-# the bundled .ico for its Explorer icon. (settings.html is the cloud admin
-# panel now and is pruned from this bundle -- Workstream R.)
-$dashboardUrl = 'http://127.0.0.1:46123/'
-$desktop = [Environment]::GetFolderPath('Desktop')
-if ($desktop) {
-  Say "Adding the Desktop launcher"
-  $ico = Join-Path $ScriptDir 'assets\icon.ico'
-  $lnk = Join-Path $desktop 'WorldMonitor.url'
-  $lines = @('[InternetShortcut]', "URL=$dashboardUrl")
-  if (Test-Path $ico) { $lines += "IconFile=$ico"; $lines += 'IconIndex=0' }
-  Set-Content -Path $lnk -Value $lines -Encoding ascii
-  Info "created $lnk"
-}
-
 # --- done ---------------------------------------------------------
+$dashboardUrl = 'http://127.0.0.1:46123/'
 Say "Done."
 @"
   Open the local dashboard in a browser:
        $dashboardUrl
-  ...or double-click WorldMonitor on your Desktop.
+  (bookmark it -- there's no Desktop launcher; the CLI below covers the rest)
 
   Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login

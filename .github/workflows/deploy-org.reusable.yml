@@ -197,11 +197,34 @@ jobs:
       # Applies supabase/migrations/* — pipeline_config (Workstream 1), whose
       # trailing ALTER ROLE authenticator SET pgrst.db_schemas was hardened at
       # 7170443 to the full schema list, safe for a shared project like
-      # biovita too (contract §2's promotion carve-out). Idempotent
-      # (`create table if not exists`). This reusable is the ONLY consumer of
-      # this project's `schema_migrations` across the whole contract — see
-      # the contract §4 schema-apply table; org-provisioning's `deploy.sh` and
-      # platform's `deploy-schema.sh` both apply via raw SQL and never touch it.
+      # biovita too (contract §2's promotion carve-out); PLUS (added
+      # 2026-09-14) the two reconstructed Stage 2/3 migrations —
+      # user_preferences/followed_countries and
+      # notification_channels/alert_rules/telegram_pairing_tokens — see
+      # PLATFORM_ARCHITECTURE.md's 2026-09-14 Status entry for why these
+      # exist as repo migrations now instead of only ever having been
+      # MCP-applied. Idempotent (`create table if not exists`). This reusable
+      # is the ONLY consumer of this project's `schema_migrations` across the
+      # whole contract — see the contract §4 schema-apply table;
+      # org-provisioning's `deploy.sh` and platform's `deploy-schema.sh` both
+      # apply via raw SQL and never touch it.
+      #
+      # RUNBOOK NOTE (contract, carried forward — not automated here): `supabase
+      # db push` hard-fails with `LegacyMigrationMissingLocalError` against any
+      # target whose `supabase_migrations.schema_migrations` already has
+      # version entries this repo's `supabase/migrations/` doesn't contain
+      # (e.g. a project that was ever MCP-`apply_migration`'d directly, or
+      # `psql`-applied by hand outside the CLI). Before promoting to such a
+      # target, run `supabase migration repair --status applied <foreign
+      # versions>` (or `supabase db pull` to baseline) against it FIRST, as a
+      # separate manual step — this workflow does not attempt that
+      # automatically, since the correct set of versions to mark differs per
+      # target and getting it wrong risks the same-shaped disaster as the
+      # pgrst.db_schemas clobber this step's first comment paragraph already
+      # guards against. A target with zero migration history (a genuinely
+      # fresh `create` project, or biovita post-2026-09-13-wipe if its own
+      # `supabase_migrations` schema was wiped along with everything else —
+      # unconfirmed, check before relying on it) needs no repair step.
       - name: Apply migrations
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

@@ -37,7 +37,29 @@ services:
     # _bundle-runner.mjs's spawned node children inherit it too (spawn() inherits
     # process.env by default). Mirrors Dockerfile.seed-bundle-resilience-validation's
     # ENV NODE_OPTIONS wiring, which local `node $SERVICE_PATH` never had.
-    start: NODE_OPTIONS=--import=file://$PWD/node_modules/tsx/dist/loader.mjs node $SERVICE_PATH
+    #
+    # FIXED 2026-09-14: this was the only `start:` entry in the whole file using
+    # a bare `VAR=value command` shell-prefix + a `$PWD`-built `file://` loader
+    # path — under `nitric start` it crashed immediately with a BLANK error (no
+    # stack trace, process gone before its first "Starting" log line), unlike
+    # every other service here, which all use plain argv. Confirmed three
+    # different candidate fixes (dropping `$PWD` for the bare `tsx/esm`
+    # specifier; quoted vs. unquoted `NODE_OPTIONS=...`) each ran clean
+    # standalone (`sh -c "..."`, all 3 sections OK) yet EACH still crashed
+    # silently under `nitric start` specifically — conclusion: nitric does not
+    # reliably support a leading `VAR=value` env-assignment prefix in `start:`
+    # at all (it likely argv-splits rather than invoking a real shell, so
+    # nothing about the value itself was ever the problem). Switched to the
+    # POSIX `env` command instead — `env VAR=value cmd args...` is one
+    # ordinary executable or every arg is a plain token, so no shell-prefix
+    # parsing is required from whatever launches it. Verified this exact form
+    # directly (no `sh -c`, plain argv in a shell): all 3 sections OK. Also
+    # added `--env-file=.env`, matching the other cron-like entries
+    # (api-main/scheduler-main) — without it this bundle's two Redis-reading
+    # sections (External-Benchmark, Outcome-Backtest) fail closed with
+    # "Missing UPSTASH_REDIS_REST_URL" the instant nitric's own env injection
+    # doesn't reach a given entry.
+    start: env NODE_OPTIONS=--import=tsx/esm node --env-file=.env $SERVICE_PATH
     runtime: seed-bundle-resilience-validation
   - match: scripts/loop-fetch-gpsjam.mjs
     # Local-dev-only wrapper (see its own header). scripts/fetch-gpsjam.mjs is

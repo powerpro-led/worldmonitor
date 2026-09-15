@@ -251,6 +251,27 @@ export function isAisResultsKey(key) {
  *
  * A key matches if it EQUALS an entry or starts with an entry that ends in
  * ':' (prefix form) — same convention AIS_RESULTS_KEYS uses above.
+ *
+ * KNOWN LIMITATION, confirmed live against real Redis (session 3 local
+ * rehearsal, not just this file's own tests): an isSharedDataKey() entry
+ * whose prefix ALSO matches one of classifyKey()'s DENY_PREFIXES above (e.g.
+ * `seed-meta:comtrade:bilateral-hs4`, under `seed-meta:`) can NEVER reach
+ * scripts/sync-shared-results.mjs's changelog fast path — notifyChange()
+ * (the only writer of the shared store's `sync:changelog`) gates on
+ * isMirroredKey(), which is classifyKey() itself, so a denied key's write
+ * never produces a changelog entry at all, full stop, regardless of whether
+ * the writer calls notifyMirroredWrites() or not. This is BY DESIGN for
+ * classifyKey()'s own purpose (operator-mirror relevance) — `seed-meta:*` is
+ * denied because it's pipeline bookkeeping, not display data — but it means
+ * such a key is bridged ONLY via sync-shared-results.mjs's 6h-gated
+ * full-reconcile backstop, permanently, not as a transient gap awaiting a
+ * one-line notify fix elsewhere. Confirmed empirically: comtrade's own
+ * `writeMeta()` doesn't call notifyMirroredWrites() at all (unlike its main
+ * per-country batches, which do) — adding the call would change nothing,
+ * since notifyChange() would silently no-op on the deny check regardless.
+ * A future SHARED_DATA_KEY_PREFIXES entry under any deny-listed prefix
+ * inherits this same ceiling — worth knowing before assuming it needs
+ * near-real-time freshness.
  * ---------------------------------------------------------------------------
  */
 export const SHARED_DATA_KEY_PREFIXES = [

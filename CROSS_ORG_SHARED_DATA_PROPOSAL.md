@@ -1,4 +1,4 @@
-# Cross-org shared data layer — PILOT BUILT, NOT DEPLOYED
+# Cross-org shared data layer — PILOT REHEARSED LOCALLY, NOT DEPLOYED TO REAL CLOUD
 
 **Status: idea captured 2026-09-14, read-only inventory done.
 2026-09-15 (session 2, chat-only): the per-org extension point got a name +
@@ -15,10 +15,25 @@ code, not chat): the picked pilot got BUILT — `scripts/sync-shared-results.mjs
 + the `data-shared` Nitric/GH Actions triad + the `centralized` flag
 mechanism, unit tested and type-checked, but never run against real GCP/
 Upstash/Comtrade — same scaffold status `ais-shared` has always carried. See
-PLATFORM_ARCHITECTURE.md's Session 72 log for full build detail. Only
-complication #1 (the full per-seeder audit) remains genuinely undone from the
-proposal's original five; a real deploy rehearsal is the next gate before
-generalizing past this one pilot.**
+PLATFORM_ARCHITECTURE.md's Session 72 log for full build detail. **2026-09-15
+(Session 73): rehearsed end-to-end against REAL local infrastructure — a
+second local Redis pair standing in for `data-shared`, a real Comtrade
+public-preview fetch (96/197 countries, no paid quota touched), a real
+bridge run verified via full key-scan diff into a real org Redis. Found (via
+one wrong diagnosis, corrected in the same session) a real, permanent
+design property: a `SHARED_DATA_KEY_PREFIXES` entry that also matches a
+`classifyKey()` deny rule (comtrade's own `seed-meta:*` key) can never reach
+the bridge's fast path, only its 6h backstop — documented at that constant's
+own definition, not a bug to fix. The pilot's actual display data is
+unaffected and confirmed working. See PLATFORM_ARCHITECTURE.md's Session 73
+log for full detail, including an unrelated safety fix found along the way
+(local Supabase CLI was linked to the real `mosiq` project — `unlink`ed).**
+Only complication #1 (the full per-seeder audit) remains genuinely undone
+from the proposal's original five; a REAL cloud deploy rehearsal (not just
+local infrastructure) is the next gate before generalizing past this one
+pilot — separately, PLATFORM_ARCHITECTURE.md's actual release-readiness gap
+(a real `provision-org.yml` run against a real org) is unrelated to this
+proposal and still untouched by any of it.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the

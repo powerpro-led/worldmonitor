@@ -1,0 +1,67 @@
+# Local stand-in for the `data-shared` deploy's Upstash instance — a SECOND,
+# independent Redis + Upstash-REST proxy pair, separate from
+# docker-compose.dev.yml's own (which plays THIS org's own store).
+#
+# Exists only to test scripts/sync-shared-results.mjs and
+# scripts/seed-comtrade-bilateral-hs4.mjs against two real, independent
+# stores locally, before any real GCP/GH-Environment deploy
+# (CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3 pilot). Not part of the
+# ordinary daily dev loop — bring it up only when testing the shared-data
+# pilot, tear it down after:
+#
+#   docker compose -f docker-compose.data-shared.yml up -d
+#   docker compose -f docker-compose.data-shared.yml down          # keeps data
+#   docker compose -f docker-compose.data-shared.yml down -v       # wipes data
+#
+# Requires REDIS_SHARED_PASSWORD and REDIS_SHARED_TOKEN in .env (separate
+# from docker-compose.dev.yml's REDIS_PASSWORD/REDIS_TOKEN — two independent
+# stores need two independent credential pairs, same as real Upstash would
+# give them). Generate with: openssl rand -hex 32
+#
+# Reuses the SAME already-built worldmonitor-redis-rest:latest image
+# docker-compose.dev.yml uses — the proxy is generic, only its Redis
+# backend + token differ. Neither service is reachable off this machine.
+#
+# Explicit `name:` — without one, compose derives the project name from the
+# directory, colliding with docker-compose.dev.yml's own (same directory,
+# no name there either) and reporting THAT file's containers as "orphans" of
+# THIS one. Separate names keep `down`/`down -v` from ever touching the
+# wrong stack by accident.
+name: worldmonitor-data-shared
+
+services:
+  redis-shared:
+    image: docker.io/redis:7-alpine
+    container_name: worldmonitor-redis-shared
+    command: >
+      redis-server
+      --requirepass "${REDIS_SHARED_PASSWORD:?REDIS_SHARED_PASSWORD required — generate with: openssl rand -hex 32}"
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+    volumes:
+      - redis-shared-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_SHARED_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-rest-shared:
+    image: worldmonitor-redis-rest:latest
+    container_name: worldmonitor-redis-rest-shared
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - ./docker/redis-rest-proxy.mjs:/app/redis-rest-proxy.mjs:ro
+    environment:
+      SRH_TOKEN: "${REDIS_SHARED_TOKEN:?REDIS_SHARED_TOKEN required — generate with: openssl rand -hex 32}"
+      SRH_CONNECTION_STRING: "redis://:${REDIS_SHARED_PASSWORD:?REDIS_SHARED_PASSWORD required — generate with: openssl rand -hex 32}@redis-shared:6379"
+    depends_on:
+      redis-shared:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-shared-data:

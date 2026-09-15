@@ -362,6 +362,22 @@ export async function main() {
     const meta = JSON.stringify({ fetchedAt: Date.now(), recordCount: count, status });
     // TTL ≥ FRESHNESS_GATE_MS so the gate's "fresh" answer cannot be silently
     // invalidated by Redis eviction. See the SEED_META_TTL_SECONDS comment.
+    //
+    // Deliberately NOT paired with notifyMirroredWrites() the way the main
+    // per-country batch below is — investigated 2026-09-15 while rehearsing
+    // the CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3 pilot locally and
+    // confirmed this is correct, not a gap: META_KEY starts with `seed-meta:`,
+    // one of scripts/shared/sync-domains.mjs's own DENY_PREFIXES ("Sync-job
+    // bookkeeping written by the seed pipeline itself"), so notifyChange()
+    // would silently no-op on it regardless — adding the call here would
+    // look like a fix without changing any actual behavior. This key is
+    // pipeline bookkeeping (the freshness gate above reads it), not display
+    // data; it's expected to only ever reach a consumer via a periodic full
+    // scan (local-sync.mjs's 6h rescan for the operator mirror; sync-shared-
+    // results.mjs's equally-6h-gated full-reconcile backstop for the shared-
+    // data bridge, once centralized) — never the real-time fast path, by the
+    // same design choice that applies to every other seeder's own seed-meta
+    // key, not something specific to comtrade.
     await redisPipeline([['SET', META_KEY, meta, 'EX', String(SEED_META_TTL_SECONDS)]])
       .catch(e => console.warn('[bilateral-hs4] Failed to write seed-meta:', e.message));
   };

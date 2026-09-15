@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-15 (later still, Session 73) — **`comtrade-bilateral-hs4` pilot REHEARSED against real local infrastructure (still not deployed to real cloud).** A second local Redis pair (`docker-compose.data-shared.yml`, port 8081) stood in for the `data-shared` Upstash; a real Comtrade public-preview fetch (96/197 countries, 69min, zero paid quota touched) ran end-to-end through `sync-shared-results.mjs` into a real org Redis, verified via full `SCAN` diff. Found (then correctly root-caused, after one wrong diagnosis corrected in the same session) a real, permanent design property: any `SHARED_DATA_KEY_PREFIXES` entry that also matches a `classifyKey()` deny rule (e.g. `seed-meta:*`) can never reach the bridge's changelog fast path, only its 6h backstop — now documented at that constant's own definition. Also fixed an unrelated safety issue found along the way: local Supabase CLI was linked to the real `mosiq` project, now `unlink`ed. Full detail in the new "Session 73" log entry below.
 - **As of:** 2026-09-15 (later still) — **`comtrade-bilateral-hs4` pilot BUILT (not deployed), CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3's design turned into real code for the first time.** Operator approved building the pilot end-to-end after session 3's design below. New: `scripts/sync-shared-results.mjs` (the generalized changelog+cursor bridge — org-side, reads a cursor persisted in the org's own Upstash, `XRANGE`s the shared store's `sync:changelog`, mirrors only changed keys, includes a 6h-gated full-reconcile SCAN backstop for changelog-trim/long-downtime cases); `nitric.data-shared.yaml` + `deploy/shared/data-shared.yml` + `.github/workflows/deploy-data-shared.yml` (the shared deploy, modeled on `ais-shared`, no pinned instances — nothing here is a persistent connection); `scripts/shared/sync-domains.mjs` gained `SHARED_DATA_KEY_PREFIXES`/`isSharedDataKey()` (currently just comtrade's 2 key shapes). Changed: `scripts/railway-services.json`'s `seed-comtrade-bilateral-hs4` entry flagged `"centralized": true`; `gcp/scheduler/main.ts` now filters `nixpacksEntries` by a `DATA_SHARED_SCHEDULER` env flag so the SAME scheduler code runs only centralized entries on the shared deploy and everything else per-org (one registry, not two that could drift); `deploy-org.reusable.yml` gives every org's own deploy the shared store's read-only credential pair (`DATA_SHARED_UPSTASH_REST_URL`/`_READONLY_TOKEN`), confirming session 3's own complication-#4 finding by construction — `local-config`/`local-config-broker.mjs` were NOT touched. A real correctness bug caught and fixed DURING this build, not after: the bridge's write side initially flattened any non-string Redis type (hash/zset/set/list) into a JSON-stringified plain string in the org's store — harmless for the operator's own mirror (which already stores everything as a string) but would have silently corrupted any org-side RPC handler reading that key directly with a type-specific command. Fixed to reconstruct the correct Redis type on write (comtrade itself is string-only, so this path is reasoned-correct but not live-exercised by the pilot — flagged in the code for whoever centralizes a non-string source next). Verified: `node --check` on the new script, 7 new unit tests (`tests/sync-shared-results.test.mjs`, mocked fetch — no real Upstash/GCP), the existing `sync-domains`/comtrade/railway-registry test suites re-run clean (same 3 pre-existing unrelated failures as the pre-change baseline, confirmed via `git stash`), `tsc --noEmit -p tsconfig.gcp.json` clean. **NOT verified — still scaffold, like `ais-shared` before it:** no real GCP project, no real `nitric up`, no real Upstash instance, no real Comtrade API call through this path, no `data-shared` GH Environment created. Committed locally, not pushed, not tagged — same standing habit as every other session.
 - **As of:** 2026-09-15 (later) — **`CROSS_ORG_SHARED_DATA_PROPOSAL.md` session 3 (chat-only, zero repo code changed besides that doc + this Status/log).** Continuation of session 2 below, picked up its flagged risk (the AIS bridge's plain-poll mechanism not scaling to ~166 sources) and turned complication #3 ("write-path consolidation," the proposal's biggest open architectural piece) into a concrete design, read against real code first (`scripts/sync-ais-results.mjs`, `nitric.ais-shared.yaml`/`deploy/shared/ais-ingest.yml`/`.github/workflows/deploy-ais-shared.yml`, `server/_shared/sync-notify.ts`/`vscode-extension/sidecar/sync-listener.mjs`, `gcp/scheduler/main.ts`/`scripts/railway-services.json`), not proposed cold. Four decisions, each proposed then confirmed by the operator, full detail + reasoning in the proposal doc's new "Session 3 addendum" section: (1) **bridge mechanism** — promote `sync-listener.mjs`'s `catchUp()` (`XRANGE` a changelog stream from a persisted cursor, apply only what changed) from "reconnect-recovery path" to the org-side bridge's *only* path, since the bridge is a stateless `--once` cron with no persistent process to hold a live subscription open between ticks; (2) **deployment granularity** — one `data-shared` stack + one shared read-only Upstash, generalized straight from `ais-shared`'s existing shape, not split into 5-6 domain-grouped stacks (the failure-isolation argument for splitting is weak since every migrated seeder already runs as its own spawned child process); (3) **migration mechanism** — add a `centralized` flag to `scripts/railway-services.json` (87 entries today, no such concept yet) and reuse `gcp/scheduler/main.ts` unchanged in both contexts (org deploy filters it out, `data-shared` deploy filters it in) rather than a second script registry that could drift; (4) **cutover strategy** — operator explicitly chose a hard cutover per seeder over a parallel-run verification window, a real tradeoff recorded on purpose (a parallel-run window is what would have caught something like `sync-ais-results.mjs`'s own need to hand-reapply per-key TTLs *before* it hit live data, not after). Also this session: **complication #4 turned out to be a wrong assumption, not just an open design question** — it claimed `local-config` would need to hand out a second read-only credential pair, but `supabase/functions/local-config/index.ts` never touches `AIS_RESULTS_UPSTASH_*` at all today; that pair is a per-org deploy-time secret consumed only by `sync-ais-results.mjs` server-side (confirmed against `.github/workflows/deploy-org.reusable.yml` lines 281-282). Generalized, the `data-shared` equivalent needs only a new per-org GH Environment secret for the bridge script — **zero changes to `local-config`/`local-config-broker.mjs`.** **Complication #5 got a spot-check (not exhaustive) and an operator-confirmed pilot: `comtrade-bilateral-hs4`** — its own header comment documents the hardest quota constraint found (UN Comtrade free tier, 500 calls/month per key, ~394-396 calls per run, 2-key rotation caps it at 2 runs/month, with dedicated freshness-gate/seed-meta-TTL/lock-domain machinery built just to survive it), stronger evidence than the "one visibly slow run" the proposal originally had. Other candidates checked and set aside with reasons: SAM.gov (10 req/day/key, real past 429 lockout `#5444`, but already self-mitigated per-org via a fetch-interval gate — centralizing buys "no key needed," not "stops an active fire"); `seed-conflict-intel.mjs`'s GDELT fallback (confirmed still live — `#5140` brownout incident — and NOT the same thing session 40 removed, which was the `实时情报` UI panel/RPC, a display-layer removal; not picked because it only fires per-org when that org lacks ACLED credentials, a conditional case that collides with complication #1's classification-rule concern rather than a clean first case); `seed-portwatch*`/ArcGIS (rate-limited per egress IP, a genuinely different flavor, untested which way centralizing would cut). **Only complication #1 (the full per-seeder classification audit) is now genuinely undone** — everything else the proposal originally flagged has some form of answer.
 - **As of:** 2026-09-15 — **`CROSS_ORG_SHARED_DATA_PROPOSAL.md` session 2 (chat-only, zero repo code changed besides the doc itself).** Continuation of the 2026-09-14 proposal below. Two conclusions, both still proposal-status, full detail + reasoning in the proposal doc's new "Session 2 addendum" section: (1) **operator confirmed the per-org extension point's name and shape** — a new `org_specific_seeders` field (proposed, not yet added) on `org-provisioning/orgs/<org>.yml`, mechanically identical to how `seed-telegram.mjs` already works; the shared half stays a fixed automatic feed with no subscription list, per the operator's own call ("world shared for every org without choose need"). (2) **Checked Upstash's actual replication docs rather than assuming** — confirmed no native cross-database/cross-account replication exists (`upstash.com/docs/redis/features/replication` is intra-database multi-region only), so a hand-rolled bridge cron is the right shape, not a workaround for a missing feature — but flagged that `scripts/sync-ais-results.mjs`'s current plain-poll-2-keys mechanism likely needs to become push+changelog+backstop (reusing the shape `sync-listener.mjs`/`sync:changelog` already prove out one hop downstream) before it generalizes past AIS. Visual reference updated to match: the "WorldMonitor Sync Pipeline" artifact (external) — <https://claude.ai/code/artifact/76d476c8-f6b7-44b7-8214-3864212e4e1d>.
@@ -466,6 +467,117 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 73 — 2026-09-15
+
+**Local end-to-end rehearsal of the `comtrade-bilateral-hs4` pilot (session
+72) against REAL local infrastructure — real Redis, real Comtrade fetch,
+real bridge run — not mocks.** Operator's own framing: "at the meantime,
+let me know how far of our goal... while not ready to deploy real cloud, can
+we make local nitric and local supabase full working now."
+
+**New local dev rig, not part of the ordinary dev loop:**
+`docker-compose.data-shared.yml` — a second, independent Redis + Upstash-
+REST-proxy pair (port 8081; 8080 was already taken by `dagu` on this
+machine), modeled on `docker-compose.dev.yml`'s existing pair, playing the
+`data-shared` deploy's Upstash locally. New `.env` entries:
+`REDIS_SHARED_PASSWORD`/`REDIS_SHARED_TOKEN` (container credentials) and
+`DATA_SHARED_UPSTASH_REST_URL`/`_READONLY_TOKEN` (what `sync-shared-
+results.mjs` reads, exactly mirroring the real deploy's env shape).
+
+**Verified against the two real stores:**
+1. Synthetic round-trip first (seconds, not the real API): manually seeded
+   comtrade-shaped keys + changelog entries into the shared store, ran
+   `sync-shared-results.mjs` for real three times in a row — confirmed
+   incremental-only cost (tick 2 = 0 work), correct TTL re-application (the
+   comtrade seeder's own 35d/25d constants, not a 3600s default), cursor
+   idempotency, the full-reconcile backstop firing once on a cold start and
+   staying gated afterward, and the bridge's own `notifyChange()` landing in
+   the ORG's `sync:changelog` (confirming the downstream operator
+   `sync-listener.mjs` fan-out would see it in real time, not just at the
+   next 6h rescan).
+2. `nitric start` restarted clean (killed by PID, not name, per past-session
+   guidance; confirmed no orphan processes squatting on ports first) so the
+   new scheduler code actually runs, not just type-checks. Since restarting
+   it didn't retroactively prove the `DATA_SHARED_SCHEDULER` filter (this
+   local nitric runs in ordinary org mode, so comtrade correctly never
+   schedules here — 30-day cadence makes waiting for a real tick
+   impractical), the exact filter logic from `gcp/scheduler/main.ts` was
+   re-run in isolation against the real `railway-services.json`: org mode
+   returns 82 entries with comtrade excluded and `sync-shared-results`
+   included; `data-shared` mode returns exactly one entry,
+   `seed-comtrade-bilateral-hs4`. Both as designed.
+3. **Real Comtrade fetch, run in the background** (`COMTRADE_API_KEYS=`
+   forced empty to hit the free/keyless public-preview endpoint — confirmed
+   via the seeder's own printed `apiMode` line — so this never touched the
+   real ~500-calls/month paid quota). 197 countries attempted, 0 failed, 394
+   requests (matches the seeder's own "~394-396 calls per run" quota-math
+   comment exactly), 96 country keys actually written (101 skipped
+   gracefully — "no products after grouping" — a public-tier data-coverage
+   limit, not an error). Took 69 minutes wall-clock (the theoretical ~23min
+   from the 3.5s inter-request delay was optimistic — real network latency
+   roughly tripled it; worth knowing for anyone planning around this path).
+4. Bridged the real output into the org's store. Verified via a full `SCAN`
+   diff (not the bridge's own "N bridged" log line, which undercounts —
+   see below): **all 96 real country keys present in the org's store**, real
+   content (`iso2`/`products`/`fetchedAt` shape, not placeholder data),
+   correct 35-day TTL.
+
+**A real finding — and a real mistake in diagnosing it, corrected in the
+same session, left on record rather than quietly fixed.** One key,
+`seed-meta:comtrade:bilateral-hs4`, did not travel via the changelog fast
+path — only the full-reconcile backstop picked it up. First diagnosis was
+wrong: assumed `seed-comtrade-bilateral-hs4.mjs`'s `writeMeta()` had a bug
+(missing a `notifyMirroredWrites()` call the main per-country batches do
+make) and got the operator's go-ahead to add it. The added call was
+syntax-valid, tests still passed, and it was **reverted anyway** once closer
+inspection showed it wouldn't have changed anything: `META_KEY` starts with
+`seed-meta:`, one of `sync-domains.mjs`'s own `DENY_PREFIXES` — `notifyChange()`
+gates on `isMirroredKey()` (= `classifyKey()`) and silently no-ops on any
+denied key regardless of who calls it. The REAL finding, now documented at
+`SHARED_DATA_KEY_PREFIXES`'s own definition in `sync-domains.mjs`: **any
+`isSharedDataKey()` entry that also matches a `classifyKey()` deny rule can
+never reach the changelog fast path, full stop — it is permanently
+backstop-only, not a transient gap.** `classifyKey()`'s deny list exists for
+a narrower purpose (operator-mirror relevance) than `isSharedDataKey()`'s
+question (what the bridge should carry), and `sync-shared-results.mjs`
+happens to ride the same underlying stream for both — a design property
+worth knowing before assuming near-real-time freshness for a future
+centralized seeder's own bookkeeping key. Not a blocker: the pilot's actual
+display data (`comtrade:bilateral-hs4:*`) isn't denylisted and travels via
+the fast path exactly as designed, confirmed above.
+
+**Also this session, unrelated to the pilot — a real safety fix:** the local
+Supabase CLI was linked (`supabase/.temp/project-ref`, dated Sep 5, likely
+left over from earlier schema-reconstruction work) to the REAL remote
+`mosiq` project. Operator flagged it immediately: "that will be mistake, we
+need link local isolated." `npx supabase unlink` — confirmed clean
+(`linked_project: null`, local stack itself untouched). A linked CLI is a
+standing footgun: any `supabase db push`/`migration up` run locally without
+an explicit `--local` flag would silently target the real remote database
+instead of the local one. Recorded as a standing memory note (`local_supabase_
+must_stay_unlinked.md`) — the CLI should default to unlinked between
+sessions, link deliberately for a specific remote task, unlink again after.
+
+**Also clarified this session, in response to "how far are we from a real
+release":** the multi-tenant platform's Workstreams R/1–7 are all landed and
+the local-install mechanics are tested (macOS, real clean-machine
+rehearsal), but the actual multi-org deploy pipeline (`provision-org.yml` /
+`deploy-org.reusable.yml`) has never been run against a real org's real
+infrastructure — `deploy/orgs/mosiq.yml`'s own `gcp.projectId`/`domain`
+fields are still placeholders. That gap, not anything in this
+cross-org-shared-data thread, is what actually blocks a real release; this
+session's local rehearsal doesn't move that number, it only proves the
+`comtrade-bilateral-hs4` pilot's OWN mechanism works against real
+infrastructure short of a real cloud deploy.
+
+**Next session:** either a real cloud deploy rehearsal for the shared-data
+pilot itself (the `data-shared` GH Environment, `deploy-data-shared.yml`,
+real GCP, real Comtrade paid key — real cost, needs explicit go-ahead), or —
+separately and likely higher-leverage — a first real `provision-org.yml` run
+against an actual org, which is what the release-readiness gap above
+actually needs. Complication #1 (the full 168-seeder classification audit)
+remains the proposal's last untouched item either way.
 
 ### Session 72 — 2026-09-15
 

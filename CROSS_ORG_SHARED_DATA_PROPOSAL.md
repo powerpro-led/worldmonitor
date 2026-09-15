@@ -29,11 +29,14 @@ unaffected and confirmed working. See PLATFORM_ARCHITECTURE.md's Session 73
 log for full detail, including an unrelated safety fix found along the way
 (local Supabase CLI was linked to the real `mosiq` project — `unlink`ed).**
 Only complication #1 (the full per-seeder audit) remains genuinely undone
-from the proposal's original five; a REAL cloud deploy rehearsal (not just
-local infrastructure) is the next gate before generalizing past this one
-pilot — separately, PLATFORM_ARCHITECTURE.md's actual release-readiness gap
-(a real `provision-org.yml` run against a real org) is unrelated to this
-proposal and still untouched by any of it.**
+from the proposal's original five. **HANDED OFF to the next session,
+operator's explicit direction: pick this up and work through the remaining
+seeders — see "Suggested next steps" item 1 below for the concrete
+methodology.** A real cloud deploy rehearsal (not just local infrastructure)
+and PLATFORM_ARCHITECTURE.md's actual release-readiness gap (a real
+`provision-org.yml` run against a real org, unrelated to this proposal) are
+both still open but were NOT what got handed off — don't start those
+unprompted.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
@@ -332,11 +335,46 @@ through the new shared layer once it exists.
 
 ## Suggested next steps, in order (not a mandate)
 
-1. **Full audit pass, not just filenames** — open every one of the 168
-   seeders (or at least sample each group), confirm what each actually
-   reads (pure public API + shared key vs org-chosen parameter), producing
-   a definitive shareable/per-org list with one-line justification each —
-   this session's table above is a starting point, not the final word.
+1. **HANDED OFF 2026-09-15 (session 73 → next session), operator's explicit
+   direction: "continue for the rest of the seeders."** Full audit pass, not
+   just filenames — open every one of the 168 seeders (or at least sample
+   each group), confirm what each actually reads (pure public API + shared
+   key vs org-chosen parameter), producing a definitive shareable/per-org
+   list with one-line justification each — the "Read-only inventory" table
+   above is a starting point (naming-pattern grouping + 2 spot-checked
+   exceptions), not the final word; this is the ONE complication out of the
+   proposal's original five that's still genuinely undone. A concrete way to
+   attack 166 files without reading each one cold: the classification rule
+   itself (complication #1, above) already names the exact thing to grep
+   for — a seeder that reads a `pipeline_config`-hydrated env var for a
+   *choice* (a region, a coverage set, an endpoint), not just a shared
+   credential, is the one shape that would make an otherwise-shareable
+   seeder secretly org-specific. Grep each group's files for env-var reads
+   beyond a bare API key/token pattern, spot-check the ones that hit, and
+   treat everything else in that group as confirmed-shareable by the
+   filename-pattern table's own logic — full per-file reads only where the
+   grep pass finds something ambiguous. Output: replace the "Read-only
+   inventory" table's rough grouping with a real per-seeder list (still
+   groupable by category for readability), each row shareable/per-org +
+   one-line why.
+
+   **What's already settled — do NOT re-litigate:** the write-path design
+   (session 3: changelog+cursor bridge, one `data-shared` stack, the
+   `centralized` flag mechanism), the pilot pick (`comtrade-bilateral-hs4`),
+   and the pilot's real-infrastructure rehearsal (session 73: `scripts/
+   sync-shared-results.mjs` + the `data-shared` deploy triad all verified
+   against real local Redis, see `PLATFORM_ARCHITECTURE.md`'s Session 72/73
+   logs). The audit's job is picking the NEXT seeders to migrate with the
+   same discipline the pilot used, not redesigning the mechanism.
+
+   **What this audit does NOT require:** no real cloud deploy, no GCP
+   credentials, no new infrastructure — it's a read-only code-classification
+   pass, same as session 1's original inventory, just exhaustive instead of
+   sampled. The real-cloud-deploy rehearsal and the separate, higher-priority
+   `provision-org.yml`-against-a-real-org gap (release readiness,
+   `PLATFORM_ARCHITECTURE.md`'s own top Status entry) are both still open
+   but are NOT what the operator asked to hand off here — don't start those
+   unprompted.
 2. ~~**Rank the shareable list by rate-limit/cost pain**~~ — **spot-checked,
    session 3 addendum above, not exhaustive.** Enough of a look at the
    sources with genuinely hard-coded quotas (vs generic 429-retry handling)

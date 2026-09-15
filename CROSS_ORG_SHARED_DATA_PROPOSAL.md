@@ -1,5 +1,20 @@
 # Cross-org shared data layer — PILOT REHEARSED LOCALLY, NOT DEPLOYED TO REAL CLOUD
 
+**2026-09-15 (session 5, chat + read-only code audit, no repo behavior
+changed except this doc): complication #1 (the full 168-seeder classification
+audit) is CLOSED — see the "Full per-seeder classification" section below,
+which replaces the old naming-pattern "Read-only inventory" table. Result:
+165/168 confirmed shareable (was estimated 166/168), 3/168 confirmed per-org.
+One real reclassification found beyond the original 2 known exceptions:
+`seed-consumer-prices.mjs` reads a `CONSUMER_PRICES_DEFAULT_MARKET`
+choice-env-var against the `consumer-prices-core` microservice — exactly the
+shape this audit was checking for — and moves from shareable to per-org.
+Nothing else in this doc changes; this was the one item left from the
+proposal's original five complications. Next real step (still the
+operator's call, not started here): migrate more seeders onto the
+`data-shared` pattern the pilot proved, in whatever order/pace the operator
+wants.**
+
 **Status: idea captured 2026-09-14, read-only inventory done.
 2026-09-15 (session 2, chat-only): the per-org extension point got a name +
 operator sign-off, and the bridge mechanism got a real answer on Upstash's
@@ -28,11 +43,10 @@ own definition, not a bug to fix. The pilot's actual display data is
 unaffected and confirmed working. See PLATFORM_ARCHITECTURE.md's Session 73
 log for full detail, including an unrelated safety fix found along the way
 (local Supabase CLI was linked to the real `mosiq` project — `unlink`ed).**
-Only complication #1 (the full per-seeder audit) remains genuinely undone
-from the proposal's original five. **HANDED OFF to the next session,
-operator's explicit direction: pick this up and work through the remaining
-seeders — see "Suggested next steps" item 1 below for the concrete
-methodology.** A real cloud deploy rehearsal (not just local infrastructure)
+Only complication #1 (the full per-seeder audit) remained genuinely undone
+from the proposal's original five at the time this paragraph was written —
+**now CLOSED, see this doc's very top and the "Full per-seeder
+classification" section below.** A real cloud deploy rehearsal (not just local infrastructure)
 and PLATFORM_ARCHITECTURE.md's actual release-readiness gap (a real
 `provision-org.yml` run against a real org, unrelated to this proposal) are
 both still open but were NOT what got handed off — don't start those
@@ -230,47 +244,150 @@ A data source stays **per-org** if either the org chooses *what* it covers
 (which channels, which region, which vertical) or the output is
 inherently personalized per user/org (delivery, not data).
 
-## Read-only inventory (this session, `scripts/seed-*.mjs`, 168 files)
+## Full per-seeder classification (session 5, 2026-09-15) — complication #1 CLOSED
 
-**166 of 168 are shareable by the rule above.** Rough grouping (not an
-exhaustive per-file audit — see "Next steps" for that):
+**Methodology** (per the "Suggested next steps" item 1 plan below, followed
+as written): extracted every `process.env.*` read from all 168
+`scripts/seed-*.mjs` files (168/168 via grep, not sampled) — 56 files read at
+least one env var, 112 read none. Classified all 112 distinct var names by
+shape; the ~15 that looked "choice-shaped" (could plausibly encode a region,
+market, coverage set, or endpoint rather than a bare credential/infra value)
+were traced to their exact read site and read in full surrounding context,
+not judged by name alone. The 112 zero-env-var files were also spot-checked
+for a country/market baked in as a hardcoded constant instead of an env var
+(`seed-bundle-regional.mjs`, `seed-china-macro.mjs`, `seed-gulf-quotes.mjs`,
+`seed-grocery-basket.mjs`) — all confirmed genuinely global/multi-country
+coverage, nothing org-narrowed. Note: `pipeline_config`/the config-broker
+machinery itself has zero direct `seed-*.mjs` callers today (grep-confirmed)
+— the risk this audit checked for is *any* env-var-driven content selection,
+not literally a `pipeline_config` read.
 
-| Group | Examples | Count (approx) |
-|---|---|---|
-| Macro/economic | `bis-*`, `imf-*`, `eurostat-*`, `wb-*`, `fx-rates`, `yield-curve-eu`, `national-debt` | 30+ |
-| Markets/commodities | `market-quotes`, `crypto-*`, `commodity-quotes`, `gold-*`, `fear-greed`, `etf-flows` | 20+ |
-| Climate/energy | `climate-*`, `energy-*`, `jodi-*`, `eia-petroleum`, `gas-storage-*` | 25+ |
-| Conflict/security | `ucdp-events`, `conflict-intel`, `military-*`, `cyber-threats`, `unrest-events` | 15+ |
-| Supply chain/shipping | `portwatch-*`, `chokepoint-*`, `hormuz`, `corridor-risk`, `shipping-stress` | 15+ |
-| Everything else (health, social, prediction markets, sanctions, trade…) | | 60+ |
+**Result: 165/168 shareable, 3/168 per-org** (previous estimate was 166/168 —
+one reclassification, below).
 
-**2 confirmed exceptions today**, both **already correctly per-org**, no
-change needed:
-- `seed-telegram.mjs` — the script's own header comment already states why:
-  "Telegram creds are not public data and each org polls its own channel
-  set with its own MTProto session." Content itself differs per org, not
-  just the credential.
-- `seed-digest-notifications.mjs` — not a data *source* at all; it reads
-  each org's own `alert_rules` and dispatches personalized digests to that
-  org's configured channels. Downstream delivery, not upstream fetch.
+### The 3 per-org seeders
+
+| Seeder | Why per-org |
+|---|---|
+| `seed-telegram.mjs` | Own header comment states it: each org polls its own Telegram channel set with its own MTProto session — the credential *and* the content differ per org. (Known since session 1.) |
+| `seed-digest-notifications.mjs` | Not a data source — reads each org's own `alert_rules`/`notification_channels` and dispatches personalized digests. Downstream delivery, not upstream fetch. (Known since session 1.) |
+| `seed-consumer-prices.mjs` | **New this session.** Reads `CONSUMER_PRICES_DEFAULT_MARKET` (defaults to `'ae'`) and a hardcoded `BASKET = 'essentials-ae'` against the separate `consumer-prices-core` microservice — an env var picking *which market's* basket gets fetched, the exact "choice, not just a credential" shape complication #1 warned about. An org wanting Saudi or Egyptian prices instead overrides the var and gets genuinely different output; centralizing as-is would silently pin every org to UAE data. Consistent with `consumer-prices-core` already being flagged separately (`org-provisioning`'s 2026-09-14 handoff) as a standalone microservice never wired into any shared/cloud fan-out — this audit independently arrives at the same "leave it per-org" conclusion from the data-sharing side. |
+
+**14 other "choice-shaped" var hits, checked and confirmed NOT org-choice** —
+global feature flags, staged-rollout gates, and LLM-model/provider knobs.
+Same value would behave identically whether set on a shared deploy or on any
+single org's own deploy today; none of them change *what content* comes
+back, only how/whether it's processed:
+`IRAN_EVENTS_ENABLED` (domain-sunset kill switch, `seed-iran-events.mjs`),
+`CHAIN_FORECAST_SEED_ON_MILITARY` (internal orchestration trigger,
+`seed-military-flights.mjs`), `RESILIENCE_WHO_MEASLES_INDICATOR` (WHO
+indicator-code override for API churn, `seed-resilience-static.mjs`),
+`NEWS_DIGEST_SEED_VARIANTS`/`_LANGS` (which variant×lang pairs to eagerly
+cache-warm — same underlying public digest content either way,
+`seed-news-digest.mjs`), `BRIEF_VALIDATOR_MODE` (hallucination-guard
+incident-revert switch, `seed-insights.mjs`), `FORECAST_PROMOTE_BET_ENGINE` /
+`FORECAST_BETS_ENSEMBLE` (staged feature-gate promotions, one-way rollout
+switches, `seed-forecast-resolutions.mjs` / `seed-forecast-bets.mjs`), and
+the family of `FORECAST_LLM_*_PROVIDER_ORDER` / `_MODEL_OPENROUTER` /
+`_MODEL_GROQ` / `GROQ_MODEL` / `OPENROUTER_MODEL` / `OLLAMA_MODEL` overrides
+(`seed-forecasts.mjs`, `seed-forecast-resolutions.mjs`, `seed-classify.mjs`,
+`seed-insights.mjs`) — these pick which LLM processes the same public source
+data, a deploy-wide ops/cost knob, not a content-scope choice.
+
+### The 165 shareable seeders, by category (real file list, not examples)
+
+Every file below was covered by the audit above — either it had zero
+env-var reads (confirmed nothing to differ per org), or its env vars were
+all credentials/infra/feature-flags (checked individually above), or it was
+one of the 4 hardcoded-constant spot-checks. One shared one-line reason per
+category; no individual file needed a different reason since none read an
+org-narrowing choice.
+
+**Macro/economic (43)** — public statistical-agency APIs (BIS, IMF, Eurostat,
+World Bank, ECB, FATF, national statistics offices), same output for any
+caller: `aaii-sentiment`, `bigmac`, `bis-data`, `bis-extended`, `bis-lbs`,
+`bls-series`, `bundle-ecb-eu`, `bundle-imf-extended`, `bundle-macro`,
+`china-coverage-health`, `china-macro`, `china-release-calendar`,
+`correlation`, `cross-source-signals`, `ecb-fx-rates`, `ecb-short-rates`,
+`economic-calendar`, `economy`, `eurostat-country-data`,
+`eurostat-gov-debt-q`, `eurostat-house-prices`,
+`eurostat-industrial-production`, `fatf-listing`, `fsi-eu`, `fx-rates`,
+`fx-yoy`, `gscpi`, `imf-external`, `imf-growth`, `imf-labor`, `imf-macro`,
+`national-debt`, `recovery-external-debt`, `recovery-fiscal-space`,
+`recovery-fuel-stocks`, `recovery-import-hhi`, `recovery-reexport-share`,
+`recovery-reserve-adequacy`, `sovereign-wealth`, `usa-spending`,
+`wb-external-debt`, `wb-indicators`, `yield-curve-eu`.
+
+**Markets/commodities (19)** — public market-data feeds (quotes, ETF flows,
+sentiment indices), identical for every caller regardless of org:
+`bundle-market-backup`, `bundle-relay-backup`, `commodity-quotes`, `cot`,
+`crypto-quotes`, `crypto-sectors`, `earnings-calendar`, `etf-flows`,
+`fear-greed`, `gold-cb-reserves`, `gold-etf-flows`, `gulf-quotes`,
+`hyperliquid-flow`, `market-breadth`, `market-quotes`, `prediction-markets`,
+`stablecoin-markets`, `token-panels`, `wsb-tickers`.
+
+**Climate/energy (32)** — public climate/energy datasets (satellite, EIA,
+JODI, IEA, government energy agencies), no per-org parameter:
+`bundle-climate`, `bundle-energy-sources`, `bundle-resilience-energy-v2`,
+`climate-anomalies`, `climate-disasters`, `climate-news`,
+`climate-ocean-ice`, `climate-zone-normals`, `co2-monitoring`,
+`eia-petroleum`, `electricity-prices`, `ember-electricity`,
+`energy-crisis-policies`, `energy-disruptions`, `energy-intelligence`,
+`energy-spine`, `fossil-electricity-share`, `fuel-prices`, `fuel-shortages`,
+`gas-storage-countries`, `gie-gas-storage`, `iea-oil-stocks`, `jodi-gas`,
+`jodi-oil`, `low-carbon-generation`, `owid-energy-mix`, `pipelines-gas`,
+`pipelines-oil`, `spr-policies`, `storage-facilities`, `vpd-tracker`,
+`weather-alerts`.
+
+**Conflict/security (19)** — public conflict/security trackers (UCDP,
+sanctions lists, satellite/ADS-B feeds), global coverage by design:
+`conflict-intel`, `cyber-threats`, `defense-patents`, `internet-outages`,
+`iran-events`, `military-bases`, `military-cii`, `military-flights`,
+`military-maritime-news`, `pizzint`, `radiation-watch`, `regulatory-actions`,
+`sanctions-pressure`, `satellites`, `security-advisories`,
+`thermal-escalation`, `ucdp-events`, `unrest-events`, `usni-fleet`.
+
+**Supply chain/shipping (17)** — public shipping/trade trackers (IMF
+PortWatch, chokepoint AIS baselines, UN Comtrade), same for every caller:
+`bundle-portwatch-port-activity`, `bundle-portwatch`, `chokepoint-baselines`,
+`chokepoint-flows`, `comtrade-bilateral-hs4` (the pilot, already migrating),
+`corridor-risk`, `global-tenders`, `hormuz`, `hs2-chokepoint-exposure`,
+`portwatch-chokepoints-ref`, `portwatch-disruptions`, `portwatch-port-activity`,
+`portwatch`, `shipping-stress`, `submarine-cables`, `supply-chain-trade`,
+`transit-summaries`.
+
+**Resilience/health/derived/other (35)** — public health/disaster data (WHO,
+USGS, NASA FIRMS) plus in-repo derived/synthesis layers (forecasts, briefs,
+classification) that process shared public inputs, no org-specific input of
+their own: `aviation`, `bundle-derived-signals`, `bundle-health`,
+`bundle-regional`, `bundle-resilience-recovery`,
+`bundle-resilience-validation`, `bundle-resilience`, `bundle-static-ref`,
+`classify`, `disease-outbreaks`, `displacement-summary`, `earthquakes`,
+`fao-food-price-index`, `fire-detections`, `forecast-bets`,
+`forecast-resolutions`, `forecasts`, `grocery-basket`, `health-air-quality`,
+`insights`, `natural-events`, `news-digest`, `positive-events`,
+`power-reliability`, `recall-benchmark`, `regional-briefs`,
+`regional-snapshots`, `research`, `resilience-scores`, `resilience-static`,
+`rpc-warmpings`, `sector-summary`, `service-statuses`, `social-velocity`,
+`trade-flows`.
 
 **2 named future org-specific verticals** (operator's plan, not built):
 mosiq's China stock market data, biovita's Amazon intelligence data. These
 fit the per-org bucket naturally and need no architecture change to build —
 flagging here only so whoever builds them doesn't accidentally route them
-through the new shared layer once it exists.
+through the new shared layer once it exists. (`seed-consumer-prices.mjs`,
+above, is a third, already-built example of the same shape — worth keeping
+in mind as the pattern to recognize, not a coincidence.)
 
 ## Real complications to resolve before building anything (not yet designed)
 
-1. **The classification rule needs to survive contact with real edge cases,
-   not just the 168 filenames.** A pass that actually opens each seeder
-   (or at least each *group*) and checks what it reads/writes is needed —
-   this session's inventory was a naming-pattern + spot-check pass, not a
-   full audit. Specifically worth checking: anything that reads
-   `pipeline_config`-hydrated env for a *choice* (a region, an endpoint,
-   a coverage set) rather than just a shared credential — that would make
-   the OUTPUT org-specific even though it looks like a generic data source
-   from the filename.
+1. ~~**The classification rule needs to survive contact with real edge
+   cases, not just the 168 filenames.**~~ — **CLOSED, session 5: see "Full
+   per-seeder classification" above.** All 168 files' env-var reads checked
+   individually, not sampled; found exactly one case of the warned-about
+   shape (`seed-consumer-prices.mjs` reading a market-choice env var), the
+   other 14 "choice-shaped" hits were confirmed global flags/knobs, not
+   content selection.
 2. **Per-org Upstash isolation is a security boundary today, not just a
    freshness boundary** — see `PLATFORM_ARCHITECTURE.md`'s repeated
    emphasis on per-org secrets, no shared write credentials to operators,
@@ -335,28 +452,14 @@ through the new shared layer once it exists.
 
 ## Suggested next steps, in order (not a mandate)
 
-1. **HANDED OFF 2026-09-15 (session 73 → next session), operator's explicit
-   direction: "continue for the rest of the seeders."** Full audit pass, not
-   just filenames — open every one of the 168 seeders (or at least sample
-   each group), confirm what each actually reads (pure public API + shared
-   key vs org-chosen parameter), producing a definitive shareable/per-org
-   list with one-line justification each — the "Read-only inventory" table
-   above is a starting point (naming-pattern grouping + 2 spot-checked
-   exceptions), not the final word; this is the ONE complication out of the
-   proposal's original five that's still genuinely undone. A concrete way to
-   attack 166 files without reading each one cold: the classification rule
-   itself (complication #1, above) already names the exact thing to grep
-   for — a seeder that reads a `pipeline_config`-hydrated env var for a
-   *choice* (a region, a coverage set, an endpoint), not just a shared
-   credential, is the one shape that would make an otherwise-shareable
-   seeder secretly org-specific. Grep each group's files for env-var reads
-   beyond a bare API key/token pattern, spot-check the ones that hit, and
-   treat everything else in that group as confirmed-shareable by the
-   filename-pattern table's own logic — full per-file reads only where the
-   grep pass finds something ambiguous. Output: replace the "Read-only
-   inventory" table's rough grouping with a real per-seeder list (still
-   groupable by category for readability), each row shareable/per-org +
-   one-line why.
+1. ~~**HANDED OFF 2026-09-15 (session 73 → next session), operator's
+   explicit direction: "continue for the rest of the seeders."**~~ —
+   **DONE, session 5 (2026-09-15): see "Full per-seeder classification"
+   above.** Every one of the 168 files' env-var reads checked (not sampled),
+   producing a real shareable/per-org list with justification — 165
+   shareable, 3 per-org (the 2 known exceptions + `seed-consumer-prices.mjs`,
+   newly reclassified). This was the ONE complication out of the proposal's
+   original five that was still undone; nothing is now.
 
    **What's already settled — do NOT re-litigate:** the write-path design
    (session 3: changelog+cursor bridge, one `data-shared` stack, the

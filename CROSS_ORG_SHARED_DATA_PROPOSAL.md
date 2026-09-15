@@ -1,18 +1,24 @@
-# Cross-org shared data layer — PROPOSAL, NOT STARTED
+# Cross-org shared data layer — PILOT BUILT, NOT DEPLOYED
 
-**Status: idea captured 2026-09-14, read-only inventory done, zero code changed.
+**Status: idea captured 2026-09-14, read-only inventory done.
 2026-09-15 (session 2, chat-only): the per-org extension point got a name +
 operator sign-off, and the bridge mechanism got a real answer on Upstash's
-native capabilities. 2026-09-15 (session 3, chat-only — see below): complication
+native capabilities. 2026-09-15 (session 3, chat-only): complication
 #3 (write-path consolidation) went from "architecturally biggest open piece" to
 a concrete design — bridge mechanism, shared-deploy granularity, the migration
 flag, and the cutover strategy are all decided (operator sign-off given in
 conversation); complication #4 (local broker credentials) turned out to be a
 wrong assumption and is fully resolved, not just designed; complication #5
 got a spot-check and a picked, operator-confirmed pilot (`comtrade-bilateral-
-hs4`). Still nothing built, still zero repo code changed except this doc +
-`PLATFORM_ARCHITECTURE.md`. Only complication #1 (the full per-seeder audit)
-remains genuinely undone.**
+hs4`). 2026-09-15 (session 4 / PLATFORM_ARCHITECTURE.md Session 72 — real
+code, not chat): the picked pilot got BUILT — `scripts/sync-shared-results.mjs`
++ the `data-shared` Nitric/GH Actions triad + the `centralized` flag
+mechanism, unit tested and type-checked, but never run against real GCP/
+Upstash/Comtrade — same scaffold status `ais-shared` has always carried. See
+PLATFORM_ARCHITECTURE.md's Session 72 log for full build detail. Only
+complication #1 (the full per-seeder audit) remains genuinely undone from the
+proposal's original five; a real deploy rehearsal is the next gate before
+generalizing past this one pilot.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
@@ -329,12 +335,19 @@ through the new shared layer once it exists.
    never touches the shared credential; a per-org GH Environment secret for
    the bridge script is enough. `local-config`/`local-config-broker.mjs`
    need no changes.
-5. ~~**Pick ONE pilot source**~~ — **PICKED, session 3 addendum above:
-   `comtrade-bilateral-hs4`, operator-confirmed.** Still need to ship it
-   end-to-end before deciding whether to generalize — same incremental
-   discipline the AIS migration itself used (S61–S67, extracted 26 loops
-   one at a time, not in one shot).
-   Don't attempt all 166 in one PR.
+5. ~~**Pick ONE pilot source, ship it end-to-end**~~ — **BUILT, not deployed
+   (session 4 / PLATFORM_ARCHITECTURE.md Session 72): `comtrade-bilateral-
+   hs4`.** `scripts/sync-shared-results.mjs` + the `data-shared` Nitric/GH
+   Actions triad + the `centralized` flag mechanism are real code, unit
+   tested, type-checked — but never run against real GCP/Upstash/Comtrade,
+   same scaffold status `ais-shared` has always carried. A real deploy
+   rehearsal is the next gate before generalizing past this one source — see
+   PLATFORM_ARCHITECTURE.md's Session 72 log for the full build detail
+   including one real bug (non-string type flattening) caught and fixed
+   mid-build. Same incremental discipline the AIS migration itself used
+   (S61–S67, extracted 26 loops one at a time, not in one shot) — don't
+   attempt all 166 in one PR regardless of how this one pilot's rehearsal
+   goes.
 
 ## What NOT to do
 

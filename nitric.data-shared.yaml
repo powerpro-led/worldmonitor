@@ -1,0 +1,38 @@
+# Nitric stack file for the ONE shared centralized-seeder deploy
+# (CROSS_ORG_SHARED_DATA_PROPOSAL.md, session 3 design + pilot). Selected by
+# `.github/workflows/deploy-data-shared.yml` via `nitric up --stack
+# data-shared`. Non-secret companion config: deploy/shared/data-shared.yml.
+#
+# Modeled on nitric.ais-shared.yaml, but with NO persistent-connection pin —
+# unlike ais-relay.cjs (one long-lived WebSocket, needs min-instances: 1),
+# every `centralized: true` entry this stack's scheduler runs (see
+# gcp/scheduler/main.ts's own header comment for the dual-context filter) is
+# an ordinary polling/batch cron, same shape as any per-org seeder, just
+# invoked here instead of per-org. Pilot: seed-comtrade-bilateral-hs4 (monthly
+# batch, no persistent state between ticks) needs nothing pinned. Everything
+# stays at the default min-instances: 0 — this deploy exists to run its
+# scheduled crons, and an idle api/mcp/relay surface on the shared project
+# costs nothing at zero (same reasoning nitric.ais-shared.yaml's own header
+# gives for the inverse case).
+#
+# SCAFFOLD — `nitric up` has NOT been run against this. See
+# docs/architecture/nitric-gcp-scaffold.md + deploy/shared/README.md.
+
+provider: nitric/gcp@1.27.6
+region: us-central1
+gcp-project-id: apps-453107
+
+apis:
+  api:
+    description: "worldmonitor public REST API — ported api/*.ts Vercel Edge handlers"
+  mcp:
+    description: "worldmonitor agent-facing MCP server"
+
+config:
+  default:
+    cloudrun:
+      memory: 512
+      timeout: 60
+      min-instances: 0
+      max-instances: 10
+      concurrency: 80

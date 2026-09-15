@@ -1,0 +1,16 @@
+# deploy/shared/data-shared.yml — non-secret config for the shared
+# centralized-seeder deploy (CROSS_ORG_SHARED_DATA_PROPOSAL.md, session 3
+# design + pilot). See deploy/shared/README.md.
+#
+# Everything secret (GCP creds, Pulumi token, the shared write-side Upstash
+# creds, and any data-source key a centralized seeder needs — e.g.
+# COMTRADE_API_KEYS for the pilot) lives in the `data-shared` GitHub
+# Environment, never here.
+
+stack: data-shared        # matches the GH Environment name + nitric.data-shared.yaml
+gcp:
+  projectId: apps-453107  # the shared project (NOT a tenant project — this
+                           # deploy carries no tenant data), same project
+                           # ais-shared already uses — no reason to split GCP
+                           # projects across the two shared deploys
+  region: us-central1

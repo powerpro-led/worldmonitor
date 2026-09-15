@@ -220,6 +220,51 @@ export function isAisResultsKey(key) {
 }
 
 /**
+ * ---------------------------------------------------------------------------
+ * Shared-data bridge namespace (CROSS_ORG_SHARED_DATA_PROPOSAL.md, session 3
+ * design + pilot).
+ *
+ * SEPARATE CONCERN from both classifyKey() above and the AIS-results block
+ * above it. This answers "is this key produced by the ONE shared `data-shared`
+ * deploy (a subset of scripts/railway-services.json entries flagged
+ * `centralized: true`, run by gcp/scheduler/main.ts in its shared-deploy
+ * context) and therefore copied by scripts/sync-shared-results.mjs from the
+ * shared 'data-shared' Upstash into each org's own Upstash".
+ *
+ * Same trust shape as AIS_RESULTS_KEYS: the `data-shared` deploy holds only
+ * its own credentials, never a tenant's — it writes into the shared store,
+ * and each org's own bridge cron pulls from there into that org's Upstash.
+ * Unlike AIS (one persistent-connection source, 2 keys, ever), this list
+ * grows over time as more `scripts/seed-*.mjs` entries get their
+ * `railway-services.json` entry flagged `centralized: true` — add each
+ * migrated seeder's key prefix here in the same commit that flips the flag,
+ * so sync-shared-results.mjs's defense-in-depth check
+ * (isSharedDataKey()) and the flag stay in sync by construction rather than
+ * by convention.
+ *
+ * Pilot (session 3): `comtrade-bilateral-hs4` only. See
+ * scripts/seed-comtrade-bilateral-hs4.mjs's own KEY_PREFIX/META_KEY consts —
+ * duplicated here (not imported) because that script also runs standalone,
+ * per-org, before/if it's ever migrated back, and this list must reflect
+ * only what's ACTUALLY centralized right now, not everything the script is
+ * capable of writing.
+ *
+ * A key matches if it EQUALS an entry or starts with an entry that ends in
+ * ':' (prefix form) — same convention AIS_RESULTS_KEYS uses above.
+ * ---------------------------------------------------------------------------
+ */
+export const SHARED_DATA_KEY_PREFIXES = [
+  'comtrade:bilateral-hs4:',
+  'seed-meta:comtrade:bilateral-hs4',
+];
+
+/** @param {unknown} key @returns {boolean} */
+export function isSharedDataKey(key) {
+  if (typeof key !== 'string' || key.length === 0) return false;
+  return SHARED_DATA_KEY_PREFIXES.some((p) => key === p || (p.endsWith(':') && key.startsWith(p)));
+}
+
+/**
  * True only for keys that are safe to push on the fast path — i.e. exactly
  * the 'mirror' state. 'deny' and 'mirror-filtered' both return false: the
  * former is never mirrored at all, the latter reaches the local mirror only

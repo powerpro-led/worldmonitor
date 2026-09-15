@@ -154,6 +154,12 @@
     "documentedAt": "PLATFORM_ARCHITECTURE.md P14 Phase 2 tail / decision P17 — bridges supply_chain:chokepoint_transits:v1 from the shared AIS-results Upstash into each org's Upstash (session 67)"
   },
   {
+    "entry": "scripts/sync-shared-results.mjs",
+    "deployMode": "nixpacks-root-repo",
+    "service": "sync-shared-results",
+    "documentedAt": "CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3 — generalized changelog+cursor bridge from the data-shared deploy's Upstash into each org's Upstash. Runs per-org (like sync-ais-results, NOT centralized itself)."
+  },
+  {
     "entry": "scripts/seed-fx-yoy.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-fx-yoy",
@@ -163,7 +169,9 @@
     "entry": "scripts/seed-comtrade-bilateral-hs4.mjs",
     "deployMode": "nixpacks-root-repo",
     "service": "seed-comtrade-bilateral-hs4",
-    "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot"
+    "documentedAt": "docs/railway-seed-consolidation-runbook.md#standalone-seed-crons-added-after-this-snapshot",
+    "centralized": true,
+    "centralizedNote": "CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3 pilot — runs ONLY on the data-shared deploy now (gcp/scheduler/main.ts filters this out of every org's own scheduler). scripts/sync-shared-results.mjs bridges its output into each org's Upstash."
   },
   {
     "entry": "scripts/seed-hs2-chokepoint-exposure.mjs",

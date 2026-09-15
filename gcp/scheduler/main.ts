@@ -56,6 +56,25 @@
  *   same treatment as the existing 5 `dockerfile`-mode services, not a
  *   schedule.
  *
+ * ─────────────────────────────────────────────────────────────────────────
+ * `centralized` entries (2026-09-15, CROSS_ORG_SHARED_DATA_PROPOSAL.md
+ * session 3): this same file also serves as the `data-shared` deploy's own
+ * scheduler (nitric.data-shared.yaml + deploy/shared/data-shared.yml +
+ * .github/workflows/deploy-data-shared.yml), not a separate implementation.
+ * A railway-services.json entry flagged `"centralized": true` runs on the
+ * `data-shared` deploy INSTEAD OF every org's own deploy — one script
+ * registry, filtered by context, rather than two registries that could
+ * drift apart. `DATA_SHARED_SCHEDULER=true` (set only in the `data-shared`
+ * GH Environment) selects which half of the filter applies:
+ *   - unset (every per-org deploy): centralized entries are skipped.
+ *   - `true` (the data-shared deploy only): ONLY centralized entries run.
+ * Pilot: `seed-comtrade-bilateral-hs4` (session 3). Its own CADENCES entry
+ * below is unchanged — the flag decides WHERE it runs, not how often.
+ * scripts/sync-shared-results.mjs (itself NOT centralized — it runs
+ * per-org, like sync-ais-results.mjs) bridges its output back into each
+ * org's own Upstash.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
  * Scaffold-only pass — see docs/architecture/nitric-gcp-scaffold.md.
  */
 
@@ -81,11 +100,19 @@ interface RailwayServiceEntry {
   entry: string;
   deployMode: string;
   service: string;
+  // CROSS_ORG_SHARED_DATA_PROPOSAL.md session 3 — see this file's header
+  // comment. Absent/false on every entry except the pilot.
+  centralized?: boolean;
 }
 
 const railwayServices = JSON.parse(
   readFileSync(path.join(REPO_ROOT, 'scripts', 'railway-services.json'), 'utf8'),
 ) as RailwayServiceEntry[];
+
+// See this file's header comment. Only ever 'true' in the `data-shared` GH
+// Environment (.github/workflows/deploy-data-shared.yml) — every real org
+// deploy leaves this unset.
+const IS_DATA_SHARED_DEPLOY = process.env.DATA_SHARED_SCHEDULER === 'true';
 
 /**
  * The three always-on workers described above. Excluded from scheduling
@@ -377,6 +404,15 @@ const CADENCES: Record<string, Cadence> = {
   // ~2min — within the ~30-60s streaming staleness P8 already accepts. Copies
   // bytes, computes nothing; not a seeder.
   'sync-ais-results': { kind: 'every', rate: '2 minutes' },
+  // 2026-09-15 (session 3, CROSS_ORG_SHARED_DATA_PROPOSAL.md) — the
+  // generalized changelog+cursor bridge (see this file's header comment and
+  // scripts/sync-shared-results.mjs's own header). Unlike sync-ais-results'
+  // blind 2-key poll, cost here scales with what changed, not with source
+  // count, so a tighter cadence than AIS's is affordable without repeating
+  // the scaling problem session 2 flagged. 5min still comfortably clears
+  // the changelog's ~10k-entry MAXLEN trim window for any plausible write
+  // rate at pilot scale (one seeder, monthly cadence).
+  'sync-shared-results': { kind: 'every', rate: '5 minutes' },
 };
 
 /**
@@ -411,7 +447,13 @@ function runScriptOnce(entryRelativePath: string, extraArgs: string[] = []): () 
     });
 }
 
-const nixpacksEntries = railwayServices.filter((svc) => svc.deployMode.startsWith('nixpacks'));
+const nixpacksEntries = railwayServices.filter((svc) => {
+  if (!svc.deployMode.startsWith('nixpacks')) return false;
+  const isCentralized = svc.centralized === true;
+  // See this file's header comment: the data-shared deploy runs ONLY
+  // centralized entries; every org's own deploy runs everything ELSE.
+  return IS_DATA_SHARED_DEPLOY ? isCentralized : !isCentralized;
+});
 
 for (const svc of nixpacksEntries) {
   if (ALWAYS_ON_NOT_SCHEDULED.has(svc.service)) continue;

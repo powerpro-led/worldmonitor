@@ -1,0 +1,117 @@
+name: Deploy Shared Centralized Seeders (CROSS_ORG_SHARED_DATA_PROPOSAL.md)
+
+# The ONE shared centralized-seeder deploy — CROSS_ORG_SHARED_DATA_PROPOSAL.md
+# session 3 design + pilot. Generalizes the deploy-ais-shared.yml pattern
+# (one shared deploy, one shared Upstash, each org bridges in) from AIS's one
+# persistent-connection source to scripts/railway-services.json entries
+# flagged `"centralized": true`. Pilot: seed-comtrade-bilateral-hs4 only —
+# see scripts/shared/sync-domains.mjs's SHARED_DATA_KEY_PREFIXES for the
+# up-to-date list as more seeders migrate.
+#
+# Unlike ais-relay.cjs, nothing here is a persistent connection — this
+# deploy's gcp/scheduler/main.ts instance runs ordinary polling/batch crons
+# (see that file's header comment for the `DATA_SHARED_SCHEDULER` dual-context
+# filter: this deploy runs ONLY centralized entries, every org's own deploy
+# runs everything ELSE). Each org's own deploy runs
+# scripts/sync-shared-results.mjs (a `--once` cron, changelog+cursor bridge —
+# NOT a blind poll, see that script's own header) to copy this deploy's
+# output into that org's Upstash.
+#
+# Manual-only, same rationale as deploy-ais-shared.yml / deploy-org.reusable.yml:
+# an on-push trigger would redeploy live infrastructure on every unrelated
+# merge.
+#
+# Required GH Environment `data-shared`:
+#   GCP_CREDENTIALS                                  — SA JSON for the shared GCP project
+#   PULUMI_ACCESS_TOKEN                               — Nitric's GCP provider deploys via Pulumi
+#   DATA_SHARED_UPSTASH_REST_URL / _REST_TOKEN        — shared "data-shared" Upstash, WRITE side
+#   COMTRADE_API_KEYS                                 — pilot only; the Comtrade key(s) formerly
+#                                                        provisioned per-org via pipeline_config.
+#                                                        Add each future centralized seeder's own
+#                                                        data-source secret here as it migrates.
+#   vars.APP_DOMAIN                                   — CORS allow-list derivation
+#
+# SCAFFOLD — never run. Like the rest of the Nitric/GCP target
+# (docs/architecture/nitric-gcp-scaffold.md), `nitric up` has not been run
+# against this, mirroring deploy-ais-shared.yml's own status.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to confirm — this (re)deploys the shared centralized-seeder infrastructure.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy shared centralized seeders
+    runs-on: ubuntu-latest
+    environment: data-shared
+
+    steps:
+      - name: Require explicit confirmation
+        if: ${{ inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}')."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+
+      - name: Setup GCP Docker Auth
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Install and configure Pulumi
+        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
+
+      # This deploy's own credentials only — no tenant secrets. Every
+      # centralized seeder writes with UPSTASH_REDIS_REST_URL/_TOKEN like any
+      # per-org seeder does; here that pair points at the SHARED store, not a
+      # tenant's. DATA_SHARED_SCHEDULER=true is what makes
+      # gcp/scheduler/main.ts run ONLY centralized entries in this deploy
+      # instead of everything else — see that file's header comment.
+      - name: Create shared-seeder env file
+        run: |
+          cat > .env <<EOF
+          DATA_SHARED_SCHEDULER=true
+          UPSTASH_REDIS_REST_URL=${{ secrets.DATA_SHARED_UPSTASH_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN=${{ secrets.DATA_SHARED_UPSTASH_REST_TOKEN }}
+          COMTRADE_API_KEYS=${{ secrets.COMTRADE_API_KEYS }}
+          APP_DOMAIN=${{ vars.APP_DOMAIN }}
+          EOF
+
+      - name: Cache Nitric Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .nitric/docker-cache
+          key: nitric-docker-data-shared-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
+          restore-keys: |
+            nitric-docker-data-shared-${{ runner.os }}-
+
+      - name: Deploy Infrastructure
+        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
+        with:
+          command: up
+          stack-name: data-shared
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

@@ -8,9 +8,11 @@ native capabilities. 2026-09-15 (session 3, chat-only — see below): complicati
 a concrete design — bridge mechanism, shared-deploy granularity, the migration
 flag, and the cutover strategy are all decided (operator sign-off given in
 conversation); complication #4 (local broker credentials) turned out to be a
-wrong assumption and is fully resolved, not just designed. Still nothing built,
-still zero repo code changed except this doc + `PLATFORM_ARCHITECTURE.md`. Only
-complication #5 (pilot ranking) remains open.**
+wrong assumption and is fully resolved, not just designed; complication #5
+got a spot-check and a picked, operator-confirmed pilot (`comtrade-bilateral-
+hs4`). Still nothing built, still zero repo code changed except this doc +
+`PLATFORM_ARCHITECTURE.md`. Only complication #1 (the full per-seeder audit)
+remains genuinely undone.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
@@ -113,9 +115,15 @@ mechanism spelled out above.
    `local-config/index.ts` or `local-config-broker.mjs`.** Complication #4 is
    resolved, not just scoped down.
 
-Still open, not touched this session: complication #5 (ranking seeders by
-rate-limit pain to pick a pilot) — the one remaining thread, per the
-"Suggested next steps" list below.
+6. **Complication #5 spot-checked (not exhaustive) and a pilot picked:
+   `comtrade-bilateral-hs4`, operator-confirmed.** Full detail + the other
+   candidates considered (SAM.gov, GDELT fallback, ArcGIS/Decodo) are under
+   complication #5's own entry below. All five real complications the
+   proposal originally listed now have an answer of some kind — #1 (full
+   per-seeder audit) is the one still genuinely undone, not spot-checked.
+
+**Nothing left open from the proposal's own "Suggested next steps" list
+except item 1 (the full per-seeder audit) and actually shipping the pilot.**
 
 ## Session 2 addendum (2026-09-15) — naming + bridge-mechanism research
 
@@ -268,16 +276,38 @@ through the new shared layer once it exists.
    running server-side. Generalized: a new `DATA_SHARED_UPSTASH_*` pair goes
    in each org's GH Environment for the bridge script alone. **Zero changes
    to `local-config/index.ts` or `local-config-broker.mjs`.**
-5. **Rate-limit-sensitive sources are the highest-value pilot candidates**,
-   not a random first pick. Confirmed today: `comtrade-bilateral-hs4` is
-   real (per-key quota, ~197-country run took 10+ minutes for ONE org this
-   session). Worth a first pass specifically ranking seeders by known
-   rate-limit pain before picking a pilot — this session didn't do that
-   ranking, only spotted the one already visibly slow. Memory mentions
-   ACLED (403s, session 37) and a GDELT-specific distributed rate gate
-   (session 35, `acquireGdeltRateSlot`) as other historically rate-limited
-   sources, worth re-checking whether they're still live sources post the
-   session-40 GDELT-surface removal before assuming they're still relevant.
+5. ~~**Rate-limit-sensitive sources are the highest-value pilot
+   candidates**~~ — **PILOT PICKED, session 3 addendum: `comtrade-bilateral-
+   hs4`, operator-confirmed.** Not a full per-seeder ranking (42 files touch
+   rate-limit-related keywords; not all read in depth), but enough of a
+   spot-check across the ones with genuinely hard-coded quotas — not just
+   generic 429-retry handling — to be confident this is the strongest single
+   candidate, not just the one that happened to look slow:
+   - **`comtrade-bilateral-hs4`** — the real ceiling, read from its own
+     header comment: UN Comtrade's free tier is 500 calls/month **per key**;
+     one run burns ~394-396 calls; with 2-key rotation that's 2 runs/month,
+     hard. A dedicated freshness-gate + seed-meta-TTL formula + lock domain
+     exist purely to survive this — the most infrastructure any single
+     seeder in the repo carries just to stay inside its quota, which is
+     itself the signal this is the highest-value migration, not only the
+     slowest-observed one.
+   - `seed-global-tenders.mjs` (SAM.gov, 10 req/day/key) — a real historical
+     429 lockout (`#5444`) but **already self-mitigated per-org**
+     (`SAM_MIN_FETCH_INTERVAL_MS` spreads it to ~9.6/day) — centralizing
+     buys "new orgs don't need their own key," not "stops an active fire."
+   - `seed-conflict-intel.mjs`'s GDELT fallback — confirmed still live
+     (`#5140` brownout incident, real sweep-budget/throttle-streak logic),
+     **not** the same thing session 40 removed (that was the `实时情报`
+     UI panel + `search-gdelt-documents` RPC, a display-layer removal; this
+     is a still-live backend data fetch). Not picked as the pilot because
+     it only fires per-org when that org has no ACLED credentials — a
+     conditional fallback is exactly the edge case complication #1 (the
+     classification rule surviving contact with real cases) warns about,
+     not a clean first case to prove the pattern on.
+   - `seed-portwatch*` (ArcGIS/Decodo) — rate-limited **per egress IP**, not
+     per key — a genuinely different flavor (centralizing changes which IP
+     gets throttled, not obviously better or worse without testing) flagged
+     for whoever tackles it, not chosen as the pilot.
 
 ## Suggested next steps, in order (not a mandate)
 
@@ -286,9 +316,11 @@ through the new shared layer once it exists.
    reads (pure public API + shared key vs org-chosen parameter), producing
    a definitive shareable/per-org list with one-line justification each —
    this session's table above is a starting point, not the final word.
-2. **Rank the shareable list by rate-limit/cost pain** — this determines
-   pilot order. `comtrade-bilateral-hs4` is a confirmed strong candidate;
-   don't assume it's the only one without checking.
+2. ~~**Rank the shareable list by rate-limit/cost pain**~~ — **spot-checked,
+   session 3 addendum above, not exhaustive.** Enough of a look at the
+   sources with genuinely hard-coded quotas (vs generic 429-retry handling)
+   to pick a pilot with confidence; still not the full per-seeder pass item
+   1 below calls for.
 3. ~~**Design the shared-deploy write path**~~ — **DONE, session 3 addendum
    above** (one `data-shared` stack, changelog+cursor bridge, `centralized`
    flag on `railway-services.json`, hard-cutover policy). Not built.
@@ -297,9 +329,11 @@ through the new shared layer once it exists.
    never touches the shared credential; a per-org GH Environment secret for
    the bridge script is enough. `local-config`/`local-config-broker.mjs`
    need no changes.
-5. **Pick ONE pilot source, ship it end-to-end, THEN decide whether to
-   generalize** — same incremental discipline the AIS migration itself
-   used (S61–S67, extracted 26 loops one at a time, not in one shot).
+5. ~~**Pick ONE pilot source**~~ — **PICKED, session 3 addendum above:
+   `comtrade-bilateral-hs4`, operator-confirmed.** Still need to ship it
+   end-to-end before deciding whether to generalize — same incremental
+   discipline the AIS migration itself used (S61–S67, extracted 26 loops
+   one at a time, not in one shot).
    Don't attempt all 166 in one PR.
 
 ## What NOT to do

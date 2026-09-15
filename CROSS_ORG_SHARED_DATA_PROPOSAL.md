@@ -7,8 +7,10 @@ native capabilities. 2026-09-15 (session 3, chat-only — see below): complicati
 #3 (write-path consolidation) went from "architecturally biggest open piece" to
 a concrete design — bridge mechanism, shared-deploy granularity, the migration
 flag, and the cutover strategy are all decided (operator sign-off given in
-conversation), though still nothing built. Still zero repo code changed except
-this doc + `PLATFORM_ARCHITECTURE.md`.**
+conversation); complication #4 (local broker credentials) turned out to be a
+wrong assumption and is fully resolved, not just designed. Still nothing built,
+still zero repo code changed except this doc + `PLATFORM_ARCHITECTURE.md`. Only
+complication #5 (pilot ranking) remains open.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
@@ -91,10 +93,29 @@ biggest open piece" to "designed, not built" — the two "(a) / (b) hybrid"
 options it posed are resolved in favor of (a), generalized, with the specific
 mechanism spelled out above.
 
+5. **Complication #4 below was wrong, not just unresolved — corrected, not
+   just designed.** It assumed local-config would need to hand out a second
+   read-only credential pair "the same way `AIS_RESULTS_UPSTASH_*` sits
+   alongside `WM_UPSTASH_*` today." Reading `supabase/functions/
+   local-config/index.ts` in full shows that assumption doesn't hold: the
+   function returns exactly `upstashUrl`/`upstashReadonlyToken` (from
+   `WM_UPSTASH_REST_URL`/`WM_UPSTASH_READONLY_TOKEN`) + `appDomain` — no
+   `AIS_RESULTS_*` field exists there at all, and it never has. That
+   credential pair is injected only into the org's own cloud deploy's `.env`
+   (`.github/workflows/deploy-org.reusable.yml` lines 281-282), consumed
+   solely by `sync-ais-results.mjs` running server-side inside that deploy.
+   The operator's local machine never sees the shared store's credentials —
+   it only ever reads the org's own (already-bridged-into) Upstash, same as
+   every other seeded key. Generalized, this means the `data-shared`
+   equivalent needs a new `DATA_SHARED_UPSTASH_REST_URL`/`_READONLY_TOKEN`
+   pair added to each org's GH Environment (alongside `AIS_RESULTS_UPSTASH_*`),
+   consumed only by the generalized bridge script — **zero changes needed to
+   `local-config/index.ts` or `local-config-broker.mjs`.** Complication #4 is
+   resolved, not just scoped down.
+
 Still open, not touched this session: complication #5 (ranking seeders by
-rate-limit pain to pick a pilot) and complication #4 (the local broker's
-second read-only credential pair) — next natural threads, per the "Suggested
-next steps" list below.
+rate-limit pain to pick a pilot) — the one remaining thread, per the
+"Suggested next steps" list below.
 
 ## Session 2 addendum (2026-09-15) — naming + bridge-mechanism research
 
@@ -239,12 +260,14 @@ through the new shared layer once it exists.
    parallel-run verification window.) Still touches the per-org deploy
    pipeline this session's `GCP_CREDENTIALS` work just got working for the
    first time, so sequence carefully when building, don't fight it.
-4. **Local operator installs need a second read-only credential pair**,
-   the same way `AIS_RESULTS_UPSTASH_*` sits alongside `WM_UPSTASH_*`
-   today — the local-config broker (`supabase/functions/local-config`)
-   would hand out both the org's own read-only token AND the new shared
-   layer's read-only token. Not a big lift, but is a real change to that
-   function + `local-config-broker.mjs`'s cache shape.
+4. ~~**Local operator installs need a second read-only credential pair**~~ —
+   **RESOLVED, session 3 addendum above: this was a wrong assumption, not
+   a real requirement.** `supabase/functions/local-config/index.ts` never
+   hands `AIS_RESULTS_UPSTASH_*` to the operator's machine today — that pair
+   is a per-org deploy-time secret consumed only by `sync-ais-results.mjs`
+   running server-side. Generalized: a new `DATA_SHARED_UPSTASH_*` pair goes
+   in each org's GH Environment for the bridge script alone. **Zero changes
+   to `local-config/index.ts` or `local-config-broker.mjs`.**
 5. **Rate-limit-sensitive sources are the highest-value pilot candidates**,
    not a random first pick. Confirmed today: `comtrade-bilateral-hs4` is
    real (per-key quota, ~197-country run took 10+ minutes for ONE org this
@@ -269,8 +292,11 @@ through the new shared layer once it exists.
 3. ~~**Design the shared-deploy write path**~~ — **DONE, session 3 addendum
    above** (one `data-shared` stack, changelog+cursor bridge, `centralized`
    flag on `railway-services.json`, hard-cutover policy). Not built.
-4. **Design the local broker's second read-only credential pair** —
-   smaller, mechanical, next natural step now that step 3's shape is settled.
+4. ~~**Design the local broker's second read-only credential pair**~~ —
+   **RESOLVED, session 3 addendum above: not needed at all.** `local-config`
+   never touches the shared credential; a per-org GH Environment secret for
+   the bridge script is enough. `local-config`/`local-config-broker.mjs`
+   need no changes.
 5. **Pick ONE pilot source, ship it end-to-end, THEN decide whether to
    generalize** — same incremental discipline the AIS migration itself
    used (S61–S67, extracted 26 loops one at a time, not in one shot).

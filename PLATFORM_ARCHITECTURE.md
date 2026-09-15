@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-15 (later) — **`CROSS_ORG_SHARED_DATA_PROPOSAL.md` session 3 (chat-only, zero repo code changed besides that doc + this Status/log).** Continuation of session 2 below, picked up its flagged risk (the AIS bridge's plain-poll mechanism not scaling to ~166 sources) and turned complication #3 ("write-path consolidation," the proposal's biggest open architectural piece) into a concrete design, read against real code first (`scripts/sync-ais-results.mjs`, `nitric.ais-shared.yaml`/`deploy/shared/ais-ingest.yml`/`.github/workflows/deploy-ais-shared.yml`, `server/_shared/sync-notify.ts`/`vscode-extension/sidecar/sync-listener.mjs`, `gcp/scheduler/main.ts`/`scripts/railway-services.json`), not proposed cold. Four decisions, each proposed then confirmed by the operator, full detail + reasoning in the proposal doc's new "Session 3 addendum" section: (1) **bridge mechanism** — promote `sync-listener.mjs`'s `catchUp()` (`XRANGE` a changelog stream from a persisted cursor, apply only what changed) from "reconnect-recovery path" to the org-side bridge's *only* path, since the bridge is a stateless `--once` cron with no persistent process to hold a live subscription open between ticks; (2) **deployment granularity** — one `data-shared` stack + one shared read-only Upstash, generalized straight from `ais-shared`'s existing shape, not split into 5-6 domain-grouped stacks (the failure-isolation argument for splitting is weak since every migrated seeder already runs as its own spawned child process); (3) **migration mechanism** — add a `centralized` flag to `scripts/railway-services.json` (87 entries today, no such concept yet) and reuse `gcp/scheduler/main.ts` unchanged in both contexts (org deploy filters it out, `data-shared` deploy filters it in) rather than a second script registry that could drift; (4) **cutover strategy** — operator explicitly chose a hard cutover per seeder over a parallel-run verification window, a real tradeoff recorded on purpose (a parallel-run window is what would have caught something like `sync-ais-results.mjs`'s own need to hand-reapply per-key TTLs *before* it hit live data, not after). Still open, untouched this session: complications #4 (local broker's second read-only credential pair) and #5 (ranking seeders by rate-limit pain to pick a pilot).
 - **As of:** 2026-09-15 — **`CROSS_ORG_SHARED_DATA_PROPOSAL.md` session 2 (chat-only, zero repo code changed besides the doc itself).** Continuation of the 2026-09-14 proposal below. Two conclusions, both still proposal-status, full detail + reasoning in the proposal doc's new "Session 2 addendum" section: (1) **operator confirmed the per-org extension point's name and shape** — a new `org_specific_seeders` field (proposed, not yet added) on `org-provisioning/orgs/<org>.yml`, mechanically identical to how `seed-telegram.mjs` already works; the shared half stays a fixed automatic feed with no subscription list, per the operator's own call ("world shared for every org without choose need"). (2) **Checked Upstash's actual replication docs rather than assuming** — confirmed no native cross-database/cross-account replication exists (`upstash.com/docs/redis/features/replication` is intra-database multi-region only), so a hand-rolled bridge cron is the right shape, not a workaround for a missing feature — but flagged that `scripts/sync-ais-results.mjs`'s current plain-poll-2-keys mechanism likely needs to become push+changelog+backstop (reusing the shape `sync-listener.mjs`/`sync:changelog` already prove out one hop downstream) before it generalizes past AIS. Visual reference updated to match: the "WorldMonitor Sync Pipeline" artifact (external) — <https://claude.ai/code/artifact/76d476c8-f6b7-44b7-8214-3864212e4e1d>.
 - **As of:** 2026-09-14 (later still) — **New proposal captured, NOT started: `CROSS_ORG_SHARED_DATA_PROPOSAL.md`.** Surfaced while explaining the `AIS_RESULTS_UPSTASH_*`/`WM_UPSTASH_*` distinction (see the `GCP_CREDENTIALS`/mosiq-secrets entry directly below) — the operator asked whether the AIS precedent (one shared fetch + deploy, mirrored read-only into every org's Upstash) should generalize to most of worldmonitor's data, keeping per-org Upstash instances only for genuinely org-specific verticals (2 named future examples: mosiq China stock data, biovita Amazon intelligence data — both unbuilt). Read-only inventory this session: **166 of 168 `scripts/seed-*.mjs` sources look shareable by that rule; 2 are correctly per-org already** (`seed-telegram.mjs` — org-chosen channel set, not just a differing credential; `seed-digest-notifications.mjs` — personalized delivery, not a data fetch at all). Real complications (write-path consolidation into a second shared deploy, local-broker second read-only credential, per-org security-boundary re-confirmation per domain) and a suggested next-session order are in the proposal doc — not a mandate, needs a full per-seeder audit (this pass was naming-pattern + spot-check) and operator sign-off before any code changes.
 - **As of:** 2026-09-14 (later still) — **`GCP_CREDENTIALS` check DONE — CONFIRMED missing, and the finding is bigger than the 2026-09-13 entry (below) suspected: worldmonitor's repo has ZERO GitHub Environments at all, so essentially the entire per-org secret set `deploy-org.reusable.yml` needs is unset, not just this one secret.** Checked directly via `gh api` rather than guessing:
@@ -464,6 +465,72 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 71 — 2026-09-15
+
+**Chat-only continuation of `CROSS_ORG_SHARED_DATA_PROPOSAL.md`, same day as
+session 70 — no repo code changed, only that doc + this file's Status/log.**
+Picked up session 70's flagged risk directly (the AIS bridge's plain-poll
+mechanism likely not scaling to ~166 sources) and, this time, read the actual
+code before proposing a design rather than reasoning from the doc alone:
+`scripts/sync-ais-results.mjs`, `nitric.ais-shared.yaml` + `deploy/shared/
+ais-ingest.yml` + `.github/workflows/deploy-ais-shared.yml` (today's one
+shared deploy), `server/_shared/sync-notify.ts` + `vscode-extension/sidecar/
+sync-listener.mjs` (the push+changelog mechanism already proven one hop
+downstream, operator↔laptop), and `gcp/scheduler/main.ts` + `scripts/
+railway-services.json` (how the 166 shareable seeders are actually scheduled
+today — a generic scheduler spawning each as its own child process off a
+JSON registry, not bespoke per-script infrastructure).
+
+Four design questions, each answered with reasoning grounded in that code
+and then put to the operator to confirm — all four confirmed, still nothing
+built:
+
+1. **Bridge mechanism** — `sync-listener.mjs` already has a changelog+cursor
+   catch-up (`XRANGE` from a persisted cursor, apply only what changed), used
+   today only as the reconnect-recovery path underneath a steady-state SSE
+   subscription. The org-side bridge can't have a steady-state subscription
+   at all — it's an ephemeral `--once` cron, nothing persists between ticks —
+   so the design promotes that same mechanism to be the bridge's *only* path:
+   one `XRANGE` per tick against the shared store's changelog, targeted GETs
+   for just the changed keys, cursor persisted as a key in the org's own
+   Upstash (not a local file, since the process doesn't persist). Cost per
+   tick scales with what changed, not with source count.
+2. **Deployment granularity** — one `data-shared` stack + one shared
+   read-only Upstash, generalized directly from `ais-shared`'s existing
+   shape, over splitting into 5-6 domain-grouped stacks per the proposal's
+   own grouping table. Argued the failure-isolation case for splitting is
+   weak (every migrated seeder already runs as its own spawned child process
+   regardless of which stack schedules it) against the real cost of 5-6x the
+   GH Environments and the local-config broker handing out 5-6 read-only
+   token pairs instead of 1.
+3. **Migration mechanism** — add a `centralized` flag to `scripts/
+   railway-services.json` (87 entries today, no such concept present) and
+   reuse `gcp/scheduler/main.ts` unchanged in both the org and the
+   `data-shared` deploy context (one filters the flag out, the other filters
+   it in) — one script registry, not two that could drift apart.
+4. **Cutover strategy** — operator explicitly chose a hard cutover per
+   seeder over a parallel-run verification window. Recorded the real
+   tradeoff rather than smoothing over it: a parallel-run window is exactly
+   what would have caught something like `sync-ais-results.mjs`'s own need
+   to hand-reapply per-key TTLs to match `ais-relay.cjs`'s writes *before*
+   it reached an org's live data rather than after — with a hard cutover,
+   pre-deploy manual testing has to be the thing that catches that class of
+   mismatch, the design provides no safety net for it.
+
+**Net effect:** complication #3 in the proposal doc ("write-path
+consolidation," previously flagged as "the architecturally biggest piece")
+moves from open to designed-not-built. Full detail in the proposal doc's new
+"Session 3 addendum" section; its "Suggested next steps" list item 3 is
+struck through as done.
+
+**Next session:** complications #4 (local broker's second read-only
+credential pair — proposal calls it "smaller, mechanical" now that #3's
+shape is settled) and #5 (rank seeders by rate-limit pain to pick a pilot,
+`comtrade-bilateral-hs4` the only confirmed candidate so far) are the two
+open threads, in that order per the proposal's own next-steps list. Still no
+operator sign-off to write actual code — this and session 70 are both
+design-only.
 
 ### Session 70 — 2026-09-15
 

@@ -1,14 +1,100 @@
 # Cross-org shared data layer — PROPOSAL, NOT STARTED
 
 **Status: idea captured 2026-09-14, read-only inventory done, zero code changed.
-2026-09-15 (session 2, chat-only — see below): the per-org extension point got
-a name + operator sign-off, and the bridge mechanism got a real answer on
-Upstash's native capabilities. Still zero repo code changed.**
+2026-09-15 (session 2, chat-only): the per-org extension point got a name +
+operator sign-off, and the bridge mechanism got a real answer on Upstash's
+native capabilities. 2026-09-15 (session 3, chat-only — see below): complication
+#3 (write-path consolidation) went from "architecturally biggest open piece" to
+a concrete design — bridge mechanism, shared-deploy granularity, the migration
+flag, and the cutover strategy are all decided (operator sign-off given in
+conversation), though still nothing built. Still zero repo code changed except
+this doc + `PLATFORM_ARCHITECTURE.md`.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
 `deploy-org.reusable.yml` secret set) — this proposal builds directly on top
 of that, doesn't replace it.
+
+## Session 3 addendum (2026-09-15) — write-path design (complication #3)
+
+Chat-only session (no repo files touched except this doc), picked up directly
+from session 2's flagged risk ("the existing bridge's poll-and-copy mechanism
+likely needs to become push+changelog+backstop... before it generalizes past
+AIS"). Read the actual code this time before proposing anything — `scripts/
+sync-ais-results.mjs`, `nitric.ais-shared.yaml` + `deploy/shared/ais-ingest.yml`
++ `.github/workflows/deploy-ais-shared.yml` (the existing AIS-shared deploy),
+`server/_shared/sync-notify.ts` + `vscode-extension/sidecar/sync-listener.mjs`
+(the push+changelog mechanism already proven one hop downstream), and `gcp/
+scheduler/main.ts` + `scripts/railway-services.json` (how per-org seeders are
+actually scheduled today). Four decisions, each proposed with reasoning then
+confirmed by the operator — all still design-only, nothing built:
+
+1. **Bridge mechanism: changelog + cursor, not blind poll.** `sync-listener.mjs`
+   already has a `catchUp()` that does `XRANGE sync:changelog` from a
+   persisted cursor and applies only what changed — today it's used only as
+   the reconnect-recovery path (the steady-state path is a live SSE
+   subscription). The org-side bridge is structurally different: it's an
+   ephemeral `--once` cron with no persistent process to hold a subscription
+   open between ticks, so it can't have a "steady-state" push path the way
+   `sync-listener.mjs` does. The design promotes `catchUp()`'s mechanism from
+   "recovery path" to "the only path": each tick does one `XRANGE` against the
+   shared store's changelog (cursor persisted as a key in the org's own
+   Upstash, not a local file — the bridge is stateless between invocations),
+   fetches only the keys that actually changed, writes them into the org's
+   own Upstash via the existing `notifyChange()` helper (so the org's own
+   downstream `sync-listener.mjs` fan-out picks it up immediately, same as
+   today). Cost per tick becomes proportional to what changed, not to the
+   number of shareable sources. A low-frequency full-rescan stays as the
+   correctness backstop, mirroring `local-sync.mjs`'s relationship to
+   `sync-listener.mjs` one hop downstream.
+2. **Deployment granularity: one shared stack, not domain-split.** The
+   read-only inventory's grouping table (macro/markets/climate/conflict/
+   supply-chain/other) could map to 5-6 independent `*-shared` GH
+   Environments + Nitric stacks, but the reasoning for splitting (failure
+   isolation) is weak here: every migrated seeder already runs as its own
+   spawned child process under `gcp/scheduler/main.ts` (see point 3), so one
+   script failing doesn't take others down regardless of how many stacks
+   they're grouped into. One `data-shared` stack + one shared read-only
+   Upstash (literally the `ais-shared` shape, generalized) avoids multiplying
+   GH Environments and avoids the local-config broker having to hand out
+   5-6 read-only token pairs instead of 1. Split later only if a concrete
+   operational reason shows up (e.g. wanting independent on/off toggles or
+   wildly different deploy cadences per domain) — not preemptively.
+3. **Migration mechanism: reuse `gcp/scheduler/main.ts` unchanged, add a
+   `centralized` flag to `scripts/railway-services.json`.** That file already
+   drives every org's scheduler (87 entries today, fields: `entry`,
+   `deployMode`, `service`, `cronSchedule`, `requiredEnv`, `watchPatterns`,
+   `documentedAt`, `startCommand`, `dockerfile` — no centralization concept
+   yet). Add `centralized: true` per migrated entry; the same scheduler code
+   runs in two contexts — an org's own deploy filters OUT `centralized`
+   entries, the `data-shared` deploy filters IN only `centralized` entries —
+   so there is exactly one source of truth for "which script runs where,"
+   not two registries that can drift apart. No new deploy primitive needed:
+   this is the same mechanism `ais-relay.cjs` already uses for the one
+   persistent-connection case, applied to ordinary cron entries.
+4. **Cutover strategy: hard switch per seeder, operator's explicit call.**
+   Considered a parallel-run verification window (shared layer writes first,
+   org's own seeder keeps running, flip `centralized` only after confirming
+   the bridge mirrors correctly) versus flipping `centralized` and disabling
+   the org-side entry in the same deploy. **Operator chose hard cutover** —
+   simpler operationally, but the tradeoff is real and stays on record: a
+   parallel-run window is what would have caught `sync-ais-results.mjs`'s own
+   need to re-apply per-key TTLs by hand (its header comment: "Re-applied
+   TTLs on the org side. Match ais-relay.cjs's own writes") *before* it hit
+   an org's live data instead of after. With a hard cutover, any such mismatch
+   for a newly-migrated seeder surfaces in production, so pre-deploy manual
+   testing has to be the thing that catches it — the design does not provide
+   a safety net for this itself.
+
+**Net effect on complication #3 below:** it moves from "architecturally
+biggest open piece" to "designed, not built" — the two "(a) / (b) hybrid"
+options it posed are resolved in favor of (a), generalized, with the specific
+mechanism spelled out above.
+
+Still open, not touched this session: complication #5 (ranking seeders by
+rate-limit pain to pick a pilot) and complication #4 (the local broker's
+second read-only credential pair) — next natural threads, per the "Suggested
+next steps" list below.
 
 ## Session 2 addendum (2026-09-15) — naming + bridge-mechanism research
 
@@ -140,22 +226,19 @@ through the new shared layer once it exists.
    public) ever lands in it — same trust model AIS already uses
    (`AIS_RESULTS_UPSTASH_READONLY_TOKEN` is read-only precisely for this
    reason), but needs re-confirming per shared data domain, not assumed.
-3. **Write-path consolidation is the big one.** (**Session 2 addendum above:**
-   confirmed Upstash has no native fix for this — it has to be a hand-rolled
-   bridge either way — but the *existing* bridge's poll-and-copy mechanism
-   likely needs to become push+changelog+backstop, not stay a plain timer,
-   once it's not just AIS's 2 keys.) AIS could centralize
-   cheaply because it's inherently one persistent WebSocket connection.
-   Most of the 166 shareable seeders are simple polling crons running
-   inside each org's own `nitric`-deployed stack today
-   (`deploy-org.reusable.yml` → `generate-nitric-org-stack.mjs`,
-   `PINNED_SERVICES: {}`). Centralizing them means either: (a) one new
-   shared deploy (a second `ais-shared`-style GH Environment + Nitric
-   stack) that owns fetching for all 166, with each org's
-   `sync-*.mjs` mirroring in — the AIS pattern, generalized; or (b) some
-   hybrid. This is the architecturally biggest piece — it touches the
-   per-org deploy pipeline this session's `GCP_CREDENTIALS` work just
-   got working for the first time, so sequence carefully, don't fight it.
+3. **Write-path consolidation was the big one — now DESIGNED, not built,
+   see "Session 3 addendum" above.** (Session 2: confirmed Upstash has no
+   native fix for this, has to be a hand-rolled bridge either way, existing
+   bridge's poll-and-copy mechanism wouldn't scale past AIS's 2 keys.
+   Session 3: resolved option (a) — one new shared `data-shared` deploy,
+   generalized from `ais-shared` — over a domain-split (b), with the bridge
+   itself redesigned around `sync-listener.mjs`'s changelog+cursor mechanism
+   instead of blind polling, migration tracked via a `centralized` flag on
+   `scripts/railway-services.json` shared by both scheduler contexts, and a
+   hard-cutover-per-seeder policy the operator explicitly chose over a
+   parallel-run verification window.) Still touches the per-org deploy
+   pipeline this session's `GCP_CREDENTIALS` work just got working for the
+   first time, so sequence carefully when building, don't fight it.
 4. **Local operator installs need a second read-only credential pair**,
    the same way `AIS_RESULTS_UPSTASH_*` sits alongside `WM_UPSTASH_*`
    today — the local-config broker (`supabase/functions/local-config`)
@@ -183,12 +266,11 @@ through the new shared layer once it exists.
 2. **Rank the shareable list by rate-limit/cost pain** — this determines
    pilot order. `comtrade-bilateral-hs4` is a confirmed strong candidate;
    don't assume it's the only one without checking.
-3. **Design the shared-deploy write path** (new `*-shared` GH Environment +
-   Nitric stack, or fold into `ais-shared` if that's cleaner) — a real
-   design decision, needs the operator's sign-off before building, same as
-   `ais-shared` presumably had one.
+3. ~~**Design the shared-deploy write path**~~ — **DONE, session 3 addendum
+   above** (one `data-shared` stack, changelog+cursor bridge, `centralized`
+   flag on `railway-services.json`, hard-cutover policy). Not built.
 4. **Design the local broker's second read-only credential pair** —
-   smaller, mechanical once step 3's shape is settled.
+   smaller, mechanical, next natural step now that step 3's shape is settled.
 5. **Pick ONE pilot source, ship it end-to-end, THEN decide whether to
    generalize** — same incremental discipline the AIS migration itself
    used (S61–S67, extracted 26 loops one at a time, not in one shot).

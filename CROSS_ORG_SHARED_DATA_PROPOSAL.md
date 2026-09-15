@@ -1,11 +1,67 @@
 # Cross-org shared data layer — PROPOSAL, NOT STARTED
 
-**Status: idea captured 2026-09-14, read-only inventory done, zero code changed.**
+**Status: idea captured 2026-09-14, read-only inventory done, zero code changed.
+2026-09-15 (session 2, chat-only — see below): the per-org extension point got
+a name + operator sign-off, and the bridge mechanism got a real answer on
+Upstash's native capabilities. Still zero repo code changed.**
 Not authorized to build yet — this is a plan for a future session to pick up,
 not a mandate. Read `PLATFORM_ARCHITECTURE.md`'s Status section first for the
 platform's current state (per-org GitHub Environments, per-org Upstash, the
 `deploy-org.reusable.yml` secret set) — this proposal builds directly on top
 of that, doesn't replace it.
+
+## Session 2 addendum (2026-09-15) — naming + bridge-mechanism research
+
+Chat-only session (no repo files touched except this doc) spent working
+through the shape of the upstream half with the operator. Two real
+conclusions, both still proposal-status:
+
+1. **`org_specific_seeders` is the per-org extension point — operator
+   confirmed.** The shared half is NOT a subscription list — every org gets
+   it automatically, no opt-in/opt-out, the same way every org already gets
+   AIS data with no toggle for it (operator's own words: "let world shared be
+   for every org without choose need"). The only real per-org choice lives on
+   the org-specific side, and it already has a natural home: a new
+   `org_specific_seeders` field (name proposed, not yet added) on each org's
+   `org-provisioning/orgs/<org>.yml` entry, listing that org's own extra
+   scripts (mosiq's `seed-china-stocks.mjs`, biovita's
+   `seed-ecommerce-intel.mjs` — both still just named ideas, neither built).
+   Mechanically this is identical to how `seed-telegram.mjs` already works
+   today — no new abstraction, no shared-layer involvement at all for this
+   half.
+2. **Upstash has no native cross-database/cross-account replication —
+   checked against current docs, not assumed.** `upstash.com/docs/redis/
+   features/replication` describes only intra-database multi-region
+   replicas (primary + read replicas, same account, same credential) —
+   nothing for mirroring one Upstash database into a separate one under
+   different credentials. This isn't just a missing feature: native Redis
+   replication protocols (Upstash's own, and Redis Enterprise's
+   Active-Active/CRDB) assume the replica side trusts the primary enough to
+   see its full replication stream, which is exactly the opposite of what
+   this platform needs (the shared store's write credential must never
+   reach an org's deploy; each org's bridge writes with its *own* credential
+   into its *own* store). A hand-rolled bridge cron isn't a workaround for a
+   missing Upstash feature — it's the right shape for a requirement native
+   replication isn't built to express at all.
+3. **But the existing bridge cron's mechanism (not its existence) needs a
+   second look before generalizing — extends complication #3 below.**
+   `scripts/sync-ais-results.mjs` is a plain `every 2min` poll that does a
+   blind `GET` on 2 hardcoded key names and re-`SET`s them — no pub/sub, no
+   changelog, no incremental diff. Fine for AIS's 2-key case. Doesn't
+   obviously scale to ~166 sources' worth of keys × every org without
+   inheriting the same full-rescan cost profile `local-sync.mjs` already
+   carries one hop downstream (where it's accepted *because* it's a
+   backstop, not the primary path). If this generalizes, the bridge should
+   probably adopt the same push+changelog-replay+low-frequency-backstop
+   shape `sync-listener.mjs`/`sync-notify.ts`/`sync:changelog` already prove
+   out one hop down, rather than reinventing a simpler-but-less-scalable
+   poll per domain group. Ties directly into the open "bridge granularity"
+   question in complication #3.
+
+Visual reference (external, not in this repo): the "WorldMonitor Sync
+Pipeline" artifact was updated this session to diagram the shared-vs-per-org
+split end to end, with explicit live/proposed labels per node —
+<https://claude.ai/code/artifact/76d476c8-f6b7-44b7-8214-3864212e4e1d>.
 
 ---
 
@@ -84,7 +140,11 @@ through the new shared layer once it exists.
    public) ever lands in it — same trust model AIS already uses
    (`AIS_RESULTS_UPSTASH_READONLY_TOKEN` is read-only precisely for this
    reason), but needs re-confirming per shared data domain, not assumed.
-3. **Write-path consolidation is the big one.** AIS could centralize
+3. **Write-path consolidation is the big one.** (**Session 2 addendum above:**
+   confirmed Upstash has no native fix for this — it has to be a hand-rolled
+   bridge either way — but the *existing* bridge's poll-and-copy mechanism
+   likely needs to become push+changelog+backstop, not stay a plain timer,
+   once it's not just AIS's 2 keys.) AIS could centralize
    cheaply because it's inherently one persistent WebSocket connection.
    Most of the 166 shareable seeders are simple polling crons running
    inside each org's own `nitric`-deployed stack today

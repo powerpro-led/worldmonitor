@@ -13,6 +13,7 @@ walmart, …), each an isolated instance."
 
 ## Status
 
+- **As of:** 2026-09-15 — **`CROSS_ORG_SHARED_DATA_PROPOSAL.md` session 2 (chat-only, zero repo code changed besides the doc itself).** Continuation of the 2026-09-14 proposal below. Two conclusions, both still proposal-status, full detail + reasoning in the proposal doc's new "Session 2 addendum" section: (1) **operator confirmed the per-org extension point's name and shape** — a new `org_specific_seeders` field (proposed, not yet added) on `org-provisioning/orgs/<org>.yml`, mechanically identical to how `seed-telegram.mjs` already works; the shared half stays a fixed automatic feed with no subscription list, per the operator's own call ("world shared for every org without choose need"). (2) **Checked Upstash's actual replication docs rather than assuming** — confirmed no native cross-database/cross-account replication exists (`upstash.com/docs/redis/features/replication` is intra-database multi-region only), so a hand-rolled bridge cron is the right shape, not a workaround for a missing feature — but flagged that `scripts/sync-ais-results.mjs`'s current plain-poll-2-keys mechanism likely needs to become push+changelog+backstop (reusing the shape `sync-listener.mjs`/`sync:changelog` already prove out one hop downstream) before it generalizes past AIS. Visual reference updated to match: the "WorldMonitor Sync Pipeline" artifact (external) — <https://claude.ai/code/artifact/76d476c8-f6b7-44b7-8214-3864212e4e1d>.
 - **As of:** 2026-09-14 (later still) — **New proposal captured, NOT started: `CROSS_ORG_SHARED_DATA_PROPOSAL.md`.** Surfaced while explaining the `AIS_RESULTS_UPSTASH_*`/`WM_UPSTASH_*` distinction (see the `GCP_CREDENTIALS`/mosiq-secrets entry directly below) — the operator asked whether the AIS precedent (one shared fetch + deploy, mirrored read-only into every org's Upstash) should generalize to most of worldmonitor's data, keeping per-org Upstash instances only for genuinely org-specific verticals (2 named future examples: mosiq China stock data, biovita Amazon intelligence data — both unbuilt). Read-only inventory this session: **166 of 168 `scripts/seed-*.mjs` sources look shareable by that rule; 2 are correctly per-org already** (`seed-telegram.mjs` — org-chosen channel set, not just a differing credential; `seed-digest-notifications.mjs` — personalized delivery, not a data fetch at all). Real complications (write-path consolidation into a second shared deploy, local-broker second read-only credential, per-org security-boundary re-confirmation per domain) and a suggested next-session order are in the proposal doc — not a mandate, needs a full per-seeder audit (this pass was naming-pattern + spot-check) and operator sign-off before any code changes.
 - **As of:** 2026-09-14 (later still) — **`GCP_CREDENTIALS` check DONE — CONFIRMED missing, and the finding is bigger than the 2026-09-13 entry (below) suspected: worldmonitor's repo has ZERO GitHub Environments at all, so essentially the entire per-org secret set `deploy-org.reusable.yml` needs is unset, not just this one secret.** Checked directly via `gh api` rather than guessing:
   - `gh api repos/powerpro-led/worldmonitor/environments` → `{"total_count":0,"environments":[]}`. `deploy-org.reusable.yml`'s job declares `environment: ${{ inputs.org }}` **on its own side** (line 156, in worldmonitor's own repo — the file's own build-note comment, lines 19-20, already explains why: a called `workflow_call` job does NOT inherit the caller's `environment:` context, only `secrets: inherit`). Since worldmonitor owns this workflow file, that environment resolves against worldmonitor's own repo — which has none. GitHub would auto-create a "biovita"/"mosiq" environment on first real dispatch, but it would start completely empty.
@@ -463,6 +464,56 @@ data-source fetching and holds no data-source keys — it is a read replica.
 ---
 
 ## Session log
+
+### Session 70 — 2026-09-15
+
+**Chat-only continuation of `CROSS_ORG_SHARED_DATA_PROPOSAL.md` — no repo
+code changed, only that doc + this file's Status/log + an external design
+artifact.** Picked up the operator's 2026-09-14 proposal and worked through
+two open questions live in conversation rather than by reading code first
+(then verified against real code/docs after):
+
+- **"Does config on deploy look like a per-org subscription list (`[world-
+  shared, ecommerce]` vs `[world-shared, chinese-stocks]`)?"** — walked
+  through why that framing conflates two different things, landed on: the
+  shared half is NOT a subscription (every org gets it, no toggle, same as
+  AIS today); the per-org half already has a mechanism (`seed-telegram.mjs`'s
+  pattern) that just needs a name — operator picked `org_specific_seeders`
+  as a new (proposed, not added) field on `org-provisioning/orgs/<org>.yml`.
+- **"Is a bridge cron actually a good solution, or does Upstash replicate
+  natively?"** — checked `upstash.com/docs/redis/features/replication`
+  directly rather than answering from memory: confirmed it's intra-database
+  multi-region only, no cross-account/cross-database story at all. Argued
+  (and it held up) that even if it existed, native replication's trust model
+  (replica sees the primary's full stream) is the opposite of what per-org
+  isolation needs — so the bridge-cron *shape* is correct. But re-read
+  `scripts/sync-ais-results.mjs` while answering and found its actual
+  mechanism is a blind `every 2min` poll on 2 hardcoded keys, not the
+  push+changelog pattern `sync-listener.mjs` uses one hop downstream —
+  flagged that this likely won't scale to ~166 sources without adopting that
+  same push+backstop shape.
+
+**Also updated (external, not in this repo):** the "WorldMonitor Sync
+Pipeline" Artifact (first built session ~39-ish, predates the multi-org
+pivot entirely — it showed one shared Upstash for everyone, which is now
+wrong) — redrawn to show the shared-deploy → shared-results-Upstash →
+per-org-bridge-cron chain feeding into a renamed "org's own Upstash" node
+alongside the org-specific-seeders input, with explicit live/proposed labels
+per node so it doesn't overstate what's built. Also caught and fixed a real
+inaccuracy in the old version while in there: it named the operator
+read-only token `UPSTASH_REDIS_REST_READONLY_TOKEN`, which doesn't match the
+actual secret name (`WM_UPSTASH_READONLY_TOKEN`, confirmed against
+`supabase/functions/local-config/index.ts`) — this repo's own docs already
+had the name right, only the artifact was stale.
+
+**Next session:** the proposal is still exactly where S-2026-09-14 left it
+for *building* anything — no audit done past naming patterns, no operator
+sign-off to write code yet. What's new is the shape is firmer: if someone
+picks this up to build, the per-org field name is settled
+(`org_specific_seeders`) and the bridge mechanism question is answered
+(hand-roll it, but don't copy `sync-ais-results.mjs`'s poll-only mechanism
+verbatim — design the push+changelog version from the start if building for
+more than AIS).
 
 ### Session 69 — 2026-09-07
 

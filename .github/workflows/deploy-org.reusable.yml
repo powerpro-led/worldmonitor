@@ -1,14 +1,22 @@
 name: Deploy Org (reusable)
 
 # worldmonitor's half of the per-org provisioning contract
-# (powerpro-led/org-provisioning docs/PER_ORG_PROVISIONING_CONTRACT.md §5, §5b,
-# §5c — RATIFIED 2026-09-10, org-provisioning v0.2.0). Supersedes the old
+# (powerpro-led/org-provisioning docs/PER_ORG_PROVISIONING_CONTRACT.md §5, §5b
+# — RATIFIED 2026-09-10, org-provisioning v0.2.0). Supersedes the old
 # `deploy-org.yml` (@a0a00a6), which checked out org-provisioning@v0.1.0 and
 # called `./deploy.sh` itself. Under the contract, `org-provisioning`'s
 # `provision-org.yml` owns the registry, the trigger, the identity-bridge
 # deploy, and cross-repo sequencing (calling this file, then platform's own
 # reusable, in `apps:` order); this file does ONLY worldmonitor's own deploy —
 # schema apply, local-config, and the Nitric/Cloud Run deploy.
+#
+# `workflow_call` ONLY — the standalone `workflow_dispatch` entry point
+# (contract §5c) was removed 2026-09-16 (operator decision): it required this
+# repo's own `mosiq`/`biovita` GH Environments to carry a full duplicate copy
+# of every secret org-provisioning's own same-named Environments already
+# hold, and that duplication drifted (worldmonitor's copy predates several
+# secrets org-provisioning now has). org-provisioning's `provision-org.yml`
+# is the only supported way to run this now.
 #
 # `provision-org.yml` never calls this with `supabase_project_ref: local` —
 # its step 3 "local short-circuit" no-ops before the fan-out for any org still
@@ -114,45 +122,6 @@ on:
         required: false
         type: string
 
-  # Thin standalone entry point (contract §5c) — for iterating on worldmonitor's
-  # own deploy without going through org-provisioning's registry/orchestration.
-  # Mirrors the workflow_call inputs so the same job runs either way.
-  workflow_dispatch:
-    inputs:
-      org:
-        description: 'Org slug — must match a GH Environment name.'
-        required: true
-      display_name:
-        description: 'Human label — accepted for interface parity, unused.'
-        required: true
-      supabase_project_ref:
-        description: "That org's Supabase project ref (a real ref, not `local`)."
-        required: true
-      target:
-        description: 'Always "cloud" for a standalone run.'
-        required: true
-        default: 'cloud'
-      gcp_project:
-        description: "That org's GCP project id."
-        required: false
-      gcp_region:
-        description: 'Cloud Run region.'
-        required: false
-        default: 'us-central1'
-      domains:
-        description: "That org's domain(s) as a JSON array string, e.g. '[\"dashboard.example.com\"]'."
-        required: false
-      variant:
-        description: 'VITE_VARIANT.'
-        required: false
-        default: 'full'
-      logo:
-        description: 'Unused, accepted for interface parity.'
-        required: false
-      confirm:
-        description: 'Type DEPLOY to confirm — this deploys real infrastructure for the named org.'
-        required: true
-
 permissions:
   contents: read
 
@@ -166,12 +135,6 @@ jobs:
     environment: ${{ inputs.org }}
 
     steps:
-      - name: Require explicit confirmation (standalone runs only)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm != 'DEPLOY' }}
-        run: |
-          echo "::error::Confirmation input must be exactly 'DEPLOY' (got '${{ inputs.confirm }}'). Re-run and type DEPLOY to proceed."
-          exit 1
-
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 

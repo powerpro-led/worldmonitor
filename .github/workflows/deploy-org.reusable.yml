@@ -135,8 +135,26 @@ jobs:
     environment: ${{ inputs.org }}
 
     steps:
+      # A bare `actions/checkout` with no `repository:` checks out the
+      # CALLER's repo (org-provisioning), not this one — invisible when this
+      # workflow is only ever exercised via its own standalone
+      # workflow_dispatch, but a real cross-repo `uses:` call (as
+      # provision-org.yml's SHA-pinned fan-out does) needs this explicit.
+      # `github.workflow_ref` is "owner/repo/path@ref" for the ref THIS
+      # reusable workflow file is actually running at, unlike github.sha/
+      # github.ref which reflect the caller — so parsing it out gives the
+      # exact pinned commit regardless of which repo dispatched this run.
+      - name: Resolve this workflow's own ref
+        id: self_ref
+        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: powerpro-led/worldmonitor
+          ref: ${{ steps.self_ref.outputs.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

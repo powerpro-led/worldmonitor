@@ -18,10 +18,9 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 # BuildKit cache mount persists npm's package cache across the several
-# service images `nitric up` builds in one run (this same dockerfile backs
-# both the `scheduler` service and the `loop-fetch-gpsjam` alias) — see
-# platform's fc0c2091 for the proven pattern (there: pnpm store) that cut a
-# comparable multi-service deploy 15min->6min.
+# service images `nitric up` builds in one run — see platform's fc0c2091 for
+# the proven pattern (there: pnpm store) that cut a comparable multi-service
+# deploy 15min->6min.
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --ignore-scripts
 

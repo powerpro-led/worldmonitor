@@ -61,21 +61,23 @@ services:
     # doesn't reach a given entry.
     start: env NODE_OPTIONS=--import=tsx/esm node --env-file=.env $SERVICE_PATH
     runtime: seed-bundle-resilience-validation
-  - match: scripts/loop-fetch-gpsjam.mjs
-    # Local-dev-only wrapper (see its own header). scripts/fetch-gpsjam.mjs is
-    # scheduled for real by gcp/scheduler/main.ts's CADENCES map ('fetch-gpsjam',
-    # every 1 day) — which `nitric start` DOES load as the `scheduler` service —
-    # but a Nitric schedule().every() first fires only after the interval
-    # elapses, so a fresh `nitric start` (or a local Redis reset) leaves
-    # intelligence:gpsjam:v2 empty and /api/gpsjam 503ing for up to 24h. This
-    # wrapper runs the seeder once immediately, then daily. Reuses the
-    # `scheduler` runtime's own image (full-repo node, whose stated job is
-    # "spawns the existing scripts/seed-*.mjs entries as child processes") via
-    # a same-dockerfile runtime alias below — no new Dockerfile for a
-    # scaffold-only, never-deployed local convenience. Production path is
-    # untouched.
-    start: node $SERVICE_PATH
-    runtime: loop-fetch-gpsjam
+  # scripts/loop-fetch-gpsjam.mjs was a service here until 2026-09-18. It was
+  # added as a local-dev convenience on the premise that this file was
+  # "scaffold-only, never deployed" — the first real `nitric up` runs
+  # invalidated that: nitric has no per-stack service selection, so EVERY
+  # entry here is built and deployed by every stack. Two concrete problems:
+  # its runtime aliased gcp/scheduler/node.dockerfile, whose CMD hardcodes
+  # `tsx gcp/scheduler/main.ts` — so the deployed service was a second copy
+  # of the scheduler, re-registering every Cloud Scheduler cadence (real
+  # duplicate GCP cost and duplicate seed runs). And had the CMD actually
+  # pointed at the wrapper, its `for(;;)` + 24h setTimeout would have hung
+  # `nitric up`'s collection phase the same way the unref'd hydration
+  # interval did (see server/_shared/pipeline-config-hydration.ts).
+  # The production cadence was always gcp/scheduler/main.ts's CADENCES entry
+  # ('fetch-gpsjam', every 1 day) — unaffected. The script itself is kept:
+  # run `node scripts/loop-fetch-gpsjam.mjs` by hand when a fresh local
+  # `nitric start` leaves intelligence:gpsjam:v2 empty, or just
+  # `node scripts/fetch-gpsjam.mjs` once.
 
 runtimes:
   api:
@@ -84,12 +86,8 @@ runtimes:
   scheduler:
     dockerfile: gcp/scheduler/node.dockerfile
     context: .
-  # Local-dev-only alias of the scheduler image for scripts/loop-fetch-gpsjam.mjs
-  # (see that service entry above). Same generic full-repo node image; never
-  # built for a real deploy.
-  loop-fetch-gpsjam:
-    dockerfile: gcp/scheduler/node.dockerfile
-    context: .
+  # loop-fetch-gpsjam's scheduler-image alias removed 2026-09-18 along with its
+  # service entry — see the note in `services:` above.
   relay:
     dockerfile: Dockerfile.relay
     context: .

@@ -74,6 +74,18 @@
  * per-org, like sync-ais-results.mjs) bridges its output back into each
  * org's own Upstash.
  * ─────────────────────────────────────────────────────────────────────────
+ * `ais-shared` deploy (2026-09-16, first real run of
+ * nitric.ais-shared.yaml): that stack's Nitric app image includes this same
+ * `scheduler` service (nothing in nitric.yaml lets a stack drop a service),
+ * but the shared AIS project holds no tenant credentials at all — every
+ * nixpacks-* entry here (centralized or not) would just fail on missing
+ * Supabase/org config, on a real Cloud Scheduler trigger Nitric provisions
+ * regardless of `min-instances: 0`. `AIS_SHARED_SCHEDULER=true` (hardcoded
+ * into `deploy-ais-shared.yml`'s own `.env` step, not a GH secret/var — this
+ * deploy never needs it to vary) skips registering ANY nixpacks-* cadence in
+ * that context — this deploy's only real job is `ais-relay` (its own Cloud
+ * Run service, wired directly in nitric.yaml, unaffected by this file).
+ * ─────────────────────────────────────────────────────────────────────────
  *
  * Scaffold-only pass — see docs/architecture/nitric-gcp-scaffold.md.
  */
@@ -113,6 +125,12 @@ const railwayServices = JSON.parse(
 // Environment (.github/workflows/deploy-data-shared.yml) — every real org
 // deploy leaves this unset.
 const IS_DATA_SHARED_DEPLOY = process.env.DATA_SHARED_SCHEDULER === 'true';
+
+// See this file's header comment. Only ever 'true' via the hardcoded line in
+// .github/workflows/deploy-ais-shared.yml's `.env` step — that deploy has no
+// tenant credentials and no `data-shared` role either, so it runs neither
+// half of the DATA_SHARED_SCHEDULER filter below.
+const IS_AIS_SHARED_DEPLOY = process.env.AIS_SHARED_SCHEDULER === 'true';
 
 /**
  * The three always-on workers described above. Excluded from scheduling
@@ -449,6 +467,10 @@ function runScriptOnce(entryRelativePath: string, extraArgs: string[] = []): () 
 
 const nixpacksEntries = railwayServices.filter((svc) => {
   if (!svc.deployMode.startsWith('nixpacks')) return false;
+  // See this file's header comment: ais-shared runs NEITHER half of the
+  // data-shared filter below — it has no tenant creds and isn't the
+  // data-shared deploy either, so no nixpacks-* cadence belongs here at all.
+  if (IS_AIS_SHARED_DEPLOY) return false;
   const isCentralized = svc.centralized === true;
   // See this file's header comment: the data-shared deploy runs ONLY
   // centralized entries; every org's own deploy runs everything ELSE.

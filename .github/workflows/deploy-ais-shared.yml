@@ -91,6 +91,7 @@ jobs:
           OPENSKY_CLIENT_SECRET=${{ secrets.OPENSKY_CLIENT_SECRET }}
           RELAY_SHARED_SECRET=${{ secrets.RELAY_SHARED_SECRET }}
           APP_DOMAIN=${{ vars.APP_DOMAIN }}
+          AIS_SHARED_SCHEDULER=true
           EOF
 
       - name: Cache Nitric Docker layers

@@ -55,11 +55,24 @@ reach it directly for the HTTP-pull surfaces.
 
 ## AIS ingest — status
 
-**Scaffold — never deployed.** Like the rest of the Nitric/GCP target
-(`docs/architecture/nitric-gcp-scaffold.md`), `nitric up` has not been run
-against this. The code it deploys (`scripts/ais-relay.cjs` minus Telegram
-minus the TransitSummary merge) is real and covered by tests; the deploy
-plumbing here is parity scaffold pending a first real run.
+**First real `nitric up` run: 2026-09-16.** Was scaffold/never-deployed until
+then. The code it deploys (`scripts/ais-relay.cjs` minus Telegram minus the
+TransitSummary merge) is real and covered by tests.
+
+Found on that first run: `nitric.ais-shared.yaml` deploys the SAME app image
+as any per-org stack (Nitric has no per-stack service selection), which
+includes `gcp/scheduler/main.ts` — and that file's `DATA_SHARED_SCHEDULER`
+filter (see its header comment) has no third state for "run nothing." Left
+as-is, the `ais-shared` deploy would have registered real Cloud Scheduler
+triggers for every ordinary per-org cadence (fetch-gpsjam, seed bundles, …)
+against a project with zero tenant credentials — real recurring cost +
+guaranteed failures, not the harmless min-instances:0 idle it looked like.
+Fixed by adding `AIS_SHARED_SCHEDULER=true` (hardcoded into
+`deploy-ais-shared.yml`'s own `.env` step, not a GH secret/var — this deploy
+never needs it to vary) — `gcp/scheduler/main.ts` now skips every
+nixpacks-* cadence entirely in that context. `ais-relay`'s own Cloud Run
+service (wired directly in root `nitric.yaml`, not through this filter) is
+unaffected.
 
 ## AIS ingest — GH Environment `ais-shared` secrets
 

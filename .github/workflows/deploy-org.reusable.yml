@@ -315,15 +315,24 @@ jobs:
         # open would show up here.
         run: docker ps -a && docker buildx ls
 
-      - name: Deploy Infrastructure
-        # 2026-09-17: a real biovita dispatch hung silently here for 5h42m
-        # (builds completed, zero GCP resources ever created) until the 6h
-        # job ceiling force-killed it. Root cause unresolved — this bounds a
-        # repeat hang to 30min instead of burning the full ceiling again.
-        timeout-minutes: 30
+      - name: Install Nitric CLI
         uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
         with:
-          command: up
-          stack-name: ${{ inputs.org }}
+          version: latest
+
+      - name: Deploy Infrastructure
+        # 2026-09-17/18: two real dispatches (biovita, then ais-shared) hung
+        # silently in this step after the build phase completed, zero GCP
+        # resources ever created, the `nitric` process itself still alive
+        # (not a crashed/orphaned child) when the job's timeout killed it —
+        # rules out the known leftover-builder-container failure mode
+        # (actions/runner#1326). timeout-minutes bounds a repeat hang to
+        # 30min; the wrapper script sends SIGQUIT after 10min of silent
+        # output so Go dumps goroutine stacks for real diagnostic signal
+        # (`nitric --verbose` is dead code in the CLI, confirmed 2026-09-17).
+        timeout-minutes: 30
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          DOCKER_BUILD_CACHE_SRC: .nitric/docker-cache/read
+          DOCKER_BUILD_CACHE_DEST: .nitric/docker-cache/write
+        run: .github/scripts/nitric-up-stall-dump.sh "${{ inputs.org }}"

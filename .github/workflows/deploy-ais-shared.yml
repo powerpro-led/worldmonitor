@@ -109,13 +109,24 @@ jobs:
         # leftover-builder-container theory (actions/runner#1326).
         run: docker ps -a && docker buildx ls
 
-      - name: Deploy Infrastructure
-        # See "Docker state before deploy" above — bounds a repeat hang to
-        # 30min instead of burning hours before a manual cancel.
-        timeout-minutes: 30
+      - name: Install Nitric CLI
         uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
         with:
-          command: up
-          stack-name: ais-shared
+          version: latest
+
+      - name: Deploy Infrastructure
+        # 2026-09-18: this run confirmed the hang isn't biovita-specific —
+        # same shape (build completes, then 23m43s of total silence, the
+        # `nitric` process itself still alive when timeout-minutes killed
+        # it — rules out the known leftover-builder-container failure mode,
+        # actions/runner#1326). Swapped the action's own `up` call for the
+        # stall-detecting wrapper: SIGQUIT after 10min of silent output makes
+        # Go dump goroutine stacks (`nitric --verbose` is dead code in the
+        # CLI, confirmed 2026-09-17) — real diagnostic signal instead of
+        # just "still nothing" at the 30min mark.
+        timeout-minutes: 30
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          DOCKER_BUILD_CACHE_SRC: .nitric/docker-cache/read
+          DOCKER_BUILD_CACHE_DEST: .nitric/docker-cache/write
+        run: .github/scripts/nitric-up-stall-dump.sh ais-shared

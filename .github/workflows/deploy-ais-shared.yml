@@ -102,7 +102,17 @@ jobs:
           restore-keys: |
             nitric-docker-ais-shared-${{ runner.os }}-
 
+      - name: Docker state before deploy
+        # 2026-09-18: this workflow hit the same silent post-build hang as
+        # deploy-org.reusable.yml's 2026-09-17 biovita incident (builds
+        # complete, then nothing — cancelled manually at 2h15m). Tests the
+        # leftover-builder-container theory (actions/runner#1326).
+        run: docker ps -a && docker buildx ls
+
       - name: Deploy Infrastructure
+        # See "Docker state before deploy" above — bounds a repeat hang to
+        # 30min instead of burning hours before a manual cancel.
+        timeout-minutes: 30
         uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
         with:
           command: up

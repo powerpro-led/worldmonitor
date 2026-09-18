@@ -63,9 +63,10 @@ jobs:
       REGION: us-central1
       AR_REPO: ais-shared
       SERVICE: ais-relay
-      # Job-level env can't interpolate its own keys — keep this in sync with
+      # Job-level env can't interpolate its own keys — keep these in sync with
       # the four above: <REGION>-docker.pkg.dev/<GCP_PROJECT>/<AR_REPO>/<SERVICE>
       IMAGE: us-central1-docker.pkg.dev/apps-453107/ais-shared/ais-relay
+      RUNTIME_SA: ais-relay-run@apps-453107.iam.gserviceaccount.com
 
     steps:
       - name: Require explicit confirmation
@@ -87,6 +88,23 @@ jobs:
 
       - name: Setup GCP Docker Auth
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      # Cloud Run otherwise runs the service as the Compute Engine default
+      # service account, which the deployer has no actAs permission on (and
+      # which newer GCP projects no longer create at all) — that is what failed
+      # run 35342750227. Nitric sidestepped this by minting a service account
+      # per service; this deploy names one explicitly instead.
+      #
+      # It is deliberately granted NO roles: the relay only talks to external
+      # services (aisstream.io over WebSocket, Upstash over HTTPS) and needs no
+      # GCP resource access of its own.
+      - name: Ensure the relay's runtime service account
+        run: |
+          gcloud iam service-accounts describe "$RUNTIME_SA" \
+            --project="$GCP_PROJECT" >/dev/null 2>&1 \
+          || gcloud iam service-accounts create ais-relay-run \
+               --project="$GCP_PROJECT" \
+               --display-name="AIS relay Cloud Run runtime (no roles)"
 
       - name: Ensure Artifact Registry repository
         run: |
@@ -148,6 +166,7 @@ jobs:
             --project="$GCP_PROJECT" \
             --region="$REGION" \
             --image="$IMAGE:${{ github.sha }}" \
+            --service-account="$RUNTIME_SA" \
             --env-vars-file=/tmp/relay-env.yaml \
             --memory=1Gi \
             --timeout=300 \

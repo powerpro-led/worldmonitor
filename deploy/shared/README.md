@@ -50,36 +50,56 @@ reach it directly for the HTTP-pull surfaces.
 | File | Purpose |
 |---|---|
 | `ais-ingest.yml` | non-secret config (region, gcp project, domain) — safe to commit |
-| `../../nitric.ais-shared.yaml` | the Nitric stack file — pins `ais-relay` at `min-instances: 1`, everything else `0` |
+| `../../Dockerfile.relay` | the image this deploy builds and pushes |
+| `../../nitric.ais-shared.yaml` | **no longer used to deploy** (see status below); kept as the documented source of the Cloud Run resource settings the workflow mirrors |
 | `../../.github/workflows/deploy-ais-shared.yml` | `workflow_dispatch` deploy, GH Environment `ais-shared` |
 
 ## AIS ingest — status
 
-**First real `nitric up` run: 2026-09-16.** Was scaffold/never-deployed until
-then. The code it deploys (`scripts/ais-relay.cjs` minus Telegram minus the
-TransitSummary merge) is real and covered by tests.
+**Deploys via `gcloud run deploy`, not Nitric (changed 2026-09-18).** Build
+`Dockerfile.relay` → push to Artifact Registry → deploy to Cloud Run.
 
-Found on that first run: `nitric.ais-shared.yaml` deploys the SAME app image
-as any per-org stack (Nitric has no per-stack service selection), which
-includes `gcp/scheduler/main.ts` — and that file's `DATA_SHARED_SCHEDULER`
-filter (see its header comment) has no third state for "run nothing." Left
-as-is, the `ais-shared` deploy would have registered real Cloud Scheduler
-triggers for every ordinary per-org cadence (fetch-gpsjam, seed bundles, …)
-against a project with zero tenant credentials — real recurring cost +
-guaranteed failures, not the harmless min-instances:0 idle it looked like.
-Fixed by adding `AIS_SHARED_SCHEDULER=true` (hardcoded into
-`deploy-ais-shared.yml`'s own `.env` step, not a GH secret/var — this deploy
-never needs it to vary) — `gcp/scheduler/main.ts` now skips every
-nixpacks-* cadence entirely in that context. `ais-relay`'s own Cloud Run
-service (wired directly in root `nitric.yaml`, not through this filter) is
-unaffected.
+It used `nitric up --stack ais-shared` until 2026-09-18. The first runs that
+actually reached Pulumi showed the model doesn't fit this deploy:
+
+* **A stack cannot opt out of another service's resources.** `nitric up`
+  discovers resources by booting EVERY service in `nitric.yaml` and collecting
+  what each declares, and that collection phase is **stack-agnostic** — it runs
+  once, before any stack-specific logic. So this deploy declared all 83 of
+  `gcp/scheduler/main.ts`'s Cloud Scheduler cadences against a shared project
+  holding no tenant credentials to run them with.
+* **`AIS_SHARED_SCHEDULER` could never have worked.** Added 2026-09-16 to
+  suppress exactly that, it was read at collection time — where nitric injects
+  **no app env at all** (the container gets 5 `NITRIC_*` vars and nothing
+  else). It was inert from the start. The same flaw applies to the
+  `DATA_SHARED_SCHEDULER` precedent it was modeled on; `deploy-data-shared.yml`
+  still carries that assumption and has never been run.
+* **The relay doesn't use Nitric anyway.** `scripts/ais-relay.cjs` imports
+  `@nitric/sdk` zero times and declares no nitric resources, so nitric bought
+  this deploy nothing while forcing the entire app image on it.
+
+`ais-relay` is still listed in the root `nitric.yaml` — that entry now serves
+local `nitric start` (one machine, everything in one process) and per-org
+stacks, which leave it at `min-instances: 0`.
+
+**One-time operator step on first creation:** the service needs unauthenticated
+Cloud Run ingress, because per-org deploys reach it over the public internet
+and authenticate at the application layer with `RELAY_SHARED_SECRET` via the
+`x-relay-key` header. Re-deploys preserve the IAM policy, so this is needed
+only once:
+
+```
+gcloud run services add-iam-policy-binding ais-relay \
+  --project=apps-453107 --region=us-central1 \
+  --member=allUsers --role=roles/run.invoker
+```
 
 ## AIS ingest — GH Environment `ais-shared` secrets
 
 | Secret / var | What |
 |---|---|
 | `GCP_CREDENTIALS` | service-account JSON for the shared GCP project |
-| `PULUMI_ACCESS_TOKEN` | Nitric's GCP provider deploys via Pulumi |
+| `PULUMI_ACCESS_TOKEN` | ~~Nitric's GCP provider deploys via Pulumi~~ — **no longer read** since this deploy dropped Nitric (2026-09-18); still set on the Environment, harmless |
 | `AISSTREAM_API_KEY` | the shared aisstream.io key |
 | `AIS_RESULTS_UPSTASH_REST_URL` / `AIS_RESULTS_UPSTASH_REST_TOKEN` | the shared "AIS results" Upstash — **write** side (the read-only token is what each org's Environment gets) |
 | `OREF_PROXY_URL` (+ auth) | residential proxy with an Israel exit, for the Oref siren poller |

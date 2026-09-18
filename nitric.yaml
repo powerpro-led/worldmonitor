@@ -28,39 +28,30 @@ services:
   - match: scripts/ais-relay.cjs
     start: node $SERVICE_PATH
     runtime: relay
-  - match: scripts/seed-bundle-portwatch-port-activity.mjs
-    start: node $SERVICE_PATH
-    runtime: seed-bundle-portwatch-port-activity
-  - match: scripts/seed-bundle-resilience-validation.mjs
-    # Sensitivity-Suite (validate-resilience-sensitivity.mjs) dynamically imports
-    # ../server/*.ts — needs the tsx ESM loader registered via NODE_OPTIONS so
-    # _bundle-runner.mjs's spawned node children inherit it too (spawn() inherits
-    # process.env by default). Mirrors Dockerfile.seed-bundle-resilience-validation's
-    # ENV NODE_OPTIONS wiring, which local `node $SERVICE_PATH` never had.
-    #
-    # FIXED 2026-09-14: this was the only `start:` entry in the whole file using
-    # a bare `VAR=value command` shell-prefix + a `$PWD`-built `file://` loader
-    # path — under `nitric start` it crashed immediately with a BLANK error (no
-    # stack trace, process gone before its first "Starting" log line), unlike
-    # every other service here, which all use plain argv. Confirmed three
-    # different candidate fixes (dropping `$PWD` for the bare `tsx/esm`
-    # specifier; quoted vs. unquoted `NODE_OPTIONS=...`) each ran clean
-    # standalone (`sh -c "..."`, all 3 sections OK) yet EACH still crashed
-    # silently under `nitric start` specifically — conclusion: nitric does not
-    # reliably support a leading `VAR=value` env-assignment prefix in `start:`
-    # at all (it likely argv-splits rather than invoking a real shell, so
-    # nothing about the value itself was ever the problem). Switched to the
-    # POSIX `env` command instead — `env VAR=value cmd args...` is one
-    # ordinary executable or every arg is a plain token, so no shell-prefix
-    # parsing is required from whatever launches it. Verified this exact form
-    # directly (no `sh -c`, plain argv in a shell): all 3 sections OK. Also
-    # added `--env-file=.env`, matching the other cron-like entries
-    # (api-main/scheduler-main) — without it this bundle's two Redis-reading
-    # sections (External-Benchmark, Outcome-Backtest) fail closed with
-    # "Missing UPSTASH_REDIS_REST_URL" the instant nitric's own env injection
-    # doesn't reach a given entry.
-    start: env NODE_OPTIONS=--import=tsx/esm node --env-file=.env $SERVICE_PATH
-    runtime: seed-bundle-resilience-validation
+  # scripts/seed-bundle-portwatch-port-activity.mjs and
+  # scripts/seed-bundle-resilience-validation.mjs were services here until
+  # 2026-09-18. Removed because, as nitric services, they could never have
+  # worked — and one of them hard-blocked every deploy:
+  #
+  #   * NOTHING WOULD EVER TRIGGER THEM. Both are `deployMode: dockerfile`
+  #     Railway cron services (scripts/railway-services.json), where Railway's
+  #     own cron does the triggering. Neither imports @nitric/sdk, so neither
+  #     declares a schedule() — nitric deployed each as a Cloud Run service
+  #     with no Cloud Scheduler job pointing at it. gcp/scheduler/main.ts's
+  #     CADENCES can't cover them either: it filters to
+  #     `deployMode.startsWith('nixpacks')`, which deliberately excludes both.
+  #   * portwatch-port-activity BROKE THE WHOLE DEPLOY. Nitric derives a Cloud
+  #     Run service_id as `<project>_<path>` (pathToNormalizedServiceName, no
+  #     override) — `worldmonitor-scripts-seed-bundle-portwatch-port-activity`
+  #     is 56 chars against GCP's 50-char limit, so `nitric up` failed with a
+  #     400 after creating 183 other resources (run 35331266844, the first one
+  #     ever to reach Pulumi).
+  #
+  # They keep running on Railway, unaffected — railway-services.json, both
+  # Dockerfiles and the scripts themselves are untouched. Moving them to GCP
+  # for real needs a trigger designed first (a CADENCES entry via nixpacks
+  # mode, or an explicit Cloud Scheduler -> Cloud Run job), not a bare service
+  # entry here.
   # scripts/loop-fetch-gpsjam.mjs was a service here until 2026-09-18. It was
   # added as a local-dev convenience on the premise that this file was
   # "scaffold-only, never deployed" — the first real `nitric up` runs
@@ -86,16 +77,13 @@ runtimes:
   scheduler:
     dockerfile: gcp/scheduler/node.dockerfile
     context: .
-  # loop-fetch-gpsjam's scheduler-image alias removed 2026-09-18 along with its
-  # service entry — see the note in `services:` above.
+  # loop-fetch-gpsjam's scheduler-image alias, and the
+  # seed-bundle-portwatch-port-activity / seed-bundle-resilience-validation
+  # runtimes, were removed 2026-09-18 along with their service entries — see
+  # the notes in `services:` above. Their Dockerfiles stay on disk: Railway
+  # still builds and runs all three.
   relay:
     dockerfile: Dockerfile.relay
-    context: .
-  seed-bundle-portwatch-port-activity:
-    dockerfile: Dockerfile.seed-bundle-portwatch-port-activity
-    context: .
-  seed-bundle-resilience-validation:
-    dockerfile: Dockerfile.seed-bundle-resilience-validation
     context: .
   # digest-notifications / publish-bootstrap-tiers / process-simulation-tasks
   # / process-deep-forecast-tasks / scenario-worker runtimes removed here

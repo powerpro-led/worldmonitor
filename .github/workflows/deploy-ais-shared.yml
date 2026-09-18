@@ -10,22 +10,35 @@ name: Deploy Shared AIS Ingest (P14 / P17)
 # into a shared "AIS results" Upstash; each org's deploy runs
 # scripts/sync-ais-results.mjs to pull that into the org's own DB (P17).
 #
-# Manual-only, same rationale as deploy-org.reusable.yml / nitric-deploy.yml: an
-# on-push trigger would redeploy live infrastructure on every unrelated merge.
+# Manual-only, same rationale as deploy-org.reusable.yml: an on-push trigger
+# would redeploy live infrastructure on every unrelated merge.
+#
+# NOT a nitric deploy (changed 2026-09-18). It used `nitric up --stack
+# ais-shared` until the first runs that actually got that far showed the model
+# doesn't fit: `nitric up` declares resources by booting EVERY service in
+# nitric.yaml and collecting what each declares — and that collection phase is
+# stack-agnostic and receives no app env, so a stack cannot opt out of another
+# service's resources. This deploy needs exactly one long-lived container, but
+# it was declaring all 83 of gcp/scheduler/main.ts's Cloud Scheduler cadences
+# against the shared project, which holds no tenant credentials to run them
+# with. (AIS_SHARED_SCHEDULER, added 2026-09-16 to suppress exactly that, could
+# never have worked for the same reason — it was read at collection time, where
+# no app env exists.) And scripts/ais-relay.cjs imports @nitric/sdk zero times:
+# it declares no nitric resources at all, so nitric bought this deploy nothing
+# while forcing the whole app image on it. Now: build Dockerfile.relay, push to
+# Artifact Registry, `gcloud run deploy`. nitric.ais-shared.yaml is retained
+# only as the source of the resource settings mirrored below.
 #
 # Required GH Environment `ais-shared` (see deploy/shared/README.md for the
 # full table):
 #   GCP_CREDENTIALS                                    — SA JSON for the shared GCP project
-#   PULUMI_ACCESS_TOKEN                                 — Nitric's GCP provider deploys via Pulumi
 #   AISSTREAM_API_KEY                                   — the shared aisstream.io key
 #   AIS_RESULTS_UPSTASH_REST_URL / _REST_TOKEN          — shared "AIS results" Upstash, WRITE side
 #   OREF_PROXY_URL (+ OREF_PROXY_AUTH if used)          — residential proxy, Israel exit, for the siren poller
 #   OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET           — OpenSky OAuth for the /opensky proxy route
 #   RELAY_SHARED_SECRET                                 — the x-relay-key every per-org deploy sends
 #   vars.APP_DOMAIN                                     — CORS allow-list derivation
-#
-# SCAFFOLD — never run. Like the rest of the Nitric/GCP target
-# (docs/architecture/nitric-gcp-scaffold.md), `nitric up` has not executed here.
+# PULUMI_ACCESS_TOKEN is no longer read here (no Pulumi in this path).
 
 on:
   workflow_dispatch:
@@ -43,6 +56,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: ais-shared
 
+    # Mirrors nitric.ais-shared.yaml's region + gcp-project-id, which this
+    # workflow no longer reads (see the header note on dropping nitric).
+    env:
+      GCP_PROJECT: apps-453107
+      REGION: us-central1
+      AR_REPO: ais-shared
+      SERVICE: ais-relay
+      # Job-level env can't interpolate its own keys — keep this in sync with
+      # the four above: <REGION>-docker.pkg.dev/<GCP_PROJECT>/<AR_REPO>/<SERVICE>
+      IMAGE: us-central1-docker.pkg.dev/apps-453107/ais-shared/ais-relay
+
     steps:
       - name: Require explicit confirmation
         if: ${{ inputs.confirm != 'DEPLOY' }}
@@ -52,15 +76,6 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
@@ -73,71 +88,78 @@ jobs:
       - name: Setup GCP Docker Auth
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      - name: Install and configure Pulumi
-        uses: pulumi/actions@a3f382e1242b69ab33854c253c3b580f1226348e # v4
-
-      # The relay's runtime env — its OWN credentials only. No tenant secrets.
-      - name: Create shared-ingest env file
+      - name: Ensure Artifact Registry repository
         run: |
-          cat > .env <<EOF
-          AISSTREAM_API_KEY=${{ secrets.AISSTREAM_API_KEY }}
-          AIS_RESULTS_UPSTASH_REST_URL=${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}
-          AIS_RESULTS_UPSTASH_REST_TOKEN=${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}
-          UPSTASH_REDIS_REST_URL=${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN=${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}
-          OREF_PROXY_URL=${{ secrets.OREF_PROXY_URL }}
-          OREF_PROXY_AUTH=${{ secrets.OREF_PROXY_AUTH }}
-          OPENSKY_CLIENT_ID=${{ secrets.OPENSKY_CLIENT_ID }}
-          OPENSKY_CLIENT_SECRET=${{ secrets.OPENSKY_CLIENT_SECRET }}
-          RELAY_SHARED_SECRET=${{ secrets.RELAY_SHARED_SECRET }}
-          APP_DOMAIN=${{ vars.APP_DOMAIN }}
-          AIS_SHARED_SCHEDULER=true
+          gcloud artifacts repositories describe "$AR_REPO" \
+            --project="$GCP_PROJECT" --location="$REGION" >/dev/null 2>&1 \
+          || gcloud artifacts repositories create "$AR_REPO" \
+               --project="$GCP_PROJECT" --location="$REGION" \
+               --repository-format=docker \
+               --description="Shared AIS ingest relay images"
+
+      - name: Build and push the relay image
+        run: |
+          set -euo pipefail
+          docker build -f Dockerfile.relay -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      # The relay's runtime env — its OWN credentials only, no tenant secrets.
+      # Written to a file rather than passed via --set-env-vars so secret
+      # values never appear in a command line.
+      - name: Write runtime env file
+        run: |
+          umask 077
+          cat > /tmp/relay-env.yaml <<EOF
+          AISSTREAM_API_KEY: "${{ secrets.AISSTREAM_API_KEY }}"
+          AIS_RESULTS_UPSTASH_REST_URL: "${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}"
+          AIS_RESULTS_UPSTASH_REST_TOKEN: "${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}"
+          UPSTASH_REDIS_REST_URL: "${{ secrets.AIS_RESULTS_UPSTASH_REST_URL }}"
+          UPSTASH_REDIS_REST_TOKEN: "${{ secrets.AIS_RESULTS_UPSTASH_REST_TOKEN }}"
+          OREF_PROXY_URL: "${{ secrets.OREF_PROXY_URL }}"
+          OREF_PROXY_AUTH: "${{ secrets.OREF_PROXY_AUTH }}"
+          OPENSKY_CLIENT_ID: "${{ secrets.OPENSKY_CLIENT_ID }}"
+          OPENSKY_CLIENT_SECRET: "${{ secrets.OPENSKY_CLIENT_SECRET }}"
+          RELAY_SHARED_SECRET: "${{ secrets.RELAY_SHARED_SECRET }}"
+          APP_DOMAIN: "${{ vars.APP_DOMAIN }}"
           EOF
 
-      - name: Cache Nitric Docker layers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .nitric/docker-cache
-          key: nitric-docker-ais-shared-${{ runner.os }}-${{ hashFiles('package-lock.json', 'gcp/*/node.dockerfile', 'Dockerfile.*') }}
-          restore-keys: |
-            nitric-docker-ais-shared-${{ runner.os }}-
+      # Resource settings mirror nitric.ais-shared.yaml's `ais-relay` block:
+      # 1 GB (live vessel/density aggregates held in memory), 300s timeout,
+      # concurrency 80, and min=max=1 — the one pinned instance in the whole
+      # platform, because a scale-to-zero relay drops its persistent
+      # aisstream.io WebSocket between requests (OQ-P1/P8).
+      #
+      # INGRESS: per-org deploys reach this relay over the public internet and
+      # authenticate at the application layer with RELAY_SHARED_SECRET via the
+      # x-relay-key header (scripts/ais-relay.cjs refuses to start without that
+      # secret). The service therefore needs unauthenticated Cloud Run ingress
+      # — that is NOT granted here; it is a deliberate one-time operator step:
+      #   gcloud run services add-iam-policy-binding ais-relay \
+      #     --project=apps-453107 --region=us-central1 \
+      #     --member=allUsers --role=roles/run.invoker
+      # Re-deploys preserve the existing IAM policy, so this is only needed
+      # once, on first creation.
+      - name: Deploy to Cloud Run
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          gcloud run deploy "$SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$REGION" \
+            --image="$IMAGE:${{ github.sha }}" \
+            --env-vars-file=/tmp/relay-env.yaml \
+            --memory=1Gi \
+            --timeout=300 \
+            --concurrency=80 \
+            --min-instances=1 \
+            --max-instances=1 \
+            --quiet
 
-      - name: Docker state before deploy
-        # 2026-09-18: this workflow hit the same silent post-build hang as
-        # deploy-org.reusable.yml's 2026-09-17 biovita incident (builds
-        # complete, then nothing — cancelled manually at 2h15m). Tests the
-        # leftover-builder-container theory (actions/runner#1326).
-        run: docker ps -a && docker buildx ls
-
-      - name: Install Nitric CLI
-        uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
-        with:
-          version: latest
-
-      - name: Deploy Infrastructure
-        # 2026-09-18: this run confirmed the hang isn't biovita-specific —
-        # same shape (build completes, then 23m43s of total silence, the
-        # `nitric` process itself still alive when timeout-minutes killed
-        # it — rules out the known leftover-builder-container failure mode,
-        # actions/runner#1326). Swapped the action's own `up` call for the
-        # stall-detecting wrapper: SIGQUIT after 10min of silent output makes
-        # Go dump goroutine stacks (`nitric --verbose` is dead code in the
-        # CLI, confirmed 2026-09-17) — real diagnostic signal instead of
-        # just "still nothing" at the 30min mark.
-        timeout-minutes: 30
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          DOCKER_BUILD_CACHE_SRC: .nitric/docker-cache/read
-          DOCKER_BUILD_CACHE_DEST: .nitric/docker-cache/write
-        run: .github/scripts/nitric-up-stall-dump.sh ais-shared
-
-      - name: Upload per-service collect logs
-        # Survives even if timeout-minutes kills the whole step before the
-        # wrapper script's own cleanup runs — see its header comment.
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nitric-collect-logs-ais-shared
-          path: .nitric/collect/
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Report service URL
+        run: |
+          url="$(gcloud run services describe "$SERVICE" \
+            --project="$GCP_PROJECT" --region="$REGION" \
+            --format='value(status.url)')"
+          echo "::notice::ais-relay deployed at $url"
+          echo "If this URL changed, update worldmonitor's repo-level WS_RELAY_URL variable."

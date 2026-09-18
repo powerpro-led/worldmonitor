@@ -308,7 +308,19 @@ jobs:
       - name: Disk usage before build
         run: df -h / && docker system df
 
+      - name: Docker state before deploy
+        # 2026-09-17: tests the leftover-builder-container theory
+        # (actions/runner#1326) for the 5h42m silent hang below — a stray
+        # buildx/BuildKit container from a prior run holding stdout/stderr
+        # open would show up here.
+        run: docker ps -a && docker buildx ls
+
       - name: Deploy Infrastructure
+        # 2026-09-17: a real biovita dispatch hung silently here for 5h42m
+        # (builds completed, zero GCP resources ever created) until the 6h
+        # job ceiling force-killed it. Root cause unresolved — this bounds a
+        # repeat hang to 30min instead of burning the full ceiling again.
+        timeout-minutes: 30
         uses: nitrictech/actions@7a43726a04662d0f1ffce5f9cb1ac26edf391ad7 # v1
         with:
           command: up

@@ -9,7 +9,17 @@
 # Built 2026-09-18 after two real dispatches (biovita 2026-09-17, ais-shared
 # 2026-09-18) both hung silently after the build phase completed, with zero
 # GCP resources ever created and the `nitric` process still alive (not a
-# crashed/orphaned child) when the job's own timeout-minutes killed it.
+# crashed/orphaned child) when the job's own timeout-minutes killed it. A
+# goroutine dump from the first SIGQUIT (ais-shared, 2026-09-18) pinpointed
+# it further: the main goroutine blocks in CollectServicesRequirements'
+# sync.WaitGroup.Wait() — nitric boots EVERY service (nitrictech/cli has no
+# per-stack service selection) as a local Docker container and waits for
+# each to call back over a local gRPC server declaring its resources; one or
+# more containers never completed that handshake. The CLI itself already
+# writes a per-service log for exactly this to ./.nitric/collect/ (see
+# pkg/project/project.go's collectServiceRequirements) — never captured
+# before now. Dumping it here should name the actual stuck service and why,
+# instead of just generic Go runtime noise.
 #
 # Usage: nitric-up-stall-dump.sh <stack-name>
 set -uo pipefail
@@ -49,5 +59,17 @@ echo "::group::nitric up output"
 cat "$log_file"
 echo "::endgroup::"
 rm -f "$log_file"
+
+collect_dir="./.nitric/collect"
+if [ -d "$collect_dir" ]; then
+  for f in "$collect_dir"/*.log; do
+    [ -e "$f" ] || continue
+    echo "::group::per-service collect log: $f"
+    cat "$f"
+    echo "::endgroup::"
+  done
+else
+  echo "::notice::no $collect_dir found — CollectServicesRequirements likely never started a service container"
+fi
 
 exit "$status"

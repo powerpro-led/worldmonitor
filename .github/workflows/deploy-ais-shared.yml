@@ -130,3 +130,14 @@ jobs:
           DOCKER_BUILD_CACHE_SRC: .nitric/docker-cache/read
           DOCKER_BUILD_CACHE_DEST: .nitric/docker-cache/write
         run: .github/scripts/nitric-up-stall-dump.sh ais-shared
+
+      - name: Upload per-service collect logs
+        # Survives even if timeout-minutes kills the whole step before the
+        # wrapper script's own cleanup runs — see its header comment.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nitric-collect-logs-ais-shared
+          path: .nitric/collect/
+          if-no-files-found: ignore
+          retention-days: 7

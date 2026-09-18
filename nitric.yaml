@@ -13,21 +13,27 @@ services:
   - match: gcp/scheduler/main.ts
     start: npx tsx watch --env-file=.env $SERVICE_PATH
     runtime: scheduler
-  # P14 Phase 2 tail (PLATFORM_ARCHITECTURE.md, 2026-09-07): a per-org deploy
-  # now has ZERO pinned instances (generate-nitric-org-stack.mjs's
-  # PINNED_SERVICES is empty). ais-relay.cjs — the sole genuinely persistent
-  # connection (aisstream.io WebSocket) — runs as ONE SHARED deploy instead:
-  # deploy/shared/ais-ingest.yml + nitric.ais-shared.yaml +
-  # .github/workflows/deploy-ais-shared.yml (min-instances: 1 there). Its 28
-  # seed/warm-ping loops are standalone crons (gcp/scheduler/main.ts CADENCES);
-  # Telegram + the TransitSummary merge are per-org `--once` jobs (P18 / P14
-  # Phase 2 tail); the pure-AIS transit counts reach each org via
-  # scripts/sync-ais-results.mjs (P17). This service entry stays here for
-  # local `nitric start` dev (one machine, everything in one process) and is
-  # what the shared stack deploys; per-org stacks leave it at min-instances: 0.
-  - match: scripts/ais-relay.cjs
-    start: node $SERVICE_PATH
-    runtime: relay
+  # scripts/ais-relay.cjs was a service here until 2026-09-18. Background
+  # (P14 Phase 2 tail, PLATFORM_ARCHITECTURE.md 2026-09-07): the relay holds
+  # the platform's only genuinely persistent connection (the aisstream.io
+  # WebSocket), so it runs as ONE SHARED deploy rather than once per org —
+  # deploy/shared/ais-ingest.yml + .github/workflows/deploy-ais-shared.yml.
+  # Per-org clients reach it over vars.WS_RELAY_URL; the pure-AIS transit
+  # counts arrive via scripts/sync-ais-results.mjs (P17).
+  #
+  # The entry stayed here on the assumption that a per-org stack would simply
+  # leave it at min-instances: 0 and cost nothing. The first successful
+  # per-org deploy (biovita, 2026-09-18) showed what actually happens: the
+  # container FATALs on startup — `AISSTREAM_API_KEY environment variable not
+  # set`, since that key is ais-shared-only — and every org project is left
+  # with a Cloud Run service that can never serve a request. It doesn't fail
+  # the deploy (a min-instances: 0 service is created even when its container
+  # can't start), it is just permanently dead weight, plus one more image to
+  # build on every deploy.
+  #
+  # The shared deploy no longer reads this file either: it stopped using
+  # Nitric the same day and builds Dockerfile.relay directly. For local
+  # `nitric start`, run the relay alongside it: `node scripts/ais-relay.cjs`.
   # scripts/seed-bundle-portwatch-port-activity.mjs and
   # scripts/seed-bundle-resilience-validation.mjs were services here until
   # 2026-09-18. Removed because, as nitric services, they could never have
@@ -82,9 +88,9 @@ runtimes:
   # runtimes, were removed 2026-09-18 along with their service entries — see
   # the notes in `services:` above. Their Dockerfiles stay on disk: Railway
   # still builds and runs all three.
-  relay:
-    dockerfile: Dockerfile.relay
-    context: .
+  # The `relay` runtime was removed 2026-09-18 with its service entry (see the
+  # note in `services:`). Dockerfile.relay stays on disk and is very much in
+  # use — .github/workflows/deploy-ais-shared.yml builds it directly now.
   # digest-notifications / publish-bootstrap-tiers / process-simulation-tasks
   # / process-deep-forecast-tasks / scenario-worker runtimes removed here
   # (P14 Phase 1, 2026-09-05) — no longer wired as pinned nitric services,

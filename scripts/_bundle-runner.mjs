@@ -209,6 +209,19 @@ function spawnSeed(scriptPath, { timeoutMs, label, bundleStartedAtMs }) {
  * @param {{ maxBundleMs?: number }} [opts]
  */
 export async function runBundle(label, sections, opts = {}) {
+  // `nitric up` boots every service in a throwaway container with
+  // NITRIC_ENVIRONMENT=build purely to introspect the Nitric resources it
+  // declares — injecting no app secrets, and treating a non-zero exit as a
+  // collection failure for the whole deploy. Bundles declare no Nitric
+  // resources, so there is nothing to collect: exit cleanly rather than
+  // running sections that would fail on the absent UPSTASH_*/etc. config.
+  // ("run" is the CLI's default, covering both real deploys and the Railway
+  // cron path this runner was built for.)
+  if (process.env.NITRIC_ENVIRONMENT === 'build') {
+    console.log(`[Bundle:${label}] NITRIC_ENVIRONMENT=build — collection pass, nothing to do`);
+    process.exit(0);
+  }
+
   const missingEnvBySection = new Map();
   for (const section of sections) {
     if (section.requiredEnv == null) continue;

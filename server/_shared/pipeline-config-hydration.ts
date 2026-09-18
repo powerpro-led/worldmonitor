@@ -86,6 +86,18 @@ export async function hydratePipelineConfig(env: NodeJS.ProcessEnv = process.env
  * hook) can `clearInterval()` it — production callers can ignore the return
  * value, since a Cloud Run instance's process lifetime is the interval's own
  * natural bound.
+ *
+ * The interval is `unref()`ed so it never by itself keeps the process alive.
+ * Cloud Run is unaffected (Nitric's own server holds the loop open, and an
+ * unref'd interval still fires normally), but `nitric up`'s collection phase
+ * depends on it: that phase boots every service in a container purely to
+ * introspect its declared resources and blocks on the container exiting
+ * (RunContainer -> ContainerWait, no timeout). Without unref, api/main.ts and
+ * scheduler/main.ts declared their resources, had their trigger streams
+ * closed, and then never exited — hanging `nitric up` indefinitely before
+ * Pulumi was ever invoked. Diagnosed 2026-09-18 from a SIGQUIT goroutine dump
+ * (main blocked in CollectServicesRequirements' sync.WaitGroup.Wait) plus
+ * nitric's own per-service collect logs.
  */
 export async function startPipelineConfigHydration(env: NodeJS.ProcessEnv = process.env): Promise<NodeJS.Timeout> {
   const initial = await hydratePipelineConfig(env);
@@ -98,7 +110,7 @@ export async function startPipelineConfigHydration(env: NodeJS.ProcessEnv = proc
         console.log(`[pipeline-config-hydration] refresh set ${changed.length} key(s): ${changed.join(', ')}`);
       }
     });
-  }, HYDRATION_INTERVAL_MS);
+  }, HYDRATION_INTERVAL_MS).unref();
 }
 
 /** Test-only reset of the module-scope warn-once flag. */

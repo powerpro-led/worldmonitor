@@ -15,6 +15,15 @@
  *   payload.description. Enforced by tests/notification-relay-payload-audit.test.mjs.
  */
 
+// `nitric up` boots every service in a throwaway container with
+// NITRIC_ENVIRONMENT=build purely to introspect the Nitric resources it
+// declares — injecting no app secrets, and treating a non-zero exit as a
+// collection failure for the whole deploy. This script declares no Nitric
+// resources, so there is nothing to collect: exit cleanly before the
+// AISSTREAM_API_KEY check below, which would otherwise fail every deploy.
+// ("run" is the CLI's default, covering both real deploys and `nitric start`.)
+if (process.env.NITRIC_ENVIRONMENT === 'build') process.exit(0);
+
 const http = require('http');
 const https = require('https');
 const zlib = require('zlib');

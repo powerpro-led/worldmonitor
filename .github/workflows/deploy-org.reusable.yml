@@ -290,7 +290,21 @@ jobs:
           TELEGRAM_SESSION=${{ secrets.TELEGRAM_SESSION }}
           DATA_SHARED_UPSTASH_REST_URL=${{ secrets.DATA_SHARED_UPSTASH_REST_URL }}
           DATA_SHARED_UPSTASH_READONLY_TOKEN=${{ secrets.DATA_SHARED_UPSTASH_READONLY_TOKEN }}
+          WORKER_TIMEOUT=180
           EOF
+
+      # WORKER_TIMEOUT above: Nitric's membrane starts the app process, then
+      # waits for it to register its workers (one per api/schedule handler)
+      # over gRPC, and exits FATAL if they don't arrive in time. The default is
+      # 10 seconds (core/pkg/env/variables.go), which api/main.ts cannot make
+      # on a Cloud Run cold start — `npx tsx` compiles TypeScript at boot,
+      # routes.generated.ts pulls in ~105 route modules, and
+      # startPipelineConfigHydration() awaits a live Supabase round-trip before
+      # any route registers. The first real per-org deploy died exactly there:
+      # "available workers below required minimum of 2, 0 available, timed out
+      # waiting for more workers" 11s after the instance started (2026-09-18,
+      # biovita). Nitric's own docs bump this the same way for slow-starting
+      # services.
 
       # Runners are ephemeral, so BuildKit cache mounts start cold every run.
       # One cache key per org (region/config differ, but the npm-install

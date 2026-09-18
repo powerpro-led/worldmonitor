@@ -86,12 +86,65 @@ stacks, which leave it at `min-instances: 0`.
 Cloud Run ingress, because per-org deploys reach it over the public internet
 and authenticate at the application layer with `RELAY_SHARED_SECRET` via the
 `x-relay-key` header. Re-deploys preserve the IAM policy, so this is needed
-only once:
+only once (**already done 2026-09-18**):
 
 ```
 gcloud run services add-iam-policy-binding ais-relay \
   --project=apps-453107 --region=us-central1 \
   --member=allUsers --role=roles/run.invoker
+```
+
+**First successful deploy: 2026-09-18** (run 35343188309, 94s).
+`https://ais-relay-255128245941.us-central1.run.app`. Verified live: `/health`
+returned `status:ok` with `auth.sharedSecretEnabled:true` and Upstash
+connected, and after the first `/ais/snapshot` call the upstream came up and
+vessel counts started climbing.
+
+**The relay connects to aisstream.io lazily, not at startup** — `connectUpstream()`
+is called only from the WS `connection` handler and the `/ais/snapshot` route.
+So a freshly deployed instance reports `connected:false, vessels:0` until the
+first real consumer arrives; that is expected, not a fault. With
+`min-instances=1` the instance then stays up and holds the socket, which is the
+whole point of pinning it. A single "Disconnected, reconnecting in 5s" right
+after the first connect is normal; it settles on the retry.
+
+## AIS ingest — teardown
+
+Because this deploy no longer goes through Nitric, **nothing here is removed by
+`nitric down`** — it is all created directly by
+`.github/workflows/deploy-ais-shared.yml` and must be deleted directly too.
+Everything lives in `apps-453107` / `us-central1`:
+
+```
+gcloud run services delete ais-relay --project=apps-453107 --region=us-central1
+gcloud artifacts repositories delete ais-shared --project=apps-453107 --location=us-central1
+gcloud iam service-accounts delete ais-relay-run@apps-453107.iam.gserviceaccount.com --project=apps-453107
+```
+
+The `allUsers`/`run.invoker` binding is part of the Cloud Run service's own IAM
+policy and disappears with it — no separate cleanup.
+
+### Leftovers from the Nitric era
+
+The pre-2026-09-18 deploys left a Pulumi stack behind:
+`powerpro-led/worldmonitor/worldmonitor-ais-shared`, ~185 resources, nothing in
+this repo points at it any more.
+
+**Do not simply run `nitric down --stack ais-shared` (or `pulumi destroy`) on
+it.** `apps-453107` is a SHARED project — `platform` uses it too — and roughly
+19 of those resources are project-level API enablements
+(`gcp:projects/service:Service`). Destroying the stack would disable APIs other
+deploys depend on. The rest (12 service accounts, an Artifact Registry, a Cloud
+Tasks queue, 2 API Gateway APIs) are idle and cost effectively nothing, so
+there is no urgency.
+
+If it is cleaned up, do it resource by resource, skipping every
+`gcp:projects/service:Service`. Inspect the actual contents first — the Pulumi
+API works even when local `gcloud` auth has lapsed:
+
+```
+curl -s -H "Authorization: token $PULUMI_ACCESS_TOKEN" \
+  https://api.pulumi.com/api/stacks/powerpro-led/worldmonitor/worldmonitor-ais-shared/export
 ```
 
 ## AIS ingest — GH Environment `ais-shared` secrets

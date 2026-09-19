@@ -89,9 +89,14 @@ mcp        http://127.0.0.1:46123/api/mcp   header  x-worldmonitor-local-token: 
 
 ### One-time operator setup
 
-`worldmonitor-local login` uses a loopback OAuth redirect. Add
-`http://127.0.0.1:46124/callback` to the Supabase project's **Auth → URL
-Configuration → Redirect URLs** once, so the flow's callback is accepted.
+There are two sign-in paths and each needs its own entry under the Supabase
+project's **Auth → URL Configuration → Redirect URLs**:
+
+- `http://127.0.0.1:46124/callback` — `worldmonitor-local login`'s loopback
+  redirect.
+- `http://localhost:46123/dashboard.html?embed=vscode` — the sign-in button
+  inside the VS Code panel (the iframe is served from `localhost`, not the
+  bare IP, and comes back to the same page with `?embed=vscode`).
 The invite gate itself is the existing `worldmonitor-org-gate` Auth Hook —
 to invite someone, add their GitHub account to the allow-listed org.
 

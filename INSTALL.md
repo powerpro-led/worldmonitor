@@ -69,10 +69,16 @@ refreshing without you ever handling a token. Removing your account from the
 org revokes it within the hour (the backend re-checks the broker hourly and
 drops the credential on a `401`/`403`).
 
-One-time operator setup: the Supabase project must allowlist
-`http://127.0.0.1:46124/callback` under **Auth → URL Configuration → Redirect
-URLs**. Your GitHub account must be in the allow-listed org (org membership is
-the invite).
+One-time operator setup: the Supabase project must allowlist **both** sign-in
+return URLs under **Auth → URL Configuration → Redirect URLs**:
+
+| URL | Used by |
+| --- | --- |
+| `http://127.0.0.1:46124/callback` | `worldmonitor-local login` (the CLI's loopback flow) |
+| `http://localhost:46123/dashboard.html?embed=vscode` | the sign-in button inside the VS Code panel (the iframe is served from `localhost`, not the bare IP) |
+
+Your GitHub account must be on the deployment's allow-list (or in its
+allow-listed org) — that is the invite.
 
 Then either open **`http://127.0.0.1:46123/`** in a browser, or, in VS Code,
 run **WorldMonitor: Open Local Dashboard**.
@@ -139,6 +145,9 @@ why it's safe.
 | Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
 | "Brief service unavailable" | You haven't signed in, or the session expired — run `worldmonitor-local login` again. |
 | Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
-| `login` fails after GitHub consent | Your account isn't in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
+| `login` fails after GitHub consent | Your account isn't on the allow-list / in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
+| Sign-in inside VS Code bounces back logged out | `http://localhost:46123/dashboard.html?embed=vscode` isn't allowlisted in Supabase (see above). |
+| Error ends "…sign-up attempt" / "…not on this deployment's allow-list" | That text comes from the `worldmonitor-org-gate` Auth Hook, not the local bundle: the first means the hook payload carried no GitHub login (a gate bug — fixed 2026-09-19, redeploy the function); the second means your GitHub login isn't on `GITHUB_ALLOWED_LOGINS`. |
 | Windows: `status` shows `task Ready` but `backend DOWN` | The task ran but node exited — check `%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |
+| Windows: `install` says "Access is denied" (拒绝访问) | Registering with a bundle older than v2.13.1 needed admin rights (the task XML lacked `<UserId>`); upgrade. |
 | Bootstrap can't reach nodejs.org / GitHub | Use the offline vars (`WM_NODE_TARBALL` / `WM_APP_TARBALL`) or the manual `setup.sh` path. |

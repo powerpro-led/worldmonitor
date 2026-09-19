@@ -36,6 +36,26 @@ function Say  ($m) { Write-Host "`n$m" -ForegroundColor Cyan }
 function Info ($m) { Write-Host "  $m" }
 function Die  ($m) { Write-Host "`nerror: $m" -ForegroundColor Red; exit 1 }
 
+# Fetch a small text resource as an actual string.
+#
+# NEVER use `(Invoke-WebRequest ...).Content` for this. On Windows PowerShell
+# 5.1 that property is a [string] for a `text/*` response but a [byte[]] for
+# anything else — and GitHub serves release assets as
+# `application/octet-stream`. Splitting a byte[] on whitespace yields "53",
+# the ASCII code of the first character '5', so the bundle checksum compared
+# "53" against the real digest and **every Windows install failed with
+# "bundle checksum mismatch"**. The Node step got away with the same code only
+# because nodejs.org serves SHASUMS256.txt as text/plain.
+#
+# Going through -OutFile removes the content-type dependency entirely, so both
+# callers below are correct regardless of what the server declares.
+# Found on the first real Windows install, 2026-09-19.
+function Get-RemoteText ($url) {
+  $f = Join-Path $tmp ([guid]::NewGuid().ToString('N') + '.txt')
+  Invoke-WebRequest -UseBasicParsing $url -OutFile $f
+  return (Get-Content -Raw $f)
+}
+
 if ([Environment]::Is64BitOperatingSystem) {
   $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 } else { Die '32-bit Windows is not supported.' }
@@ -48,6 +68,22 @@ try {
   Info "platform:  $nodePlat"
   Info "node:      $NodeVersion   ->  $RuntimeDir"
   Info "app:       v$AppVersion   ->  $AppDir"
+
+  # Create the PARENT only. Both install steps below end with
+  # `Move-Item <extracted dir> <RuntimeDir|AppDir>`, and PowerShell's Move-Item
+  # renames source -> destination only when the destination does NOT exist; if
+  # it does exist, the source is moved INSIDE it, which would produce
+  # runtime\node-v22.23.2-win-x64\ rather than runtime\. So the parent must
+  # exist and the two leaf dirs must not — which is why each step removes its
+  # own leaf first and nothing pre-creates them here.
+  #
+  # This line was missing entirely until 2026-09-19. On a machine with no
+  # ~\.worldmonitor yet, the first Move-Item failed with
+  # DirectoryNotFoundException ("Move-Item : 未能找到路径中的某个部分"). The
+  # macOS installer had it right all along (`mkdir -p "$RUNTIME_DIR"` /
+  # `"$APP_DIR"`); this PowerShell mirror never got the equivalent, and it had
+  # never been run on real Windows.
+  New-Item -ItemType Directory -Force -Path $WmDir | Out-Null
 
   # ── 1. Node runtime ──────────────────────────────────────────────────
   $runtimeNode = Join-Path $RuntimeDir 'node.exe'
@@ -63,7 +99,7 @@ try {
       Info "using local $($env:WM_NODE_TARBALL) (checksum skipped)"
     } else {
       Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$NodeVersion/$nodeZip" -OutFile $zipPath
-      $sums = (Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$NodeVersion/SHASUMS256.txt").Content
+      $sums = Get-RemoteText "https://nodejs.org/dist/$NodeVersion/SHASUMS256.txt"
       $want = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($nodeZip) + '$' })
       if (-not $want) { Die "no SHASUMS entry for $nodeZip" }
       $want = ($want -split '\s+')[0].ToLower()
@@ -91,7 +127,7 @@ try {
   } else {
     $base = "https://github.com/$GhRepo/releases/download/v$AppVersion"
     Invoke-WebRequest -UseBasicParsing "$base/$appZip" -OutFile $appZipPath
-    $wantLine = (Invoke-WebRequest -UseBasicParsing "$base/$appZip.sha256").Content
+    $wantLine = Get-RemoteText "$base/$appZip.sha256"
     $want = ($wantLine -split '\s+')[0].ToLower()
     $got = (Get-FileHash $appZipPath -Algorithm SHA256).Hash.ToLower()
     if ($got -ne $want) { Die "bundle checksum mismatch" }
@@ -112,10 +148,32 @@ try {
   if ($savedEnv) { Copy-Item $savedEnv (Join-Path $AppDir '.env') -Force }
 
   # ── 3. hand off to the in-bundle setup ────────────────────────────
+  #
+  # NOT `.\setup.ps1` directly. This installer reaches the machine through
+  # `irm ... | iex`, so it is never a file and ExecutionPolicy never applies to
+  # it. setup.ps1 IS a file, extracted from a downloaded zip, so it is subject
+  # to both ExecutionPolicy (default `Restricted` on Windows client SKUs — it
+  # would fail with "running scripts is disabled on this system") and
+  # Mark-of-the-Web. Hence: unblock the extracted .ps1 files, then run setup in
+  # a child process with -ExecutionPolicy Bypass.
+  #
+  # NOT NEEDED on the one machine actually tested, and kept anyway. The
+  # 2026-09-19 Windows 11 install reported ExecutionPolicy
+  # LocalMachine=RemoteSigned and `.\setup.ps1` ran fine unaided — PS 5.1's
+  # Invoke-WebRequest does not attach Mark-of-the-Web to what it downloads, so
+  # Unblock-File is a no-op there and RemoteSigned lets an unmarked local
+  # script run. This stays for the machines that are NOT that one: `Restricted`
+  # is the client-SKU default, and a bundle fetched by any other means (a
+  # browser, curl, a file share) does carry MOTW. Harmless where it is
+  # unnecessary; the difference between working and not where it is.
   Say "Running setup..."
+  Get-ChildItem -Path $AppDir -Filter *.ps1 -Recurse | Unblock-File -ErrorAction SilentlyContinue
   Push-Location $AppDir
   try {
-    if ($Config) { .\setup.ps1 -Config $Config } else { .\setup.ps1 }
+    $setupArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '.\setup.ps1')
+    if ($Config) { $setupArgs += @('-Config', $Config) }
+    & powershell.exe @setupArgs
+    if ($LASTEXITCODE -ne 0) { Die "setup.ps1 exited with code $LASTEXITCODE" }
   } finally { Pop-Location }
 
   Say "Installed."

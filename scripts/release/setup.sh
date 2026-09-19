@@ -92,6 +92,11 @@ elif [ -n "$ORG_ENV" ]; then
   info "wrote $SCRIPT_DIR/.env (0600)"
 else
   say "Configuring .env"
+  # Same guard as setup.ps1: with no terminal on stdin, `read` fails with an
+  # opaque EOF instead of saying what was missing.
+  if [ ! -t 0 ]; then
+    die "no org.env found and no interactive terminal to prompt on. Pass --config <org.env>, set WM_ORG_ENV, or drop org.env next to this script."
+  fi
   info "No org.env found (drop one next to this script, or pass --config)."
   info "Two values are required (your org's Supabase project)."
   info "The rest are optional — press Enter to skip."
@@ -185,8 +190,10 @@ cat <<EOF
 
   Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login
-     One-time operator setup: allowlist  http://127.0.0.1:46124/callback
-     under the Supabase project's Auth → URL Configuration → Redirect URLs.
+     One-time operator setup — allowlist BOTH of these under the Supabase
+     project's Auth → URL Configuration → Redirect URLs:
+       http://127.0.0.1:46124/callback                      (this CLI login)
+       http://localhost:46123/dashboard.html?embed=vscode   (sign-in inside VS Code)
 
   Then in VS Code run:  WorldMonitor: Open Local Dashboard
 

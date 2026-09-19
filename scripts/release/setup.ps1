@@ -84,6 +84,13 @@ if (Test-Path .env) {
   Set-Content -Path .env -Value $out -Encoding utf8
   Info "wrote $ScriptDir\.env"
 } else {
+  # Read-Host throws (rather than prompts) when there is no interactive console
+  # — a CI runner, a headless SSH session, `... | powershell -File` — and the
+  # resulting "Cannot read input" stack is much less useful than saying what
+  # was actually missing. Reported on the first real Windows install, 2026-09-19.
+  if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
+    Die "no org.env found and no interactive console to prompt on. Pass -Config <org.env>, set `$env:WM_ORG_ENV, or drop org.env next to this script."
+  }
   Say "Configuring .env"
   Info "No org.env found (drop one next to this script, or pass -Config)."
   Info "Two values are required (your org's Supabase project)."
@@ -171,8 +178,10 @@ Say "Done."
 
   Sign in (for your personalised Latest Brief):
        node scripts/worldmonitor-local.mjs login
-     One-time operator setup: allowlist  http://127.0.0.1:46124/callback
-     under the Supabase project's Auth -> URL Configuration -> Redirect URLs.
+     One-time operator setup -- allowlist BOTH of these under the Supabase
+     project's Auth -> URL Configuration -> Redirect URLs:
+       http://127.0.0.1:46124/callback                      (this CLI login)
+       http://localhost:46123/dashboard.html?embed=vscode   (sign-in inside VS Code)
 
   Then in VS Code run:  WorldMonitor: Open Local Dashboard
 

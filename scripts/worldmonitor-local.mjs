@@ -216,12 +216,47 @@ function bootstrap() {
 // launches a .cmd wrapper with a hidden window (window style 0), the .cmd sets
 // the same env the launchd plist does and runs the backend, appending stdout +
 // stderr to LOG. RestartOnFailure in the XML approximates launchd's KeepAlive.
+//
+// Console tools on Windows (schtasks, netstat, chcp) write in the console's
+// OEM code page, NOT UTF-8 — on a Chinese-locale machine that is GBK (936),
+// and decoding it as 'utf-8' turns "错误: 拒绝访问。" into a row of '?'s (found
+// on the first real Windows install, 2026-09-19: the operator could not read
+// why registration failed). Capture as bytes and decode with the code page
+// `chcp` reports; anything we can't name falls back to utf-8, which is
+// ASCII-transparent and therefore fine for every English-locale message.
+const WIN_CODE_PAGE_LABELS = {
+  936: 'gbk', 950: 'big5', 932: 'shift_jis', 949: 'euc-kr',
+  1250: 'windows-1250', 1251: 'windows-1251', 1252: 'windows-1252',
+  1253: 'windows-1253', 1254: 'windows-1254', 1255: 'windows-1255',
+  1256: 'windows-1256', 1257: 'windows-1257', 1258: 'windows-1258',
+  65001: 'utf-8',
+};
+let winConsoleDecoder = null;
+function winConsoleText(buf) {
+  if (!buf || buf.length === 0) return '';
+  if (!winConsoleDecoder) {
+    let label = 'utf-8';
+    try {
+      // "Active code page: 936" / "活动代码页: 936" — only the trailing number
+      // matters, and latin1 can't mangle digits.
+      const out = execFileSync('cmd', ['/c', 'chcp'], { encoding: 'latin1', stdio: ['ignore', 'pipe', 'ignore'] });
+      const cp = Number((out.match(/(\d+)\s*$/) || [])[1]);
+      label = WIN_CODE_PAGE_LABELS[cp] || label;
+    } catch { /* no console — utf-8 */ }
+    try { winConsoleDecoder = new TextDecoder(label); } catch { winConsoleDecoder = new TextDecoder('utf-8'); }
+  }
+  return winConsoleDecoder.decode(buf);
+}
+
 function schtasks(args, { check = true } = {}) {
   try {
-    return execFileSync('schtasks', args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return winConsoleText(execFileSync('schtasks', args, { stdio: ['ignore', 'pipe', 'pipe'] }));
   } catch (err) {
-    if (check) throw err;
-    return null;
+    if (!check) return null;
+    // execFileSync's own message embeds stderr utf-8-decoded (the mojibake
+    // above); rebuild it from the raw bytes so the operator sees the real text.
+    const detail = winConsoleText(err?.stderr) || winConsoleText(err?.stdout) || err?.message || String(err);
+    throw new Error(`schtasks ${args.join(' ')} failed:\n${detail.trim()}`);
   }
 }
 
@@ -250,7 +285,20 @@ function winKillPort(port) {
 }
 
 function execFileSyncSafe(cmd, args) {
-  try { return execFileSync(cmd, args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
+  try { return winConsoleText(execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return null; }
+}
+
+function xmlEscape(s) {
+  return String(s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
+}
+
+// The account the task runs as, in the DOMAIN\user form Task Scheduler
+// expects. USERDOMAIN is the machine name for a local account and the AD
+// domain for a domain one; os.userInfo() is the only reliable username source
+// (USERNAME can be missing under some launchers).
+function winTaskUserId() {
+  const domain = process.env.USERDOMAIN || os.hostname();
+  return `${domain}\\${os.userInfo().username}`;
 }
 
 function writeWinTaskFiles(port) {
@@ -278,6 +326,15 @@ function writeWinTaskFiles(port) {
     '',
   ].join('\r\n');
   // Task Scheduler definition: logon trigger, hidden, restart 3x/1min.
+  //
+  // <UserId> in BOTH the trigger and the principal is what makes this a
+  // per-user task. Without it Task Scheduler reads the LogonTrigger as "at
+  // any user's logon" and the principal as "the registering user's group",
+  // both of which need administrator rights to register — a non-admin
+  // `schtasks /create` fails with "Access is denied" (拒绝访问). Found on
+  // the first real Windows install, 2026-09-19; the header's "no admin
+  // rights" promise was never true until this.
+  const userId = xmlEscape(winTaskUserId());
   const xml = `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -286,10 +343,12 @@ function writeWinTaskFiles(port) {
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
+      <UserId>${userId}</UserId>
     </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
+      <UserId>${userId}</UserId>
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -358,6 +417,38 @@ function describeExpiry(expiresAt) {
   return mins < 60 ? `expires in ${mins}m` : `expires in ${Math.round(mins / 60)}h`;
 }
 
+// ── backend liveness ──────────────────────────────────────────────────────
+async function probeHealth(port) {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/api/sidecar-health`, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) return await resp.json();
+  } catch { /* down */ }
+  return null;
+}
+
+// `install` hands the backend to launchd / Task Scheduler and returns at once,
+// but node takes a few seconds to open the port — long enough that the
+// `status` setup.sh/setup.ps1 run right afterwards reported "backend DOWN" on a
+// perfectly good install (2026-09-19 Windows report). Poll briefly so the
+// install summary, and anything run straight after it, sees the real state.
+async function waitForBackend(port, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const health = await probeHealth(port);
+    if (health) return health;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return null;
+}
+
+function reportBackendAfterInstall(health, port) {
+  if (health) {
+    ok(`  backend:  up   127.0.0.1:${port}  (mode ${health.mode})`);
+  } else {
+    ok(`  backend:  not answering on 127.0.0.1:${port} yet — check ${LOG}, then \`worldmonitor-local status\``);
+  }
+}
+
 // ── commands ─────────────────────────────────────────────────────────────
 async function cmdInstall() {
   requireServiceOS();
@@ -390,9 +481,11 @@ async function cmdInstall() {
     }
     schtasks(['/create', '/tn', WIN_TASK_NAME, '/xml', WIN_TASK_XML, '/f']);
     schtasks(['/run', '/tn', WIN_TASK_NAME], { check: false });
+    const health = await waitForBackend(port);
     ok('');
-    ok(`installed Scheduled Task "${WIN_TASK_NAME}"`);
-    ok(`  backend:  ${nodeBin()} ${SERVER_SCRIPT}`);
+    ok(`installed Scheduled Task "${WIN_TASK_NAME}"  (runs as ${winTaskUserId()})`);
+    reportBackendAfterInstall(health, port);
+    ok(`  command:  ${nodeBin()} ${SERVER_SCRIPT}`);
     ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
     ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);
     ok(`  log:      ${LOG}`);
@@ -413,10 +506,12 @@ async function cmdInstall() {
     return;
   }
   bootstrap();
+  const health = await waitForBackend(port);
 
   ok('');
   ok(`installed ${LABEL}`);
-  ok(`  backend:  ${nodeBin()} ${SERVER_SCRIPT}`);
+  reportBackendAfterInstall(health, port);
+  ok(`  command:  ${nodeBin()} ${SERVER_SCRIPT}`);
   ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
   ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);
   ok(`  log:      ${LOG}`);
@@ -566,11 +661,7 @@ async function cmdStatus() {
   const token = readToken();
   const session = readSession();
 
-  let health = null;
-  try {
-    const resp = await fetch(`http://127.0.0.1:${port}/api/sidecar-health`, { signal: AbortSignal.timeout(2000) });
-    if (resp.ok) health = await resp.json();
-  } catch { /* down */ }
+  const health = await probeHealth(port);
 
   ok(`backend    ${health ? `up   127.0.0.1:${port}  (mode ${health.mode})` : `DOWN 127.0.0.1:${port}`}`);
   const usingRuntime = existsSync(RUNTIME_NODE);
@@ -681,8 +772,9 @@ function usage() {
   config unset <KEY>                     remove one key
   config import <file>                   seed config.db from an org.env / .env
 
-SETUP (one-time, operator): add  http://127.0.0.1:${DEFAULT_CALLBACK_PORT}/callback  to the Supabase
-project's Auth -> URL Configuration -> Redirect URLs, so \`login\`'s loopback is accepted.`);
+SETUP (one-time, operator): add BOTH to the Supabase project's Auth -> URL Configuration -> Redirect URLs:
+  http://127.0.0.1:${DEFAULT_CALLBACK_PORT}/callback                      (this CLI's \`login\` loopback)
+  http://localhost:${DEFAULT_PORT}/dashboard.html?embed=vscode   (the sign-in button inside VS Code)`);
 }
 
 const commands = {

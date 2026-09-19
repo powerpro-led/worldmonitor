@@ -49,17 +49,36 @@ name: Deploy Org (reusable)
 #                               writes both from this one value, which is why
 #                               it lives here rather than being generated at
 #                               deploy time.
-#   GITHUB_ALLOWED_LOGINS     — comma-separated GitHub logins allowed to sign
-#                               up. **This is the mode in use today**, because
-#                               `powerpro-led` is a personal User account, not
-#                               an org (see the function's header).
-#   GITHUB_ALLOWED_ORG, GITHUB_ORG_READ_TOKEN — the alternative mode: real
-#                               GitHub org membership, checked with a
-#                               server-owned PAT needing only `read:org`.
-#                               Unusable until a real org exists.
+#   WM_INVITE_ALLOWED_LOGINS  — comma-separated GitHub logins allowed to sign
+#                               up. Needs no org and no PAT; the fallback when
+#                               there is no organization to point at.
+#   WM_INVITE_ALLOWED_ORG, WM_INVITE_ORG_READ_TOKEN — GitHub org membership,
+#                               checked with a server-owned PAT needing only
+#                               `read:org`. **The mode in use**: the `biovita`
+#                               org was created 2026-09-19.
+#                               Two constraints that both fail CLOSED, i.e.
+#                               they deny everyone rather than erroring
+#                               visibly, so get them right:
+#                                 * the PAT's owner must themselves be a
+#                                   member of the org — GitHub answers
+#                                   `/orgs/{org}/members/{login}` with a 302
+#                                   for a non-member requester, and the gate
+#                                   treats anything but 204/404 as an
+#                                   operational failure;
+#                                 * the `biovita` org REJECTS fine-grained
+#                                   PATs whose lifetime exceeds 366 days
+#                                   (403, verified 2026-09-19 — this is an
+#                                   org policy, not a GitHub-wide rule). Mint
+#                                   the token with a lifetime under that, or
+#                                   use a classic PAT.
+# NOTE these three are GH Actions secret names, deliberately NOT prefixed
+# `GITHUB_`: GitHub rejects any secret whose name starts with `GITHUB_` with a
+# 422. The function's own Deno env vars are still GITHUB_ALLOWED_ORG /
+# GITHUB_ORG_READ_TOKEN / GITHUB_ALLOWED_LOGINS — the mapping happens in the
+# "Enable the invite gate" step.
 #   Absent entirely: the gate stays OPEN and the run warns. It never
 #   half-configures — see the "invite gate" steps below for why that matters.
-#   Neither GITHUB_ALLOWED_LOGINS nor GITHUB_ALLOWED_ORG is actually secret;
+#   Neither WM_INVITE_ALLOWED_LOGINS nor WM_INVITE_ALLOWED_ORG is actually secret;
 #   they sit in the Environment only because this workflow's `vars.*` resolve
 #   against THIS repo, not the per-org caller. Both belong in
 #   org-provisioning's `orgs/<org>.yml` registry as inputs, like `domains`
@@ -301,9 +320,9 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           HOOK_SECRET: ${{ secrets.BEFORE_USER_CREATED_HOOK_SECRET }}
-          ALLOWED_LOGINS: ${{ secrets.GITHUB_ALLOWED_LOGINS }}
-          ALLOWED_ORG: ${{ secrets.GITHUB_ALLOWED_ORG }}
-          ORG_READ_TOKEN: ${{ secrets.GITHUB_ORG_READ_TOKEN }}
+          ALLOWED_LOGINS: ${{ secrets.WM_INVITE_ALLOWED_LOGINS }}
+          ALLOWED_ORG: ${{ secrets.WM_INVITE_ALLOWED_ORG }}
+          ORG_READ_TOKEN: ${{ secrets.WM_INVITE_ORG_READ_TOKEN }}
           PROJECT_REF: ${{ inputs.supabase_project_ref }}
         run: |
           set -euo pipefail
@@ -322,7 +341,7 @@ jobs:
           [ -n "${ALLOWED_LOGINS:-}" ] && have_mode=1
           [ -n "${ALLOWED_ORG:-}" ] && [ -n "${ORG_READ_TOKEN:-}" ] && have_mode=1
           if [ -z "${HOOK_SECRET:-}" ] || [ "$have_mode" -eq 0 ]; then
-            echo "::warning title=Invite gate NOT enabled::Needs BEFORE_USER_CREATED_HOOK_SECRET plus either GITHUB_ALLOWED_LOGINS or both GITHUB_ALLOWED_ORG and GITHUB_ORG_READ_TOKEN. Sign-up for this org stays OPEN to any GitHub account. The auth config was left untouched; set them and re-run."
+            echo "::warning title=Invite gate NOT enabled::Needs BEFORE_USER_CREATED_HOOK_SECRET plus either WM_INVITE_ALLOWED_LOGINS or both WM_INVITE_ALLOWED_ORG and WM_INVITE_ORG_READ_TOKEN. Sign-up for this org stays OPEN to any GitHub account. The auth config was left untouched; set them and re-run."
             exit 0
           fi
 

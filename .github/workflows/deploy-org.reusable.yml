@@ -42,6 +42,28 @@ name: Deploy Org (reusable)
 #                               secrets (P4); the 3rd (the org's app domain)
 #                               now comes from `inputs.domains[0]`, not a
 #                               secret — see the "domains remap" note below.
+#   BEFORE_USER_CREATED_HOOK_SECRET — the invite gate's signing secret, added
+#                               2026-09-19. Format `v1,whsec_<base64>`. Must
+#                               be the SAME string in the function's env and
+#                               in the project's auth config; the deploy
+#                               writes both from this one value, which is why
+#                               it lives here rather than being generated at
+#                               deploy time.
+#   GITHUB_ALLOWED_LOGINS     — comma-separated GitHub logins allowed to sign
+#                               up. **This is the mode in use today**, because
+#                               `powerpro-led` is a personal User account, not
+#                               an org (see the function's header).
+#   GITHUB_ALLOWED_ORG, GITHUB_ORG_READ_TOKEN — the alternative mode: real
+#                               GitHub org membership, checked with a
+#                               server-owned PAT needing only `read:org`.
+#                               Unusable until a real org exists.
+#   Absent entirely: the gate stays OPEN and the run warns. It never
+#   half-configures — see the "invite gate" steps below for why that matters.
+#   Neither GITHUB_ALLOWED_LOGINS nor GITHUB_ALLOWED_ORG is actually secret;
+#   they sit in the Environment only because this workflow's `vars.*` resolve
+#   against THIS repo, not the per-org caller. Both belong in
+#   org-provisioning's `orgs/<org>.yml` registry as inputs, like `domains`
+#   and `variant`.
 #   GCP_CREDENTIALS           — service account JSON scoped to that org's GCP project.
 #   PULUMI_ACCESS_TOKEN       — Nitric's GCP provider deploys via Pulumi.
 #   WM_SESSION_SECRET         — this deploy's own session signing secret.
@@ -251,6 +273,97 @@ jobs:
             WM_UPSTASH_REST_URL="${{ secrets.WM_UPSTASH_REST_URL }}" \
             WM_UPSTASH_READONLY_TOKEN="${{ secrets.WM_UPSTASH_READONLY_TOKEN }}" \
             WM_APP_DOMAIN="${{ steps.domain.outputs.value }}"
+
+      # ── The invite gate ────────────────────────────────────────────────
+      #
+      # `worldmonitor-org-gate` is the before-user-created Auth Hook that
+      # restricts sign-up to members of one GitHub org. INSTALL.md,
+      # vscode-extension/README.md and src/services/auth-provider.ts all
+      # describe it as THE invite gate, and local-config/index.ts's whole
+      # revocation design is built on top of it.
+      #
+      # It was not wired here until 2026-09-19, and the consequence was real:
+      # the function was deployed on biovita and mosiq but
+      # `hook_before_user_created_enabled` was `false` on both, so ANY GitHub
+      # account could sign up and the local-config broker would hand it that
+      # org's Upstash read-only credential. Deploying the function is not the
+      # same as enabling it, and nothing before this step did the second half.
+      - name: Deploy worldmonitor-org-gate
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # --no-verify-jwt: GoTrue calls this hook with a standardwebhooks
+        # signature, never a Supabase JWT. The function verifies that
+        # signature itself and rejects anything unsigned (400), so the
+        # gateway's JWT check would only ever block the caller we want.
+        run: supabase functions deploy worldmonitor-org-gate --no-verify-jwt
+
+      - name: Enable the invite gate
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          HOOK_SECRET: ${{ secrets.BEFORE_USER_CREATED_HOOK_SECRET }}
+          ALLOWED_LOGINS: ${{ secrets.GITHUB_ALLOWED_LOGINS }}
+          ALLOWED_ORG: ${{ secrets.GITHUB_ALLOWED_ORG }}
+          ORG_READ_TOKEN: ${{ secrets.GITHUB_ORG_READ_TOKEN }}
+          PROJECT_REF: ${{ inputs.supabase_project_ref }}
+        run: |
+          set -euo pipefail
+
+          # FAIL-CLOSED FUNCTION, SO GUARD BEFORE ENABLING. The function
+          # denies on any configuration it can't act on, GoTrue turns that
+          # into a refused sign-up, and a before-user-created hook that always
+          # denies locks EVERY new account out of the project. Enabling it
+          # half-configured is strictly worse than leaving the gate open, so
+          # this step refuses instead.
+          #
+          # Two usable modes (see the function's header): an explicit login
+          # allow-list, or real GitHub org membership. At least one, plus the
+          # hook secret.
+          have_mode=0
+          [ -n "${ALLOWED_LOGINS:-}" ] && have_mode=1
+          [ -n "${ALLOWED_ORG:-}" ] && [ -n "${ORG_READ_TOKEN:-}" ] && have_mode=1
+          if [ -z "${HOOK_SECRET:-}" ] || [ "$have_mode" -eq 0 ]; then
+            echo "::warning title=Invite gate NOT enabled::Needs BEFORE_USER_CREATED_HOOK_SECRET plus either GITHUB_ALLOWED_LOGINS or both GITHUB_ALLOWED_ORG and GITHUB_ORG_READ_TOKEN. Sign-up for this org stays OPEN to any GitHub account. The auth config was left untouched; set them and re-run."
+            exit 0
+          fi
+
+          # Only set what's configured — `supabase secrets set X=""` would
+          # store an empty string, and the function treats empty and unset
+          # alike, but an empty GITHUB_ALLOWED_ORG next to a real token would
+          # still read as "org mode half-on" to a human reading the list.
+          set -- BEFORE_USER_CREATED_HOOK_SECRET="$HOOK_SECRET"
+          [ -n "${ALLOWED_LOGINS:-}" ] && set -- "$@" GITHUB_ALLOWED_LOGINS="$ALLOWED_LOGINS"
+          [ -n "${ALLOWED_ORG:-}" ] && set -- "$@" GITHUB_ALLOWED_ORG="$ALLOWED_ORG"
+          [ -n "${ORG_READ_TOKEN:-}" ] && set -- "$@" GITHUB_ORG_READ_TOKEN="$ORG_READ_TOKEN"
+          supabase secrets set "$@"
+
+          # No `supabase` CLI command covers auth hooks - Management API only.
+          # Idempotent: re-running with the same values is a no-op PATCH.
+          body=$(HOOK_SECRET="$HOOK_SECRET" PROJECT_REF="$PROJECT_REF" node -e '
+            process.stdout.write(JSON.stringify({
+              hook_before_user_created_enabled: true,
+              hook_before_user_created_uri:
+                `https://${process.env.PROJECT_REF}.supabase.co/functions/v1/worldmonitor-org-gate`,
+              hook_before_user_created_secrets: process.env.HOOK_SECRET,
+            }));
+          ')
+          code=$(printf '%s' "$body" | curl -sS -o /tmp/authcfg.json -w '%{http_code}' \
+            -X PATCH "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @-)
+          if [ "$code" != "200" ]; then
+            # Deliberately not echoing the response body - this endpoint
+            # returns the project's whole auth config, the GitHub OAuth client
+            # secret included.
+            echo "::error::Enabling the invite gate failed: HTTP $code"
+            exit 1
+          fi
+          if [ -n "${ALLOWED_LOGINS:-}" ]; then
+            echo "Invite gate enabled - allow-list mode."
+          fi
+          if [ -n "${ALLOWED_ORG:-}" ] && [ -n "${ORG_READ_TOKEN:-}" ]; then
+            echo "Invite gate enabled - org-membership mode ('$ALLOWED_ORG')."
+          fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2

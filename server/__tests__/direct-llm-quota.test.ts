@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   DIRECT_LLM_DAILY_QUOTA_LIMIT,
@@ -84,5 +84,36 @@ describe("direct LLM daily quota", () => {
       "/api/chat-analyst",
       ...[...DIRECT_LLM_GATEWAY_QUOTA_PATHS].sort(),
     ]);
+  });
+});
+
+describe("direct LLM daily quota — local bundle", () => {
+  // The counter needs a Redis WRITE the operator machine never holds, so the
+  // local bundle disables the quota unless an operator sets one explicitly.
+  const load = async (env: Record<string, string | undefined>) => {
+    const saved = { LOCAL_API_MODE: process.env.LOCAL_API_MODE, DIRECT_LLM_DAILY_QUOTA_LIMIT: process.env.DIRECT_LLM_DAILY_QUOTA_LIMIT };
+    for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    try {
+      vi.resetModules();
+      return await import("../_shared/direct-llm-quota");
+    } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+  };
+
+  test("LOCAL_API_MODE=tauri-sidecar with no explicit limit -> quota disabled", async () => {
+    const mod = await load({ LOCAL_API_MODE: "tauri-sidecar", DIRECT_LLM_DAILY_QUOTA_LIMIT: undefined });
+    expect(mod.DIRECT_LLM_DAILY_QUOTA_LIMIT).toBe(0);
+    expect(mod.DIRECT_LLM_QUOTA_DISABLED).toBe(true);
+  });
+
+  test("LOCAL_API_MODE=tauri-sidecar with an explicit limit -> that limit is honoured", async () => {
+    const mod = await load({ LOCAL_API_MODE: "tauri-sidecar", DIRECT_LLM_DAILY_QUOTA_LIMIT: "7" });
+    expect(mod.DIRECT_LLM_DAILY_QUOTA_LIMIT).toBe(7);
+  });
+
+  test("cloud (LOCAL_API_MODE unset) keeps the 50 default", async () => {
+    const mod = await load({ LOCAL_API_MODE: undefined, DIRECT_LLM_DAILY_QUOTA_LIMIT: undefined });
+    expect(mod.DIRECT_LLM_DAILY_QUOTA_LIMIT).toBe(50);
   });
 });

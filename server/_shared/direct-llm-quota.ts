@@ -12,10 +12,19 @@ import { DAILY_COUNTER_TTL_SECONDS, secondsUntilUtcMidnight } from './utc-midnig
  *   0 / off / unlimited -> quota disabled entirely (see DIRECT_LLM_QUOTA_DISABLED)
  * A malformed value falls back to 50 rather than to "unlimited", so a typo can
  * never silently uncap spend.
+ *
+ * Local bundle (LOCAL_API_MODE=tauri-sidecar) with the env unset -> 0. The
+ * counter lives in shared Redis and needs a WRITE, which an operator machine
+ * deliberately never holds (read-only token only), so reserveDirectLlmQuota()
+ * could only ever fail there — the WM Analyst panel answered 503 "Direct LLM
+ * quota unavailable" to a signed-in operator using their OWN OpenRouter key
+ * (found 2026-09-19, right behind the "Sign-in or API key required" fix).
+ * There is no shared spend to cap on that machine; an explicit env value is
+ * still honoured for anyone who wants one locally.
  */
 function resolveDirectLlmDailyQuotaLimit(): number {
   const raw = (process.env.DIRECT_LLM_DAILY_QUOTA_LIMIT ?? '').trim().toLowerCase();
-  if (!raw) return 50;
+  if (!raw) return process.env.LOCAL_API_MODE === 'tauri-sidecar' ? 0 : 50;
   if (raw === '0' || raw === 'off' || raw === 'unlimited') return 0;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 50;

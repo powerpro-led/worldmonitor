@@ -170,6 +170,30 @@ describe('api/_rate-limit checkRateLimit fail-open / fail-closed (#3531 M9)', ()
     );
   });
 
+  // Mirrors server/_shared/rate-limit.ts: the local backend only ever holds
+  // the read-only Upstash token, so without this bypass every fail-closed
+  // handler it serves 503s and logs a redis-error per call.
+  it('LOCAL_API_MODE=tauri-sidecar: fail-closed check passes without Upstash and logs nothing', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.LOCAL_API_MODE = 'tauri-sidecar';
+    const mod = await importFreshRateLimitModule();
+
+    const res = await mod.checkRateLimit(makeRequest({}), {}, { failClosed: true });
+    assert.equal(res, null);
+    assert.equal(consoleErrors.length, 0, `expected no rate-limit log, got: ${consoleErrors.join('\n')}`);
+  });
+
+  it('RATE_LIMIT_LOCAL_DEV=1: fail-closed check passes without Upstash', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.RATE_LIMIT_LOCAL_DEV = '1';
+    const mod = await importFreshRateLimitModule();
+
+    const res = await mod.checkRateLimit(makeRequest({}), {}, { failClosed: true });
+    assert.equal(res, null);
+  });
+
   it('custom scoped policy uses the caller-supplied lower limit', async () => {
     const redisBodies = [];
     globalThis.fetch = async (_input, init) => {

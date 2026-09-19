@@ -74,7 +74,7 @@ import type { CotPositioningPanel } from '@/components/CotPositioningPanel';
 import type { LiquidityShiftsPanel } from '@/components/LiquidityShiftsPanel';
 import type { PositioningPanel } from '@/components/PositioningPanel';
 import type { GoldIntelligencePanel } from '@/components/GoldIntelligencePanel';
-import { isDesktopRuntime, waitForSidecarReady } from '@/services/runtime';
+import { isDesktopRuntime, isVsCodeEmbedRuntime, waitForSidecarReady } from '@/services/runtime';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { BETA_MODE } from '@/config/beta';
 import { trackEvent, trackDeeplinkOpened, initAuthAnalytics } from '@/services/analytics';
@@ -1321,7 +1321,17 @@ export class App {
     // wms_-prefixed HMAC token before the first API call. Desktop has its own
     // API key path and doesn't need this; Supabase-authenticated users will pass
     // their JWT in a Bearer header and the interceptor steps aside.
-    if (!isDesktopRuntime()) {
+    //
+    // The VS Code embed is skipped too: it is served by the local backend,
+    // which authenticates every /api/* call with the loopback transport token
+    // its embed shim already attaches (local-api-server.mjs's
+    // buildVsCodeEmbedShim) — the wms_ cookie means nothing there. Left on,
+    // every panel fetch re-minted via POST /api/wm-session, which the local
+    // backend cannot serve (no WM_SESSION_SECRET, no Upstash write token for
+    // the fail-closed limiter): a red 503 per request in the console and a
+    // `[rate-limit] … Upstash Redis is not configured` line per request in
+    // the log, both reading like a login failure (2026-09-19 Windows report).
+    if (!isDesktopRuntime() && !isVsCodeEmbedRuntime()) {
       window.addEventListener(WM_SESSION_DEGRADED_EVENT, this.handleWmSessionDegraded);
       installWmSessionFetchInterceptor();
       await ensureWmSession();

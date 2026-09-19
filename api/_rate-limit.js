@@ -114,7 +114,23 @@ function rateLimitDegradedResponse(corsHeaders) {
  *   and `window` for explicit endpoint budgets while retaining the shared
  *   degraded/429 response semantics. (#3531)
  */
+// Mirrors server/_shared/rate-limit.ts's rateLimitBypassed(): a single
+// operator's own local backend (LOCAL_API_MODE=tauri-sidecar) or a local
+// `nitric start` dev stack (RATE_LIMIT_LOCAL_DEV=1) has no abuse surface to
+// defend and no Upstash WRITE credential to defend it with — the local
+// bundle deliberately holds only the read-only token. This file was the one
+// limiter without that bypass, so every fail-closed api/* handler the local
+// backend serves (api/wm-session.js first) 503'd and logged
+// `[rate-limit] … Upstash Redis is not configured` on every call
+// (2026-09-19 Windows report). Unset in production = unchanged behaviour.
+function rateLimitBypassed() {
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') return true;
+  const raw = (process.env.RATE_LIMIT_LOCAL_DEV ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true';
+}
+
 export async function checkRateLimit(request, corsHeaders, opts = {}) {
+  if (rateLimitBypassed()) return null;
   const policy = getRateLimitPolicy(opts);
   const rl = getRatelimit(policy);
   if (!rl) {

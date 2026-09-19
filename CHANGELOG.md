@@ -4,6 +4,57 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-09-19
+
+Everything the first real Windows install (Win11, Chinese locale, non-admin)
+and the first real operator sign-in surfaced. **Upgrade + re-run the org's
+cloud deploy** — two of the fixes need the deploy (a migration and a deploy
+step), not just the bundle.
+
+### Fixed — install
+
+- **`install.ps1` failed on every fresh Windows machine**, three ways:
+  `%USERPROFILE%\.worldmonitor` was never created (first `Move-Item` died);
+  the release `.sha256` was read as a `byte[]` on PowerShell 5.1 (GitHub
+  serves it as `application/octet-stream`) so every install ended in
+  "bundle checksum mismatch"; and the Scheduled Task XML had no `<UserId>`,
+  which needs administrator rights to register (拒绝访问). All three fixed.
+- `schtasks`/`netstat` output is decoded by the console's code page (Chinese
+  errors no longer render as `????`); `install` waits up to 20 s for the
+  backend before printing, so the `status` right after isn't a false DOWN;
+  `setup.ps1`/`setup.sh` say "pass `-Config`" instead of crashing when run
+  without a terminal and without `org.env`.
+- Docs now list **both** Supabase redirect URLs the operator must allowlist:
+  `http://127.0.0.1:46124/callback` (CLI login) and
+  `http://localhost:46123/dashboard.html?embed=vscode` (sign-in inside VS Code).
+
+### Fixed — sign-in
+
+- **The invite gate (`worldmonitor-org-gate`) denied every GitHub sign-up**
+  with "No GitHub identity found on this sign-up attempt". The
+  before-user-created payload carries `identities: []`; the login is in
+  `user_metadata`. Fixed; the deny branch now logs the payload shape.
+- **Operator bearer tokens looked anonymous everywhere** — WM Analyst said
+  "Sign-in or API key required" to a signed-in operator with their own
+  OpenRouter key. `SUPABASE_JWT_PUBLIC_JWK` was never provided, on the
+  operator machine nor by the cloud deploy. Local backend now verifies via
+  GoTrue; the cloud deploy fetches the project's public ES256 key at deploy
+  time (no new secret).
+
+### Changed — your settings work locally, as you
+
+- **Notifications, alert rules, preferences and followed countries now work
+  in the local bundle** ("Failed to load notification settings" is gone).
+  The backend accesses these per-user rows with the operator's own JWT under
+  row-level security — migration `20260919120000` grants `authenticated` the
+  table access that activates the own-row policies. No service-role key is
+  ever on an operator machine. Notification *delivery* remains the org's
+  cloud pipeline.
+- The VS Code embed no longer mints anonymous `wm-session` tokens (it never
+  needed them); `api/*` rate limits and the direct-LLM daily quota are off in
+  local mode, where there is no shared spend to cap and no Redis write
+  credential to count with. Console/log noise from both is gone.
+
 ## [2.13.0] - 2026-09-07
 
 World Monitor becomes a **multi-tenant platform**. The repo devs operate an

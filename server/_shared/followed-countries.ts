@@ -26,7 +26,7 @@
  * registry.
  */
 
-import { getSupabaseAdmin } from './supabase-admin';
+import { getSupabaseForRequest } from './supabase-admin';
 import { isValidIso2 } from './iso2';
 
 /** Mirrors `convex/constants.ts::MAX_MERGE_INPUT` (ported as-is) — a
@@ -68,9 +68,9 @@ export interface MergeAnonymousLocalResult {
 }
 
 function requireSupabase() {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseForRequest();
   if (!supabase) {
-    throw new FollowedCountriesError('CONFIG', 'Supabase service-role client unconfigured');
+    throw new FollowedCountriesError('CONFIG', 'Supabase client unconfigured (no service-role key and no caller JWT in scope)');
   }
   return supabase;
 }

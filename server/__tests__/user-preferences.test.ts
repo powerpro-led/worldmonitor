@@ -13,6 +13,10 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 const getSupabaseAdmin = vi.fn();
 vi.mock("../_shared/supabase-admin", () => ({
   getSupabaseAdmin: (...a: unknown[]) => getSupabaseAdmin(...a),
+  // The module under test now resolves its client through getSupabaseForRequest
+  // (service-role when configured, else the caller's RLS-scoped client); these
+  // tests exercise the data layer with a stub client either way.
+  getSupabaseForRequest: (...a: unknown[]) => getSupabaseAdmin(...a),
 }));
 
 import {

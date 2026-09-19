@@ -11,6 +11,7 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 const getSupabaseAdmin = vi.fn();
 vi.mock("../_shared/supabase-admin", () => ({
   getSupabaseAdmin: (...a: unknown[]) => getSupabaseAdmin(...a),
+  getSupabaseForRequest: (...a: unknown[]) => getSupabaseAdmin(...a),
 }));
 
 import {

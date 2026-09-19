@@ -22,7 +22,7 @@
  * directly-callable shape).
  */
 
-import { getSupabaseAdmin } from './supabase-admin';
+import { getSupabaseForRequest } from './supabase-admin';
 
 /** Mirrors `convex/constants.ts::CURRENT_PREFS_SCHEMA_VERSION` (ported as-is). */
 export const CURRENT_PREFS_SCHEMA_VERSION = 1;
@@ -54,7 +54,7 @@ export async function getUserPreferences(
   userId: string,
   variant: string,
 ): Promise<CloudPrefsRow | null> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseForRequest();
   if (!supabase) return null;
 
   const { data, error } = await supabase
@@ -96,7 +96,7 @@ export async function setUserPreferences(
     return { ok: false, reason: 'BLOB_TOO_LARGE', size: blobSize, max: MAX_PREFS_BLOB_SIZE };
   }
 
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseForRequest();
   if (!supabase) return { ok: false, reason: 'SERVICE_UNAVAILABLE' };
 
   const { data: rows, error } = await supabase.rpc('set_user_preferences', {

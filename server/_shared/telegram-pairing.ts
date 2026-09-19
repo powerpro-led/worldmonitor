@@ -16,7 +16,7 @@
  * `seed-digest-notifications.mjs`'s existing 30-minute Railway cadence.
  */
 
-import { getSupabaseAdmin } from './supabase-admin';
+import { getSupabaseForRequest } from './supabase-admin';
 
 export type TelegramPairingErrorKind = 'CONFIG' | 'NETWORK';
 
@@ -30,8 +30,8 @@ export class TelegramPairingError extends Error {
 }
 
 function requireSupabase() {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) throw new TelegramPairingError('CONFIG', 'Supabase service-role client unconfigured');
+  const supabase = getSupabaseForRequest();
+  if (!supabase) throw new TelegramPairingError('CONFIG', 'Supabase client unconfigured (no service-role key and no caller JWT in scope)');
   return supabase;
 }
 

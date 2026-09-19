@@ -91,6 +91,78 @@ function extractName(userMetadata: Record<string, unknown> | undefined): string 
   return undefined;
 }
 
+// ---------- Local-bundle fallback: let GoTrue verify the token ----------
+//
+// The downloadable local bundle (LOCAL_API_MODE=tauri-sidecar) configures an
+// operator machine with only the org's Supabase URL + publishable key —
+// SUPABASE_JWT_PUBLIC_JWK is not among the values org.env carries, and the
+// zero-network trade-off above was made for the cloud gateway, not for a
+// backend running on the user's own laptop. Without a key every bearer looked
+// anonymous, so the account-features routes 401'd/503'd there (first real
+// Windows operator, 2026-09-19: "Failed to load notification settings").
+//
+// Here the token is verified by the issuer itself: `GET /auth/v1/user` with
+// the publishable key as `apikey` and the token as bearer. GoTrue checks
+// signature, expiry and audience server-side — correct for ES256 and legacy
+// HS256 projects alike, and it survives key rotation. One network hop per
+// distinct token, memoised briefly so a burst of panel requests from the same
+// session costs one round-trip. Strictly gated on the local mode so the cloud
+// verify path is byte-for-byte unchanged.
+
+function isLocalSidecar(): boolean {
+  return process.env.LOCAL_API_MODE === 'tauri-sidecar';
+}
+
+const GOTRUE_VERIFY_CACHE_TTL_MS = 60_000;
+const GOTRUE_VERIFY_CACHE_MAX = 64;
+const goTrueVerified = new Map<string, { result: SessionResult; expiresAt: number }>();
+
+async function validateViaGoTrue(token: string): Promise<SessionResult> {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const apikey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+  if (!url || !apikey || !token) return { valid: false };
+
+  const now = Date.now();
+  const cached = goTrueVerified.get(token);
+  if (cached && cached.expiresAt > now) return cached.result;
+
+  let result: SessionResult = { valid: false };
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+      headers: { apikey, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      const user = await res.json() as {
+        id?: unknown; email?: unknown; aud?: unknown; user_metadata?: Record<string, unknown>;
+      };
+      if (typeof user.id === 'string' && user.id && (user.aud === undefined || user.aud === SUPABASE_JWT_AUDIENCE)) {
+        result = {
+          valid: true,
+          userId: user.id,
+          orgId: null,
+          role: 'pro',
+          email: typeof user.email === 'string' ? user.email : undefined,
+          name: extractName(user.user_metadata),
+        };
+      }
+    }
+  } catch {
+    // Network/timeout — fail closed, same as an unverifiable signature.
+  }
+
+  // Only successes are memoised: a rejected token is cheap to re-check and a
+  // freshly-minted replacement must not inherit a stale "invalid".
+  if (result.valid) {
+    if (goTrueVerified.size >= GOTRUE_VERIFY_CACHE_MAX) {
+      const oldest = goTrueVerified.keys().next().value;
+      if (oldest !== undefined) goTrueVerified.delete(oldest);
+    }
+    goTrueVerified.set(token, { result, expiresAt: now + GOTRUE_VERIFY_CACHE_TTL_MS });
+  }
+  return result;
+}
+
 /**
  * Validate a Supabase-issued bearer token using local ES256 verification
  * against the project's hardcoded public signing key.
@@ -103,11 +175,14 @@ function extractName(userMetadata: Record<string, unknown> | undefined): string 
  * before-user-created hook, not per-request here.
  *
  * Fails closed: invalid/expired/unverifiable tokens, or an unconfigured/
- * unparseable SUPABASE_JWT_PUBLIC_JWK, return { valid: false }.
+ * unparseable SUPABASE_JWT_PUBLIC_JWK, return { valid: false } — except in
+ * the local bundle, see validateViaGoTrue() below.
  */
 export async function validateBearerToken(token: string): Promise<SessionResult> {
   const publicKey = getPublicKey();
-  if (!publicKey) return { valid: false };
+  if (!publicKey) {
+    return isLocalSidecar() ? validateViaGoTrue(token) : { valid: false };
+  }
 
   try {
     const key = await publicKey;

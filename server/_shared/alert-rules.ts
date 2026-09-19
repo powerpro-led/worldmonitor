@@ -16,7 +16,7 @@
  * countries/tickers shape validation + caps — is pure logic, ported verbatim.
  */
 
-import { getSupabaseAdmin } from './supabase-admin';
+import { getSupabaseForRequest } from './supabase-admin';
 
 export type Sensitivity = 'all' | 'high' | 'critical';
 export type DigestMode = 'realtime' | 'daily' | 'twice_daily' | 'weekly';
@@ -65,8 +65,8 @@ export class AlertRulesError extends Error {
 }
 
 function requireSupabase() {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) throw new AlertRulesError('CONFIG', 'Supabase service-role client unconfigured');
+  const supabase = getSupabaseForRequest();
+  if (!supabase) throw new AlertRulesError('CONFIG', 'Supabase client unconfigured (no service-role key and no caller JWT in scope)');
   return supabase;
 }
 
@@ -214,7 +214,7 @@ function rowToRule(row: RuleRowRaw): AlertRuleWithUser {
   };
 }
 
-type SupabaseAdmin = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
+type SupabaseAdmin = NonNullable<ReturnType<typeof getSupabaseForRequest>>;
 
 async function loadExisting(supabase: SupabaseAdmin, userId: string, variant: string): Promise<RuleRowRaw | null> {
   const { data, error } = await supabase

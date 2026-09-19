@@ -23,7 +23,7 @@
  * row, so there's nothing to negotiate.
  */
 
-import { getSupabaseAdmin } from './supabase-admin';
+import { getSupabaseForRequest } from './supabase-admin';
 
 export type ChannelType = 'telegram' | 'slack' | 'email' | 'discord' | 'webhook' | 'web_push';
 
@@ -59,9 +59,9 @@ export class NotificationChannelsError extends Error {
 }
 
 function requireSupabase() {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseForRequest();
   if (!supabase) {
-    throw new NotificationChannelsError('CONFIG', 'Supabase service-role client unconfigured');
+    throw new NotificationChannelsError('CONFIG', 'Supabase client unconfigured (no service-role key and no caller JWT in scope)');
   }
   return supabase;
 }

@@ -32,6 +32,7 @@ import {
 } from './_idempotency.js';
 import { validateBearerToken } from '../server/auth-session';
 import { checkScopedRateLimit } from '../server/_shared/rate-limit';
+import { runAsUser } from '../server/_shared/supabase-admin';
 import {
   CURRENT_PREFS_SCHEMA_VERSION,
   getUserPreferences,
@@ -86,7 +87,19 @@ function rateLimitHeaders(
   };
 }
 
+// Bearer JWT in scope for the request — lets server/_shared/user-preferences.ts
+// use an RLS-scoped user client where no service-role key exists (the local
+// bundle). See server/_shared/supabase-admin.ts. Validation below is unchanged.
 export default async function handler(
+  req: Request,
+  ctx?: { waitUntil: (p: Promise<unknown>) => void },
+): Promise<Response> {
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return runAsUser(bearer, () => handleRequest(req, ctx));
+}
+
+async function handleRequest(
   req: Request,
   ctx?: { waitUntil: (p: Promise<unknown>) => void },
 ): Promise<Response> {

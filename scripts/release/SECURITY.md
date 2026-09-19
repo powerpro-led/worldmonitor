@@ -19,6 +19,16 @@ number of organisations; each supplies its own `org.env`.
 The installer never prompts for, and `org.env` must never contain, the Upstash
 **full** (read/write) token or any other write credential to shared infrastructure.
 
+## Your own settings need no shared credential either
+
+Preferences, followed countries, notification channels and alert rules are
+per-user rows in the `worldmonitor` schema. The local backend reads and writes
+them **as you**: the publishable key plus the Supabase session JWT you signed
+in with, under row-level security (`user_id = auth.uid()`, enforced by
+Postgres). No service-role key exists on the machine, so there is nothing that
+could read another operator's rows. (Delivering the notifications themselves —
+Telegram, Slack, email — is done by the org's cloud pipeline, not locally.)
+
 ## `/api/health` needs no credentials locally
 
 Under `LOCAL_API_MODE=tauri-sidecar` the health endpoint computes its verdict

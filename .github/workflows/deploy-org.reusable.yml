@@ -402,11 +402,41 @@ jobs:
       # ~26 data-source keys (those come from pipeline_config, see this
       # file's header). APP_DOMAIN + VITE_VARIANT now come from inputs
       # (the vars.* retirement note above), not GH Environment vars.
+      # server/auth-session.ts verifies operator bearer JWTs with the project's
+      # PUBLIC ES256 signing key from SUPABASE_JWT_PUBLIC_JWK — deliberately
+      # with no JWKS fetch at request time. This deploy never set it, so on
+      # every per-org cloud API a signed-in operator's JWT looked anonymous:
+      # chat-analyst 403 "Sign-in or API key required", latest-brief/
+      # notification-channels/user-prefs 401 (found 2026-09-19 while chasing
+      # the same symptom in the local bundle). The key is public material
+      # (`key_ops: ["verify"]`), served by the project itself, so fetch it at
+      # deploy time rather than asking anyone to paste a secret. Fails soft:
+      # a project still on the legacy HS256 secret publishes no keys, and the
+      # bearer routes then stay exactly as (un)usable as before — the warning
+      # says what to turn on.
+      - name: Fetch the Supabase JWT public signing key
+        id: jwk
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: |
+          set -euo pipefail
+          jwk="$(curl -fsS --max-time 20 "${SUPABASE_URL%/}/auth/v1/.well-known/jwks.json" \
+            | jq -c '[.keys[]? | select(.alg == "ES256")] | .[0] // empty')"
+          if [ -z "$jwk" ]; then
+            echo "::warning::${SUPABASE_URL} publishes no ES256 signing key — operator bearer auth on this deploy's API will not work. Supabase dashboard → Project Settings → JWT Signing Keys → rotate to an asymmetric (ES256) key."
+          else
+            echo "found ES256 key kid=$(printf '%s' "$jwk" | jq -r '.kid')"
+          fi
+          # Single-quoted for the .env line below: the JWK is JSON (double
+          # quotes, no single quotes, no spaces from jq -c).
+          echo "value=$jwk" >> "$GITHUB_OUTPUT"
+
       - name: Create org env file
         run: |
           cat > .env <<EOF
           SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_JWT_PUBLIC_JWK='${{ steps.jwk.outputs.value }}'
           VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}

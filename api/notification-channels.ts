@@ -51,6 +51,7 @@ import {
   setQuietHours,
 } from '../server/_shared/alert-rules';
 import { createPairingToken, TelegramPairingError } from '../server/_shared/telegram-pairing';
+import { runAsUser } from '../server/_shared/supabase-admin';
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
@@ -288,7 +289,18 @@ async function handleBackendError(
   return json({ error: 'Operation failed' }, 500, cors);
 }
 
+// The caller's bearer JWT is put in scope for the whole request so the data
+// modules can fall back to an RLS-scoped user client where no service-role
+// key exists (the local bundle) — see server/_shared/supabase-admin.ts. The
+// token is still validated below exactly as before; an empty/invalid one
+// puts nothing usable in scope.
 export default async function handler(req: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return runAsUser(bearer, () => handleRequest(req, ctx));
+}
+
+async function handleRequest(req: Request, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<Response> {
   const corsHeaders = getCorsHeaders(req) as Record<string, string>;
 
   if (req.method === 'OPTIONS') {

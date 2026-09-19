@@ -92,18 +92,50 @@ function allow(): Response {
 // established (Supabase's built-in `github` provider vs. the custom OIDC
 // bridge) — check every field GitHub/the bridge might populate rather than
 // assuming one canonical key.
-function extractGithubLogin(identityData: Record<string, unknown> | undefined): string | null {
-  if (!identityData) return null;
-  const candidates = [
-    identityData.user_name,
-    identityData.preferred_username,
-    identityData.login,
-    identityData.name,
-  ];
-  for (const c of candidates) {
+const LOGIN_CLAIM_KEYS = ["user_name", "preferred_username", "login", "name"] as const;
+
+function loginFrom(data: Record<string, unknown> | undefined | null): string | null {
+  if (!data) return null;
+  for (const key of LOGIN_CLAIM_KEYS) {
+    const c = data[key];
     if (typeof c === "string" && c.length > 0) return c;
   }
   return null;
+}
+
+type HookUser = {
+  identities?: Array<{ identity_data?: Record<string, unknown> }>;
+  user_metadata?: Record<string, unknown>;
+  raw_user_meta_data?: Record<string, unknown>;
+  app_metadata?: Record<string, unknown>;
+};
+
+// WHERE THE LOGIN ACTUALLY IS (2026-09-19). This hook fires BEFORE the user
+// row is inserted, and the documented payload carries `"identities": []` —
+// the identity row does not exist yet either. What GoTrue has already built
+// at that point is the user's `user_metadata` (raw_user_meta_data), filled
+// from the provider's claims: `user_name` / `preferred_username` for the
+// built-in `github` provider, `user_name` / `login` / `name` for the
+// custom:github-bridge ID token. Reading identities[0] alone denied every
+// real GitHub sign-up with "No GitHub identity found" — the first Windows
+// operator hit exactly that — while the persisted auth.identities rows
+// (which DO carry user_name, and were what the allow path had been
+// "verified" against) never enter this payload at all. identities[] is
+// still checked first for whichever GoTrue versions do populate it.
+function extractGithubLogin(user: HookUser): string | null {
+  return loginFrom(user.identities?.[0]?.identity_data)
+    ?? loginFrom(user.user_metadata)
+    ?? loginFrom(user.raw_user_meta_data);
+}
+
+// Key names only (never values) so a denied sign-up leaves enough in the
+// function log to see what shape arrived, without logging anyone's email.
+function describeShape(user: HookUser): string {
+  return JSON.stringify({
+    provider: user.app_metadata?.provider ?? null,
+    identities: (user.identities ?? []).map((i) => Object.keys(i.identity_data ?? {})),
+    user_metadata: Object.keys(user.user_metadata ?? {}),
+  });
 }
 
 /**
@@ -143,17 +175,17 @@ Deno.serve(async (req) => {
   const headers = Object.fromEntries(req.headers);
   const wh = new Webhook(secret);
 
-  let user: { identities?: Array<{ identity_data?: Record<string, unknown> }>; app_metadata?: Record<string, unknown> };
+  let user: HookUser;
   try {
-    ({ user } = wh.verify(payload, headers) as { user: typeof user });
+    ({ user } = wh.verify(payload, headers) as { user: HookUser });
   } catch {
     // Signature didn't verify — do not trust this request at all.
     return deny("Invalid hook signature", 400);
   }
 
-  const identityData = user.identities?.[0]?.identity_data;
-  const login = extractGithubLogin(identityData);
+  const login = extractGithubLogin(user);
   if (!login) {
+    console.error(`[worldmonitor-org-gate] no GitHub login in payload; shape=${describeShape(user)}`);
     return deny("No GitHub identity found on this sign-up attempt", 403);
   }
 

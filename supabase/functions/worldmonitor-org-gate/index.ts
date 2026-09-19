@@ -64,10 +64,23 @@ function requiredEnv(key: string): string {
   return value;
 }
 
+// A denial is a SUCCESSFUL hook call that happens to say no, so the response
+// status is 200 and the verdict rides in the body. The `http_code` inside the
+// error object is what GoTrue propagates to the client.
+//
+// The status here is NOT cosmetic, and the Supabase docs are actively
+// misleading about it: their "Block by OAuth Provider" example returns
+// `{ status: 403 }`, and doing exactly that got
+//   {"code":500,"error_code":"unexpected_failure",
+//    "msg":"Unexpected status code returned from hook: 403"}
+// — verified against this project 2026-09-19. The sign-up was still blocked,
+// but the caller saw an opaque 500 instead of the reason, which is
+// indistinguishable from the hook being down. Returning 200 is what actually
+// propagates the message.
 function deny(message: string, httpCode = 403): Response {
   return new Response(
     JSON.stringify({ error: { message, http_code: httpCode } }),
-    { status: httpCode, headers: { "Content-Type": "application/json" } },
+    { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
 

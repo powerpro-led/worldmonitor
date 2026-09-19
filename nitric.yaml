@@ -64,7 +64,9 @@ services:
   # invalidated that: nitric has no per-stack service selection, so EVERY
   # entry here is built and deployed by every stack. Two concrete problems:
   # its runtime aliased gcp/scheduler/node.dockerfile, whose CMD hardcodes
-  # `tsx gcp/scheduler/main.ts` — so the deployed service was a second copy
+  # that image's own entrypoint (then `tsx gcp/scheduler/main.ts`; since
+  # 2026-09-19 the prebuilt `gcp/scheduler/main.bundle.mjs`) — so the
+  # deployed service was a second copy
   # of the scheduler, re-registering every Cloud Scheduler cadence (real
   # duplicate GCP cost and duplicate seed runs). And had the CMD actually
   # pointed at the wrapper, its `for(;;)` + 24h setTimeout would have hung

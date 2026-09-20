@@ -81,7 +81,7 @@ info "app:       v$APP_VERSION   →  $APP_DIR"
 if [ "$("$RUNTIME_DIR/bin/node" -v 2>/dev/null || true)" = "$NODE_VERSION" ]; then
   say "Node $NODE_VERSION already present — skipping download."
 else
-  say "Fetching Node $NODE_VERSION…"
+  say "Fetching Node ${NODE_VERSION}…"
   NODE_TGZ="node-${NODE_VERSION}-${NODE_PLAT}.tar.gz"
   if [ -n "${WM_NODE_TARBALL:-}" ]; then
     [ -f "$WM_NODE_TARBALL" ] || die "WM_NODE_TARBALL not found: $WM_NODE_TARBALL"
@@ -102,7 +102,7 @@ fi
 export PATH="$RUNTIME_DIR/bin:$PATH"
 
 # ── 2. app bundle ────────────────────────────────────────────────────────
-say "Fetching worldmonitor-local v$APP_VERSION…"
+say "Fetching worldmonitor-local v${APP_VERSION}…"
 APP_TGZ="worldmonitor-local-${APP_VERSION}.tar.gz"
 if [ -n "${WM_APP_TARBALL:-}" ]; then
   [ -f "$WM_APP_TARBALL" ] || die "WM_APP_TARBALL not found: $WM_APP_TARBALL"

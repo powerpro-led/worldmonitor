@@ -111,10 +111,23 @@ else
   info "The rest are optional — press Enter to skip."
   echo
 
+  # Neither prompt_* function uses `read -p` for its label — deliberately.
+  # `-p`'s own decision on whether to show its prompt depends on bash's
+  # internal terminal-detection heuristic, and this exact function has
+  # already produced two surprises from that class of thing (the `[ ! -t 0 ]`
+  # stdin guard, then the stdout-capture leak). wmtest's Tier B pass on the
+  # `<&3` version found a third: the fd-3/read mechanism and the required-value
+  # retry loop both genuinely worked, but the `-p` label text itself never
+  # rendered — indistinguishable from a real hang to a first-time user who
+  # doesn't already know it secretly works. Printing the label directly to
+  # fd 3 (the one fd we KNOW is the real tty, opened above) before a bare
+  # `read` sidesteps `-p`'s visibility logic entirely rather than chasing why
+  # it wasn't firing.
   prompt_required() {  # $1 var name, $2 label
     local val=""
     while [ -z "$val" ]; do
-      read -r -p "  $2: " val <&3
+      printf '  %s: ' "$2" >&3
+      read -r val <&3
       # >&2, not stdout: every call site captures this function's output via
       # command substitution ($(prompt_required ...)) to get $val. A plain
       # `echo` on stdout here doesn't just fail to reach the terminal on a
@@ -128,7 +141,8 @@ else
   }
   prompt_optional() {  # $1 label
     local val=""
-    read -r -p "  $1 (optional): " val <&3
+    printf '  %s (optional): ' "$1" >&3
+    read -r val <&3
     printf '%s' "$val"
   }
 

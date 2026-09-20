@@ -115,7 +115,14 @@ else
     local val=""
     while [ -z "$val" ]; do
       read -r -p "  $2: " val <&3
-      [ -z "$val" ] && echo "    (required)"
+      # >&2, not stdout: every call site captures this function's output via
+      # command substitution ($(prompt_required ...)) to get $val. A plain
+      # `echo` on stdout here doesn't just fail to reach the terminal on a
+      # retry — it gets captured INTO the substitution ahead of the final
+      # printf, corrupting the result into a literal multi-line
+      # "    (required)\n<the real value>" string that then gets written to
+      # .env verbatim. Confirmed via an isolated repro before fixing.
+      [ -z "$val" ] && echo "    (required)" >&2
     done
     printf '%s' "$val"
   }

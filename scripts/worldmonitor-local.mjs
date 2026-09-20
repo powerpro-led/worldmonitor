@@ -441,11 +441,11 @@ async function waitForBackend(port, timeoutMs = 20_000) {
   return null;
 }
 
-function reportBackendAfterInstall(health, port) {
+function reportBackendAfterInstall(health, port, retried = false) {
   if (health) {
-    ok(`  backend:  up   127.0.0.1:${port}  (mode ${health.mode})`);
+    ok(`  backend:  up   127.0.0.1:${port}  (mode ${health.mode})${retried ? '  (needed a retry to register — see log if this recurs)' : ''}`);
   } else {
-    ok(`  backend:  not answering on 127.0.0.1:${port} yet — check ${LOG}, then \`worldmonitor-local status\``);
+    ok(`  backend:  STILL not answering on 127.0.0.1:${port}${retried ? ' after a retry' : ''} — check ${LOG}, then run \`worldmonitor-local restart\``);
   }
 }
 
@@ -506,11 +506,27 @@ async function cmdInstall() {
     return;
   }
   bootstrap();
-  const health = await waitForBackend(port);
+  let health = await waitForBackend(port);
+  let retried = false;
+  if (!health) {
+    // launchd occasionally doesn't actually load the job on the very first
+    // bootstrap right after writePlist() just wrote the plist to disk — a
+    // timing race, not a hard failure (`launchctl bootstrap` itself returns
+    // 0, so bootstrap() above didn't throw; `launchctl print` confirms
+    // launchd genuinely has no record of the job, not just a slow-to-answer
+    // one). `restart`'s identical bootout+bootstrap sequence, run manually
+    // afterward, has reliably fixed this every time it's been seen — a
+    // first-time install shouldn't need the operator to already know that.
+    // Self-heal with one retry instead.
+    ok('backend did not answer within 20s — retrying service registration…');
+    retried = true;
+    bootstrap();
+    health = await waitForBackend(port);
+  }
 
   ok('');
   ok(`installed ${LABEL}`);
-  reportBackendAfterInstall(health, port);
+  reportBackendAfterInstall(health, port, retried);
   ok(`  command:  ${nodeBin()} ${SERVER_SCRIPT}`);
   ok(`  port:     127.0.0.1:${port}   (REST for the dashboard, /api/mcp for a local agent)`);
   ok(`  token:    ${TOKEN_FILE}   (fp ${fingerprint(token)})`);

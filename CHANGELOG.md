@@ -4,6 +4,20 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+### Fixed — install
+
+- **`setup.sh`'s org.env prompt could write a corrupted Supabase URL/key**:
+  `prompt_required()`'s empty-input retry message was a plain `echo` on
+  stdout, inside a function whose output every call site captures via
+  `$(prompt_required ...)` — a user who hit Enter blank even once before
+  entering the real value got that retry message captured into the result
+  ahead of it, writing a literal multi-line
+  `"    (required)\n<real value>"` into `.env`. Also likely explains the
+  original "nothing happens when I type the value and hit enter" report —
+  probably never stuck, just silently advancing with the message eaten into
+  the first field. Fixed by sending it to stderr, matching `read -p`'s own
+  prompt. Version bumped ahead of tagging while a fuller Tier B pass runs.
+
 ## [2.13.3] - 2026-09-20
 
 Second release-blocking installer fix found in the same clean-install

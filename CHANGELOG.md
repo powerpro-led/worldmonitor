@@ -4,6 +4,26 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.3] - 2026-09-20
+
+Second release-blocking installer fix found in the same clean-install
+re-test pass, right behind 2.13.2's.
+
+### Fixed — install
+
+- **The org.env setup prompt was unreachable via the documented
+  `curl -fsSL … | sh` one-liner**: `setup.sh`'s interactive-terminal guard
+  checked stdin (`[ ! -t 0 ]`), but under that one-liner stdin IS the curl
+  pipe itself, not the user's terminal — the guard fired, and `read` hit an
+  immediate EOF, for every genuinely new user with no pre-existing
+  `org.env`, regardless of how interactive their real terminal was.
+  `--config`/`$WM_ORG_ENV` were the only way past it, and both need
+  org-specific values a first-timer doesn't have yet. Fixed with the
+  standard fix for this exact pattern: prompts now read from `/dev/tty`
+  (the controlling terminal, independent of stdin) instead of stdin.
+  `setup.ps1`/Windows was unaffected — `irm | iex` doesn't redirect the
+  console's stdin the way `| sh` does.
+
 ## [2.13.2] - 2026-09-20
 
 Release-blocking installer fix, plus a local-dev VS Code sign-in fix found

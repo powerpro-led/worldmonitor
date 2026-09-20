@@ -1715,6 +1715,29 @@ function buildVsCodeEmbedShim(localToken) {
  * normally-built dist/). Empty string when nothing is configured, so a
  * conventionally-built dist/ with baked env is unaffected.
  */
+/**
+ * Origin of the one shared ngrok tunnel this dev machine reuses for every
+ * local public-HTTPS need (free-tier account, one reserved domain — see
+ * DISCORD_REDIRECT_URI's own comment in .env). When the currently-configured
+ * Supabase project is a LOCAL stack (`[switched-to-local-supabase]` in .env),
+ * its `custom:github-bridge` OIDC provider's issuer lives behind this same
+ * tunnel (a standalone bridge process, not a Supabase-hosted Edge Function
+ * origin) — the VS Code extension's wrapper CSP needs to trust it too, or
+ * GitHub sign-in's OAuth redirect gets blocked mid-flight. Derived from
+ * DISCORD_REDIRECT_URI rather than a dedicated var: same tunnel, one fewer
+ * thing to keep in sync. Returns null when unset (production/cloud-only
+ * setups never need this).
+ */
+function getOauthTunnelOrigin() {
+  const uri = process.env.DISCORD_REDIRECT_URI;
+  if (!uri) return null;
+  try {
+    return new URL(uri).origin;
+  } catch {
+    return null;
+  }
+}
+
 function buildRuntimeConfigShim() {
   const cfg = {};
   const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -1801,7 +1824,7 @@ async function dispatch(requestUrl, req, routes, context) {
   // routing (and, when reached via nginx /api/, that the whole request path
   // works end-to-end). Does not touch cloud, Redis, or any data source.
   if (requestUrl.pathname === '/api/sidecar-health') {
-    return json({ status: 'ok', mode: context.mode, port: context.port });
+    return json({ status: 'ok', mode: context.mode, port: context.port, oauthTunnelOrigin: getOauthTunnelOrigin() });
   }
 
   // Health check — exempt from auth to support external monitoring tools

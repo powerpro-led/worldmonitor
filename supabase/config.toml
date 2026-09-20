@@ -2,3 +2,18 @@ project_id = "org-provisioning"
 
 [api]
 port = 54321
+
+# Mirrors the cloud "biovita" project's own Redirect URL allow-list entry
+# (added there via the Dashboard — see memory local-pipeline-vscode-dagu-plan.md
+# Part 4 step 5) so the VS Code embed's GitHub sign-in
+# (completeVsCodeGithubSignIn() in src/services/auth-provider.ts, redirectTo
+# `${origin}${pathname}?embed=vscode`) works against this local stack too,
+# without GoTrue silently falling back to site_url for an unrecognized
+# redirectTo. DEFAULT_LOCAL_API_PORT (src/services/runtime.ts) is a fixed
+# constant, 46123, not randomized per session.
+[auth]
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = [
+  "http://127.0.0.1:46123/dashboard.html**",
+  "http://localhost:46123/dashboard.html**",
+]

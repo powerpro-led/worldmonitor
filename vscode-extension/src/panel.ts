@@ -3,12 +3,16 @@ import { randomBytes } from 'node:crypto';
 import { BackendClient, BackendUnreachableError } from './backendClient';
 
 /**
- * This fork's own Supabase project (VITE_SUPABASE_URL in .env.local) — the
- * backend for src/services/auth-provider.ts's GitHub sign-in. Needed here
- * only so the wrapper's CSP can allow the dashboard iframe to navigate
- * through it during the GitHub sign-in OAuth redirect chain (see
- * handleGithubSignIn below). Not a secret — the same value is already baked
- * into the app's own public build.
+ * This fork's own cloud Supabase project — the backend for
+ * src/services/auth-provider.ts's GitHub sign-in when a plain cloud-hosted
+ * `dist/` build is in play. Needed here only so the wrapper's CSP can allow
+ * the dashboard iframe to navigate through it during the GitHub sign-in
+ * OAuth redirect chain (see handleGithubSignIn below). Not a secret — the
+ * same value is already baked into the app's own public build. Kept as a
+ * fallback alongside the backend-reported origin below (extraFrameOrigin)
+ * rather than replaced by it: a sidecar too old to serve
+ * oauthTunnelOrigin/supabaseOrigin (pre-2026-09-20) must not lose GitHub
+ * sign-in entirely.
  */
 const SUPABASE_ORIGIN = 'https://ixuezudybhjptisexgxx.supabase.co';
 
@@ -23,8 +27,18 @@ const SUPABASE_ORIGIN = 'https://ixuezudybhjptisexgxx.supabase.co';
  * origin (the GitHub sign-in redirect chain re-navigates that SAME iframe
  * through Supabase mid-flight) — frame-src governs every navigation of a
  * frame, not just its initial src.
+ *
+ * `extraOrigin` is fetched fresh from the sidecar's own /api/sidecar-health
+ * at connect time (see createOrShow) — never hardcoded here. When the
+ * operator's .env points the sidecar at a LOCAL Supabase stack instead of
+ * the cloud project, that stack's `custom:github-bridge` OIDC provider's
+ * issuer can live behind a separate tunnel origin (a standalone bridge
+ * process, not a Supabase-hosted Edge Function) — without trusting it too,
+ * GitHub sign-in's OAuth redirect gets silently blocked mid-flight.
  */
-function buildCsp(nonce: string): string {
+function buildCsp(nonce: string, extraOrigin: string | null): string {
+  const frameSrc = [`http://127.0.0.1:*`, `http://localhost:*`, SUPABASE_ORIGIN];
+  if (extraOrigin && !frameSrc.includes(extraOrigin)) frameSrc.push(extraOrigin);
   return [
     `default-src 'self'`,
     `script-src 'nonce-${nonce}'`,
@@ -32,7 +46,7 @@ function buildCsp(nonce: string): string {
     // Both loopback forms allowed: the iframe navigates via 'localhost'
     // (see sidecarProcess.ts's baseUrl for why), but 127.0.0.1 stays
     // allowlisted too since nothing depends on excluding it.
-    `frame-src http://127.0.0.1:* http://localhost:* ${SUPABASE_ORIGIN}`,
+    `frame-src ${frameSrc.join(' ')}`,
   ].join('; ');
 }
 
@@ -40,6 +54,7 @@ export class DashboardPanel {
   private static current: DashboardPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  private extraFrameOrigin: string | null = null;
 
   /** For the standalone Command Palette entry (worldmonitorLocal.signInWithGithub) —
    * same flow the dashboard's own Login button triggers via postMessage. */
@@ -87,6 +102,7 @@ export class DashboardPanel {
 
     try {
       await instance.connect();
+      await instance.fetchExtraFrameOrigin();
       backend.log('[panel] backend reachable, rendering dashboard');
       instance.render();
     } catch (err) {
@@ -127,6 +143,26 @@ export class DashboardPanel {
           await this.backend.ensureReachable(15_000);
         },
       );
+    }
+  }
+
+  /**
+   * Best-effort — never blocks opening the panel. A sidecar that can't
+   * answer (old version predating oauthTunnelOrigin, or a transient hiccup
+   * right after connect() already proved it reachable) just means
+   * buildCsp() falls back to the hardcoded cloud SUPABASE_ORIGIN only, same
+   * as before this field existed.
+   */
+  private async fetchExtraFrameOrigin(): Promise<void> {
+    try {
+      const resp = await fetch(`${this.backend.baseUrl}/api/sidecar-health`, { signal: AbortSignal.timeout(2000) });
+      if (!resp.ok) return;
+      const body = (await resp.json()) as { oauthTunnelOrigin?: string | null };
+      if (typeof body.oauthTunnelOrigin === 'string' && body.oauthTunnelOrigin) {
+        this.extraFrameOrigin = body.oauthTunnelOrigin;
+      }
+    } catch {
+      // Non-fatal — see doc comment above.
     }
   }
 
@@ -237,7 +273,7 @@ export class DashboardPanel {
    */
   private render(): void {
     const nonce = randomBytes(16).toString('base64');
-    const csp = buildCsp(nonce);
+    const csp = buildCsp(nonce, this.extraFrameOrigin);
     const src = `${this.backend.baseUrl}/dashboard.html?embed=vscode`;
     this.panel.webview.html = `<!DOCTYPE html><html><head>
       <meta http-equiv="Content-Security-Policy" content="${csp}">

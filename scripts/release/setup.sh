@@ -92,10 +92,19 @@ elif [ -n "$ORG_ENV" ]; then
   info "wrote $SCRIPT_DIR/.env (0600)"
 else
   say "Configuring .env"
-  # Same guard as setup.ps1: with no terminal on stdin, `read` fails with an
-  # opaque EOF instead of saying what was missing.
-  if [ ! -t 0 ]; then
-    die "no org.env found and no interactive terminal to prompt on. Pass --config <org.env>, set WM_ORG_ENV, or drop org.env next to this script."
+  # Deliberately checks/reads /dev/tty, NOT stdin. Under the documented
+  # one-liner (`curl -fsSL <release>/install | sh`), stdin IS the curl pipe
+  # feeding the script itself — `[ ! -t 0 ]` is true and any `read` on stdin
+  # hits an immediate EOF regardless of whether the user's real terminal is
+  # interactive, making this prompt permanently unreachable via the
+  # documented install path, not just in edge cases (found 2026-09-20 via a
+  # genuinely clean wmtest re-test of v2.13.2). /dev/tty is the controlling
+  # terminal regardless of stdin redirection — the standard fix for exactly
+  # this curl-pipe-to-shell pattern. fd 3 opened read-write (not read-only):
+  # some platforms' /dev/tty rejects a plain read-only open from a script
+  # whose stdin isn't itself the tty.
+  if ! exec 3<>/dev/tty 2>/dev/null; then
+    die "no org.env found and no interactive terminal to prompt on. Pass --config <org.env>, set WM_ORG_ENV, or drop org.env (see org.env.example — needs VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY) next to this script."
   fi
   info "No org.env found (drop one next to this script, or pass --config)."
   info "Two values are required (your org's Supabase project)."
@@ -105,14 +114,14 @@ else
   prompt_required() {  # $1 var name, $2 label
     local val=""
     while [ -z "$val" ]; do
-      read -r -p "  $2: " val
+      read -r -p "  $2: " val <&3
       [ -z "$val" ] && echo "    (required)"
     done
     printf '%s' "$val"
   }
   prompt_optional() {  # $1 label
     local val=""
-    read -r -p "  $1 (optional): " val
+    read -r -p "  $1 (optional): " val <&3
     printf '%s' "$val"
   }
 
@@ -142,6 +151,7 @@ else
   } > .env
   chmod 600 .env
   info "wrote $SCRIPT_DIR/.env (0600)"
+  exec 3<&-
 fi
 
 # ── 2b. seed ~/.worldmonitor/config.db ───────────────────────────────

@@ -4,6 +4,34 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.2] - 2026-09-20
+
+Release-blocking installer fix, plus a local-dev VS Code sign-in fix found
+while rehearsing against a local Supabase stack.
+
+### Fixed — install
+
+- **`install` crashed on every fresh macOS/Linux install under a UTF-8
+  locale** (the default for macOS Terminal): two `$VAR` expansions
+  immediately followed by a literal ellipsis (`$NODE_VERSION…`,
+  `$APP_VERSION…`) with no brace delimiter got their non-ASCII byte absorbed
+  into the variable name, and `set -euo pipefail` aborted on the
+  now-undefined name before anything installed. Invisible on an upgrade
+  (the prior `app/` stayed in place after the abort) and invisible under
+  C-locale CI — only a genuinely clean install exposed it. Both expansions
+  now braced.
+
+### Fixed — local dev
+
+- VS Code's GitHub sign-in could blank the dashboard webview (an ngrok
+  `frame-src` CSP violation) when the local backend's `.env` pointed at a
+  local Supabase stack instead of the cloud project: a stale sidecar-process
+  env cache, a missing GoTrue redirect-URL allow-list entry, and the
+  extension's CSP not knowing a local stack's custom OIDC bridge issuer can
+  live behind a separate tunnel origin. Fixed without hardcoding — the
+  sidecar now reports its own configured tunnel origin and the extension
+  trusts it dynamically.
+
 ## [2.13.1] - 2026-09-19
 
 Everything the first real Windows install (Win11, Chinese locale, non-admin)

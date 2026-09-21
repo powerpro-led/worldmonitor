@@ -402,7 +402,20 @@ function supabaseConfig() {
 
 function openBrowser(url) {
   try {
-    if (IS_WIN) execFileSync('cmd', ['/c', 'start', '', url], { stdio: 'ignore' });
+    // `cmd /c start` was the prior approach — DON'T revert to it. cmd.exe
+    // re-parses everything after /c with its OWN command-line rules, even
+    // though execFileSync passes `url` as one already-separate argv entry:
+    // an OAuth authorize URL's `&` between query params gets read as cmd's
+    // command separator, silently truncating the URL at the first `&`
+    // (dropping redirect_to/scopes — GoTrue then falls back to Site URL,
+    // leaking the token in a fragment to whatever that points at) and
+    // executing whatever followed as further commands — a real command-
+    // injection surface, not just a broken login (found + minimally
+    // reproduced live on real Windows hardware, 2026-09-20/21).
+    // rundll32 isn't a shell: it hands its argv straight to the registered
+    // URL protocol handler with no re-parsing. `open`/`xdg-open` were
+    // already safe (macOS/Linux don't route through a shell for this).
+    if (IS_WIN) execFileSync('rundll32', ['url.dll,FileProtocolHandler', url], { stdio: 'ignore' });
     else if (IS_MAC) execFileSync('open', [url], { stdio: 'ignore' });
     else execFileSync('xdg-open', [url], { stdio: 'ignore' });
   } catch { /* fall back to printed URL */ }
@@ -593,8 +606,20 @@ async function cmdLogin() {
   } catch (e) {
     ok('');
     ok(`GitHub sign-in did not complete: ${e.message}`);
-    ok('If GitHub itself succeeded, your account is likely not in the allow-listed org —');
-    ok('ask the operator for an invite (they add you to the GitHub org).');
+    if (String(e.message).includes('timed out')) {
+      // A timeout this specific — the callback server never got hit at all
+      // — usually means the browser landed somewhere other than this CLI's
+      // own loopback callback: most often the Supabase project's Redirect
+      // URLs allow-list is missing http://127.0.0.1:<callbackPort>/callback
+      // (GoTrue silently falls back to its Site URL instead of erroring).
+      // Found live on a real Windows install, 2026-09-20/21.
+      ok(`Check that http://127.0.0.1:${callbackPort}/callback is in the Supabase`);
+      ok(`project's Auth -> URL Configuration -> Redirect URLs allow-list — if the`);
+      ok(`browser landed somewhere else after GitHub, that's usually why.`);
+    } else {
+      ok('If GitHub itself succeeded, your account is likely not in the allow-listed org —');
+      ok('ask the operator for an invite (they add you to the GitHub org).');
+    }
     process.exit(1);
   }
 

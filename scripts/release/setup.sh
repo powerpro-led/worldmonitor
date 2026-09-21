@@ -219,7 +219,10 @@ cat <<EOF
        $DASHBOARD_URL
   (bookmark it — there's no Desktop launcher; the CLI below covers the rest)
 
-  Sign in (for your personalised Latest Brief):
+  Sign in (for your personalised Latest Brief) and manage the backend — cd
+  here first, your shell isn't already sitting in this directory just
+  because the installer's subshell was:
+       cd $SCRIPT_DIR
        node scripts/worldmonitor-local.mjs login
      One-time operator setup — allowlist BOTH of these under the Supabase
      project's Auth → URL Configuration → Redirect URLs:
@@ -228,7 +231,7 @@ cat <<EOF
 
   Then in VS Code run:  WorldMonitor: Open Local Dashboard
 
-  Manage the backend:
+  Manage the backend (from $SCRIPT_DIR):
      node scripts/worldmonitor-local.mjs status     # health at a glance
      node scripts/worldmonitor-local.mjs restart    # after an upgrade
      node scripts/worldmonitor-local.mjs uninstall  # remove the service

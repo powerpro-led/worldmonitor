@@ -4,6 +4,26 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.5] - 2026-09-21
+
+### Fixed — install
+
+- **The printed install-success commands used a relative path**: `setup.sh`'s
+  final "Done." block told the user to run `node
+  scripts/worldmonitor-local.mjs login`/`status`/`restart`/`uninstall` with
+  no `cd` instruction and no absolute path. Copy-pasted from wherever the
+  user's shell actually was — which is never `~/.worldmonitor/app` right
+  after a `curl | sh` one-liner, since that only changes the piped
+  subshell's own cwd, not the parent shell's — that failed with `Cannot find
+  module`. `INSTALL.md` itself already documented this correctly two
+  different ways; the CLI's own live-printed instructions disagreed with the
+  doc it ships next to. Fixed with an explicit `cd $SCRIPT_DIR` line.
+
+## [2.13.4] - 2026-09-20
+
+Two more installer bugs found in the same clean-install re-test pass, plus a
+first-install service-registration race.
+
 ### Fixed — install
 
 - **`setup.sh`'s org.env prompt could write a corrupted Supabase URL/key**:
@@ -16,7 +36,20 @@ All notable changes to World Monitor are documented here.
   original "nothing happens when I type the value and hit enter" report —
   probably never stuck, just silently advancing with the message eaten into
   the first field. Fixed by sending it to stderr, matching `read -p`'s own
-  prompt. Version bumped ahead of tagging while a fuller Tier B pass runs.
+  prompt.
+- **The same prompts' labels never rendered**: `read -p`'s own decision on
+  whether to display its prompt text depends on bash's internal
+  terminal-detection heuristic — the third surprise from that class of thing
+  in this one function today. Sidestepped it entirely: the label is now
+  printed directly to the fd already confirmed to be the real terminal,
+  followed by a bare `read`.
+- **First-install service registration could silently not take**: writing a
+  fresh launchd plist immediately followed by bootstrapping it is a timing
+  race that can leave the job genuinely unloaded even though `launchctl
+  bootstrap` itself reports success — the only signal was a passively-worded
+  "not answering yet" that read like ordinary startup lag. `cmdInstall` now
+  retries registration once before reporting, with an explicit log line
+  either way.
 
 ## [2.13.3] - 2026-09-20
 

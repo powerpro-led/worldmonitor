@@ -11,6 +11,8 @@ export type RuntimeSecretKey =
   | 'EIA_API_KEY'
   | 'CLOUDFLARE_API_TOKEN'
   | 'ACLED_ACCESS_TOKEN'
+  | 'ACLED_EMAIL'
+  | 'ACLED_PASSWORD'
   | 'URLHAUS_AUTH_KEY'
   | 'OTX_API_KEY'
   | 'ABUSEIPDB_API_KEY'
@@ -175,8 +177,21 @@ export const RUNTIME_FEATURES: RuntimeFeatureDefinition[] = [
   {
     id: 'acledConflicts',
     name: 'ACLED conflicts & protests',
-    description: 'Conflict and protest event feeds from ACLED.',
-    requiredSecrets: ['ACLED_ACCESS_TOKEN'],
+    // server/_shared/acled-auth.ts prefers ACLED_EMAIL+ACLED_PASSWORD (OAuth,
+    // auto-refreshing) over the static ACLED_ACCESS_TOKEN (legacy, expires in
+    // 24h with nothing to refresh it) — only ONE of the two forms is needed,
+    // not all three. Listed together so the admin panel renders input fields
+    // for both forms; isFeatureAvailable() already treats cloud/web deploys
+    // as server-validated (see its own comment), so this array's only real
+    // effect there is which fields render, not a hard "all required" gate.
+    description: 'Conflict and protest event feeds from ACLED. Prefer email+password (auto-refreshing OAuth) over the access token (static, expires in 24h).',
+    requiredSecrets: ['ACLED_ACCESS_TOKEN', 'ACLED_EMAIL', 'ACLED_PASSWORD'],
+    // Desktop's own isFeatureAvailable() DOES use requiredSecrets.every(), so
+    // unlike the cloud path it needs an explicit narrower list — otherwise
+    // adding the two new OAuth fields above would wrongly demand all THREE
+    // secrets at once for a desktop operator who only ever had the token.
+    // Unchanged from this feature's pre-existing desktop behavior.
+    desktopRequiredSecrets: ['ACLED_ACCESS_TOKEN'],
     fallback: 'Conflict/protest overlays are hidden.',
   },
   {

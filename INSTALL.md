@@ -52,7 +52,7 @@ One-time operator setup: the Supabase project must allowlist **both** sign-in re
 | URL                                                  | Used by                                                                                             |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `http://127.0.0.1:46124/callback`                    | `worldmonitor-local login` (the CLI's loopback flow)                                                |
-| `http://localhost:46123/dashboard.html?embed=vscode` | the sign-in button inside the VS Code panel (the iframe is served from`localhost`, not the bare IP) |
+| `http://localhost:46123/dashboard.html?embed=vscode` | the sign-in button inside the VS Code panel (the iframe is served from `localhost`, not the bare IP) |
 
 Your GitHub account must be on the deployment's allow-list (or in its allow-listed org) — that is the invite.
 
@@ -130,12 +130,12 @@ See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and wh
 | Symptom | Check |
 | --- | --- |
 | Dashboard panels stay empty | `status` shows `backend up`? The cache only refreshes once you have an Upstash read-only credential — normally the `local-config` broker supplies it at `login` (its output says so, or `config list` shows the token as set). If your org doesn't run the broker, set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_READONLY_TOKEN` in `.env` and `restart`. |
-| Freshness badges say "unknown" | Expected until the cache has synced once.`/api/health` is computed locally and never needs a Redis write credential. |
-| "Brief service unavailable" | You haven't signed in, or the session expired — run`worldmonitor-local login` again. |
-| Extension iframe blank | Reload the VS Code window; the backend serves`dist/` over HTTP and must be up first. |
-| `login` fails after GitHub consent | Your account isn't on the allow-list / in the allow-listed org, or`127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
+| Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
+| "Brief service unavailable" | You haven't signed in, or the session expired — run `worldmonitor-local login` again. |
+| Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
+| `login` fails after GitHub consent | Your account isn't on the allow-list / in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
 | Sign-in inside VS Code bounces back logged out | `http://localhost:46123/dashboard.html?embed=vscode` isn't allowlisted in Supabase (see above). |
-| Error ends "…sign-up attempt" / "…not on this deployment's allow-list" | That text comes from the`worldmonitor-org-gate` Auth Hook, not the local bundle: the first means the hook payload carried no GitHub login (a gate bug — fixed 2026-09-19, redeploy the function); the second means your GitHub login isn't on `GITHUB_ALLOWED_LOGINS`. |
-| Windows:`status` shows `task Ready` but `backend DOWN` | The task ran but node exited — check`%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |
-| Windows:`install` says "Access is denied" (拒绝访问) | Registering with a bundle older than v2.13.1 needed admin rights (the task XML lacked`<UserId>`); upgrade. |
+| Error ends "…sign-up attempt" / "…not on this deployment's allow-list" | That text comes from the `worldmonitor-org-gate` Auth Hook, not the local bundle: the first means the hook payload carried no GitHub login (a gate bug — fixed 2026-09-19, redeploy the function); the second means your GitHub login isn't on `GITHUB_ALLOWED_LOGINS`. |
+| Windows: `status` shows `task Ready` but `backend DOWN` | The task ran but node exited — check `%USERPROFILE%\.worldmonitor\local-api.log`, then `restart`. |
+| Windows: `install` says "Access is denied" (拒绝访问) | Registering with a bundle older than v2.13.1 needed admin rights (the task XML lacked `<UserId>`); upgrade. |
 | Bootstrap can't reach nodejs.org / GitHub | Use the offline vars (`WM_NODE_TARBALL` / `WM_APP_TARBALL`) or the manual `setup.sh` path. |

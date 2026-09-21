@@ -321,6 +321,17 @@ chmodSync(path.join(STAGE, 'setup.sh'), 0o755);
 cpSync(path.join(ROOT, 'scripts', 'release', 'setup.ps1'), path.join(STAGE, 'setup.ps1'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'TESTING.md'), path.join(STAGE, 'TESTING.md'));
 cpSync(path.join(ROOT, 'scripts', 'release', 'SECURITY.md'), path.join(STAGE, 'SECURITY.md'));
+// worldmonitor-mcp-usage Skill — staged at the path Claude Code auto-discovers
+// project skills from (.claude/skills/<name>/SKILL.md) so an operator opening
+// the bundle root in Claude Code picks it up with no manual step. The repo's
+// own .claude/ is gitignored (per-developer local state), so the source file
+// lives at scripts/release/mcp-skill.md alongside the other release-only docs
+// and only reaches this path at bundle-build time.
+mkdirSync(path.join(STAGE, '.claude', 'skills', 'worldmonitor-mcp-usage'), { recursive: true });
+cpSync(
+  path.join(ROOT, 'scripts', 'release', 'mcp-skill.md'),
+  path.join(STAGE, '.claude', 'skills', 'worldmonitor-mcp-usage', 'SKILL.md'),
+);
 // org.env.example — the per-org config template (Model B). NOTE: never stage a
 // filled org.env / .env; the bundle must ship org-neutral.
 cpSync(path.join(ROOT, 'scripts', 'release', 'org.env.example'), path.join(STAGE, 'org.env.example'));

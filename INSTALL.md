@@ -108,6 +108,13 @@ export WORLDMONITOR_LOCAL_TOKEN="<paste the token>"   # add to your shell profil
 
 Any other MCP client works the same way: point it at `http://127.0.0.1:46123/api/mcp` with either header carrying the token from `worldmonitor-local token`.
 
+**Using the tools well, not just connecting them:** the bundle ships a `worldmonitor-mcp-usage`
+Skill at `.claude/skills/worldmonitor-mcp-usage/SKILL.md` — Claude Code auto-loads it once you
+open this folder as a project, no extra step. It maps all ~40 tools by domain, explains when to
+reach for the six ready-made prompts above versus composing raw calls, and covers the JMESPath /
+freshness habits that keep usage cheap and correct. Codex has no separate Skill mechanism — paste
+everything below that file's frontmatter into your own project's `AGENTS.md` instead.
+
 ## Upgrading
 
 Re-run the one-command installer. It re-fetches the bundle into `~/.worldmonitor/app/`, keeps your `.env`, re-points the service, and skips the Node download if the pinned version is already in `~/.worldmonitor/runtime/`. Then `node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs restart`.

@@ -4,6 +4,49 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.6] - 2026-09-21
+
+### Security — install
+
+- **Windows login opened a truncated OAuth URL, dropping `redirect_to`**:
+  `openBrowser()` shelled out via `cmd /c start '' <url>` on Windows.
+  `execFileSync` passes the URL as one argv entry, but `cmd.exe` re-parses
+  everything after `/c` with its own command-line rules regardless — an
+  OAuth authorize URL's `&` between query params was read as cmd's command
+  separator, silently truncating the URL at the first `&` (dropping
+  `redirect_to` and scopes) and executing whatever followed as further
+  commands — a real command-injection surface via any URL passed to
+  `openBrowser()`, not just a broken login. GoTrue fell back to its Site URL
+  instead of the CLI's loopback callback, so `login` just timed out.
+  Fixed by handing the URL to rundll32's URL protocol handler instead,
+  which does no command-line re-parsing. macOS/Linux were never affected
+  (`open`/`xdg-open` don't route through a shell for this). Verified live
+  on real Windows hardware.
+
+### Added — docs
+
+- **`INSTALL.md` now documents connecting an AI agent via MCP** — a
+  `claude mcp add` command for Claude Code and a `config.toml` snippet for
+  Codex CLI, both against the backend's own loopback MCP server
+  (`api/mcp/handler.ts`, no Convex/Upstash/quota locally).
+- **New `worldmonitor-mcp-usage` Skill**, shipped inside the release bundle
+  at `.claude/skills/worldmonitor-mcp-usage/SKILL.md` (Claude Code
+  auto-loads it; Codex users paste its body into their own `AGENTS.md`).
+  Maps all ~40 MCP tools by domain, explains the six ready-made prompts
+  (`country-briefing`, `energy-shock-watch`, `market-open-prep`,
+  `conflict-pulse`, `route-risk-check`, `freshness-audit`),
+  `describe_tool`/JMESPath usage habits, and how to tell degraded/stale
+  tool responses from real data.
+
+### Fixed — settings
+
+- **Cloud admin panel had no field for ACLED's preferred credentials**:
+  the backend has preferred auto-refreshing `ACLED_EMAIL`+`ACLED_PASSWORD`
+  OAuth over the static `ACLED_ACCESS_TOKEN` (which expires in 24h with
+  nothing to refresh it) for a while, but the admin panel's own secret
+  list never followed — there was no way to enter email+password through
+  it. Added both fields.
+
 ## [2.13.5] - 2026-09-21
 
 ### Fixed — install

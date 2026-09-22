@@ -4,6 +4,42 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.7] - 2026-09-22
+
+### Fixed — local sync (Windows)
+
+- **Windows local-sync mirror only ever wrote successfully once, then
+  FATALed on every subsequent sync**: the rename that atomically swaps in
+  a freshly-rebuilt mirror failed with `EPERM` on Windows whenever
+  `sidecar-cache.ts`'s reader happened to hold the file's Windows HANDLE at
+  that instant — SQLite's win32 VFS doesn't open with `FILE_SHARE_DELETE`,
+  a restriction POSIX rename doesn't have. Local data was effectively a
+  one-time snapshot on Windows, growing staler with every sync attempt.
+  Fixed with a short retry ladder (50-800ms) around the rename, and a
+  louder failure message than the previous silent FATAL. Found via a real
+  Windows field report on v2.13.6.
+
+### Fixed — cloud deploy (GCP, biovita/mosiq)
+
+- **Cloud Run instances never scaled to zero, driving most of a GCP org
+  deploy's daily cost regardless of `min-instances: 0`**: Cloud Run v2's
+  `cpu_idle` setting silently defaults to `false` ("CPU always allocated")
+  the moment any resource (cpu/memory) limit is specified — a documented
+  GCP API quirk, not something Nitric sets explicitly either way, so every
+  Nitric-deployed Cloud Run service hits it. `deploy-org.reusable.yml` now
+  runs `gcloud run services update --cpu-throttling` against every service
+  a deploy creates, reverting to normal per-request CPU billing.
+- **`queue-worker`'s scenario-queue check blocked for 30s on every empty-
+  queue Cloud Scheduler tick, every minute, regardless of any actual
+  work**: `scenario-worker.mjs`'s `BLMOVE` timeout was tuned for the
+  always-on Railway service (where blocking is free); the GCP one-shot
+  path now uses a 1s timeout and skips the trailing idle-sleep.
+- **`seed-positive-events` failed 93% of the time at Cloud Run's 60s
+  timeout**: 6 sequential GDELT calls had no retry-budget override,
+  so a single unlucky query's default retry budget (150s+ worst case)
+  could exhaust the whole request on its own. Capped retries per call and
+  added an overall 50s deadline to the query loop.
+
 ## [2.13.6] - 2026-09-21
 
 ### Security — install

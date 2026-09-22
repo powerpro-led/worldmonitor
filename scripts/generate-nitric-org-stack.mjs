@@ -67,7 +67,24 @@ export function buildOrgStack(orgConfig) {
       default: {
         cloudrun: {
           memory: 512,
-          timeout: 60,
+          // Found 2026-09-22 (biovita GCP cost investigation, post-cpu-idle-
+          // fix follow-up): seed-positive-events.mjs's own 50s internal
+          // deadline (see that file) DOES fire correctly and return real
+          // data instead of hanging forever, but a single already-in-flight
+          // GDELT query can still push total wall-clock past this platform
+          // ceiling — a forced re-run after the cpu-idle fix landed still
+          // 504'd at exactly 60.0s (~62s actual). This 60 value was this
+          // repo's own explicit choice, not a Nitric default (confirmed via
+          // `gcloud run services describe`: it's what's actually deployed).
+          // 120s (matching seed-conflict-intel.mjs's own GDELT_SWEEP_BUDGET_MS
+          // precedent for "reasonable GDELT sweep budget") gives the internal
+          // deadline real margin instead of needing every retry/timeout
+          // constant across every GDELT-touching seeder re-tuned to fit
+          // inside 60s. Applies to every per-org Cloud Run service via
+          // config.default — trivially-fast jobs are unaffected in practice
+          // (they still return in seconds either way); only genuinely
+          // degraded ones now get more grace before Cloud Run kills them.
+          timeout: 120,
           'min-instances': 0,
           'max-instances': 10,
           concurrency: 80,

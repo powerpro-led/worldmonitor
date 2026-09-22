@@ -132,14 +132,26 @@ function extractEvents(data, seenUrlLocs) {
   return events;
 }
 
-// 50s from the start of fetchPositiveEvents(), leaving a 10s margin under
-// Cloud Run's 60s request timeout for the final write/cleanup — mirrors
-// seed-conflict-intel.mjs's launchCutoffAt/GDELT_SWEEP_BUDGET_MS pattern
-// ("stop LAUNCHING once the deadline passes"), scaled down for 6 sequential
-// queries instead of a 20-country batched sweep. GDELT_RATE_WINDOW_MS's
-// 5.5s-per-attempt floor alone is 33s for all 6 even with instant, zero-
-// retry responses, so this is real margin, not a formality.
-const FETCH_DEADLINE_MS = 50_000;
+// Mirrors seed-conflict-intel.mjs's launchCutoffAt/GDELT_SWEEP_BUDGET_MS
+// pattern ("stop LAUNCHING once the deadline passes"), scaled down for 6
+// sequential queries instead of a 20-country batched sweep.
+// GDELT_RATE_WINDOW_MS's 5.5s-per-attempt floor alone is 33s for all 6
+// even with instant, zero-retry responses, so this is real margin, not a
+// formality.
+//
+// Found 2026-09-22: this deadline check only runs BEFORE starting a new
+// query, so it doesn't bound a query that's already in flight when the
+// deadline passes — a single query's own worst case under
+// GDELT_THEME_FETCH_OPTS (one direct attempt + one proxy attempt, both
+// rate-gated) is still ~35-40s. The original 50_000 here left only a 10s
+// margin under Cloud Run's PLATFORM request timeout — not enough: a forced
+// re-run genuinely hit that ceiling at ~62s wall-clock even though this
+// function's own early-exit fired correctly and would have returned real
+// data a couple seconds later. Fixed at the platform level too
+// (scripts/generate-nitric-org-stack.mjs's cloudrun.timeout: 60 → 120), so
+// this can now keep a real ~40s margin instead of a tight 10s one — same
+// worst-case-single-query math, just against the corrected ceiling.
+const FETCH_DEADLINE_MS = 80_000;
 
 async function fetchPositiveEvents() {
   const allEvents = [];

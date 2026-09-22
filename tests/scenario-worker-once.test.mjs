@@ -16,10 +16,12 @@ const { runWorker } = await import('../scripts/scenario-worker.mjs');
 
 let originalFetch;
 let calls;
+let lastArgsByCmd;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   calls = [];
+  lastArgsByCmd = {};
 });
 
 afterEach(() => {
@@ -43,6 +45,7 @@ function installFetchMock(onCommand) {
     const body = JSON.parse(opts.body);
     const [cmd, ...args] = body;
     calls.push(cmd);
+    lastArgsByCmd[cmd] = args;
     const result = onCommand(cmd, args);
     return {
       ok: true,
@@ -64,6 +67,15 @@ describe('runWorker({ once: true })', () => {
 
     const blmoveCalls = calls.filter((c) => c === 'BLMOVE');
     assert.equal(blmoveCalls.length, 1, 'should attempt exactly one dequeue, not loop');
+
+    // Regression check for the 2026-09-22 biovita cost investigation: a
+    // once:true call is driven by GCP Cloud Scheduler, which is already the
+    // retry loop (every 1 minute) — it must NOT block for the Railway
+    // service's 30s BLMOVE_TIMEOUT_SECONDS, or every empty-queue tick bills
+    // ~30s of Cloud Run compute for nothing. The last BLMOVE arg is the
+    // timeout (seconds); confirm it's the short one-shot value, not 30.
+    const [, , , , timeoutSeconds] = lastArgsByCmd.BLMOVE;
+    assert.ok(timeoutSeconds < 5, `once:true BLMOVE timeout should be short, got ${timeoutSeconds}s`);
   });
 
   it('processing an unparseable job still returns after one iteration (no infinite loop)', async () => {

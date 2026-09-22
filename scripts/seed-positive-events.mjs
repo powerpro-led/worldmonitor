@@ -32,6 +32,20 @@ const CACHE_TTL = 4500;
 const MAX_EVENTS = 500;
 const TONE_THRESHOLD = 2; // keep only articles with urltone strictly above this
 
+// Found live 2026-09-22 (biovita GCP cost investigation): fetchGdeltJson()'s
+// DEFAULT retry budget (4 direct attempts × 15s timeout + up to 60s of
+// backoff between them, THEN 5 proxy attempts) is 150s+ in the worst case
+// for a SINGLE call — this loop makes 6 of them sequentially, one per
+// theme, with no override, so a single unlucky query could already consume
+// the whole 60s Cloud Run request timeout on its own; Cloud Run logs showed
+// this job failing 93% of the time with a hard 60.000s timeout, not a fast
+// error. Individual query failure is already treated as non-fatal here
+// (`continue` below, `anyQuerySucceeded` only needs ONE of the six) — the
+// same fast-fail tuning `seed-conflict-intel.mjs`'s `GDELT_COUNTRY_FETCH_OPTS`
+// already uses for its own "runs N× per cycle, keep each call cheap" sweep
+// applies just as directly here.
+const GDELT_THEME_FETCH_OPTS = Object.freeze({ maxRetries: 0, proxyMaxAttempts: 1 });
+
 // Single-theme queries — v1 GKG accepts one theme tag per call.
 // http://data.gdeltproject.org/documentation/GKG-MASTER-THEMELIST.TXT
 const QUERIES = [
@@ -118,6 +132,15 @@ function extractEvents(data, seenUrlLocs) {
   return events;
 }
 
+// 50s from the start of fetchPositiveEvents(), leaving a 10s margin under
+// Cloud Run's 60s request timeout for the final write/cleanup — mirrors
+// seed-conflict-intel.mjs's launchCutoffAt/GDELT_SWEEP_BUDGET_MS pattern
+// ("stop LAUNCHING once the deadline passes"), scaled down for 6 sequential
+// queries instead of a 20-country batched sweep. GDELT_RATE_WINDOW_MS's
+// 5.5s-per-attempt floor alone is 33s for all 6 even with instant, zero-
+// retry responses, so this is real margin, not a formality.
+const FETCH_DEADLINE_MS = 50_000;
+
 async function fetchPositiveEvents() {
   const allEvents = [];
   const seenNames = new Set();
@@ -125,15 +148,20 @@ async function fetchPositiveEvents() {
   // themes would otherwise double-count its location buckets.
   const seenUrlLocs = new Set();
   let anyQuerySucceeded = false;
+  const deadlineAt = Date.now() + FETCH_DEADLINE_MS;
 
   for (const query of QUERIES) {
+    if (Date.now() >= deadlineAt) {
+      console.warn(`  ${query}: skipped — fetch deadline reached, stopping the sweep early`);
+      break;
+    }
     let data;
     try {
       // fetchGdeltJson claims a cross-process rate slot (>=5.5s spacing) per
       // attempt and does the direct→proxy retry itself.
       data = await fetchGdeltJson(
         `https://api.gdeltproject.org/api/v1/gkg_geojson?QUERY=${encodeURIComponent(query)}&MAXROWS=500`,
-        { label: `positive:${query}` },
+        { label: `positive:${query}`, ...GDELT_THEME_FETCH_OPTS },
       );
     } catch (err) {
       console.warn(`  ${query}: ${err?.message || err}`);

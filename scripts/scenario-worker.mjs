@@ -21,7 +21,15 @@ loadEnvFile(import.meta.url);
 const QUEUE_KEY = 'scenario-queue:pending';
 const PROCESSING_KEY = 'scenario-queue:processing';
 const RESULT_TTL_SECONDS = 86_400; // 24 h
-const BLMOVE_TIMEOUT_SECONDS = 30;  // block for up to 30s waiting for a job
+// Always-on Railway mode (runWorker({ once: false }), this file's original
+// design): block for up to 30s so an idle worker isn't hammering Upstash
+// every few seconds — cost-neutral there, since Railway bills the pinned
+// instance's uptime either way, not per request.
+const BLMOVE_TIMEOUT_SECONDS = 30;
+// One-shot GCP mode (runWorker({ once: true }), P14 Phase 1's queue-worker
+// merge — see runOneIteration()'s own comment for why this has to differ
+// from the constant above).
+const ONESHOT_BLMOVE_TIMEOUT_SECONDS = 1;
 
 /** @typedef {{ jobId: string; scenarioId: string; iso2: string | null; enqueuedAt: number }} ScenarioJob */
 
@@ -356,25 +364,49 @@ const JOB_ID_RE = /^scenario:\d{13}:[a-z0-9]{8}$/;
  * early-exit `continue` below became a `return`, which is equivalent inside
  * a function body called once per outer-loop iteration.
  */
-async function runOneIteration() {
+async function runOneIteration(once = false) {
   let raw;
   try {
     // Atomic FIFO dequeue+claim: moves item from pending → processing.
-    // Note: Upstash REST API does not honour the BLMOVE blocking timeout —
-    // it returns null immediately for empty queues. The 5s sleep below prevents
-    // busy-looping when the queue is idle.
-    raw = await redisCmd('blmove', [QUEUE_KEY, PROCESSING_KEY, 'LEFT', 'RIGHT', BLMOVE_TIMEOUT_SECONDS]);
+    //
+    // Found live 2026-09-22 (biovita GCP cost investigation): despite this
+    // function's own prior comment claiming "Upstash REST API does not
+    // honour the BLMOVE blocking timeout — it returns null immediately",
+    // redisCmd()'s AbortSignal.timeout(40_000) (deliberately "> BLMOVE_
+    // TIMEOUT_SECONDS", per its own comment) shows whoever wrote THAT one
+    // expected the opposite — and Cloud Run request logs confirmed it:
+    // queue-worker (the once:true GCP path below) was taking a remarkably
+    // consistent ~35.5s per invocation with an empty queue — 30s BLMOVE
+    // block + the unconditional 5s idle-sleep that used to follow it,
+    // every single Cloud-Scheduler-triggered tick, every minute, 24/7,
+    // dominating biovita's GCP bill on its own regardless of any actual
+    // work being queued. Upstash's REST API DOES honour the blocking
+    // timeout (holds the HTTP connection open, long-poll style) — the
+    // old comment was simply wrong, or described a since-changed behavior.
+    //
+    // Fix: the once:true (GCP Cloud Scheduler) path uses a near-instant
+    // ONESHOT_BLMOVE_TIMEOUT_SECONDS instead — Cloud Scheduler's own 1-
+    // minute cadence is already the retry loop, so this invocation has no
+    // reason to itself hold a billed connection open waiting for a job
+    // that isn't there yet. The always-on Railway service (once:false)
+    // keeps the original 30s block, where it's genuinely free (a pinned
+    // instance bills the same whether blocked or busy) and avoids
+    // hammering Upstash with a request every few seconds while idle.
+    const timeoutSeconds = once ? ONESHOT_BLMOVE_TIMEOUT_SECONDS : BLMOVE_TIMEOUT_SECONDS;
+    raw = await redisCmd('blmove', [QUEUE_KEY, PROCESSING_KEY, 'LEFT', 'RIGHT', timeoutSeconds]);
   } catch (err) {
     console.error('[scenario-worker] BLMOVE error:', err.message);
-    // Brief pause before retrying to avoid hot-loop on connectivity issues
-    await new Promise(r => setTimeout(r, 5_000));
+    // Brief pause before retrying to avoid hot-loop on connectivity issues —
+    // only meaningful when there IS a next iteration to protect (once:true
+    // has none; Cloud Scheduler's own cadence is the backoff there).
+    if (!once) await new Promise(r => setTimeout(r, 5_000));
     return;
   }
 
   if (!raw) {
-    // Upstash REST returns null immediately for empty queue (no true HTTP blocking).
-    // Sleep before retrying to avoid busy-loop burning CPU.
-    await new Promise(r => setTimeout(r, 5_000));
+    // Sleep before retrying to avoid busy-loop burning CPU — same "only
+    // matters if there's a next iteration" reasoning as the catch block above.
+    if (!once) await new Promise(r => setTimeout(r, 5_000));
     return;
   }
 
@@ -451,7 +483,7 @@ export async function runWorker({ once = false } = {}) {
   await requeueOrphanedJobs();
 
   while (!shuttingDown) {
-    await runOneIteration();
+    await runOneIteration(once);
     if (once) return;
   }
 

@@ -40,6 +40,23 @@ describe('positive-events GDELT seed failure semantics', () => {
     assert.match(fetchBlock, /if \(!anyQuerySucceeded\) throw new Error\('all GDELT theme queries failed'\);/);
   });
 
+  it('caps each GDELT call to a single direct + single proxy attempt (2026-09-22 biovita cost fix)', () => {
+    // fetchGdeltJson's defaults (4 direct attempts w/ up to 60s of backoff,
+    // then 5 proxy attempts) are 150s+ worst case for ONE of the 6
+    // sequential theme queries — this Cloud Scheduler job has a hard 60s
+    // request timeout. GDELT_THEME_FETCH_OPTS must disable the retry
+    // loops (same fast-fail tuning as seed-conflict-intel.mjs's
+    // GDELT_COUNTRY_FETCH_OPTS) and must actually be spread into the call.
+    assert.match(seedSrc, /const GDELT_THEME_FETCH_OPTS = Object\.freeze\(\{ maxRetries: 0, proxyMaxAttempts: 1 \}\)/);
+    assert.match(seedSrc, /\{ label: `positive:\$\{query\}`, \.\.\.GDELT_THEME_FETCH_OPTS \}/);
+  });
+
+  it('stops the sweep once the fetch deadline is reached, rather than grinding into the 60s Cloud Run timeout', () => {
+    const fetchStart = seedSrc.indexOf('async function fetchPositiveEvents()');
+    const fetchBlock = seedSrc.slice(fetchStart, seedSrc.indexOf('function validate('));
+    assert.match(fetchBlock, /if \(Date\.now\(\) >= deadlineAt\)/);
+  });
+
   it('a genuinely-empty successful fetch still publishes (zeroIsValid)', () => {
     // Matches the relay loop's "any query succeeded → write, even 0 events".
     assert.match(seedSrc, /zeroIsValid: true/);

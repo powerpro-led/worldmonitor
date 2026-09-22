@@ -513,6 +513,61 @@ jobs:
           DOCKER_BUILD_CACHE_DEST: .nitric/docker-cache/write
         run: .github/scripts/nitric-up-stall-dump.sh "${{ inputs.org }}"
 
+      # Found 2026-09-22 (biovita GCP cost investigation): Nitric's GCP
+      # provider (cloud/gcp/deploy/service.go) always specifies a Cloud Run
+      # v2 `resources` block (cpu/memory limits — every real deploy needs
+      # these) but never sets `cpuIdle`. Per a documented Cloud Run v2 API
+      # quirk (hashicorp/terraform-provider-google#17246), `cpu_idle`
+      # defaults to `true` ONLY when `resources` is omitted entirely — the
+      # moment any resource limits are specified, the API silently defaults
+      # it to `false` ("CPU always allocated") instead. `nitric.yaml`/
+      # `scripts/generate-nitric-org-stack.mjs`'s config schema has no key
+      # for this at all (confirmed against Nitric's actual Go source), so
+      # every Nitric-deployed Cloud Run service on GCP lands in this trap
+      # silently. Confirmed live on biovita: `billable_instance_time` showed
+      # ~95.6 instance-hours/day with `state=active` never dropping to 0
+      # despite `min-instances: 0` — instances never scale to zero because
+      # CPU stays billed continuously once warm, not just during requests.
+      # Confirmed the fix works: the scheduler paused 2026-09-21 ~07:20 UTC
+      # (a real zero-traffic window) shows `active` dropping to 0 within the
+      # very next hour and staying there — Cloud Run DOES tear down given a
+      # real gap, so reverting to normal per-request CPU billing here is
+      # sufficient, no cadence changes needed.
+      #
+      # Same shape as the existing `--cpu-boost` (`startup-cpu-boost`)
+      # workaround org-provisioning's own deploy already applies post-`nitric
+      # up` for a different unexposed Nitric/Cloud-Run knob — a `gcloud run
+      # services update` step here, after the services exist, is the
+      # established pattern for this class of gap.
+      #
+      # `--cpu-throttling` is the flag that ENABLES throttling (i.e. sets
+      # cpuIdle=true, "only allocate CPU during request processing" — Cloud
+      # Run's normal default) — not `--no-cpu-throttling`, which would keep
+      # this bug. Applied to every Cloud Run service Nitric just deployed for
+      # this org (not a hardcoded api-main/scheduler-main name list — the
+      # exact service names carry a Nitric/Pulumi-generated hash suffix not
+      # knowable at workflow-authoring time), so a future new service type
+      # doesn't silently fall back into the same trap unnoticed.
+      - name: Revert Cloud Run CPU-always-allocated back to normal per-request billing
+        run: |
+          set -euo pipefail
+          services=$(gcloud run services list \
+            --project="${{ inputs.gcp_project }}" \
+            --region="${{ inputs.gcp_region }}" \
+            --format='value(metadata.name)')
+          if [ -z "$services" ]; then
+            echo "::warning::no Cloud Run services found in ${{ inputs.gcp_project }}/${{ inputs.gcp_region }} — nothing to update"
+            exit 0
+          fi
+          while IFS= read -r svc; do
+            echo "cpu-throttling (cpuIdle=true) -> $svc"
+            gcloud run services update "$svc" \
+              --project="${{ inputs.gcp_project }}" \
+              --region="${{ inputs.gcp_region }}" \
+              --cpu-throttling \
+              --quiet
+          done <<< "$services"
+
       - name: Upload per-service collect logs
         # Survives even if timeout-minutes kills the whole step before the
         # wrapper script's own cleanup runs — see its header comment.

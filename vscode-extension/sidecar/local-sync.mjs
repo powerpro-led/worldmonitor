@@ -590,7 +590,52 @@ async function main() {
 
   // Close first, then swap. Closing cleanly removes SQLite's journal
   // sidecar files, so the single rename moves a self-contained database.
-  fs.renameSync(SQLITE_TMP_PATH, SQLITE_PATH);
+  //
+  // Windows-only wrinkle (found live 2026-09-22, Windows field report): SQLite's
+  // win32 VFS doesn't open with FILE_SHARE_DELETE, so a rename over this path
+  // fails with EPERM if ANY reader — even one that opened read-only and has
+  // already called close() — happened to hold the underlying Windows HANDLE at
+  // the exact instant of the rename. server/_shared/sidecar-cache.ts's
+  // loadMirror() is exactly such a reader: it re-opens SQLITE_PATH read-only,
+  // slurps the whole table into memory, and closes again, every time the
+  // file's mtime changes (see that function's own header) — brief, but not
+  // synchronized with this rename, and Windows apparently doesn't always
+  // release the handle the instant close() returns (antivirus real-time
+  // scanning is one known cause). POSIX rename() has no such restriction
+  // (open-file rename works unconditionally), so this loop is a no-op there —
+  // the very first attempt always wins and RETRY_MS_LADDER is never consulted.
+  const RENAME_RETRY_MS_LADDER = [50, 100, 200, 400, 800];
+  let renamed = false;
+  let lastRenameErr;
+  for (let attempt = 0; !renamed; attempt++) {
+    try {
+      fs.renameSync(SQLITE_TMP_PATH, SQLITE_PATH);
+      renamed = true;
+    } catch (err) {
+      lastRenameErr = err;
+      const retryable = err.code === 'EPERM' || err.code === 'EBUSY';
+      if (!retryable || attempt >= RENAME_RETRY_MS_LADDER.length) {
+        // Non-retryable, or out of attempts: SQLITE_TMP_PATH is left in
+        // place (never deleted here) and SQLITE_PATH is untouched — the
+        // NEXT sync's rebuild overwrites SQLITE_TMP_PATH and tries again,
+        // so this is stale data, not lost data. Surface loudly either way:
+        // this was previously a silent FATAL that only a log-diver would
+        // ever see, with no signal in `status`.
+        console.error(
+          `[local-sync] FATAL: could not swap in the freshly-built mirror after ` +
+            `${attempt + 1} attempt(s) (${lastRenameErr.code || lastRenameErr.message}). ` +
+            `Serving stale data from the previous sync until the next attempt succeeds.`,
+        );
+        throw lastRenameErr;
+      }
+      const wait = RENAME_RETRY_MS_LADDER[attempt];
+      console.warn(
+        `[local-sync] rename → ${SQLITE_PATH} hit ${err.code} (attempt ${attempt + 1}/${RENAME_RETRY_MS_LADDER.length + 1}), ` +
+          `retrying in ${wait}ms — likely a reader (sidecar-cache) transiently holding the file on Windows`,
+      );
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
 
   console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
 }

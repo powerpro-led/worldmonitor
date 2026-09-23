@@ -50,6 +50,33 @@ const REPO_ROOT = resolve(here, '..');
  */
 const PINNED_SERVICES = Object.freeze({});
 
+/**
+ * biovita GCP cost incident follow-up (2026-09-23,
+ * biovita_gcp_scheduler_cost_pause_2026_09_21.md): config.default's
+ * cloudrun.timeout (120s, raised from 60s by the a1f053a fix above) is
+ * enough for every genuinely fast cron, but two seed-bundle-macro sections
+ * have a real documented worst case above that: seed-bis-lbs.mjs's own
+ * comment ("Parallel-4 caps wall time at ~240s on the slow path") and
+ * seed-fatf-listing.mjs's 6-tier fallback chain ("Worst-case ≤250s"). Both
+ * now run as their own independent Cloud Scheduler entry (gcp/scheduler/
+ * main.ts, one per macro section) rather than stacked sequentially inside
+ * one request, so the remaining ceiling only needs to cover ONE section's
+ * own worst case, not all 15 summed on an unlucky day — but that one
+ * section's request still needs more than 120s. 360s covers both real
+ * worst cases (240s/250s) with 100s+ margin, while capping the cost of a
+ * future undiscovered hang at 6 minutes of billed time instead of blindly
+ * matching the 600s/300s `timeoutMs` values declared in
+ * scripts/seed-bundle-macro.mjs (which are themselves conservative
+ * ceilings above the documented real worst case, not the real worst case
+ * itself). Scoped to the `scheduler` service only (matches gcp/scheduler/
+ * main.ts's `runtime: scheduler` in nitric.yaml) — api-main/mcp keep the
+ * 120s default; every other cron hosted by this same service still returns
+ * in seconds either way, so this doesn't change their cost.
+ */
+const SERVICE_CLOUDRUN_OVERRIDES = Object.freeze({
+  scheduler: { cloudrun: { timeout: 360 } },
+});
+
 /** @param {{gcpProject: string, gcpRegion: string}} orgConfig */
 export function buildOrgStack(orgConfig) {
   if (!orgConfig.gcpProject || !orgConfig.gcpRegion) {
@@ -91,6 +118,7 @@ export function buildOrgStack(orgConfig) {
         },
       },
       ...PINNED_SERVICES,
+      ...SERVICE_CLOUDRUN_OVERRIDES,
     },
   };
 }

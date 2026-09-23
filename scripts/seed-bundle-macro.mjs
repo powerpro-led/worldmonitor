@@ -1,7 +1,18 @@
 #!/usr/bin/env node
+// biovita GCP cost incident follow-up (2026-09-23): on Railway this bundle
+// still runs all 15 sections sequentially in one long-lived container, same
+// as always. On GCP, `gcp/scheduler/main.ts` instead registers one Cloud
+// Scheduler entry PER SECTION below, each invoking `--section=<Label>` so a
+// single Cloud Run request only ever needs to cover ONE section's own
+// worst-case timeout, not the sum of every section that happens to be due on
+// the same day (the failure mode that made seed-bundle-macro one of the 5
+// real 504s found in the post-cpu-idle-fix force-run test — see memory
+// biovita_gcp_scheduler_cost_pause_2026_09_21.md). `--section=` is optional
+// and backward-compatible: omitted, this runs the full bundle exactly as
+// before.
 import { runBundle, HOUR, DAY } from './_bundle-runner.mjs';
 
-await runBundle('macro', [
+const ALL_SECTIONS = [
   { label: 'BIS-Data', script: 'seed-bis-data.mjs', seedMetaKey: 'economic:bis', canonicalKey: 'economic:bis:policy:v1', intervalMs: 12 * HOUR, timeoutMs: 300_000 },
   // OECD is capped at 60 downloads/hour. Each China macro run performs two
   // consolidated dataflow requests, and the 36h gate stays far below budget.
@@ -28,4 +39,16 @@ await runBundle('macro', [
   // 300_000 gives ~50s margin and matches peer sections. Pre-PR-#3415 the section
   // was 120_000 — too tight for the multi-tier fallback, would SIGTERM mid-fetch.
   { label: 'FATF-Listing', script: 'seed-fatf-listing.mjs', seedMetaKey: 'economic:fatf-listing', canonicalKey: 'economic:fatf-listing:v1', intervalMs: 30 * DAY, timeoutMs: 300_000 },
-]);
+];
+
+const sectionArg = process.argv.find((a) => a.startsWith('--section='))?.slice('--section='.length);
+const sections = sectionArg ? ALL_SECTIONS.filter((s) => s.label === sectionArg) : ALL_SECTIONS;
+
+if (sectionArg && sections.length === 0) {
+  console.error(
+    `seed-bundle-macro: unknown --section=${sectionArg}. Valid labels: ${ALL_SECTIONS.map((s) => s.label).join(', ')}`,
+  );
+  process.exit(1);
+}
+
+await runBundle('macro', sections);

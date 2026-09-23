@@ -86,6 +86,16 @@
  * that context — this deploy's only real job is `ais-relay` (its own Cloud
  * Run service, wired directly in nitric.yaml, unaffected by this file).
  * ─────────────────────────────────────────────────────────────────────────
+ * `seed-bundle-macro` decomposition (2026-09-23, biovita GCP cost incident
+ * follow-up — see biovita_gcp_scheduler_cost_pause_2026_09_21.md): unlike
+ * every other bundle above, this one is NOT registered as a single daily
+ * cadence. Its 15 sections are hand-registered near the bottom of this file
+ * (see DECOMPOSED_BUNDLES / MACRO_BUNDLE_SECTIONS), each on its own real
+ * cadence, each invoking `scripts/seed-bundle-macro.mjs --section=<Label>` so
+ * a single Cloud Run request only ever covers one section instead of up to
+ * 15 stacked sequentially. Railway is untouched — it still runs the full
+ * bundle daily via railway-services.json, unchanged.
+ * ─────────────────────────────────────────────────────────────────────────
  *
  * Scaffold-only pass — see docs/architecture/nitric-gcp-scaffold.md.
  */
@@ -138,6 +148,20 @@ const IS_AIS_SHARED_DEPLOY = process.env.AIS_SHARED_SCHEDULER === 'true';
  */
 const ALWAYS_ON_NOT_SCHEDULED = new Set(['process-simulation-tasks', 'process-deep-forecast-tasks', 'scenario-worker']);
 
+/**
+ * biovita GCP cost incident follow-up (2026-09-23,
+ * biovita_gcp_scheduler_cost_pause_2026_09_21.md): seed-bundle-macro's own
+ * daily wrapper ran all 15 sections sequentially inside ONE Cloud Run
+ * request, which could exceed even a generous shared timeout on a day where
+ * several long-interval sections happened to align. Excluded from the
+ * standard railway-services.json-driven loop below (same mechanism as
+ * ALWAYS_ON_NOT_SCHEDULED, different reason) — its 15 sections are instead
+ * hand-registered further down this file, each on its own real intervalMs
+ * cadence via `--section=<Label>`, so a single request only ever needs to
+ * cover one section's own worst case.
+ */
+const DECOMPOSED_BUNDLES = new Set(['seed-bundle-macro']);
+
 type Cadence = { kind: 'cron'; expr: string } | { kind: 'every'; rate: string };
 
 /**
@@ -155,7 +179,11 @@ const CADENCES: Record<string, Cadence> = {
   'seed-bundle-derived-signals': { kind: 'cron', expr: '*/5 * * * *' }, // every 5min (Redis-only, fast)
   'seed-bundle-climate': { kind: 'cron', expr: '0 */3 * * *' }, // every 3h
   'seed-bundle-energy-sources': { kind: 'cron', expr: '30 7 * * *' }, // daily 07:30 UTC
-  'seed-bundle-macro': { kind: 'cron', expr: '0 8 * * *' }, // daily 08:00 UTC
+  // seed-bundle-macro is NOT registered here — see DECOMPOSED_BUNDLES below.
+  // It still runs as one daily 08:00 UTC bundle on Railway (railway-services.json
+  // is untouched), but on GCP it's registered as 15 independent per-section
+  // schedules further down this file, one real cadence per section instead of
+  // one artificial daily wrapper.
   'seed-bundle-health': { kind: 'cron', expr: '0 */1 * * *' }, // hourly
   'seed-bundle-market-backup': { kind: 'cron', expr: '*/5 * * * *' }, // every 5min (ais-relay backup)
   'seed-bundle-relay-backup': { kind: 'cron', expr: '*/30 * * * *' }, // every 30min (ais-relay backup)
@@ -478,7 +506,7 @@ const nixpacksEntries = railwayServices.filter((svc) => {
 });
 
 for (const svc of nixpacksEntries) {
-  if (ALWAYS_ON_NOT_SCHEDULED.has(svc.service)) continue;
+  if (ALWAYS_ON_NOT_SCHEDULED.has(svc.service) || DECOMPOSED_BUNDLES.has(svc.service)) continue;
 
   const cadence = CADENCES[svc.service];
   if (!cadence) {
@@ -548,3 +576,46 @@ schedule('publish-bootstrap-tiers-fast').cron('*/2 * * * *', async () => {
 schedule('publish-bootstrap-tiers-slow').cron('*/10 * * * *', async () => {
   await runScriptOnce('scripts/publish-bootstrap-tiers.mjs', ['--tier=slow'])();
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// 2026-09-23 — biovita GCP cost incident follow-up (see DECOMPOSED_BUNDLES
+// above and memory biovita_gcp_scheduler_cost_pause_2026_09_21.md). Hand-written
+// like the four entries above — GCP-only, does not touch railway-services.json
+// or Railway's own daily seed-bundle-macro.mjs cron. One Cloud Scheduler entry
+// per section, cadence matching that section's own intervalMs in
+// scripts/seed-bundle-macro.mjs exactly (kept in sync by hand — there is no
+// single source both files read from). scripts/generate-nitric-org-stack.mjs's
+// `scheduler` service override (360s Cloud Run timeout) is what actually makes
+// the two heaviest sections (BIS-LBS ~240s, FATF-Listing ~250s real worst case)
+// fit; this decomposition is what stops them from ever having to share a
+// request with 14 siblings on an unlucky day.
+// ──────────────────────────────────────────────────────────────────────────
+const MACRO_BUNDLE_SECTIONS: Array<{ section: string; cadence: Cadence }> = [
+  { section: 'BIS-Data', cadence: { kind: 'every', rate: '12 hours' } },
+  { section: 'China-Macro', cadence: { kind: 'every', rate: '36 hours' } },
+  { section: 'China-Release-Calendar', cadence: { kind: 'every', rate: '36 hours' } },
+  { section: 'BIS-Extended', cadence: { kind: 'every', rate: '12 hours' } },
+  { section: 'BLS-Series', cadence: { kind: 'every', rate: '1 days' } },
+  { section: 'Eurostat', cadence: { kind: 'every', rate: '1 days' } },
+  { section: 'Eurostat-HousePrices', cadence: { kind: 'every', rate: '7 days' } },
+  { section: 'Eurostat-GovDebtQ', cadence: { kind: 'every', rate: '2 days' } },
+  { section: 'Eurostat-IndProd', cadence: { kind: 'every', rate: '1 days' } },
+  { section: 'IMF-Macro', cadence: { kind: 'every', rate: '30 days' } },
+  { section: 'National-Debt', cadence: { kind: 'every', rate: '30 days' } },
+  { section: 'FAO-FFPI', cadence: { kind: 'every', rate: '1 days' } },
+  { section: 'WB-External-Debt', cadence: { kind: 'every', rate: '30 days' } },
+  { section: 'BIS-LBS', cadence: { kind: 'every', rate: '7 days' } },
+  { section: 'FATF-Listing', cadence: { kind: 'every', rate: '30 days' } },
+];
+
+for (const { section, cadence } of MACRO_BUNDLE_SECTIONS) {
+  const scheduleName = `seed-bundle-macro-${section.toLowerCase()}`;
+  const handler = async () => {
+    await runScriptOnce('scripts/seed-bundle-macro.mjs', [`--section=${section}`])();
+  };
+  if (cadence.kind === 'cron') {
+    schedule(scheduleName).cron(cadence.expr, handler);
+  } else {
+    schedule(scheduleName).every(cadence.rate, handler);
+  }
+}

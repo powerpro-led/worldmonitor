@@ -31,10 +31,19 @@ describe('buildOrgStack()', () => {
     const stack = buildOrgStack({ gcpProject: 'acme-gcp-project', gcpRegion: 'us-central1' });
     assert.equal(stack.config.default.cloudrun['min-instances'], 0);
     // The ais-relay stopgap (P14 Phase 1) is gone — it's now ONE shared
-    // deploy (nitric.ais-shared.yaml), not per org. Zero per-org overrides.
-    const serviceOverrideKeys = Object.keys(stack.config).filter((k) => k !== 'default');
-    assert.deepEqual(serviceOverrideKeys, []);
+    // deploy (nitric.ais-shared.yaml), not per org. No per-org instance pins.
     assert.equal(stack.config['ais-relay'], undefined);
+    for (const key of Object.keys(stack.config)) {
+      if (key === 'default') continue;
+      assert.equal(stack.config[key].cloudrun?.['min-instances'], undefined, `${key} must not pin instances`);
+    }
+  });
+
+  it('gives the scheduler service a longer Cloud Run timeout than the default (biovita cost incident follow-up)', () => {
+    const stack = buildOrgStack({ gcpProject: 'acme-gcp-project', gcpRegion: 'us-central1' });
+    assert.equal(stack.config.scheduler.cloudrun.timeout, 360);
+    // Only the scheduler service is affected — api-main/mcp keep the shared default.
+    assert.equal(stack.config.default.cloudrun.timeout, 120);
   });
 
   it('throws rather than silently generating a stack missing either value', () => {

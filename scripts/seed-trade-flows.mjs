@@ -258,6 +258,17 @@ export async function fetchAllFlows(opts = {}) {
     exhausted: false,
   };
   const pacingState = { requestCount: 0 };
+  // biovita cost-incident follow-up (2026-09-23): --group= below passes a
+  // REPORTER_GROUPS subset here instead of the full REPORTERS list, plus
+  // skipChinaGate when that subset never included China by design (see
+  // checkCoverage's own comment). Unset opts.reporters (the existing,
+  // unsplit call path) is byte-for-byte the same REPORTERS/REQUIRED_REPORTERS/
+  // BEST_EFFORT_REPORTERS/skipChinaGate:false behavior as before this option
+  // existed.
+  const reporters = opts.reporters ?? REPORTERS;
+  const requiredReporters = reporters.filter((r) => r.required !== false);
+  const bestEffortReporters = reporters.filter((r) => r.required === false);
+  const skipChinaGate = opts.skipChinaGate ?? false;
 
   let lastGate = null;
   for (let pi = 0; pi < periods.length; pi++) {
@@ -270,14 +281,14 @@ export async function fetchAllFlows(opts = {}) {
     // prevent the older fallback period from running.
     const requiredBaseline = await fetchCommodityStage(
       period,
-      REQUIRED_REPORTERS,
+      requiredReporters,
       BASELINE_COMMODITIES,
       pace,
       rateLimitBudget,
       pacingState,
     );
 
-    const gate = checkCoverage(requiredBaseline.perKeyFlows, REPORTERS, BASELINE_COMMODITIES);
+    const gate = checkCoverage(requiredBaseline.perKeyFlows, reporters, BASELINE_COMMODITIES, { skipChinaGate });
     lastGate = gate;
     console.log(`  Coverage (period ${period}): ${gate.populated}/${gate.total} (${(gate.globalRatio * 100).toFixed(0)}%) required reporter×commodity pairs populated`);
     for (const r of gate.perReporter) {
@@ -307,7 +318,7 @@ export async function fetchAllFlows(opts = {}) {
 
     const bestEffortBaseline = await fetchCommodityStage(
       period,
-      BEST_EFFORT_REPORTERS,
+      bestEffortReporters,
       BASELINE_COMMODITIES,
       pace,
       rateLimitBudget,
@@ -329,7 +340,7 @@ export async function fetchAllFlows(opts = {}) {
 
     const requiredExpansion = await fetchCommodityStage(
       period,
-      REQUIRED_REPORTERS,
+      requiredReporters,
       EXPANSION_COMMODITIES,
       pace,
       rateLimitBudget,
@@ -346,7 +357,7 @@ export async function fetchAllFlows(opts = {}) {
 
     const bestEffortExpansion = await fetchCommodityStage(
       period,
-      BEST_EFFORT_REPORTERS,
+      bestEffortReporters,
       EXPANSION_COMMODITIES,
       pace,
       rateLimitBudget,
@@ -378,7 +389,7 @@ export async function fetchAllFlows(opts = {}) {
  * the India/Taiwan-style "one reporter flatlines completely" case that passes
  * a global-only gate.
  */
-export function checkCoverage(perKeyFlows, reporters, commodities) {
+export function checkCoverage(perKeyFlows, reporters, commodities, { skipChinaGate = false } = {}) {
   const commTotal = commodities.length;
 
   // Full breakdown (for logging). `required` defaults to true, so callers that
@@ -403,29 +414,52 @@ export function checkCoverage(perKeyFlows, reporters, commodities) {
   const populated = gated.reduce((n, r) => n + r.populated, 0);
   const globalRatio = total > 0 ? populated / total : 0;
 
-  const chinaReporter = perReporter.find((r) => r.code === CHINA_REPORTER_CODE);
+  // biovita cost-incident follow-up (2026-09-23): seed-trade-flows now also
+  // runs as a per-REPORTER-GROUP invocation (see --group= below). A group
+  // that's entirely best-effort (e.g. Russia+Iran — no `required` reporters
+  // at all) has nothing to gate: `gated` is empty, so a naive `total===0`
+  // globalRatio of 0 would wrongly read as "0% coverage, refuse to publish"
+  // instead of "nothing was ever supposed to be required here." Matches the
+  // existing per-reporter contract ("best-effort reporters never block
+  // publish") generalized to a whole group being best-effort.
+  if (gated.length === 0) {
+    return { ok: true, populated, total, globalRatio, perReporter, reason: null };
+  }
+
   // China is independently load-bearing for this strategic-dependency feed.
   // Keep this separate from `required` so a future reporter policy change
-  // cannot silently turn reporter 156 into best-effort coverage.
-  if (!chinaReporter) {
-    return {
-      ok: false,
-      populated,
-      total,
-      globalRatio,
-      perReporter,
-      reason: 'China reporter 156 missing from reporter coverage set',
-    };
-  }
-  if (chinaReporter.ratio < MIN_PER_REPORTER_RATIO) {
-    return {
-      ok: false,
-      populated,
-      total,
-      globalRatio,
-      perReporter,
-      reason: `China reporter 156 below per-reporter independent coverage floor: ${chinaReporter.populated}/${chinaReporter.total}`,
-    };
+  // cannot silently turn reporter 156 into best-effort coverage. Default
+  // (skipChinaGate=false) is unchanged from before this option existed —
+  // an accidentally-China-less reporter set is still treated as a bug, not
+  // a legitimate scenario (see the "rejects reporter sets that omit
+  // reporter 156 entirely" regression test). `skipChinaGate: true` is only
+  // ever passed explicitly by REPORTER_GROUPS entries (see --group= below)
+  // that never included China BY DESIGN — an opt-in flag rather than
+  // inferring intent from whether China happens to be present, so this
+  // stays a deliberate per-caller declaration, not a silent behavior change
+  // for the existing full-run path.
+  if (!skipChinaGate) {
+    const chinaReporter = perReporter.find((r) => r.code === CHINA_REPORTER_CODE);
+    if (!chinaReporter) {
+      return {
+        ok: false,
+        populated,
+        total,
+        globalRatio,
+        perReporter,
+        reason: 'China reporter 156 missing from reporter coverage set',
+      };
+    }
+    if (chinaReporter.ratio < MIN_PER_REPORTER_RATIO) {
+      return {
+        ok: false,
+        populated,
+        total,
+        globalRatio,
+        perReporter,
+        reason: `China reporter 156 below per-reporter independent coverage floor: ${chinaReporter.populated}/${chinaReporter.total}`,
+      };
+    }
   }
 
   if (globalRatio < MIN_COVERAGE_RATIO) {
@@ -460,8 +494,53 @@ export function declareRecords(data) {
   return Array.isArray(data?.flows) ? data.flows.length : 0;
 }
 
+// biovita cost-incident follow-up (2026-09-23): this script's own header
+// documents "~8.5 min against UN Comtrade" for a full run — Railway's
+// always-on container never had a request timeout to violate, but the same
+// script now also runs on GCP behind Cloud Run's per-request ceiling
+// (gcp/scheduler/main.ts), where it hit the shared 120s timeout in the
+// post-cpu-idle-fix force-run test. Note: seed-supply-chain-trade.mjs's own
+// `listComtradeFlows` RPC handler reads the PER-PAIR `comtrade:flows:<r>:<c>`
+// keys directly (written unconditionally by afterPublish below), not this
+// combined CANONICAL_KEY — so a group split only changes freshness of the
+// canonical `comtrade:flows:v1` blob (read by api/health.js's staleness
+// check and the MCP get_supply_chain_data tool) between groups' own ticks;
+// the actual dashboard panel is unaffected either way.
+// `--group=<0..REPORTER_GROUPS.length-1>` runs fetchAllFlows against just
+// that group's reporters (2 each, ~1/3 of the total (reporter,commodity)
+// matrix per group) instead of all 6 reporters in one sequential run.
+// skipChinaGate is derived from whether China is actually IN the resolved
+// group (not hardcoded per group), so it stays correct even if
+// REPORTER_GROUPS' membership changes later. No --group= (Railway's cron,
+// and this script's own default) runs every reporter in one call exactly
+// as before — reporters/skipChinaGate stay unset, matching fetchAllFlows'
+// own documented defaults.
+export const REPORTER_GROUPS = [
+  { name: 'usa-china', codes: ['842', '156'] },
+  { name: 'india-taiwan', codes: ['699', '490'] },
+  { name: 'russia-iran', codes: ['643', '364'] },
+];
+
+function reporterGroupOpts(index) {
+  const group = REPORTER_GROUPS[index];
+  const reporters = REPORTERS.filter((r) => group.codes.includes(r.code));
+  const skipChinaGate = !reporters.some((r) => r.code === CHINA_REPORTER_CODE);
+  return { reporters, skipChinaGate };
+}
+
+const groupArg = process.argv.find((a) => a.startsWith('--group='))?.slice('--group='.length);
+let groupOpts = {};
+if (groupArg !== undefined) {
+  const groupIndex = Number(groupArg);
+  if (!Number.isInteger(groupIndex) || groupIndex < 0 || groupIndex >= REPORTER_GROUPS.length) {
+    console.error(`seed-trade-flows: --group=${groupArg} must be an integer in [0, ${REPORTER_GROUPS.length - 1}]`);
+    process.exit(1);
+  }
+  groupOpts = reporterGroupOpts(groupIndex);
+}
+
 if (process.argv[1]?.endsWith('seed-trade-flows.mjs')) {
-  runSeed('trade', 'comtrade-flows', CANONICAL_KEY, fetchAllFlows, {
+  runSeed('trade', 'comtrade-flows', CANONICAL_KEY, () => fetchAllFlows(groupOpts), {
     validateFn: validate,
     ttlSeconds: CACHE_TTL,
     lockTtlMs: TRADE_FLOW_LOCK_TTL_MS,
@@ -469,7 +548,7 @@ if (process.argv[1]?.endsWith('seed-trade-flows.mjs')) {
     sourceVersion: 'comtrade-preview-v1',
     publishTransform,
     afterPublish,
-  
+
     declareRecords,
     schemaVersion: 1,
     maxStaleMin: 2880,

@@ -409,7 +409,15 @@ function parseFlowRows(data, indicator) {
     const year = parseInt(row.Year ?? row.year ?? '', 10);
     const value = parseFloat(row.Value ?? row.value ?? '');
     if (Number.isNaN(year) || Number.isNaN(value)) return null;
-    return { year, indicator, value, reporterName: row.ReportingEconomy ?? '', partnerName: row.PartnerEconomy ?? '' };
+    // ReportingEconomyCode disaggregates a multi-reporter batched response by
+    // reporter — same field fetchTradeBarriers/fetchTradeRestrictions already
+    // key off (see their own `cc = row.ReportingEconomyCode` reads below).
+    return {
+      year, indicator, value,
+      reporterCode: String(row.ReportingEconomyCode ?? ''),
+      reporterName: row.ReportingEconomy ?? '',
+      partnerName: row.PartnerEconomy ?? '',
+    };
   }).filter(Boolean);
 }
 
@@ -457,14 +465,54 @@ async function fetchFlowPair(reporter, partner, years, flows) {
   }
 }
 
-async function fetchTradeFlows() {
+// biovita cost-incident follow-up (2026-09-23): the old per-reporter loop
+// (one fetchFlowPair call + 500ms sleep per entry in ALL_REPORTERS, up to
+// 239 in the un-to-iso2.json fallback) hit Cloud Run's request timeout at
+// exactly 120.000s — 239 × 500ms of sleep ALONE is ~120s, before any real
+// fetch latency. Batches reporters BATCH-at-a-time into the same `r:`
+// comma-list shape fetchTradeBarriers/fetchTradeRestrictions already use
+// below, then disaggregates the combined response by each row's
+// ReportingEconomyCode (same field those two functions already key off) to
+// reconstruct the exact same per-reporter `trade:flows:v1:<reporter>:000:
+// <years>` cache keys the old loop wrote. Cuts round trips from
+// ALL_REPORTERS.length down to ALL_REPORTERS.length / BATCH.
+async function fetchTradeFlowsWorld(years, flows) {
+  const BATCH = 30;
+  const currentYear = new Date().getFullYear();
+  const startYear = currentYear - years;
+  const byReporter = new Map();
+
+  for (let i = 0; i < ALL_REPORTERS.length; i += BATCH) {
+    const batch = ALL_REPORTERS.slice(i, i + BATCH).join(',');
+    const base = { r: batch, p: '000', ps: `${startYear}-${currentYear}`, pc: 'TO', fmt: 'json', mode: 'full', max: '5000' };
+    const [exportsResult, importsResult] = await Promise.allSettled([
+      wtoFetch('/data', { ...base, i: 'ITS_MTV_AX' }),
+      wtoFetch('/data', { ...base, i: 'ITS_MTV_AM' }),
+    ]);
+    const exportsData = exportsResult.status === 'fulfilled' ? exportsResult.value : null;
+    const importsData = importsResult.status === 'fulfilled' ? importsResult.value : null;
+    const rows = [...(exportsData ? parseFlowRows(exportsData, 'ITS_MTV_AX') : []), ...(importsData ? parseFlowRows(importsData, 'ITS_MTV_AM') : [])];
+    for (const row of rows) {
+      if (!row.reporterCode) continue;
+      if (!byReporter.has(row.reporterCode)) byReporter.set(row.reporterCode, []);
+      byReporter.get(row.reporterCode).push(row);
+    }
+    await sleep(1000);
+  }
+
+  for (const [reporterCode, rows] of byReporter) {
+    const records = buildFlowRecords(rows, reporterCode, '000');
+    if (records.length > 0) {
+      flows[`trade:flows:v1:${reporterCode}:000:${years}`] = { flows: records, fetchedAt: new Date().toISOString(), upstreamUnavailable: false };
+    }
+  }
+}
+
+export async function fetchTradeFlows() {
   const flows = {};
   const years = 10;
 
-  for (const reporter of ALL_REPORTERS) {
-    await fetchFlowPair(reporter, '000', years, flows);
-    await sleep(500);
-  }
+  await fetchTradeFlowsWorld(years, flows);
 
   for (const [reporter, partner] of BILATERAL_PAIRS) {
     await fetchFlowPair(reporter, partner, years, flows);

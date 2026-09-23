@@ -209,7 +209,21 @@ function extractPrice(result, expectedCurrency) {
   return fromTitle;
 }
 
-async function fetchGroceryBasketPrices(prevSnapshot) {
+// Pure and exported for testing — see the call site below for why this needs
+// to stay side-effect-free: seed-grocery-basket.mjs performs a real network
+// scrape as a top-level await, so a test can't safely import the whole
+// module. This is the one piece of the --group= merge logic worth protecting
+// with a real test in isolation.
+export function mergeCarriedOverCountries(freshCountriesResult, prevCountries, freshCodes) {
+  if (!Array.isArray(prevCountries)) return freshCountriesResult;
+  const merged = [...freshCountriesResult];
+  for (const prevCountry of prevCountries) {
+    if (!freshCodes.has(prevCountry.code)) merged.push(prevCountry);
+  }
+  return merged;
+}
+
+async function fetchGroceryBasketPrices(prevSnapshot, targetCountries = config.countries) {
   const fxRates = await getSharedFxRates(config.fxSymbols, FX_FALLBACKS);
 
   const countriesResult = [];
@@ -261,7 +275,7 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
     routeUpdates.set(BAD_PRICES_KEY, 'done');
   }
 
-  for (const country of config.countries) {
+  for (const country of targetCountries) {
     console.log(`\n  Processing ${country.flag} ${country.name} (${country.currency})...`);
     const fxRate = fxRates[country.currency] || FX_FALLBACKS[country.currency] || null;
     const allowedHosts = country.sites.map(s => s.replace(/^www\./, '').split('/')[0]);
@@ -366,6 +380,25 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
     });
   }
 
+  // biovita cost-incident follow-up (2026-09-23): when this run only covers a
+  // GROUP of countries (see the --group= CLI flag below), carry over every
+  // OTHER country's most recent entry from prevSnapshot unchanged so the
+  // cross-country outlier gate, cheapest/most-expensive ranking, and the
+  // canonical key's own `countries` array still reflect the full 24-country
+  // picture (just-fetched data for this group, last-known-good for the
+  // rest) instead of collapsing to only whichever group ran most recently.
+  // A full run (targetCountries === config.countries, no --group=) carries
+  // over nothing and freshCodes covers everyone — every code path below is
+  // unchanged from before. `freshCodes` is also read by the WoW block further
+  // down, so a carried-over country keeps ITS OWN last-computed wowPct
+  // instead of comparing its (unchanged) totalUsd against itself and
+  // reporting a bogus 0%.
+  const isGroupRun = targetCountries !== config.countries;
+  const freshCodes = new Set(targetCountries.map(c => c.code));
+  const mergedCountriesResult = isGroupRun
+    ? mergeCarriedOverCountries(countriesResult, prevSnapshot?.countries, freshCodes)
+    : countriesResult;
+
   // Persist learned routes for next run (non-fatal)
   await bulkWriteLearnedRoutes('grocery-basket', routeUpdates, routeDeletes).catch(err =>
     console.warn(`  [routes] write failed (non-fatal): ${err.message}`)
@@ -378,7 +411,7 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
   const itemIds = config.items.map(i => i.id);
   const outlierEvictions = new Set();
   for (const itemId of itemIds) {
-    const pricePoints = countriesResult
+    const pricePoints = mergedCountriesResult
       .map(c => c.items.find(i => i.itemId === itemId)?.usdPrice)
       .filter(p => p != null && p > 0);
     if (pricePoints.length < 3) continue; // need ≥ 3 data points for meaningful median
@@ -386,7 +419,7 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
     const median = pricePoints[Math.floor(pricePoints.length / 2)];
     const ceiling = median * 4;
     const floor = median / 4;
-    for (const country of countriesResult) {
+    for (const country of mergedCountriesResult) {
       const item = country.items.find(i => i.itemId === itemId);
       if (!item?.usdPrice || item.usdPrice <= 0) continue;
       const isHigh = item.usdPrice > ceiling;
@@ -408,14 +441,14 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
     );
   }
   // Recompute totals after outlier pass
-  for (const country of countriesResult) {
+  for (const country of mergedCountriesResult) {
     country.totalUsd = +country.items.reduce((s, ip) => s + (ip.usdPrice ?? 0), 0).toFixed(2);
   }
 
   // Only rank countries with enough items found — a country with 4/10 items
   // could appear "cheapest" purely due to missing data, not actual prices.
   const MIN_ITEMS_FOR_RANKING = Math.ceil(config.items.length * 0.7); // ≥ 70% coverage
-  const rankable = countriesResult.filter(c => {
+  const rankable = mergedCountriesResult.filter(c => {
     const found = c.items.filter(ip => ip.available).length;
     return c.totalUsd > 0 && found >= MIN_ITEMS_FOR_RANKING;
   });
@@ -427,7 +460,12 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
   const wowAvailable = prevSnapshot?.countries?.length > 0 && prevSnapshot.basketVersion === BASKET_VERSION;
   if (wowAvailable) {
     const prevMap = Object.fromEntries(prevSnapshot.countries.map(c => [c.code, c.totalUsd]));
-    for (const country of countriesResult) {
+    for (const country of mergedCountriesResult) {
+      // A carried-over country (see freshCodes above) wasn't re-fetched this
+      // cycle — its totalUsd is identical to prevMap's, so recomputing here
+      // would always yield a bogus 0% instead of its real last-known trend.
+      // Keep whatever wowPct it already carries from prevSnapshot untouched.
+      if (isGroupRun && !freshCodes.has(country.code)) continue;
       if (country.totalUsd > 0 && prevMap[country.code] != null && prevMap[country.code] > 0) {
         country.wowPct = +((country.totalUsd - prevMap[country.code]) / prevMap[country.code] * 100).toFixed(2);
       } else {
@@ -436,13 +474,13 @@ async function fetchGroceryBasketPrices(prevSnapshot) {
     }
   }
 
-  const wowCountries = wowAvailable ? countriesResult.filter(c => c.wowPct != null) : [];
+  const wowCountries = wowAvailable ? mergedCountriesResult.filter(c => c.wowPct != null) : [];
   const wowAvgPct = wowCountries.length > 0
     ? +(wowCountries.reduce((s, c) => s + c.wowPct, 0) / wowCountries.length).toFixed(2)
     : 0;
 
   return {
-    countries: countriesResult,
+    countries: mergedCountriesResult,
     fetchedAt: new Date().toISOString(),
     cheapestCountry: cheapest,
     mostExpensiveCountry: mostExpensive,
@@ -459,7 +497,37 @@ export function declareRecords(data) {
   return Array.isArray(data?.countries) ? data.countries.length : 0;
 }
 
-await runSeed('economic', 'grocery-basket', CANONICAL_KEY, () => fetchGroceryBasketPrices(prevSnapshot), {
+// biovita cost-incident follow-up (2026-09-23): 24 countries sequential ×
+// ~25s degraded worst case (see the lockTtlMs comment below) means a full run
+// can legitimately take ~600s — safely under Railway's always-on container
+// but well past even the raised 360s GCP scheduler-service Cloud Run
+// timeout. `--group=<0..GROUP_COUNT-1>` runs only a slice of config.countries
+// (fetchGroceryBasketPrices carries the other countries' last-known entries
+// forward — see the freshCodes merge above), so gcp/scheduler/main.ts can
+// register GROUP_COUNT independent Cloud Scheduler entries instead of one.
+// No arg (Railway's cron, and this script's own default) runs every country
+// in one call exactly as before.
+export const GROUP_COUNT = 4;
+export function countryGroup(index) {
+  const size = Math.ceil(config.countries.length / GROUP_COUNT);
+  return config.countries.slice(index * size, (index + 1) * size);
+}
+const groupArg = process.argv.find((a) => a.startsWith('--group='))?.slice('--group='.length);
+let targetCountries = config.countries;
+if (groupArg !== undefined) {
+  const groupIndex = Number(groupArg);
+  if (!Number.isInteger(groupIndex) || groupIndex < 0 || groupIndex >= GROUP_COUNT) {
+    console.error(`seed-grocery-basket: --group=${groupArg} must be an integer in [0, ${GROUP_COUNT - 1}]`);
+    process.exit(1);
+  }
+  targetCountries = countryGroup(groupIndex);
+}
+
+// isMain guard so tests can import mergeCarriedOverCountries/countryGroup
+// without triggering a real Exa/Firecrawl scrape (this file has no other
+// export-only-for-tests seam — everything else executes as a real run).
+if (process.argv[1]?.endsWith('seed-grocery-basket.mjs')) {
+await runSeed('economic', 'grocery-basket', CANONICAL_KEY, () => fetchGroceryBasketPrices(prevSnapshot, targetCountries), {
   ttlSeconds: CACHE_TTL,
   // 24 countries are fetched SERIALLY (items within a country run concurrently);
   // per-country critical path is ~8s healthy but ~25s degraded (direct 8s fails →
@@ -492,3 +560,4 @@ await runSeed('economic', 'grocery-basket', CANONICAL_KEY, () => fetchGroceryBas
   maxStaleMin: 10080,
   sourceVersion: 'grocery-basket-v1',
 });
+}

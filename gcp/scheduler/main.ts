@@ -150,17 +150,28 @@ const ALWAYS_ON_NOT_SCHEDULED = new Set(['process-simulation-tasks', 'process-de
 
 /**
  * biovita GCP cost incident follow-up (2026-09-23,
- * biovita_gcp_scheduler_cost_pause_2026_09_21.md): seed-bundle-macro's own
- * daily wrapper ran all 15 sections sequentially inside ONE Cloud Run
- * request, which could exceed even a generous shared timeout on a day where
- * several long-interval sections happened to align. Excluded from the
- * standard railway-services.json-driven loop below (same mechanism as
- * ALWAYS_ON_NOT_SCHEDULED, different reason) — its 15 sections are instead
- * hand-registered further down this file, each on its own real intervalMs
- * cadence via `--section=<Label>`, so a single request only ever needs to
- * cover one section's own worst case.
+ * biovita_gcp_scheduler_cost_pause_2026_09_21.md): three services whose
+ * single-invocation work is too large for one Cloud Run request, even after
+ * the shared/scheduler-service timeout raises (60s -> 120s -> a 360s
+ * scheduler-only override), excluded from the standard
+ * railway-services.json-driven loop below (same mechanism as
+ * ALWAYS_ON_NOT_SCHEDULED, different reason) and instead hand-registered as
+ * several independent per-GROUP schedules further down this file, so a
+ * single request only ever needs to cover one group's own worst case:
+ *   - seed-bundle-macro: 15 independent per-SECTION schedules
+ *     (MACRO_BUNDLE_SECTIONS, `--section=<Label>`) — one real intervalMs
+ *     cadence per section instead of one daily wrapper running all 15
+ *     sequentially.
+ *   - seed-grocery-basket: 4 independent per-country-GROUP schedules
+ *     (GROCERY_BASKET_GROUPS, `--group=<0-3>`) — real worst case ~600s for
+ *     all 24 countries sequential (script's own lockTtlMs comment).
+ *   - seed-trade-flows: 3 independent per-reporter-GROUP schedules
+ *     (TRADE_FLOWS_GROUPS, `--group=<0-2>`) — script's own header documents
+ *     "~8.5 min against UN Comtrade" for the full 6-reporter run.
+ * Railway is untouched for all three — each still runs its single full-scope
+ * cron exactly as before via railway-services.json.
  */
-const DECOMPOSED_BUNDLES = new Set(['seed-bundle-macro']);
+const SPLIT_INTO_GROUPS = new Set(['seed-bundle-macro', 'seed-grocery-basket', 'seed-trade-flows']);
 
 type Cadence = { kind: 'cron'; expr: string } | { kind: 'every'; rate: string };
 
@@ -179,7 +190,7 @@ const CADENCES: Record<string, Cadence> = {
   'seed-bundle-derived-signals': { kind: 'cron', expr: '*/5 * * * *' }, // every 5min (Redis-only, fast)
   'seed-bundle-climate': { kind: 'cron', expr: '0 */3 * * *' }, // every 3h
   'seed-bundle-energy-sources': { kind: 'cron', expr: '30 7 * * *' }, // daily 07:30 UTC
-  // seed-bundle-macro is NOT registered here — see DECOMPOSED_BUNDLES below.
+  // seed-bundle-macro is NOT registered here — see SPLIT_INTO_GROUPS below.
   // It still runs as one daily 08:00 UTC bundle on Railway (railway-services.json
   // is untouched), but on GCP it's registered as 15 independent per-section
   // schedules further down this file, one real cadence per section instead of
@@ -201,7 +212,9 @@ const CADENCES: Record<string, Cadence> = {
   // orphaned, so `trade:*` had ZERO keys. Cadences here are the ones each script's
   // own TTL comments are already written against — don't retune one without the other.
   'seed-supply-chain-trade': { kind: 'cron', expr: '0 */6 * * *' }, // TTLs are "8h — 2h buffer over 6h cron cadence"
-  'seed-trade-flows': { kind: 'cron', expr: '0 4 * * *' }, // CACHE_TTL=259200 "72h = 3x daily interval"; off the 6h ticks // TTL_SECONDS=21600 "6h — 6x the 1h cron interval"
+  // seed-trade-flows is NOT registered here — see SPLIT_INTO_GROUPS below.
+  // It still runs as one daily 04:00 UTC job on Railway (railway-services.json
+  // is untouched); on GCP it's 3 independent per-reporter-group schedules.
   'seed-insights': { kind: 'every', rate: '30 minutes' }, // CACHE_TTL=10800 "3h — 6x the 30 min cron interval"
   'seed-hs2-chokepoint-exposure': { kind: 'every', rate: '1 days' }, // TTL_SECONDS=172800 "48h — 2x daily cron interval"
   'seed-comtrade-bilateral-hs4': { kind: 'every', rate: '30 days' }, // own code comment: "new monthly Railway cron"
@@ -280,7 +293,9 @@ const CADENCES: Record<string, Cadence> = {
   'seed-forecast-bets': { kind: 'every', rate: '1 days' }, // header: "mirrors the seed-forecast-resolutions service" (registered daily above)
   'seed-fuel-prices': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
   'seed-fx-rates': { kind: 'every', rate: '1 days' }, // TTL=25*3600 "25 hours — covers daily cron with 1h drift buffer"
-  'seed-grocery-basket': { kind: 'every', rate: '7 days' }, // TTL=864000 "10 days — weekly seed with 3-day cron-drift buffer"
+  // seed-grocery-basket is NOT registered here — see SPLIT_INTO_GROUPS below.
+  // It still runs as one weekly job on Railway (railway-services.json is
+  // untouched); on GCP it's 4 independent per-country-group schedules.
   'seed-hormuz': { kind: 'cron', expr: '0 6 * * *' }, // header: "Cron: every 24 hours (0 6 * * *)"
   'seed-military-flights': { kind: 'every', rate: '10 minutes' }, // LIVE_TTL=600 (10min); health maxStaleMin=30
   // UNCONFIRMED — warm-ping seeder with no TTL constant and no health entry
@@ -506,7 +521,7 @@ const nixpacksEntries = railwayServices.filter((svc) => {
 });
 
 for (const svc of nixpacksEntries) {
-  if (ALWAYS_ON_NOT_SCHEDULED.has(svc.service) || DECOMPOSED_BUNDLES.has(svc.service)) continue;
+  if (ALWAYS_ON_NOT_SCHEDULED.has(svc.service) || SPLIT_INTO_GROUPS.has(svc.service)) continue;
 
   const cadence = CADENCES[svc.service];
   if (!cadence) {
@@ -618,4 +633,43 @@ for (const { section, cadence } of MACRO_BUNDLE_SECTIONS) {
   } else {
     schedule(scheduleName).every(cadence.rate, handler);
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 2026-09-23 — biovita GCP cost incident follow-up (see SPLIT_INTO_GROUPS
+// above). Same weekly cadence as the single job this replaces
+// (scripts/seed-grocery-basket.mjs's own GROUP_COUNT — kept in sync by hand,
+// there is no single source both files read from). Each group covers a
+// contiguous slice of shared/grocery-basket.json's countries; the script
+// itself merges in every OTHER country's last-known entry from the previous
+// snapshot before recomputing the cross-country outlier gate and ranking, so
+// the canonical key's `countries` array always reflects the full list even
+// though only one group is freshly fetched per invocation.
+// ──────────────────────────────────────────────────────────────────────────
+for (let group = 0; group < 4; group++) {
+  schedule(`seed-grocery-basket-group-${group}`).every('7 days', async () => {
+    await runScriptOnce('scripts/seed-grocery-basket.mjs', [`--group=${group}`])();
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 2026-09-23 — biovita GCP cost incident follow-up (see SPLIT_INTO_GROUPS
+// above). Same daily cadence as the single job this replaces
+// (scripts/seed-trade-flows.mjs's own REPORTER_GROUPS — kept in sync by
+// hand, same caveat as above). Staggered 15min apart, not all at 04:00,
+// because — unlike grocery-basket's per-country web scrapes, which hit
+// different site domains per country — all 3 groups share ONE upstream
+// (UN Comtrade), and the script's own INTER_REQUEST_DELAY_MS=3000 pacing
+// was tuned assuming a single sequential process, not 3 independent Cloud
+// Run invocations hitting Comtrade at the exact same instant.
+// ──────────────────────────────────────────────────────────────────────────
+const TRADE_FLOWS_GROUPS: Array<{ group: number; expr: string }> = [
+  { group: 0, expr: '0 4 * * *' },
+  { group: 1, expr: '15 4 * * *' },
+  { group: 2, expr: '30 4 * * *' },
+];
+for (const { group, expr } of TRADE_FLOWS_GROUPS) {
+  schedule(`seed-trade-flows-group-${group}`).cron(expr, async () => {
+    await runScriptOnce('scripts/seed-trade-flows.mjs', [`--group=${group}`])();
+  });
 }

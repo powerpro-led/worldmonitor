@@ -5,6 +5,7 @@ import {
   wtoFetch,
   deriveWtoSeverityStatus,
   fetchTariffTrends,
+  fetchTradeFlows,
   _setAllReportersForTesting,
 } from '../scripts/seed-supply-chain-trade.mjs';
 
@@ -153,6 +154,52 @@ describe('fetchTariffTrends: per-batch isolation under timeout', () => {
       3.4,
       'datapoint from the surviving batch must be intact',
     );
+  });
+});
+
+describe('fetchTradeFlows: batches reporters instead of one request per reporter', () => {
+  // biovita cost-incident follow-up (2026-09-23): the old loop fired one
+  // fetchFlowPair call (2 wtoFetch requests) per ALL_REPORTERS entry plus a
+  // 500ms sleep, hitting Cloud Run's 120s request timeout on a real
+  // ~239-reporter fallback list before any fetch latency was even counted.
+  // This is a direct regression test for that incident, not just the
+  // batching mechanism in the abstract: it fails if a future edit reverts
+  // fetchTradeFlowsWorld back to a per-reporter loop.
+  it('groups a 65-reporter world sweep into 3 batches, not 65 individual requests', async () => {
+    const reporters = Array.from({ length: 65 }, (_, i) => String(100 + i));
+    _setAllReportersForTesting(reporters);
+
+    let worldCallCount = 0;
+    globalThis.fetch = async (input) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!url.includes('api.wto.org/timeseries/v1/data')) {
+        throw new Error(`Unexpected fetch URL in test: ${url}`);
+      }
+      const parsed = new URL(url);
+      const rParam = parsed.searchParams.get('r');
+      const reporterCodes = rParam.split(',');
+      if (reporterCodes.length > 1) worldCallCount++; // world batch (comma-joined r)
+      return new Response(JSON.stringify({
+        Dataset: reporterCodes.map((code) => ({
+          ReportingEconomyCode: code,
+          ReportingEconomy: `Reporter ${code}`,
+          Year: 2025,
+          Value: Number(code), // distinct per reporter so cross-contamination would be caught
+        })),
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    const flows = await fetchTradeFlows();
+
+    // 65 reporters / BATCH=30 = 3 batches × 2 indicators (exports+imports) = 6 world calls,
+    // vs. the old 65 × 2 = 130. The exact assertion (6, not <65*2) is what catches a
+    // regression back to the per-reporter loop.
+    assert.equal(worldCallCount, 6, 'world sweep must batch into 3 groups of <=30 reporters, not one call per reporter');
+
+    // Disaggregation correctness: each reporter's own value lands under its own key,
+    // not merged/overwritten by a batch-mate.
+    assert.equal(flows['trade:flows:v1:100:000:10'].flows[0].exportValueUsd, 100);
+    assert.equal(flows['trade:flows:v1:164:000:10'].flows[0].exportValueUsd, 164);
   });
 });
 

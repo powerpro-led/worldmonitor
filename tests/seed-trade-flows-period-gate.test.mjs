@@ -27,6 +27,7 @@ import {
   KEY_PREFIX,
   TRADE_FLOW_COVERAGE_CODES,
   TRADE_FLOW_RATE_LIMIT_RETRY_BUDGET,
+  REPORTER_GROUPS,
   __setSleepForTests,
 } from '../scripts/seed-trade-flows.mjs';
 
@@ -291,4 +292,78 @@ test('fetchAllFlows throws (→ graceful exit 75) when no candidate period has c
     () => fetchAllFlows({ periods: ['2024', '2023'], pace: async () => {} }),
     /below (global floor|per-reporter)/,
   );
+});
+
+// --- biovita cost-incident follow-up (2026-09-23): --group= reporter-subset split ---
+// seed-trade-flows' own header documents "~8.5 min against UN Comtrade" for a full
+// run — fine for Railway's always-on container, but it hit GCP's shared Cloud Run
+// timeout in the post-cpu-idle-fix force-run test. REPORTER_GROUPS splits the 6
+// reporters into 3 independent invocations; these tests pin the two properties that
+// make the split safe: (1) every reporter appears in exactly one group, and (2) a
+// group that doesn't include China, or has no required reporters at all, still
+// publishes successfully via fetchAllFlows({ reporters, skipChinaGate }) instead of
+// hitting the China-independent gate or the generic coverage gate meant for the
+// full 6-reporter run.
+
+test('REPORTER_GROUPS partitions all 6 strategic reporters exactly once', () => {
+  const ALL_CODES = ['842', '156', '699', '490', '643', '364']; // USA, China, India, Taiwan, Russia, Iran
+  const seen = REPORTER_GROUPS.flatMap((g) => g.codes);
+  assert.deepEqual([...seen].sort(), [...ALL_CODES].sort());
+  assert.equal(new Set(seen).size, seen.length, 'no reporter code should appear in more than one group');
+});
+
+test('fetchAllFlows({reporters, skipChinaGate: true}) publishes a China-less required group', async () => {
+  // India + Taiwan group — both required, neither is China. Without
+  // skipChinaGate this would hit "China reporter 156 missing" even though
+  // that's true by design for this group, not a coverage failure.
+  const groupReporters = [
+    { code: '699', name: 'India' },
+    { code: '490', name: 'Taiwan' },
+  ];
+  globalThis.fetch = async (url) => {
+    fetchCalls.push(String(url));
+    return new Response(
+      JSON.stringify({ data: [{ period: 2024, flowCode: 'X', primaryValue: 100, partnerCode: '000' }] }),
+      { status: 200 },
+    );
+  };
+  const res = await fetchAllFlows({ periods: ['2024'], pace: async () => {}, reporters: groupReporters, skipChinaGate: true });
+  assert.ok(res.flows.length > 0, 'must publish successfully without China in scope');
+  assert.ok(fetchCalls.every((u) => {
+    const rc = new URL(u).searchParams.get('reporterCode');
+    return rc === '699' || rc === '490';
+  }), 'must only query this group\'s own reporters, not the full 6');
+});
+
+test('fetchAllFlows({reporters: best-effort-only}) never blocks publish, even with zero data', async () => {
+  // Russia + Iran — both required:false. Real behavior: they usually return
+  // 0 rows (suspended/sporadic UN Comtrade reporting). Before the
+  // gated.length===0 fix, checkCoverage's global-ratio check defaulted
+  // total=0 → globalRatio=0 → "0% coverage, refuse to publish", crashing a
+  // group that was never supposed to be gated at all.
+  const groupReporters = [
+    { code: '643', name: 'Russia', required: false },
+    { code: '364', name: 'Iran', required: false },
+  ];
+  globalThis.fetch = async (url) => {
+    fetchCalls.push(String(url));
+    return new Response(JSON.stringify({ data: [] }), { status: 200 }); // zero coverage, as real Russia/Iran usually are
+  };
+  const res = await fetchAllFlows({ periods: ['2024'], pace: async () => {}, reporters: groupReporters, skipChinaGate: true });
+  assert.equal(res.period, '2024', 'must publish on the first period, never retry a fallback for a non-gated group');
+  assert.equal(res.flows.length, 0, 'zero data is a legitimate outcome for this group, not a rejected publish');
+});
+
+test('checkCoverage: skipChinaGate defaults to false — omitting it keeps the existing "China missing" rejection', () => {
+  // Direct regression guard for the default-parameter behavior itself,
+  // independent of fetchAllFlows' own plumbing above.
+  const reporters = [{ code: '842', name: 'USA' }, { code: '699', name: 'India' }];
+  const commodities = [{ code: '2709', desc: 'Crude' }];
+  const perKeyFlows = Object.fromEntries(reporters.map((r) => [
+    `${KEY_PREFIX}:${r.code}:2709`,
+    { flows: [{ year: 2024 }] },
+  ]));
+  const res = checkCoverage(perKeyFlows, reporters, commodities);
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /China.*156.*missing/i);
 });

@@ -51,7 +51,7 @@ One-time operator setup: the Supabase project must allowlist **both** sign-in re
 
 | URL                                                  | Used by                                                                                             |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `http://127.0.0.1:46124/callback`                    | `worldmonitor-local login` (the CLI's loopback flow)                                                |
+| `http://127.0.0.1:46124/callback`                    | the `login` CLI command's loopback flow                                                             |
 | `http://localhost:46123/dashboard.html?embed=vscode` | the sign-in button inside the VS Code panel (the iframe is served from `localhost`, not the bare IP) |
 
 Your GitHub account must be on the deployment's allow-list (or in its allow-listed org) — that is the invite.
@@ -106,7 +106,7 @@ export WORLDMONITOR_LOCAL_TOKEN="<paste the token>"   # add to your shell profil
 
 (The sidecar accepts a standard `Authorization: Bearer <token>` header as an alternative to the `x-worldmonitor-local-token` header above — that's what Codex's `bearer_token_env_var` sends, so no server-side config is needed for either client.)
 
-Any other MCP client works the same way: point it at `http://127.0.0.1:46123/api/mcp` with either header carrying the token from `worldmonitor-local token`.
+Any other MCP client works the same way: point it at `http://127.0.0.1:46123/api/mcp` with either header carrying the token from the `token` command above.
 
 **Using the tools well, not just connecting them:** the bundle ships a `worldmonitor-mcp-usage`
 Skill at `.claude/skills/worldmonitor-mcp-usage/SKILL.md` — Claude Code auto-loads it once you
@@ -138,7 +138,7 @@ See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and wh
 | --- | --- |
 | Dashboard panels stay empty | `status` shows `backend up`? The cache only refreshes once you have an Upstash read-only credential — normally the `local-config` broker supplies it at `login` (its output says so, or `config list` shows the token as set). If your org doesn't run the broker, set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_READONLY_TOKEN` in `.env` and `restart`. |
 | Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
-| "Brief service unavailable" | You haven't signed in, or the session expired — run `worldmonitor-local login` again. |
+| "Brief service unavailable" | You haven't signed in, or the session expired — run `node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs login` again. |
 | Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
 | `login` fails after GitHub consent | Your account isn't on the allow-list / in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
 | Sign-in inside VS Code bounces back logged out | `http://localhost:46123/dashboard.html?embed=vscode` isn't allowlisted in Supabase (see above). |

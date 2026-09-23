@@ -170,6 +170,19 @@ so `$env:USERPROFILE\.worldmonitor\` and PATH are clean.
   `%USERPROFILE%\.worldmonitor\worldmonitor-local-task.xml`
 - Log: `%USERPROFILE%\.worldmonitor\local-api.log`
 - `uninstall` removes the task and the `.xml`/`.cmd`/`.vbs`
+- **Upgrade via `irm .../install.ps1 | iex` while the backend is running**
+  (steps 1-3 above only exercise `setup.ps1` directly against a manually
+  extracted zip, which never touches `install.ps1`'s own app-dir-replace
+  logic — this needs the real one-liner, run a second time against an
+  already-installed machine with the Scheduled Task still `Running`):
+  the task stops and comes back up automatically, `%USERPROFILE%\.worldmonitor\app`
+  is never left partially deleted even if you kill the installer mid-run,
+  and both `.env` and `vscode-extension\sidecar\local-cache.db` survive
+  with their old content (check mtime, not just presence — a truncated
+  restore still passes a bare existence check). Found broken (destructive
+  half-delete + backend not restarting + mirror silently discarded) via a
+  real field report upgrading v2.13.6 -> v2.13.7; fixed but not yet
+  re-verified on real Windows hardware.
 
 ---
 
@@ -203,4 +216,5 @@ cd - && rm -rf /tmp/relcheck
 | survives logout/reboot | B / C | backend back up on its own |
 | `.vsix` install + dashboard opens | B / C | panels render |
 | `restart` / `uninstall` | B / C | clean |
+| re-run the installer over an existing install (upgrade) | B / C | backend stops and comes back up; `.env` and `local-cache.db` both survive (check mtime/size, not just presence) |
 | published `.sha256` | post | `shasum -c` OK for both archives |

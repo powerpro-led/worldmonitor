@@ -26,6 +26,17 @@ All notable changes to World Monitor are documented here.
   effect, the backend now also actually restarts on every Windows upgrade
   (setup.ps1 re-registers and runs the task at the end regardless).
 
+### Fixed — installer (all platforms)
+
+- **Every upgrade silently discarded the synced local mirror
+  (`local-cache.db`), forcing a full resync (~1h against Upstash) for no
+  reason**: both `install` (macOS/Linux) and `install.ps1` (Windows) only
+  ever preserved `.env` across an upgrade — `local-cache.db` lives next to
+  it purely because that's where the release bundle happens to unpack, not
+  because it's version-specific data, but it was wiped along with everything
+  else on every reinstall. Both installers now save and restore it the same
+  way they already do `.env`.
+
 ## [2.13.7] - 2026-09-22
 
 ### Fixed — local sync (Windows)

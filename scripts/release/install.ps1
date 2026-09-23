@@ -141,6 +141,25 @@ try {
     Info "kept your existing .env"
   }
 
+  # Preserve the synced local-cache.db across the upgrade too, same idea as
+  # .env above. It lives inside the app dir purely because that's where the
+  # bundle happens to unpack — nothing about it is version-specific — but
+  # every upgrade previously discarded it anyway, forcing a full resync
+  # (~1h against Upstash, per a real field report) for no reason. A plain
+  # Copy-Item here is fine even while the backend still has it open: it only
+  # needs read+share-read access, and the one thing a read-only SQLite
+  # handle denies other processes is FILE_SHARE_DELETE (see the EPERM
+  # comments in local-sync.mjs) — sharing for reads is unaffected. local-
+  # sync's own swap is already atomic too, so at worst this catches it
+  # mid-swap and restores a slightly older (still fully valid) mirror.
+  $cacheRelPath = Join-Path 'vscode-extension' (Join-Path 'sidecar' 'local-cache.db')
+  $savedCache = $null
+  if (Test-Path (Join-Path $AppDir $cacheRelPath)) {
+    $savedCache = Join-Path $tmp 'saved-local-cache.db'
+    Copy-Item (Join-Path $AppDir $cacheRelPath) $savedCache -ErrorAction SilentlyContinue
+    if (Test-Path $savedCache) { Info "kept your synced local-cache.db" } else { $savedCache = $null }
+  }
+
   # Stop the running backend before replacing the install dir. It holds an
   # open handle on vscode-extension\sidecar\local-cache.db for as long as it
   # runs, and Windows — unlike POSIX `rm -rf` — refuses to delete a file that
@@ -206,6 +225,13 @@ try {
   $innerApp = Get-ChildItem -Directory $appExtract | Select-Object -First 1
   Move-Item $innerApp.FullName $AppDir
   if ($savedEnv) { Copy-Item $savedEnv (Join-Path $AppDir '.env') -Force }
+  if ($savedCache) {
+    $cacheTarget = Join-Path $AppDir $cacheRelPath
+    if (Test-Path (Split-Path -Parent $cacheTarget)) {
+      Copy-Item $savedCache $cacheTarget -Force
+      Info "restored your synced local-cache.db"
+    }
+  }
 
   # ── 3. hand off to the in-bundle setup ────────────────────────────
   #

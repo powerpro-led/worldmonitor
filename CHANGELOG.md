@@ -4,6 +4,8 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.8] - 2026-09-23
+
 ### Fixed — installer (Windows)
 
 - **Upgrading while the backend was running could fail and leave the
@@ -36,6 +38,14 @@ All notable changes to World Monitor are documented here.
   because it's version-specific data, but it was wiped along with everything
   else on every reinstall. Both installers now save and restore it the same
   way they already do `.env`.
+
+### Docs
+
+- `INSTALL.md` no longer implies a global `worldmonitor-local` CLI shim
+  exists on either platform — neither installer ever puts it on `PATH`;
+  the correct invocation is `node scripts/worldmonitor-local.mjs <cmd>`,
+  which every runnable example in the doc already used except three prose
+  mentions, now consistent with the rest.
 
 ## [2.13.7] - 2026-09-22
 

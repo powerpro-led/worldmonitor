@@ -13,6 +13,23 @@ services:
   - match: gcp/scheduler/main.ts
     start: npx tsx watch --env-file=.env $SERVICE_PATH
     runtime: scheduler
+    # biovita GCP cost incident follow-up (2026-09-23): `runtime:` only picks
+    # the Dockerfile/build context — it is NOT what a per-service stack
+    # `config.<name>` override (see scripts/generate-nitric-org-stack.mjs's
+    # SERVICE_CLOUDRUN_OVERRIDES) matches against. Confirmed via nitrictech/
+    # cli's own source (pkg/project/config.go's `ServiceConfiguration.Type`,
+    # `yaml:"type,omitempty"`) and nitrictech/nitric's gcp provider
+    # (cloud/gcp/deploy/service.go: `p.GcpConfig.Config[config.Type]`, empty
+    # string defaults to "default") — org-provisioning-05 traced the provider
+    # side after `config.scheduler.cloudrun.timeout: 360` deployed but
+    # `scheduler-main` still showed the shared 120s default. Without this
+    # `type:` field every service's Type is "", so every per-service override
+    # keyed by anything other than "default" is silently unreachable — this
+    # was true for the current scheduler override AND for the historical
+    # `ais-relay` min-instances pin before that service was removed
+    # 2026-09-18 (unconfirmed whether that one was ever actually verified
+    # live via gcloud, or just assumed to work the same way).
+    type: scheduler
   # scripts/ais-relay.cjs was a service here until 2026-09-18. Background
   # (P14 Phase 2 tail, PLATFORM_ARCHITECTURE.md 2026-09-07): the relay holds
   # the platform's only genuinely persistent connection (the aisstream.io

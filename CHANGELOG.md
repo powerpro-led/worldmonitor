@@ -4,6 +4,28 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+### Fixed — installer (Windows)
+
+- **Upgrading while the backend was running could fail and leave the
+  install directory half-deleted, with no way to stop the backend or retry
+  short of manual `schtasks`/`Stop-Process` intervention**: `install.ps1`
+  replaced an existing install with `Remove-Item -Recurse -Force $AppDir`,
+  which walks and deletes file-by-file and aborts mid-walk the moment it
+  hits a locked handle — Windows refuses to delete an open file, unlike
+  POSIX `rm -rf` (why macOS/Linux never hit this). The backend's Scheduled
+  Task holds `vscode-extension\sidecar\local-cache.db` open for as long as
+  it runs, so any upgrade attempted without stopping it first could abort
+  with `api\`, `dist\`, `node_modules\`, `scripts\` (including the CLI
+  itself) already gone. Found via a real Windows field report upgrading
+  v2.13.6 -> v2.13.7. Fixed two ways: the installer now stops the running
+  backend (Scheduled Task + kill-by-port) before touching the install dir,
+  and the replacement itself now renames the old dir aside before deleting
+  it rather than deleting in place — a directory rename is a single
+  metadata operation that can't partially fail the way a recursive delete
+  can, so a locked file can no longer corrupt a live install. As a side
+  effect, the backend now also actually restarts on every Windows upgrade
+  (setup.ps1 re-registers and runs the task at the end regardless).
+
 ## [2.13.7] - 2026-09-22
 
 ### Fixed — local sync (Windows)

@@ -140,7 +140,67 @@ try {
     Copy-Item (Join-Path $AppDir '.env') $savedEnv
     Info "kept your existing .env"
   }
-  if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
+
+  # Stop the running backend before replacing the install dir. It holds an
+  # open handle on vscode-extension\sidecar\local-cache.db for as long as it
+  # runs, and Windows — unlike POSIX `rm -rf` — refuses to delete a file that
+  # is still open. A fresh install has nothing to stop; this is a no-op then.
+  if (Test-Path $AppDir) {
+    & schtasks.exe /query /tn WorldMonitorLocal *> $null
+    if ($LASTEXITCODE -eq 0) {
+      Say "Stopping the running backend for the upgrade..."
+      & schtasks.exe /end /tn WorldMonitorLocal *> $null
+    }
+    # The task's node child is detached once wscript returns (see
+    # cmdRestart in worldmonitor-local.mjs), so /end alone won't release the
+    # handle -- kill whatever is actually listening on the dashboard port too.
+    # Mirrors winKillPort() in worldmonitor-local.mjs: `.` as well as `:` before
+    # the port (older/localized netstat formats can print "0.0.0.0.46123"),
+    # and LISTENING matched case-insensitively without relying on column
+    # position — netstat's STATE tokens are not localized, but column widths
+    # can vary.
+    $listening = & netstat.exe -ano | Where-Object { $_ -match 'LISTENING' -and $_ -match '[:.]46123\b' }
+    $listenPids = $listening | ForEach-Object { ($_.Trim() -split '\s+')[-1] } | Where-Object { $_ -match '^\d+$' -and $_ -ne '0' } | Select-Object -Unique
+    foreach ($procId in $listenPids) {
+      try { Stop-Process -Id $procId -Force -ErrorAction Stop } catch { }
+    }
+  }
+
+  # Rename first, delete second. Rename-Item on a directory is a single
+  # metadata operation — it does not need to touch (or close) files inside —
+  # so unlike `Remove-Item -Recurse -Force`, which walks and deletes
+  # file-by-file and aborts mid-walk on the first still-locked handle, it
+  # cannot leave a half-deleted app dir behind. That partial delete is what
+  # made a real 2026-09-23 Windows upgrade unrecoverable without manual
+  # intervention: api\, dist\, node_modules\, scripts\ (including the CLI
+  # needed to stop or retry) were already gone by the time Remove-Item
+  # errored on the locked local-cache.db.
+  #
+  # Stopping the backend above should release the lock immediately, but it's
+  # a best effort, not a guarantee (a slow-to-exit process, antivirus, a
+  # stray open handle) — so retry briefly before giving up with an actionable
+  # message instead of a raw exception. Deleting the renamed-away old copy is
+  # still best-effort: if it's somehow still locked, it's harmless clutter
+  # outside the live path, not a broken install, and the next upgrade cleans
+  # it up once whatever was holding it has exited.
+  if (Test-Path $AppDir) {
+    $oldAppDir = "$AppDir.old"
+    if (Test-Path $oldAppDir) { Remove-Item -Recurse -Force $oldAppDir -ErrorAction SilentlyContinue }
+    $renamed = $false
+    for ($i = 0; $i -lt 8; $i++) {
+      try {
+        Rename-Item -Path $AppDir -NewName (Split-Path -Leaf $oldAppDir)
+        $renamed = $true
+        break
+      } catch {
+        Start-Sleep -Milliseconds (200 * ($i + 1))
+      }
+    }
+    if (-not $renamed) {
+      Die "could not replace the existing install at $AppDir - a file inside it (likely local-cache.db) is still locked by a running backend.`n  Stop it first:  schtasks /end /tn WorldMonitorLocal`n  then re-run this installer. Nothing was deleted."
+    }
+    Remove-Item -Recurse -Force $oldAppDir -ErrorAction SilentlyContinue
+  }
   $appExtract = Join-Path $tmp 'app-extract'
   Expand-Archive -Path $appZipPath -DestinationPath $appExtract -Force
   $innerApp = Get-ChildItem -Directory $appExtract | Select-Object -First 1

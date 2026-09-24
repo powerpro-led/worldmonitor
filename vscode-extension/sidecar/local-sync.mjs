@@ -128,8 +128,17 @@ const SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || path.join(__dirname, 'local
  * The rebuild is staged here and renamed over SQLITE_PATH only once the run
  * has fully succeeded — see openDatabase() for why that matters now that this
  * script runs unattended on a timer.
+ *
+ * Suffixed with this process's own PID, not a fixed `.tmp` — this file is a
+ * fresh child process every run (see local-api-server.mjs's
+ * startFullReconciliationLoop()), and a fixed shared path meant two
+ * overlapping runs (a slow run still in flight when the next interval fires,
+ * or an orphaned child surviving a backend restart) would build into and
+ * clean up the SAME scratch file, corrupting one run's data with the
+ * other's — or racing the FATAL handler below's cleanup against the other
+ * run's still-open write handle. Found via a real Windows field report.
  */
-const SQLITE_TMP_PATH = `${SQLITE_PATH}.tmp`;
+const SQLITE_TMP_PATH = `${SQLITE_PATH}.${process.pid}.tmp`;
 
 // Own retry/timeout layer — see header comment for why the SDK's built-in
 // `retry`/`signal` options don't work for this. RETRY_ATTEMPTS absorbs VPN
@@ -462,7 +471,9 @@ function keepKey(key) {
 }
 
 function openDatabase() {
-  // A leftover .tmp means a previous run died; it is scratch, so drop it.
+  // SQLITE_TMP_PATH is PID-suffixed, so this PID's own path can't legitimately
+  // already exist — belt-and-suspenders in case the OS ever recycles a PID
+  // fast enough to collide with a hard-crashed prior run's leftover file.
   fs.rmSync(SQLITE_TMP_PATH, { force: true });
   const db = new DatabaseSync(SQLITE_TMP_PATH);
   // Always a fresh file, so a schema change here is non-breaking — no
@@ -595,15 +606,26 @@ async function main() {
   // win32 VFS doesn't open with FILE_SHARE_DELETE, so a rename over this path
   // fails with EPERM if ANY reader — even one that opened read-only and has
   // already called close() — happened to hold the underlying Windows HANDLE at
-  // the exact instant of the rename. server/_shared/sidecar-cache.ts's
-  // loadMirror() is exactly such a reader: it re-opens SQLITE_PATH read-only,
-  // slurps the whole table into memory, and closes again, every time the
-  // file's mtime changes (see that function's own header) — brief, but not
-  // synchronized with this rename, and Windows apparently doesn't always
-  // release the handle the instant close() returns (antivirus real-time
-  // scanning is one known cause). POSIX rename() has no such restriction
+  // the exact instant of the rename. POSIX rename() has no such restriction
   // (open-file rename works unconditionally), so this loop is a no-op there —
   // the very first attempt always wins and RETRY_MS_LADDER is never consulted.
+  //
+  // CORRECTION (2026-09-24, real Windows field report, two versions running
+  // with this exact retry ladder in place): the "brief" read described above
+  // is not actually what was blocking the rename 6/6 times, every cycle,
+  // indefinitely. sync-listener.mjs's upsertRow() used to set `PRAGMA
+  // journal_mode = WAL` on this same live file on every push write — and
+  // journal_mode is a property of the FILE, not the connection, so it stuck
+  // across opens, including server/_shared/sidecar-cache.ts's loadMirror()
+  // and this very rebuild's own live-push-merge read above. A WAL database's
+  // `-shm` companion is memory-mapped, and Windows refuses to rename or
+  // delete a file that is still memory-mapped by ANY process — not a timing
+  // race a short retry ladder can win, regardless of how many attempts or
+  // how long the backoff. Fixed at the source in sync-listener.mjs (forces
+  // DELETE/rollback-journal mode instead, which a closed handle actually
+  // releases on Windows) — the retry ladder stays as defense-in-depth for
+  // whatever residual "briefly held" cases still exist (antivirus scanning,
+  // etc.), which it was always adequate for.
   const RENAME_RETRY_MS_LADDER = [50, 100, 200, 400, 800];
   let renamed = false;
   let lastRenameErr;
@@ -615,10 +637,12 @@ async function main() {
       lastRenameErr = err;
       const retryable = err.code === 'EPERM' || err.code === 'EBUSY';
       if (!retryable || attempt >= RENAME_RETRY_MS_LADDER.length) {
-        // Non-retryable, or out of attempts: SQLITE_TMP_PATH is left in
-        // place (never deleted here) and SQLITE_PATH is untouched — the
-        // NEXT sync's rebuild overwrites SQLITE_TMP_PATH and tries again,
-        // so this is stale data, not lost data. Surface loudly either way:
+        // Non-retryable, or out of attempts: SQLITE_PATH is untouched, so
+        // this is stale data, not lost data — the live mirror keeps serving
+        // whatever the last successful rename produced. SQLITE_TMP_PATH
+        // itself is this run's own scratch file (PID-suffixed, see its own
+        // comment above) and is cleaned up by the top-level FATAL handler
+        // below, not reused by a future run. Surface loudly either way:
         // this was previously a silent FATAL that only a log-diver would
         // ever see, with no signal in `status`.
         console.error(
@@ -631,7 +655,7 @@ async function main() {
       const wait = RENAME_RETRY_MS_LADDER[attempt];
       console.warn(
         `[local-sync] rename → ${SQLITE_PATH} hit ${err.code} (attempt ${attempt + 1}/${RENAME_RETRY_MS_LADDER.length + 1}), ` +
-          `retrying in ${wait}ms — likely a reader (sidecar-cache) transiently holding the file on Windows`,
+          `retrying in ${wait}ms — a reader transiently holding the file on Windows`,
       );
       await new Promise((r) => setTimeout(r, wait));
     }
@@ -662,7 +686,20 @@ if (isMainModule()) {
   main().catch((err) => {
     console.error('[local-sync] FATAL:', err.message);
     // Discard the half-built scratch file; the live mirror was never touched.
-    fs.rmSync(SQLITE_TMP_PATH, { force: true });
+    // { force: true } only silences ENOENT (already gone) — it does NOT
+    // silence EBUSY/EPERM, so a failure that reaches here (this file's own
+    // rename already failed above) could throw a SECOND, uncaught exception
+    // right here and crash with a raw Node stack instead of the intended
+    // FATAL log line + clean exit(1). Found via a real Windows field report.
+    // Best-effort like every other cleanup in this file: on failure, this
+    // run's own PID-suffixed scratch file (see SQLITE_TMP_PATH's own
+    // comment) is just orphaned disk clutter, not corruption or data loss —
+    // no other run will ever try to reuse or rename over that exact path.
+    try {
+      fs.rmSync(SQLITE_TMP_PATH, { force: true });
+    } catch (cleanupErr) {
+      console.warn(`[local-sync] could not remove stale scratch file ${SQLITE_TMP_PATH}: ${cleanupErr.message}`);
+    }
     process.exit(1);
   });
 }

@@ -143,17 +143,33 @@ function writeCursor(id) {
  * whatever file is actually live at that moment, sidestepping that trap
  * entirely rather than trying to detect the swap.
  *
- * WAL mode is set on every open (cheap, idempotent) so this small, fast,
- * single-row write never blocks a concurrent reader (sidecar-cache.ts's
- * loadMirror()) behind the default rollback-journal's exclusive lock. WAL
- * is NOT sticky across local-sync.mjs's rebuild (that scratch file starts
- * fresh, journal_mode unset) — reset here on every write, not assumed.
+ * journal_mode is forced to DELETE (SQLite's own default, but forced rather
+ * than assumed — see below) on every open, NOT WAL as an earlier version of
+ * this function set. WAL was meant to stop this small, fast, single-row
+ * write from blocking a concurrent reader (sidecar-cache.ts's loadMirror())
+ * behind the rollback-journal's exclusive lock — a real but minor and
+ * self-healing concern (loadMirror() already tolerates and retries a failed
+ * read). What WAL actually did on Windows was far worse: journal_mode is a
+ * property of the DATABASE FILE ITSELF, not the connection, so once this
+ * function set it, EVERY future opener of local-cache.db — including
+ * local-sync.mjs's own rename target — inherited WAL mode too. A WAL
+ * database's `-shm` companion file is memory-mapped, and Windows will not
+ * rename or delete a file that is still memory-mapped by any process,
+ * however briefly — unlike the plain rollback-journal case, where a closed
+ * handle is genuinely closed. That is the real reason local-sync.mjs's
+ * rename retry ladder (50-800ms) never once succeeded on a real Windows
+ * field report two versions running (2026-09-23, 2026-09-24): it was tuned
+ * for a transient lock, not a memory-mapped file Windows won't let go of
+ * regardless of how long you wait. Forcing DELETE mode here converts an
+ * already WAL-tainted file back the moment this function next runs against
+ * it — no separate migration needed, since local-sync.mjs's rebuild always
+ * writes into a brand-new scratch file first.
  */
 function upsertRow(key, value, type) {
   fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
   const db = new DatabaseSync(SQLITE_PATH);
   try {
-    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA journal_mode = DELETE');
     db.exec(KV_CACHE_DDL);
     db.prepare(
       'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '

@@ -59,13 +59,38 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           NAME="worldmonitor-local-$VERSION"
           VSIX="$(ls vscode-extension/*.vsix)"
+          ASSETS=(
+            "release/$NAME.tar.gz"
+            "release/$NAME.tar.gz.sha256"
+            "release/$NAME.zip"
+            "release/$NAME.zip.sha256"
+            "release/install"
+            "release/install.ps1"
+            "$VSIX"
+          )
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            "release/$NAME.tar.gz" \
-            "release/$NAME.tar.gz.sha256" \
-            "release/$NAME.zip" \
-            "release/$NAME.zip.sha256" \
-            "release/install" \
-            "release/install.ps1" \
-            "$VSIX"
+            "${ASSETS[@]}"
+
+          # gh release create has reported success (exit 0) while uploading
+          # zero assets — observed twice in a row on the same tagged commit,
+          # 2026-09-23, no code changes between attempts. A release with the
+          # tag published but no install script is worse than no release at
+          # all, since `releases/latest` starts pointing at it immediately.
+          # Verify the count actually landed instead of trusting the exit
+          # code, and if it didn't, delete the broken release (keeping the
+          # tag) so `latest` falls back to the last good release rather than
+          # silently breaking the documented one-liner install.
+          EXPECTED="${#ASSETS[@]}"
+          UPLOADED=0
+          for attempt in 1 2 3; do
+            UPLOADED="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')"
+            [ "$UPLOADED" = "$EXPECTED" ] && break
+            sleep 5
+          done
+          if [ "$UPLOADED" != "$EXPECTED" ]; then
+            echo "::error::gh release create for $GITHUB_REF_NAME only has $UPLOADED/$EXPECTED assets after 3 checks — deleting the broken release (tag kept) so 'latest' doesn't point at it. Re-push nothing; just re-run this job."
+            gh release delete "$GITHUB_REF_NAME" --yes
+            exit 1
+          fi

@@ -459,9 +459,17 @@ jobs:
           R2_BOOTSTRAP_ACCESS_KEY_ID=${{ secrets.R2_BOOTSTRAP_ACCESS_KEY_ID }}
           R2_BOOTSTRAP_SECRET_ACCESS_KEY=${{ secrets.R2_BOOTSTRAP_SECRET_ACCESS_KEY }}
           PROXY_URL=${{ secrets.PROXY_URL }}
-          RELAY_URL=${{ secrets.RELAY_URL }}
           WORLDMONITOR_RELAY_KEY=${{ secrets.WORLDMONITOR_RELAY_KEY }}
           EOF
+
+      # RELAY_URL is deliberately absent above (2026-09-24): scripts/_domain-config.mjs's
+      # resolveProxyOrigin() already derives `https://proxy.<APP_DOMAIN>` when RELAY_URL is
+      # unset — that's the correct per-org production value. RELAY_URL only exists as a local-dev
+      # override (`http://localhost:3004` in a developer's own .env) to bypass the domain-based
+      # resolution when running a relay locally. A static secret here would silently pin every
+      # org's deploy to whatever one developer's local value happened to be — caught live on
+      # biovita's Cloud Run service (revision -00014-pv6 through -00015-2bs briefly shipped
+      # RELAY_URL=http://localhost:3004, a broken loopback URL, before this was reverted).
 
       # WORKER_TIMEOUT above: Nitric's membrane starts the app process, then
       # waits for it to register its workers (one per api/schedule handler)

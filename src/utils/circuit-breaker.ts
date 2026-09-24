@@ -57,12 +57,27 @@ function isDesktopOfflineMode(): boolean {
 }
 
 /**
- * True for both the real Tauri desktop app and the VS Code embed — every
- * runtime backed by vscode-extension/sidecar/local-api-server.mjs in
- * LOCAL_API_MODE=tauri-sidecar mode. Checked directly against window
- * globals (not services/runtime.ts's isDesktopRuntime()/
- * isVsCodeEmbedRuntime()) to keep this file dependency-free, matching
- * isDesktopOfflineMode() above.
+ * True for the real Tauri desktop app, the VS Code embed, AND a plain
+ * browser tab pointed at the local backend (e.g. the bookmarked
+ * http://127.0.0.1:46123/ INSTALL.md tells every operator to use, and
+ * PLATFORM_ARCHITECTURE.md's "no Desktop launcher — CLI + browser bookmark
+ * covers the same ground" decision made the documented primary way to use
+ * this product) — every runtime backed by
+ * vscode-extension/sidecar/local-api-server.mjs in LOCAL_API_MODE=tauri-
+ * sidecar mode. The Tauri/VS Code globals only cover the first two; a bare
+ * bookmarked tab has neither, so it fell through this check entirely until
+ * a real Windows field report's "why is /api/wm-session still 503ing in
+ * local mode" traced back here — every caller of this function (wm-session's
+ * anonymous cookie mint, this file's own persistCache gate, Panel's
+ * storage-key scoping, mirror-key-hints) was silently not recognizing that
+ * case. `window.__WM_RUNTIME_CONFIG.mode` closes the gap: the backend
+ * injects it into every document it serves regardless of how the client got
+ * there (see local-api-server.mjs's buildRuntimeConfigShim()), so it works
+ * for exactly the case the two existing globals can't.
+ *
+ * Checked directly against window globals (not services/runtime.ts's
+ * isDesktopRuntime()/isVsCodeEmbedRuntime()) to keep this file
+ * dependency-free, matching isDesktopOfflineMode() above.
  *
  * In this mode, server/_shared/redis.ts reads exclusively from
  * server/_shared/sidecar-cache.ts's local SQLite mirror (itself synced from
@@ -83,8 +98,13 @@ function isDesktopOfflineMode(): boolean {
  */
 export function isSidecarBackedRuntime(): boolean {
   if (typeof window === 'undefined') return false;
-  const w = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown; __wmVsCodeApi?: unknown };
-  return Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__wmVsCodeApi);
+  const w = window as unknown as {
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+    __wmVsCodeApi?: unknown;
+    __WM_RUNTIME_CONFIG?: { mode?: string };
+  };
+  return Boolean(w.__TAURI__ || w.__TAURI_INTERNALS__ || w.__wmVsCodeApi || w.__WM_RUNTIME_CONFIG?.mode === 'tauri-sidecar');
 }
 
 export class CircuitBreaker<T> {

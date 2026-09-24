@@ -16,6 +16,7 @@ import { getCanonicalApiOrigin, toApiUrl } from './runtime';
 import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
 import { isPublicSharedRpcRequest } from '@/shared/public-rpc-cache';
 import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 
 const STORAGE_KEY = 'wm-session-exp';
 // Refresh well before expiry so a half-loaded page doesn't fail mid-flight.
@@ -127,6 +128,17 @@ async function fetchNewSession(body?: { widgetKey?: string; proKey?: string }): 
 }
 
 export async function ensureWmSession(): Promise<boolean> {
+  // The anonymous wms_ cookie exists to identity-scope rate limiting on the
+  // shared cloud service (issue #3541) — meaningless for a single operator's
+  // own local sidecar, which already authenticates every request via the
+  // separate local-api-token bearer scheme and has no abuse surface to
+  // defend (same rationale as server/_shared/rate-limit.ts's
+  // isLocalSidecarMode() bypass). Without this, POST /api/wm-session 503s in
+  // local mode (no WM_SESSION_SECRET is ever configured there — nothing
+  // mints or checks this cookie server-side either), flooding the console
+  // with errors that look like an auth failure but aren't. Found via a real
+  // Windows field report.
+  if (isSidecarBackedRuntime()) return true;
   if (isWmSessionDead()) return false;
   if (isFresh(cached)) return true;
   if (inflight) return inflight;

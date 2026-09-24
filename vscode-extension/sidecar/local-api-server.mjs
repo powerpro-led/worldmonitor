@@ -1712,8 +1712,8 @@ function buildVsCodeEmbedShim(localToken) {
  * into EVERY served HTML document (plain browser tab + the VS Code iframe),
  * ahead of any deferred module script. Client-safe values only — the
  * publishable/anon key is public by design (it already ships in a
- * normally-built dist/). Empty string when nothing is configured, so a
- * conventionally-built dist/ with baked env is unaffected.
+ * normally-built dist/). See buildRuntimeConfigShim() itself for the `mode`
+ * field this also always carries.
  */
 /**
  * Origin of the one shared ngrok tunnel this dev machine reuses for every
@@ -1738,13 +1738,26 @@ function getOauthTunnelOrigin() {
   }
 }
 
-function buildRuntimeConfigShim() {
-  const cfg = {};
+// `mode` mirrors this file's own `context.mode` (LOCAL_API_MODE) so
+// src/utils/circuit-breaker.ts's isSidecarBackedRuntime() can tell a plain
+// browser tab bookmarked at http://127.0.0.1:46123/ apart from the cloud web
+// app — the ONLY thing that previously distinguished sidecar-backed clients
+// was the Tauri desktop globals or the VS Code embed's __wmVsCodeApi shim,
+// neither of which a bare bookmarked tab has, even though it's the
+// documented primary way to use this product (PLATFORM_ARCHITECTURE.md:
+// no Desktop launcher, "CLI + browser bookmark" covers the same ground).
+// Every isSidecarBackedRuntime() caller (wm-session's anonymous cookie mint,
+// cached-risk-scores/cached-theater-posture's persistence skip, Panel's
+// storage-key scoping, mirror-key-hints) was therefore silently NOT
+// recognizing that bookmarked-tab case at all. Always present (not gated on
+// Supabase config existing) so a client-side check never has to distinguish
+// "not sidecar-backed" from "sidecar-backed but nothing else configured yet".
+function buildRuntimeConfigShim(mode) {
+  const cfg = { mode };
   const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (url) cfg.supabaseUrl = url;
   if (key) cfg.supabaseKey = key;
-  if (Object.keys(cfg).length === 0) return '';
   // Escape `<` so a value can never break out of the <script> element.
   const json = JSON.stringify(cfg).replace(/</g, '\\u003c');
   return `<script>window.__WM_RUNTIME_CONFIG=${json};</script>`;
@@ -1793,7 +1806,7 @@ async function tryServeStaticAsset(requestUrl, req, context) {
     // Runtime config for EVERY served document; the VS Code embed shim only
     // when the iframe asks for it. Both go right after <head>, ahead of the
     // app's deferred module scripts.
-    let head = buildRuntimeConfigShim();
+    let head = buildRuntimeConfigShim(context.mode);
     if (requestUrl.searchParams.get('embed') === 'vscode') {
       head += buildVsCodeEmbedShim(context.token);
     }
@@ -2540,8 +2553,23 @@ async function refreshOperatorSessionOnce(context) {
       signal: AbortSignal.timeout(15_000),
     });
     if (!resp.ok) {
+      // Body included (not just the status), best-effort — a real Windows
+      // field report saw this loop leave a session permanently EXPIRED
+      // across multiple restarts with nothing but "HTTP 400" to go on. The
+      // likeliest cause: Supabase refresh-token rotation means a token can
+      // only be redeemed once, and an ungracefully killed process (Windows
+      // has no clean way to signal this backend to finish in-flight work
+      // before a forceful stop — see install.ps1's own stop-before-upgrade
+      // step, restart, and uninstall, none of which can wait for this) could
+      // have this exact request already processed server-side (rotating the
+      // token) while the response — or this file's own write of it below —
+      // never lands locally, permanently invalidating the stored token. Not
+      // confirmed; this logging is so the next occurrence can confirm or
+      // rule it out instead of guessing again.
+      const detail = await resp.text().catch(() => '');
       context.logger.warn(
-        `[local-api] session refresh failed (HTTP ${resp.status}) — session.json left as-is; run \`worldmonitor-local login\` if premium panels stop loading`,
+        `[local-api] session refresh failed (HTTP ${resp.status}${detail ? `: ${detail.slice(0, 500)}` : ''}) — `
+        + 'session.json left as-is; run `worldmonitor-local login` if premium panels stop loading',
       );
       return;
     }

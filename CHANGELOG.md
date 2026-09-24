@@ -4,6 +4,39 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.9] - 2026-09-24
+
+### Fixed — local sync (Windows)
+
+- **The local mirror (`local-cache.db`) could never actually refresh on
+  Windows after the first sync — every periodic rebuild's rename hit EPERM,
+  6/6 attempts, exhausting v2.13.7's retry ladder every single cycle, on two
+  versions running**: `sync-listener.mjs`'s per-message `upsertRow()` set
+  `PRAGMA journal_mode = WAL` on the live file on every write to avoid
+  blocking a concurrent reader — but `journal_mode` is a property of the
+  database file itself, not the connection, so it stuck across every future
+  opener, including the periodic rebuild's own rename target. A WAL
+  database's `-shm` companion file is memory-mapped, and Windows refuses to
+  rename or delete a file that is still memory-mapped by any process — not
+  a brief, winnable timing race the way the retry ladder assumed, but a
+  standing condition no amount of retrying could clear. Fixed by forcing
+  `DELETE` (rollback-journal) mode instead, which a closed handle actually
+  releases on Windows; an already WAL-tainted file self-heals the moment
+  this function next writes to it, no migration needed. Found via two
+  consecutive real Windows field reports (v2.13.7 and v2.13.8) reproducing
+  the identical 6/6 failure under identical conditions.
+- **The sync failure-cleanup handler could itself crash with an uncaught
+  exception, replacing the intended `FATAL:` log line with a raw Node
+  stack**: `local-sync.mjs`'s top-level `catch` discarded its scratch file
+  with a bare `fs.rmSync(SQLITE_TMP_PATH, { force: true })` — `force: true`
+  silences ENOENT (already gone) but not EBUSY/EPERM (still open), which a
+  second, overlapping sync run sharing the same fixed `local-cache.db.tmp`
+  path could trigger. Wrapped in try/catch, and the scratch path is now
+  suffixed with the run's own PID so two overlapping runs (a slow run still
+  in flight when the next scheduled interval fires, or a child orphaned by
+  a backend restart) can no longer step on the same file at all. Found via
+  a real Windows field report reproducing the overlap on v2.13.7.
+
 ## [2.13.8] - 2026-09-23
 
 ### Fixed — installer (Windows)

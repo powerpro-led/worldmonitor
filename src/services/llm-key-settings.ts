@@ -24,6 +24,45 @@ export interface LlmKeySettingsResult {
   attach: (container: HTMLElement) => () => void;
 }
 
+let clipboardRequestSeq = 0;
+
+/**
+ * navigator.clipboard.readText() inside this iframe is a NotAllowedError,
+ * always — confirmed live, and it isn't a Permissions-Policy gap (the
+ * wrapping iframe's `allow` list does include clipboard-read). VS Code's
+ * webview host only grants the Clipboard API's permission check to its own
+ * top-level webview document, never to a nested cross-origin iframe loading
+ * real HTTP content underneath it — a VS Code host boundary this module
+ * can't reach past from in here.
+ *
+ * Instead this asks vscode-extension/src/panel.ts's wrapper document to run
+ * vscode.env.clipboard.readText() in the extension host (Node/Electron
+ * main-process territory, no browser permission model at all) via the same
+ * window.__wmVsCodeApi postMessage bridge GitHub sign-in already uses —
+ * see panel.ts's handleClipboardRead / render() relay script for the other
+ * end of this round trip.
+ */
+function readClipboardViaVsCodeHost(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const requestId = `llmkey-paste-${Date.now()}-${clipboardRequestSeq++}`;
+    const onMessage = (event: MessageEvent) => {
+      const msg = event.data as { type?: string; requestId?: string; text?: string | null; error?: string | null } | null;
+      if (!msg || msg.type !== 'wm-clipboard-read-result' || msg.requestId !== requestId) return;
+      window.removeEventListener('message', onMessage);
+      clearTimeout(timer);
+      if (msg.error) reject(new Error(msg.error));
+      else resolve(typeof msg.text === 'string' ? msg.text : '');
+    };
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      reject(new Error('clipboard read timed out'));
+    }, 4000);
+    window.addEventListener('message', onMessage);
+    (window as unknown as { __wmVsCodeApi: { postMessage: (msg: unknown) => void } }).__wmVsCodeApi
+      .postMessage({ type: 'wm-clipboard-read', requestId });
+  });
+}
+
 type LlmConfigKey = 'OPENROUTER_API_KEY' | 'GROQ_API_KEY' | 'OLLAMA_API_URL' | 'OLLAMA_MODEL';
 
 interface LlmConfigKeyStatus {
@@ -258,8 +297,13 @@ export function renderLlmKeySettings(): LlmKeySettingsResult {
       if (!input) return;
       let text: string;
       try {
-        text = await navigator.clipboard.readText();
-      } catch {
+        text = await readClipboardViaVsCodeHost();
+      } catch (err) {
+        // Surfaced to console (not just the UI's auto-clearing status line)
+        // so "the Paste button does nothing" is diagnosable from webview
+        // devtools alone — the on-screen message below clears after 4s and
+        // is easy to miss if attention is on the console instead of the UI.
+        console.error('[llmKeySettings] clipboard read via VS Code host failed', err);
         if (saveStatusEl) {
           saveStatusEl.textContent = t('settings.llmKeys.pasteFailed', { defaultValue: 'Could not read the clipboard — try Cmd/Ctrl+V instead.' });
           setTimeout(() => { if (!destroyed) saveStatusEl.textContent = ''; }, 4000);

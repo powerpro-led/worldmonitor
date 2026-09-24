@@ -177,6 +177,7 @@ export class DashboardPanel {
         // this wrapper's own render()-injected relay script.
         if (msg?.type === 'wm-github-signin') void this.handleGithubSignIn();
         if (msg?.type === 'wm-open-external' && typeof msg.url === 'string') void this.handleOpenExternal(msg.url);
+        if (msg?.type === 'wm-clipboard-read' && typeof msg.requestId === 'string') void this.handleClipboardRead(msg.requestId);
       },
       null,
       this.disposables,
@@ -250,6 +251,33 @@ export class DashboardPanel {
     }
   }
 
+  /**
+   * navigator.clipboard.readText() inside the dashboard iframe is a
+   * NotAllowedError, always — confirmed live. It's not a Permissions-Policy
+   * gap (the iframe's `allow` list does include clipboard-read): VS Code's
+   * webview host only grants the Clipboard API's permission-request check
+   * to its own top-level webview document, never to a nested cross-origin
+   * iframe loading real HTTP content underneath it. That's a VS Code host
+   * boundary this extension's code can't reach past from inside the iframe.
+   *
+   * vscode.env.clipboard.readText() runs here, in the extension host
+   * (Node/Electron main-process territory, no browser permission model at
+   * all), and the result is relayed down through the SAME postMessage
+   * bridge as GitHub sign-in (see handleGithubSignIn's doc comment) —
+   * wrapper's render()-injected relay script both ways.
+   */
+  private async handleClipboardRead(requestId: string): Promise<void> {
+    let text: string | null = null;
+    let error: string | null = null;
+    try {
+      text = await vscode.env.clipboard.readText();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      this.backend.log(`[panel] clipboard read failed: ${error}`);
+    }
+    void this.panel.webview.postMessage({ type: 'wm-clipboard-read-result', requestId, text, error });
+  }
+
   /** Deliberately dependency-free and inline — it must render before the
    * sidecar exists. */
   loadingHtml(): string {
@@ -279,7 +307,7 @@ export class DashboardPanel {
       <meta http-equiv="Content-Security-Policy" content="${csp}">
       <style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;}iframe{border:0;width:100%;height:100%;display:block;}</style>
     </head><body>
-      <iframe id="wm-frame" src="${escapeHtmlAttr(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; storage-access"></iframe>
+      <iframe id="wm-frame" src="${escapeHtmlAttr(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; storage-access; clipboard-read; clipboard-write"></iframe>
       <script nonce="${nonce}">
         (function () {
           var vscodeApi = acquireVsCodeApi();
@@ -294,6 +322,14 @@ export class DashboardPanel {
             }
             if (msg.type === 'wm-open-external' && event.source === frame.contentWindow) {
               vscodeApi.postMessage(msg);
+              return;
+            }
+            if (msg.type === 'wm-clipboard-read' && event.source === frame.contentWindow) {
+              vscodeApi.postMessage(msg);
+              return;
+            }
+            if (msg.type === 'wm-clipboard-read-result' && frame.contentWindow) {
+              frame.contentWindow.postMessage(msg, frameOrigin);
               return;
             }
             if (msg.type === 'wm-vscode-github-token' && msg.token && frame.contentWindow) {

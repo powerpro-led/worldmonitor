@@ -453,6 +453,14 @@ jobs:
           DATA_SHARED_UPSTASH_REST_URL=${{ secrets.DATA_SHARED_UPSTASH_REST_URL }}
           DATA_SHARED_UPSTASH_READONLY_TOKEN=${{ secrets.DATA_SHARED_UPSTASH_READONLY_TOKEN }}
           WORKER_TIMEOUT=180
+          IRAN_EVENTS_ENABLED=${{ secrets.IRAN_EVENTS_ENABLED || 'false' }}
+          R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}
+          R2_BOOTSTRAP_BUCKET=${{ secrets.R2_BOOTSTRAP_BUCKET }}
+          R2_BOOTSTRAP_ACCESS_KEY_ID=${{ secrets.R2_BOOTSTRAP_ACCESS_KEY_ID }}
+          R2_BOOTSTRAP_SECRET_ACCESS_KEY=${{ secrets.R2_BOOTSTRAP_SECRET_ACCESS_KEY }}
+          PROXY_URL=${{ secrets.PROXY_URL }}
+          RELAY_URL=${{ secrets.RELAY_URL }}
+          WORLDMONITOR_RELAY_KEY=${{ secrets.WORLDMONITOR_RELAY_KEY }}
           EOF
 
       # WORKER_TIMEOUT above: Nitric's membrane starts the app process, then

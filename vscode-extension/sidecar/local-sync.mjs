@@ -48,10 +48,31 @@
  * plain `GET` silently returns null for anything that isn't a string. No
  * fallback branching, no "try GET, fall back if null."
  *
- * Every run does a full rebuild — `DELETE FROM kv_cache` then a fresh
- * insert of everything just fetched — rather than incremental upsert. No
- * partial/stale-row state to reason about between runs; the table is always
- * exactly what Upstash held as of the last sync.
+ * Every run does a full rescan and upserts directly into the LIVE
+ * local-cache.db — not a scratch-file-plus-atomic-rename swap, which is what
+ * this used to do. Changed 2026-09-24 after two consecutive real Windows
+ * field reports proved the rename was unfixable in place: Windows refuses to
+ * rename or delete a file that any process still has open, and a controlled
+ * test isolated the constant condition to exactly that — stopping the
+ * long-lived backend process, and nothing else, made an otherwise-identical
+ * rename succeed instantly (the backend is the only long-lived reader of
+ * this file; server/_shared/sidecar-cache.ts's loadMirror() is the prime
+ * suspect for the actual held handle, though the test didn't isolate it
+ * that precisely). Two prior fix attempts (a retry ladder, then forcing
+ * rollback-journal instead of WAL mode) each looked plausible and each
+ * failed identically on real hardware — writing directly into the live file
+ * sidesteps the whole question of why Windows holds the handle, rather than
+ * trying to outguess it a third time.
+ *
+ * A key's row is only overwritten if this run's value isn't older than
+ * what's already there (`WHERE excluded.synced_at >= kv_cache.synced_at` on
+ * the upsert) — the same protection the old design needed a separate
+ * "merge back fresher live-push rows before renaming" pass for, now just a
+ * per-row condition instead of a whole extra step. A key that no longer
+ * belongs (removed upstream, or newly filtered out) is pruned once per run
+ * via a single `synced_at` watermark: after every admitted key has been
+ * upserted with this run's `syncedAt`, anything still older than that in the
+ * table wasn't touched this run and is deleted — no per-key tracking needed.
  *
  * Schema: a single generic key-value mirror table, not per-domain typed
  * tables — matches how vscode-extension/sidecar/local-api-server.mjs already reads
@@ -120,25 +141,20 @@ import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Exported (not just inlined in main()) so a test can exercise the exact
+// freshness-guard and prune SQL against a real node:sqlite database without
+// running the whole scan-Redis-then-write pipeline — this is the one part of
+// the 2026-09-24 rewrite (writing directly into the live file instead of a
+// scratch-file-plus-rename) that genuinely needed to be right the first
+// time, after two previous fix attempts each looked right and weren't.
+export const UPSERT_SQL = 'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
+  + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at '
+  + 'WHERE excluded.synced_at >= kv_cache.synced_at';
+export const PRUNE_SQL = 'DELETE FROM kv_cache WHERE synced_at < ?';
+
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_READONLY_TOKEN = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
 const SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || path.join(__dirname, 'local-cache.db');
-
-/**
- * The rebuild is staged here and renamed over SQLITE_PATH only once the run
- * has fully succeeded — see openDatabase() for why that matters now that this
- * script runs unattended on a timer.
- *
- * Suffixed with this process's own PID, not a fixed `.tmp` — this file is a
- * fresh child process every run (see local-api-server.mjs's
- * startFullReconciliationLoop()), and a fixed shared path meant two
- * overlapping runs (a slow run still in flight when the next interval fires,
- * or an orphaned child surviving a backend restart) would build into and
- * clean up the SAME scratch file, corrupting one run's data with the
- * other's — or racing the FATAL handler below's cleanup against the other
- * run's still-open write handle. Found via a real Windows field report.
- */
-const SQLITE_TMP_PATH = `${SQLITE_PATH}.${process.pid}.tmp`;
 
 // Own retry/timeout layer — see header comment for why the SDK's built-in
 // `retry`/`signal` options don't work for this. RETRY_ATTEMPTS absorbs VPN
@@ -471,14 +487,21 @@ function keepKey(key) {
 }
 
 function openDatabase() {
-  // SQLITE_TMP_PATH is PID-suffixed, so this PID's own path can't legitimately
-  // already exist — belt-and-suspenders in case the OS ever recycles a PID
-  // fast enough to collide with a hard-crashed prior run's leftover file.
-  fs.rmSync(SQLITE_TMP_PATH, { force: true });
-  const db = new DatabaseSync(SQLITE_TMP_PATH);
-  // Always a fresh file, so a schema change here is non-breaking — no
-  // migration is ever needed. DDL shared with sync-listener.mjs via
-  // kv-cache-schema.mjs so the two writers can't drift.
+  fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
+  const db = new DatabaseSync(SQLITE_PATH);
+  // Forced (not assumed) for the same reason sync-listener.mjs's upsertRow()
+  // forces it — journal_mode is a property of the file, not the connection,
+  // so this also self-heals a file some prior version left in WAL mode.
+  db.exec('PRAGMA journal_mode = DELETE');
+  // This connection now writes directly into the live file (see this file's
+  // own header comment for why), so it genuinely can contend with
+  // sync-listener.mjs's concurrent per-row writes — unlike the old scratch-
+  // file design, which had this file to itself. Wait rather than fail
+  // immediately on a transient lock.
+  db.exec('PRAGMA busy_timeout = 5000');
+  // DDL shared with sync-listener.mjs via kv-cache-schema.mjs so the two
+  // writers can't drift; IF NOT EXISTS makes this safe against an
+  // already-populated live file, not just a fresh one.
   db.exec(KV_CACHE_DDL);
   return db;
 }
@@ -501,7 +524,14 @@ async function main() {
   console.log('[local-sync] denylist model — scanning the full keyspace (see scripts/shared/sync-domains.mjs)');
 
   const db = openDatabase();
-  const insert = db.prepare('INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?)');
+  // Conditional upsert, not a plain INSERT: this writes into the LIVE file
+  // (see this file's own header comment), which sync-listener.mjs's
+  // upsertRow() can be writing to concurrently. The WHERE guard means a
+  // key sync-listener already pushed a fresher value for during this run
+  // keeps that fresher value instead of being reverted to what this scan
+  // (which started earlier) read — the in-place equivalent of the old
+  // design's separate "merge back fresher live-push rows" pass.
+  const upsert = db.prepare(UPSERT_SQL);
   const syncedAt = Date.now();
 
   let totalFound = 0;
@@ -518,10 +548,6 @@ async function main() {
   watchdog.unref();
 
   try {
-    // Full rebuild — no incremental upsert, no stale-row bookkeeping. The
-    // table is always exactly what Redis held as of this run. No DELETE
-    // needed: openDatabase() started from an empty scratch file.
-
     const scanned = await scanAllKeysWithType(redis);
 
     // Denylist admission: keep everything classifyKey() does not mark 'deny',
@@ -556,109 +582,26 @@ async function main() {
 
       db.exec('BEGIN');
       for (const [key, { value, type }] of values) {
-        insert.run(key, value, type, syncedAt);
+        upsert.run(key, value, type, syncedAt);
         totalWritten++;
       }
       db.exec('COMMIT');
     }
 
-    // Merge back any real-time push sync-listener.mjs applied to the LIVE db
-    // while this rebuild was running (which can take minutes). Those rows
-    // carry a synced_at newer than this run's start timestamp; the blind
-    // rename below would otherwise silently revert them to the older scanned
-    // value until the next push or full rebuild (session 39's 7-pass review,
-    // deferred finding #3 — "needs a merge policy, not a blind overwrite").
-    // Rows from a PRIOR rebuild have synced_at <= syncedAt and are correctly
-    // superseded by this fresh scan.
-    if (fs.existsSync(SQLITE_PATH)) {
-      let live = null;
-      try {
-        live = new DatabaseSync(SQLITE_PATH, { readOnly: true });
-        const fresher = live
-          .prepare('SELECT key, value, type, synced_at AS syncedAt FROM kv_cache WHERE synced_at > ?')
-          .all(syncedAt);
-        const kept = fresher.filter((row) => keepKey(row.key));
-        if (kept.length > 0) {
-          const upsert = db.prepare(
-            'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
-            + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at',
-          );
-          db.exec('BEGIN');
-          for (const row of kept) upsert.run(row.key, row.value, row.type, row.syncedAt);
-          db.exec('COMMIT');
-          console.log(`[local-sync] merged ${kept.length} live push(es) that landed during the rebuild`);
-        }
-      } catch (err) {
-        console.warn(`[local-sync] live-push merge skipped (non-fatal): ${err.message}`);
-      } finally {
-        live?.close();
-      }
-    }
+    // Prune anything that no longer belongs: removed upstream, or newly
+    // filtered out by classifyKey()/keepKey(). Every key admitted above just
+    // got its synced_at bumped to (at least) syncedAt by the upsert loop —
+    // including a key that already existed and was merely refreshed — so
+    // anything STILL older than syncedAt at this point, by construction,
+    // wasn't touched this run at all and is safe to delete. A single
+    // watermark comparison, not a per-key admitted-set tracking structure.
+    db.exec('BEGIN');
+    const deleted = db.prepare(PRUNE_SQL).run(syncedAt).changes;
+    db.exec('COMMIT');
+    if (deleted > 0) console.log(`[local-sync]   pruned ${deleted} stale key(s) no longer in Redis or no longer admitted`);
   } finally {
     clearTimeout(watchdog);
     db.close();
-  }
-
-  // Close first, then swap. Closing cleanly removes SQLite's journal
-  // sidecar files, so the single rename moves a self-contained database.
-  //
-  // Windows-only wrinkle (found live 2026-09-22, Windows field report): SQLite's
-  // win32 VFS doesn't open with FILE_SHARE_DELETE, so a rename over this path
-  // fails with EPERM if ANY reader — even one that opened read-only and has
-  // already called close() — happened to hold the underlying Windows HANDLE at
-  // the exact instant of the rename. POSIX rename() has no such restriction
-  // (open-file rename works unconditionally), so this loop is a no-op there —
-  // the very first attempt always wins and RETRY_MS_LADDER is never consulted.
-  //
-  // CORRECTION (2026-09-24, real Windows field report, two versions running
-  // with this exact retry ladder in place): the "brief" read described above
-  // is not actually what was blocking the rename 6/6 times, every cycle,
-  // indefinitely. sync-listener.mjs's upsertRow() used to set `PRAGMA
-  // journal_mode = WAL` on this same live file on every push write — and
-  // journal_mode is a property of the FILE, not the connection, so it stuck
-  // across opens, including server/_shared/sidecar-cache.ts's loadMirror()
-  // and this very rebuild's own live-push-merge read above. A WAL database's
-  // `-shm` companion is memory-mapped, and Windows refuses to rename or
-  // delete a file that is still memory-mapped by ANY process — not a timing
-  // race a short retry ladder can win, regardless of how many attempts or
-  // how long the backoff. Fixed at the source in sync-listener.mjs (forces
-  // DELETE/rollback-journal mode instead, which a closed handle actually
-  // releases on Windows) — the retry ladder stays as defense-in-depth for
-  // whatever residual "briefly held" cases still exist (antivirus scanning,
-  // etc.), which it was always adequate for.
-  const RENAME_RETRY_MS_LADDER = [50, 100, 200, 400, 800];
-  let renamed = false;
-  let lastRenameErr;
-  for (let attempt = 0; !renamed; attempt++) {
-    try {
-      fs.renameSync(SQLITE_TMP_PATH, SQLITE_PATH);
-      renamed = true;
-    } catch (err) {
-      lastRenameErr = err;
-      const retryable = err.code === 'EPERM' || err.code === 'EBUSY';
-      if (!retryable || attempt >= RENAME_RETRY_MS_LADDER.length) {
-        // Non-retryable, or out of attempts: SQLITE_PATH is untouched, so
-        // this is stale data, not lost data — the live mirror keeps serving
-        // whatever the last successful rename produced. SQLITE_TMP_PATH
-        // itself is this run's own scratch file (PID-suffixed, see its own
-        // comment above) and is cleaned up by the top-level FATAL handler
-        // below, not reused by a future run. Surface loudly either way:
-        // this was previously a silent FATAL that only a log-diver would
-        // ever see, with no signal in `status`.
-        console.error(
-          `[local-sync] FATAL: could not swap in the freshly-built mirror after ` +
-            `${attempt + 1} attempt(s) (${lastRenameErr.code || lastRenameErr.message}). ` +
-            `Serving stale data from the previous sync until the next attempt succeeds.`,
-        );
-        throw lastRenameErr;
-      }
-      const wait = RENAME_RETRY_MS_LADDER[attempt];
-      console.warn(
-        `[local-sync] rename → ${SQLITE_PATH} hit ${err.code} (attempt ${attempt + 1}/${RENAME_RETRY_MS_LADDER.length + 1}), ` +
-          `retrying in ${wait}ms — a reader transiently holding the file on Windows`,
-      );
-      await new Promise((r) => setTimeout(r, wait));
-    }
   }
 
   console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
@@ -685,21 +628,11 @@ function isMainModule() {
 if (isMainModule()) {
   main().catch((err) => {
     console.error('[local-sync] FATAL:', err.message);
-    // Discard the half-built scratch file; the live mirror was never touched.
-    // { force: true } only silences ENOENT (already gone) — it does NOT
-    // silence EBUSY/EPERM, so a failure that reaches here (this file's own
-    // rename already failed above) could throw a SECOND, uncaught exception
-    // right here and crash with a raw Node stack instead of the intended
-    // FATAL log line + clean exit(1). Found via a real Windows field report.
-    // Best-effort like every other cleanup in this file: on failure, this
-    // run's own PID-suffixed scratch file (see SQLITE_TMP_PATH's own
-    // comment) is just orphaned disk clutter, not corruption or data loss —
-    // no other run will ever try to reuse or rename over that exact path.
-    try {
-      fs.rmSync(SQLITE_TMP_PATH, { force: true });
-    } catch (cleanupErr) {
-      console.warn(`[local-sync] could not remove stale scratch file ${SQLITE_TMP_PATH}: ${cleanupErr.message}`);
-    }
+    // No scratch file to discard any more — this writes directly into the
+    // live file, in batches each committed on its own (see this file's own
+    // header comment), so whatever completed before the failure is already
+    // durable and whatever didn't just waits for the next run. Nothing left
+    // to clean up here.
     process.exit(1);
   });
 }

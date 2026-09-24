@@ -7,9 +7,12 @@
  * (session 39's 7-pass review, deferred finding #7: a future column addition
  * otherwise needs remembering to edit both, silently).
  *
- * The file is always freshly (re)created by local-sync.mjs's atomic rebuild,
- * so a schema change here never needs a migration — but sync-listener.mjs may
- * touch an existing file between rebuilds, hence `IF NOT EXISTS`.
+ * Both writers open the LIVE file directly (local-sync.mjs no longer builds
+ * a separate scratch file and swaps it in — see that file's own header
+ * comment for why), so `IF NOT EXISTS` matters for both of them now, not
+ * just sync-listener.mjs: this DDL runs against a file that may already be
+ * fully populated. A schema change here still never needs a real migration,
+ * since every column so far has been additive.
  */
 export const KV_CACHE_DDL = `
   CREATE TABLE IF NOT EXISTS kv_cache (

@@ -135,35 +135,34 @@ function writeCursor(id) {
 
 /**
  * Opens local-cache.db fresh for exactly one write, then closes it —
- * deliberately NOT a persistent handle. local-sync.mjs's periodic full
- * reconciliation pass replaces the whole file via an atomic fs.renameSync()
- * swap (see that file's own header comment for why), and a long-lived
- * handle on POSIX keeps writing to the OLD inode forever after a rename
- * replaces the path. Opening fresh per write means every write targets
- * whatever file is actually live at that moment, sidestepping that trap
- * entirely rather than trying to detect the swap.
+ * deliberately not a persistent handle, simply to keep this process's write
+ * exposure to the shared file as small as possible (it is a fast, tiny,
+ * single-row write; there is no benefit to holding the connection open
+ * between messages, only a cost if it turns out to interact badly with
+ * whatever else touches this file — see below for exactly that).
  *
  * journal_mode is forced to DELETE (SQLite's own default, but forced rather
- * than assumed — see below) on every open, NOT WAL as an earlier version of
- * this function set. WAL was meant to stop this small, fast, single-row
- * write from blocking a concurrent reader (sidecar-cache.ts's loadMirror())
- * behind the rollback-journal's exclusive lock — a real but minor and
- * self-healing concern (loadMirror() already tolerates and retries a failed
- * read). What WAL actually did on Windows was far worse: journal_mode is a
- * property of the DATABASE FILE ITSELF, not the connection, so once this
- * function set it, EVERY future opener of local-cache.db — including
- * local-sync.mjs's own rename target — inherited WAL mode too. A WAL
- * database's `-shm` companion file is memory-mapped, and Windows will not
- * rename or delete a file that is still memory-mapped by any process,
- * however briefly — unlike the plain rollback-journal case, where a closed
- * handle is genuinely closed. That is the real reason local-sync.mjs's
- * rename retry ladder (50-800ms) never once succeeded on a real Windows
- * field report two versions running (2026-09-23, 2026-09-24): it was tuned
- * for a transient lock, not a memory-mapped file Windows won't let go of
- * regardless of how long you wait. Forcing DELETE mode here converts an
- * already WAL-tainted file back the moment this function next runs against
- * it — no separate migration needed, since local-sync.mjs's rebuild always
- * writes into a brand-new scratch file first.
+ * than assumed) on every open. A now-removed earlier version of this
+ * function set WAL instead, meaning to stop this write from blocking a
+ * concurrent reader (sidecar-cache.ts's loadMirror()) behind the
+ * rollback-journal's exclusive lock. That turned out to be a real Windows
+ * hazard for an unrelated reason — journal_mode is a property of the file,
+ * not the connection, so it stuck across every future opener, and a WAL
+ * database's `-shm` companion is memory-mapped, which Windows won't let a
+ * rename or delete proceed past — but reverting it did NOT fix the actual
+ * failure a real Windows field report kept reproducing (confirmed by
+ * inspecting the file header directly: never WAL, no `-wal`/`-shm` files,
+ * still failing). The real cause was simpler and unrelated to journal mode
+ * at all: something else holding open a live handle to local-cache.db is
+ * exactly what Windows won't rename or delete over, at all, for as long as
+ * that handle exists — not a brief race, a standing condition. Confirmed by
+ * a controlled test: stopping the backend process (and nothing else) made
+ * an otherwise-identical rename succeed instantly. local-sync.mjs's full
+ * rebuild no longer renames anything at all as of the same fix (writes
+ * directly into this live file instead — see its own header comment) so
+ * this specific failure mode cannot recur there either way. DELETE mode
+ * stays forced here regardless, since it's still the safer default for a
+ * file multiple processes touch concurrently.
  */
 function upsertRow(key, value, type) {
   fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });

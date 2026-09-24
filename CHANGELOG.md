@@ -4,6 +4,21 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.13] - 2026-09-24
+
+### Fixed — local mode
+
+- **The AI-settings Paste button silently did nothing inside the VS Code
+  embed**: `navigator.clipboard.readText()` inside the dashboard iframe is
+  always a `NotAllowedError` there — not a `Permissions-Policy` gap (the
+  iframe's `allow` list already includes `clipboard-read`), but a VS Code
+  webview host boundary: the Clipboard API's permission check is only ever
+  granted to the host's own top-level webview document, never to a nested
+  cross-origin iframe loading real HTTP content underneath it. The Paste
+  button now relays its read through the same `postMessage` bridge GitHub
+  sign-in already uses, running `vscode.env.clipboard.readText()` in the
+  extension host instead, which has no browser permission model to hit.
+
 ## [2.13.12] - 2026-09-24
 
 ### Fixed — local mode

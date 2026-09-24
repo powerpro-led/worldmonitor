@@ -4,6 +4,36 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.10] - 2026-09-24
+
+### Fixed — local sync (Windows)
+
+- **v2.13.9's WAL fix did not fix the actual problem — the mirror still
+  could not refresh, 6/6 rename failures, identical to v2.13.7/v2.13.8**: a
+  real Windows field report disproved the WAL theory directly, by inspecting
+  the live file's own SQLite header (rollback-journal mode, never WAL — no
+  `-wal`/`-shm` files existed) while the rename still failed every time, and
+  then isolated the true constant condition with a controlled test: stopping
+  the long-lived backend process — and changing nothing else — made an
+  otherwise-identical rename succeed instantly, with zero retries needed.
+  The real cause was simpler than either of the first two fix attempts
+  assumed: Windows will not rename or delete a file that any process still
+  has open, for as long as that handle exists — not a brief, winnable race,
+  a standing condition, regardless of journal mode. Rather than chase a
+  third theory about exactly why the handle lingers, `local-sync.mjs`'s
+  periodic full rescan no longer builds a scratch file and renames it into
+  place at all — it now upserts directly into the live `local-cache.db`,
+  the same way `sync-listener.mjs`'s real-time push already does, so there
+  is nothing left to rename. A conditional `WHERE excluded.synced_at >=
+  kv_cache.synced_at` on the upsert protects a key the real-time push
+  already refreshed during this scan from being reverted to the older
+  scanned value (replacing the old design's separate post-build merge
+  pass), and a single `synced_at` watermark delete after each run prunes
+  whatever the run didn't touch (removed upstream, or newly filtered out) —
+  no per-key tracking needed. v2.13.9's WAL fix (forcing rollback-journal
+  mode in `sync-listener.mjs`) stays; it was a real, independent hazard in
+  its own right even though it wasn't this bug's cause.
+
 ## [2.13.9] - 2026-09-24
 
 ### Fixed — local sync (Windows)

@@ -4,6 +4,40 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.11] - 2026-09-24
+
+### Fixed — local mode
+
+- **A plain browser tab bookmarked at the local backend's own
+  `http://127.0.0.1:46123/` — the documented primary way to use this
+  product — was never recognized as sidecar-backed by any client-side
+  check**: `isSidecarBackedRuntime()` only checked for the Tauri desktop
+  app's globals or the VS Code embed's `__wmVsCodeApi` shim; neither exists
+  for a bare bookmarked tab. Every caller (wm-session's anonymous cookie
+  mint, this file's own persistent-cache gate, Panel's storage-key scoping,
+  mirror-key-hints) silently treated that operator's session as a plain
+  cloud web app instead. The backend now injects
+  `window.__WM_RUNTIME_CONFIG.mode` into every document it serves
+  regardless of how the client got there, and `isSidecarBackedRuntime()`
+  checks it too. Found via a real Windows field report: `POST
+  /api/wm-session` kept 503ing in local mode (no `WM_SESSION_SECRET` is
+  ever configured there) because `ensureWmSession()` never knew to skip
+  it, flooding the console with errors that looked like an auth failure.
+  `ensureWmSession()` now short-circuits in sidecar-backed mode instead —
+  that cookie exists to identity-scope rate limiting on the shared cloud
+  service, meaningless for a single operator's own machine, which already
+  authenticates every request via the separate local-api-token scheme.
+
+### Changed — local mode
+
+- Session-refresh failures (`~/.worldmonitor/session.json` going stale
+  across a restart) now log the response body, not just the HTTP status —
+  a real Windows field report saw a session get permanently stuck EXPIRED
+  across multiple restarts with nothing but "HTTP 400" to diagnose from.
+  Not yet root-caused (Supabase refresh-token rotation racing an
+  ungraceful Windows process kill is the leading theory, unconfirmed); this
+  is diagnostic groundwork for the next occurrence, not a fix.
+
 ## [2.13.10] - 2026-09-24
 
 ### Fixed — local sync (Windows)

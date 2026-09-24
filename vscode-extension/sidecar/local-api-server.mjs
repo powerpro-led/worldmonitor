@@ -2514,6 +2514,14 @@ const SESSION_REFRESH_INTERVAL_MS = 15 * 60_000; // 15m
 // only thing keeping the session alive.
 const SESSION_REFRESH_SKEW_MS = 25 * 60_000; // 25m
 
+// The refresh_token this loop has already confirmed permanently dead
+// (Supabase's `refresh_token_already_used` — rotation means a token works
+// exactly once, so this is a terminal rejection, not a transient one worth
+// retrying). Compared by value, not just "did we fail before": a fresh
+// `login` writes a NEW refresh_token to session.json, which naturally no
+// longer matches and clears this on its own — no explicit reset needed.
+let deadRefreshToken = null;
+
 /**
  * Refreshes ~/.worldmonitor/session.json against Supabase's token endpoint so
  * that premium-gated dashboard panels (anything behind hasPremiumAccess() in
@@ -2531,6 +2539,7 @@ const SESSION_REFRESH_SKEW_MS = 25 * 60_000; // 25m
 async function refreshOperatorSessionOnce(context) {
   const session = readOperatorSession();
   if (!session?.refresh_token) return; // not logged in — nothing to refresh
+  if (session.refresh_token === deadRefreshToken) return; // confirmed dead — see below, don't hammer Supabase every tick forever
   if (typeof session.expires_at === 'number'
       && session.expires_at * 1000 - Date.now() > SESSION_REFRESH_SKEW_MS) {
     return; // still has plenty of runway; don't race the iframe's own refresh
@@ -2553,23 +2562,35 @@ async function refreshOperatorSessionOnce(context) {
       signal: AbortSignal.timeout(15_000),
     });
     if (!resp.ok) {
-      // Body included (not just the status), best-effort — a real Windows
-      // field report saw this loop leave a session permanently EXPIRED
-      // across multiple restarts with nothing but "HTTP 400" to go on. The
-      // likeliest cause: Supabase refresh-token rotation means a token can
-      // only be redeemed once, and an ungracefully killed process (Windows
-      // has no clean way to signal this backend to finish in-flight work
-      // before a forceful stop — see install.ps1's own stop-before-upgrade
-      // step, restart, and uninstall, none of which can wait for this) could
-      // have this exact request already processed server-side (rotating the
-      // token) while the response — or this file's own write of it below —
-      // never lands locally, permanently invalidating the stored token. Not
-      // confirmed; this logging is so the next occurrence can confirm or
-      // rule it out instead of guessing again.
+      // Body included (not just the status) — a real Windows field report's
+      // own next occurrence confirmed the mechanism this comment used to
+      // guess at: the immediately preceding attempt logged "The operation
+      // was aborted due to timeout" (this fetch's own 15s AbortSignal
+      // firing), and THIS attempt then got back `refresh_token_already_used`
+      // — Supabase had already processed and rotated the timed-out request
+      // server-side; the response (or this file's own write of it below)
+      // just never made it back before the local timeout fired, so the
+      // rotated token was never persisted. No forceful process kill needed
+      // to trigger this — an ordinary network hiccup on the timed-out
+      // request is sufficient.
+      //
+      // `refresh_token_already_used` (and Supabase's `invalid_grant` family
+      // generally) is a TERMINAL rejection, not a transient one: retrying
+      // with the same now-dead token can never succeed. The same field
+      // report caught this loop doing exactly that — the identical failure
+      // recurring on 3 consecutive 15-minute ticks — so stop hammering
+      // Supabase with a token that's confirmed dead until a fresh `login`
+      // writes a different one.
       const detail = await resp.text().catch(() => '');
+      let parsedCode;
+      try { parsedCode = JSON.parse(detail)?.error_code; } catch { /* not JSON, or no error_code */ }
+      const terminal = resp.status === 400 && (parsedCode === 'refresh_token_already_used' || parsedCode === 'invalid_grant');
+      if (terminal) deadRefreshToken = session.refresh_token;
       context.logger.warn(
         `[local-api] session refresh failed (HTTP ${resp.status}${detail ? `: ${detail.slice(0, 500)}` : ''}) — `
-        + 'session.json left as-is; run `worldmonitor-local login` if premium panels stop loading',
+        + (terminal
+          ? 'this token is permanently invalid; run `worldmonitor-local login` — will not retry until you do'
+          : 'session.json left as-is; run `worldmonitor-local login` if premium panels stop loading'),
       );
       return;
     }

@@ -1,4 +1,5 @@
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 
 let vercelAnalyticsScheduled = false;
 let dashboardFontsScheduled = false;
@@ -78,7 +79,13 @@ export function initDeferredDashboardFonts(): void {
 }
 
 export function initVercelAnalytics(): void {
-  if (vercelAnalyticsScheduled || typeof window === 'undefined') return;
+  // @vercel/analytics's inject() loads /_vercel/insights/script.js, which
+  // only exists on an actual Vercel deployment (Vercel's edge middleware
+  // serves it) — the local sidecar bundle ships the same dist/ but has
+  // nothing to serve that path, so this 404s on every local-mode load. A
+  // real Windows field report found it in the console as one of several
+  // "why is this red" false alarms right after fixing the wm-session 503s.
+  if (vercelAnalyticsScheduled || typeof window === 'undefined' || isSidecarBackedRuntime()) return;
   vercelAnalyticsScheduled = true;
   scheduleAfterFirstPaint(() => {
     void import('@vercel/analytics')

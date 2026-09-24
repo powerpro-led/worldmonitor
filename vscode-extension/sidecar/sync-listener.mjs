@@ -304,6 +304,16 @@ function decodeFrame(raw) {
   return payload;
 }
 
+// Tags an idle-timeout self-abort so runForever() can log it as the routine,
+// by-design reconnect it is, not a real connection failure. Passed as the
+// AbortController's abort `reason` — verified live that both an in-flight
+// fetch() and a reader.read() mid-stream reject with this exact object
+// (undici propagates the reason as-is, not a generic AbortError), so a
+// single check in runForever() covers every phase this timer can fire during.
+class IdleReconnect extends Error {
+  constructor() { super('idle timeout — proactive reconnect'); this.name = 'IdleReconnect'; }
+}
+
 /**
  * Holds one SSE connection open until it errors, closes, or goes idle past
  * IDLE_TIMEOUT_MS. Resolves normally on any of those — the caller
@@ -321,7 +331,7 @@ async function runOneConnection(redis, externalSignal) {
   let idleTimer;
   const resetIdleTimer = () => {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+    idleTimer = setTimeout(() => controller.abort(new IdleReconnect()), IDLE_TIMEOUT_MS);
   };
   const clearIdleTimer = () => clearTimeout(idleTimer);
   resetIdleTimer(); // guards the connect handshake below only
@@ -404,7 +414,29 @@ async function runForever(options = {}) {
       attempt = 0; // a clean connection that later dropped isn't a repeated-failure signal
     } catch (err) {
       if (signal?.aborted) break;
-      console.warn(`[sync-listener] connection lost (${err.message}) — reconnecting`);
+      if (err instanceof IdleReconnect) {
+        // By design (see IDLE_TIMEOUT_MS's own comment), not a failure — a
+        // real Windows field report found this accounted for 99.3% of
+        // "connection lost" log lines across an 11-boot sample (~40/hour at
+        // the 90s idle interval), making a genuinely rare real disconnect
+        // (0.7%: a few ECONNRESET/DNS-failure occurrences) indistinguishable
+        // noise. console.log, not warn — this is normal operation.
+        console.log(`[sync-listener] idle ${IDLE_TIMEOUT_MS / 1000}s — proactive reconnect`);
+        // Also reset the backoff, same reasoning as the success-path reset
+        // above: an idle timeout is this loop's normal steady state, not a
+        // repeated-failure signal, so it must not ratchet the reconnect delay
+        // up to RECONNECT_MAX_DELAY_MS the way a real repeated failure
+        // should. Without this, every idle cycle before this fix was already
+        // (silently) doing exactly that — during purely quiet periods with
+        // no actual problem, this loop would settle into reconnecting every
+        // ~IDLE_TIMEOUT_MS + RECONNECT_MAX_DELAY_MS instead of right away,
+        // widening the gap a live push arriving in that window has to wait
+        // out (the changelog catch-up still backfills it, but later than
+        // necessary).
+        attempt = 0;
+      } else {
+        console.warn(`[sync-listener] connection lost (${err.message}) — reconnecting`);
+      }
     }
     if (signal?.aborted) break;
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempt, RECONNECT_MAX_DELAY_MS);

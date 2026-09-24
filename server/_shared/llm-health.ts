@@ -10,8 +10,23 @@
 // gates the real LLM call (llm.ts, summarize-article.ts), so a too-tight
 // timeout silently skips a working provider for the full CACHE_TTL_MS below
 // and dumps traffic onto whatever provider is next in the fallback chain.
-const PROBE_TIMEOUT_MS = 5_000;
-const CACHE_TTL_MS = 60_000; // re-probe every 60s
+//
+// 2026-09-24: 5_000ms turned out to be the SAME bug recurring on a different
+// network. A real Windows field report measured this exact probe (through
+// local-api-server.mjs's ipv4Fetch wrapper — an SSRF-check DNS lookup plus a
+// fixed-IPv4 connect plus the MAX_CONCURRENT_UPSTREAM queue, all of which the
+// timeout budget has to cover, not just the request itself) taking
+// 1.7s-9.1s across four consecutive real calls, three of the four over 5s,
+// while every single one eventually returned HTTP 200 — OpenRouter was never
+// actually unreachable. Bumped again, plus two changes so a future tuning
+// pass isn't needed for every new slow network: one retry before a verdict
+// of "unreachable" (a single slow/dropped attempt no longer condemns a
+// working provider), and an asymmetric cache TTL (a negative result is kept
+// only briefly, so a transient miss doesn't black out a working provider for
+// the same minute a confirmed-good result earns).
+const PROBE_TIMEOUT_MS = 15_000;
+const CACHE_TTL_MS = 60_000; // re-probe every 60s once confirmed reachable
+const NEGATIVE_CACHE_TTL_MS = 10_000; // re-probe soon after an "unreachable" verdict
 
 interface HealthEntry {
   available: boolean;
@@ -21,14 +36,8 @@ interface HealthEntry {
 const cache = new Map<string, HealthEntry>();
 const inFlight = new Map<string, Promise<boolean>>();
 
-/**
- * Probe a provider URL to check if it's reachable.
- * Uses a lightweight GET to the base origin (most OpenAI-compat servers
- * return 200 or 404 on root, either confirms reachability).
- */
-async function probe(url: string): Promise<boolean> {
+async function probeOnce(origin: string): Promise<boolean> {
   try {
-    const origin = new URL(url).origin;
     await fetch(origin, {
       method: 'GET',
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -40,15 +49,33 @@ async function probe(url: string): Promise<boolean> {
 }
 
 /**
+ * Probe a provider URL to check if it's reachable.
+ * Uses a lightweight GET to the base origin (most OpenAI-compat servers
+ * return 200 or 404 on root, either confirms reachability). One retry
+ * before a negative verdict — a single slow/dropped attempt on a real,
+ * working provider shouldn't be enough to gate every LLM call site off it
+ * for the next CACHE_TTL_MS.
+ */
+async function probe(url: string): Promise<boolean> {
+  const origin = new URL(url).origin;
+  if (await probeOnce(origin)) return true;
+  return probeOnce(origin);
+}
+
+/**
  * Check if an LLM provider endpoint is available.
- * Returns cached result if fresh (< CACHE_TTL_MS old).
+ * Returns cached result if fresh (< CACHE_TTL_MS for a reachable provider,
+ * the much shorter NEGATIVE_CACHE_TTL_MS for an unreachable one — see this
+ * file's own header comment for why a negative verdict shouldn't stick
+ * around as long as a positive one).
  * Otherwise probes and caches the result.
  */
 export async function isProviderAvailable(apiUrl: string): Promise<boolean> {
   const origin = new URL(apiUrl).origin;
   const cached = cache.get(origin);
-  if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
-    return cached.available;
+  if (cached) {
+    const ttl = cached.available ? CACHE_TTL_MS : NEGATIVE_CACHE_TTL_MS;
+    if (Date.now() - cached.checkedAt < ttl) return cached.available;
   }
 
   // Coalesce concurrent probes to the same origin

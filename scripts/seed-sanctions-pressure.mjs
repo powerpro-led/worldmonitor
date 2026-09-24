@@ -25,7 +25,7 @@ const ET_CODE = {
   SANCTIONS_ENTITY_TYPE_ENTITY: 'entity',
 };
 const DEFAULT_RECENT_LIMIT = 60;
-const OFAC_TIMEOUT_MS = 45_000;
+const OFAC_TIMEOUT_MS = Number(process.env.OFAC_SEED_TIMEOUT_MS) || 45_000;
 const PROGRAM_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,24}$/;
 
 const OFAC_SOURCES = [

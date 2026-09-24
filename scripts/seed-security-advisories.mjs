@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { loadEnvFile, loadSharedConfig, CHROME_UA, runSeed } from './_seed-utils.mjs';
-import { resolveProxyOrigin } from './_domain-config.mjs';
+import { resolveProxyOrigin, isLocalDomain } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -147,6 +147,13 @@ function rssProxyUrl(feedUrl) {
     console.warn(`  Skipping disallowed domain: ${domain}`);
     return null;
   }
+  // No RELAY_URL configured on a local APP_DOMAIN: there's no relay to proxy
+  // through locally (ais-relay.cjs, the service this used to point at, was
+  // decommissioned 2026-09-18). These hosts are already vetted via
+  // ALLOWED_DOMAINS, so fetch them directly instead of routing through a
+  // nonexistent proxy. Deploys always set RELAY_URL (or fall back to
+  // proxy.<real-domain>), so this branch never fires outside local dev.
+  if (!process.env.RELAY_URL && isLocalDomain(process.env.APP_DOMAIN)) return feedUrl;
   return `${RELAY_URL}/rss?url=${encodeURIComponent(feedUrl)}`;
 }
 

@@ -4,6 +4,65 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.12] - 2026-09-24
+
+### Fixed — local mode
+
+- **A session refresh timeout could permanently invalidate the operator's
+  login, and the backend would keep retrying the now-dead token forever**:
+  a real Windows field report caught the exact sequence live —
+  `refreshOperatorSessionOnce()`'s own 15s `AbortSignal` fired ("The
+  operation was aborted due to timeout"), and the very next tick got back
+  `refresh_token_already_used`: Supabase had already processed and rotated
+  the timed-out request server-side, but the response (or this file's own
+  write of it) never landed locally in time, so the rotated token was never
+  persisted — no forceful process kill needed, an ordinary network hiccup
+  on one request is sufficient. Confirmed the same failure recurring
+  identically across 3 consecutive 15-minute ticks: once a refresh_token is
+  dead, retrying it can never succeed. The loop now recognizes
+  `refresh_token_already_used`/`invalid_grant` as terminal and stops
+  retrying that exact token until a fresh `login` supplies a new one,
+  instead of hammering Supabase with a dead credential every 15 minutes
+  indefinitely.
+- **`sync-listener`'s own by-design idle-timeout reconnect was
+  indistinguishable from a real connection failure in the logs**: a real
+  Windows field report's full-log audit (11 boot cycles) found 99.3% of
+  `connection lost — reconnecting` lines were this file's own 90s idle
+  timer firing exactly as designed (`IDLE_TIMEOUT_MS`'s own comment
+  explains why); genuine failures (ECONNRESET, DNS resolution) were only
+  0.7%, buried in the noise. The idle-triggered abort is now tagged and
+  logged at `console.log` as the routine reconnect it is; a real error
+  still logs at `warn`. Also stopped ratcheting the exponential reconnect
+  backoff up during purely idle periods — an idle timeout isn't a
+  repeated-failure signal any more than a clean disconnect is, so it now
+  resets `attempt` the same way.
+- **The LLM-availability probe's 5s timeout produced false "unreachable"
+  verdicts on a real network, silently gating a working provider off for a
+  full minute**: a real Windows field report measured the exact same probe
+  (through the sidecar's SSRF-checking fetch wrapper) taking 1.7s-9.1s
+  across four consecutive real calls — three of four over 5s — while every
+  one eventually returned HTTP 200. This is the second time this exact
+  class of bug has hit this file (2026-09-01: 2s was too short for a VPN
+  path). Bumped to 15s, added one retry before a negative verdict, and gave
+  a negative result a much shorter cache TTL (10s vs 60s) than a positive
+  one, so a future slow network doesn't need a third manual timeout bump.
+- **`/api/oref-alerts` returned 503 for the permanent, by-design "no relay
+  configured" case in local mode, indistinguishable from a real relay
+  outage**: the response already carried `configured: false`, but the
+  frontend's `fetchOrefAlerts()` short-circuits on `!res.ok` before ever
+  reading the body — so a non-2xx status hid that signal entirely, on top
+  of being exactly what a browser flags red in its own console/network
+  panel regardless of the body. Never-configured now returns 200 (this is
+  a normal, successfully-answered "there is no data here", not an error),
+  reaching the frontend's own already-correct `configured` branch instead
+  of its generic HTTP-error fallback. An actually-configured relay having a
+  bad moment still gets 503.
+- Vercel Analytics' `inject()` call (which loads
+  `/_vercel/insights/script.js`, a path only Vercel's own edge middleware
+  serves) no longer runs in sidecar-backed mode — it 404s on every local
+  install, one of several "why is this red" false alarms a real Windows
+  field report found in the console right after the wm-session 503 fix.
+
 ## [2.13.11] - 2026-09-24
 
 ### Fixed — local mode

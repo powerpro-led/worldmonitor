@@ -4,6 +4,63 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.14] - 2026-09-25
+
+### Fixed — local mode
+
+- **The news digest could drop ALL categories at once on a higher-latency
+  local network, even when some had already loaded**: a real field report
+  measured a cold-cache digest fetch taking 53s end to end. The client-side
+  fetch had an 8s `AbortSignal` timeout — tuned for the sub-second feed
+  fetches of a datacenter network (matches the server's own Vercel-tuned
+  defaults) — which fired well before the server could ever respond,
+  logging `TimeoutError: signal timed out` and losing every category the
+  server would have delivered a few seconds later. In sidecar/local mode
+  the client timeout is now 60s, and the sidecar sets its own local-tuned
+  defaults for the three server-side `NEWS_*` budgets (documented,
+  `.env`-overridable, but blank by default — nobody hand-tunes these on a
+  fresh install) unless the operator has already set them. Production
+  (Vercel Edge, bound by its own 25s platform ceiling) is unaffected.
+- **Latest Brief showed a red 503 retry state on every local install,
+  forever**: `BRIEF_URL_SIGNING_SECRET` is a cloud-only secret no
+  local/sidecar deployment ever has, so this was a permanent per-install
+  state being reported as a transient outage. `/api/latest-brief` now
+  returns `200 { status: 'unavailable' }` for this case (still logged
+  server-side for a real cloud misconfiguration to be caught), and the
+  panel renders the same calm empty state `OrefSirensPanel` already uses
+  for its own permanent `configured: false` case.
+- **The sidecar's own `/api/llm-health` endpoint could still false-negative
+  a healthy provider on a slow network**: its probe timeout is a
+  standalone duplicate of `server/_shared/llm-health.ts`'s (this file is
+  bundled independently and can't import the .ts module) — a duplicate the
+  last bump of the source of truth (5s → 15s, plus a retry and an
+  asymmetric cache TTL) missed entirely, since that fix's own field
+  verification exercised a different call path. Bumped to match.
+- **The VS Code dashboard's in-page GitHub sign-in could complete
+  successfully and then immediately look signed-out again**: that flow's
+  identity (`custom:github-bridge`) resolves to a *different* Supabase
+  user id than `worldmonitor-local login`'s (plain `github` provider) for
+  the exact same real GitHub account — confirmed live. The reconcile logic
+  that adopts the standalone backend's session on load saw the id mismatch
+  and dutifully overwrote the freshly-established session with
+  `session.json`'s other identity, one page load after the redirect
+  landed. A `sessionStorage` flag now marks "a fresh in-page sign-in just
+  completed" across that redirect so reconcile trusts it outright instead
+  — without touching the intentional "a `login` as a different operator
+  should take effect" behavior for the general case.
+- **The dashboard's own session now also flows back down to the standalone
+  backend**: signing in from the panel used to update only the browser's
+  session, leaving `~/.worldmonitor/session.json` untouched — the CLI,
+  MCP, and the backend's own refresh loop never learned about it. Both a
+  fresh sign-in and every later token refresh now relay the session to
+  `session.json` through the same postMessage bridge GitHub sign-in
+  already uses.
+- **The sign-in button gave no feedback while the multi-step OAuth handoff
+  (VS Code's own GitHub session → ticket → redirect chain) was in
+  progress** — a real test called this out as looking dead. It now shows a
+  disabled state with a small spinner until the page navigates away (or
+  the flow fails and it resets).
+
 ## [2.13.13] - 2026-09-24
 
 ### Fixed — local mode

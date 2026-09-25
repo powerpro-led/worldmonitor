@@ -1,7 +1,7 @@
 import { subscribeAuthState, type AuthSession } from '@/services/auth-state';
 import { getCurrentAuthUser, signInWithGithub, signOut } from '@/services/auth-provider';
 import { t } from '@/services/i18n';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import { setTrustedHtml, trustedHtml, clearChildren } from '@/utils/dom-utils';
 
 
 export class AuthHeaderWidget {
@@ -11,6 +11,14 @@ export class AuthHeaderWidget {
   private onSettingsClick?: () => void;
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  // Set for the duration of the VS-Code-embed GitHub sign-in flow (ticket
+  // fetch + OAuth redirect chain — a few seconds before the page navigates
+  // away). Without this the button just sits there after a click with no
+  // feedback, which a 2026-09-25 live test called out as "looks dead" —
+  // there was no visual difference between "processing" and "did nothing".
+  // Not used for the onSignInClick (modal) path: that opens its own UI
+  // synchronously, nothing to wait on here.
+  private signingIn = false;
 
   constructor(onSignInClick?: () => void, onSettingsClick?: () => void) {
     this.onSignInClick = onSignInClick;
@@ -70,12 +78,38 @@ export class AuthHeaderWidget {
   }
 
   private renderSignedOut(): void {
+    clearChildren(this.container);
     const signInBtn = document.createElement('button');
+    signInBtn.type = 'button';
     signInBtn.className = 'auth-signin-btn';
-    signInBtn.textContent = t('auth.signIn');
+    if (this.signingIn) {
+      signInBtn.classList.add('auth-signin-btn--loading');
+      signInBtn.disabled = true;
+      signInBtn.setAttribute('aria-busy', 'true');
+      const spinner = document.createElement('span');
+      spinner.className = 'auth-signin-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      signInBtn.appendChild(spinner);
+    }
+    signInBtn.appendChild(document.createTextNode(t('auth.signIn')));
     signInBtn.addEventListener('click', () => {
-      if (this.onSignInClick) this.onSignInClick();
-      else void signInWithGithub();
+      if (this.onSignInClick) {
+        this.onSignInClick();
+        return;
+      }
+      if (this.signingIn) return;
+      this.signingIn = true;
+      this.renderSignedOut();
+      void signInWithGithub().finally(() => {
+        // No-op on success in the VS Code embed path: signInWithGithub()
+        // ends in a real page navigation there, so this component is
+        // already gone by the time the promise would settle. This only
+        // fires on a genuine failure (or the plain-web redirect path,
+        // which also navigates away) — reset so the button isn't stuck
+        // disabled forever.
+        this.signingIn = false;
+        if (this.container.contains(signInBtn)) this.renderSignedOut();
+      });
     });
     this.container.appendChild(signInBtn);
   }

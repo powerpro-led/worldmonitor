@@ -46,6 +46,25 @@ import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
   if (filled.length) console.log(`[local-api] config.db filled: ${filled.join(', ')}`);
 }
 
+// Local-mode defaults for server/worldmonitor/news/v1/list-feed-digest.ts's
+// three NEWS_* budgets (documented, `.env`-overridable, but blank by
+// default in .env.example — nobody hand-tunes these on a fresh install).
+// The production numbers (8s/10s/14s) are sized for the Vercel Edge
+// runtime's sub-second feed fetches and its own 25s initial-response
+// ceiling; this sidecar is a plain Node process with no such ceiling, and
+// a real 2026-09-25 Windows field report measured 1.4s single-feed round
+// trips (VPN path) that blew through the 14s outer budget and collapsed
+// ALL 15 digest categories at once (list-feed-digest.ts's cachedFetchJson
+// wrapper discards the whole in-progress buildDigest() on timeout — no
+// partial return). Same bug class as LLM_PROBE_TIMEOUT_MS above: a
+// hardcoded budget tuned for a datacenter network, not this one. `.env`
+// still wins — only fills what the operator hasn't already set.
+// Ordering constraint (enforced in list-feed-digest.ts): RESPONSE_TIMEOUT
+// > DEADLINE > FEED_TIMEOUT.
+if (!process.env.NEWS_FEED_TIMEOUT_MS) process.env.NEWS_FEED_TIMEOUT_MS = '15000';
+if (!process.env.NEWS_DIGEST_DEADLINE_MS) process.env.NEWS_DIGEST_DEADLINE_MS = '40000';
+if (!process.env.NEWS_DIGEST_RESPONSE_TIMEOUT_MS) process.env.NEWS_DIGEST_RESPONSE_TIMEOUT_MS = '45000';
+
 const brotliCompressAsync = promisify(brotliCompress);
 const DESKTOP_AUTH_SECRET_ENV = 'WM_DESKTOP_SHARED_SECRET';
 const DESKTOP_AUTH_TIMESTAMP_HEADER = 'X-WorldMonitor-Desktop-Timestamp';
@@ -53,13 +72,21 @@ const DESKTOP_AUTH_SIGNATURE_HEADER = 'X-WorldMonitor-Desktop-Signature';
 const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
 
 // Kept in lock-step with server/_shared/llm-health.ts's PROBE_TIMEOUT_MS
-// (bumped 2s -> 5s in b5323c7). A 2s cap false-negatived OpenRouter on
-// networks where its round-trip runs 2.1-3.8s, so the sidecar logged
-// "[llm:openrouter] Offline, skipping" and any panel trusting this probe
-// saw a provider that was actually up as down. This file is bundled
-// standalone and can't import the .ts module, so the value is duplicated,
-// not shared.
-const LLM_PROBE_TIMEOUT_MS = 5_000;
+// (bumped 2s -> 5s in b5323c7, then 5s -> 15s in bc9204e). That second bump
+// missed this duplicate on 2026-09-24 — bc9204e's diff touched only the
+// session-refresh path in this file, leaving this constant at the stale 5s
+// value while the source of truth moved to 15s, drifted a retry-once, and
+// gained an asymmetric cache TTL. Caught 2026-09-25 auditing a follow-up
+// field report: this endpoint (/api/llm-health) is a SEPARATE probe from
+// the one bc9204e fixed (server/worldmonitor's chat-analyst call path), so
+// the field report's "WM Analyst recovered" confirmation never exercised
+// this code path — a real 8s-9s round trip would still have false-
+// negatived here. This file is bundled standalone and can't import the .ts
+// module, so the value is duplicated, not shared; the retry/cache-TTL
+// asymmetry is NOT duplicated here (this endpoint is a point-in-time health
+// display, not a call-site gate — a stale positive lingering an extra 50s
+// is a cosmetic cost, not a functional one).
+const LLM_PROBE_TIMEOUT_MS = 15_000;
 
 /**
  * Per-machine state directory shared with the `worldmonitor-local` CLI

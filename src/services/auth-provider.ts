@@ -66,6 +66,21 @@ export async function initAuthProvider(): Promise<void> {
       if (event === 'SIGNED_OUT' && isVsCodeEmbed()) {
         void syncOperatorSession(supabase, 'signed-out');
       }
+      // Hand a freshly-established or freshly-rotated session back down to
+      // the standalone backend's session.json (via panel.ts's
+      // handleSessionEstablished). Without this, a sign-in completed FROM
+      // the dashboard (as opposed to `worldmonitor-local login` in a
+      // terminal) only ever lives in THIS iframe's own browser storage —
+      // the backend never learns about it. Covering TOKEN_REFRESHED too,
+      // not just SIGNED_IN, closes the underlying race in general: this
+      // iframe's own supabase-js autoRefresh and the backend's independent
+      // refresh loop both consume the same one-time-use Supabase refresh
+      // token (see the SIGNED_OUT branch above), so whichever side wins a
+      // refresh can now hand its result to the other instead of the loser
+      // permanently dying on "already used".
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && isVsCodeEmbed()) {
+        relaySessionToBackend(session);
+      }
     });
     if (isVsCodeEmbed()) startOperatorSessionSync(supabase);
   })();
@@ -76,6 +91,29 @@ export async function initAuthProvider(): Promise<void> {
 function isVsCodeEmbed(): boolean {
   return typeof window !== 'undefined'
     && !!(window as unknown as { __wmVsCodeApi?: unknown }).__wmVsCodeApi;
+}
+
+/**
+ * Relays this session up through the postMessage bridge (same channel as
+ * signInWithGithub()'s wm-github-signin) to panel.ts's
+ * handleSessionEstablished, which persists it to the standalone backend's
+ * session.json. Fire-and-forget: postMessage is synchronous and has no
+ * failure signal this side would act on differently, and a dropped message
+ * just leaves session.json as it already was.
+ */
+function relaySessionToBackend(session: Session): void {
+  const vsCodeApi = (window as unknown as { __wmVsCodeApi?: { postMessage: (msg: unknown) => void } }).__wmVsCodeApi;
+  if (!vsCodeApi) return;
+  vsCodeApi.postMessage({
+    type: 'wm-session-established',
+    session: {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at ?? null,
+      token_type: session.token_type,
+      user: { id: session.user.id, email: session.user.email ?? '' },
+    },
+  });
 }
 
 interface OperatorSessionBody {
@@ -158,10 +196,29 @@ function startOperatorSessionSync(
  *
  *   - not embedded / not logged in (204) / any failure → keep `existing`
  *     (which may be null → the in-page GitHub button still works)
+ *   - a fresh in-page sign-in JUST landed (VSCODE_FRESH_SIGNIN_KEY set by
+ *     completeVsCodeGithubSignIn() before its redirect) → trust `existing`
+ *     outright and push it down to session.json instead of pulling the
+ *     backend's version up. Necessary because that sign-in's identity
+ *     (`custom:github-bridge`) resolves to a DIFFERENT Supabase user id
+ *     than `worldmonitor-local login`'s (plain `github` provider) for the
+ *     SAME real account (confirmed live 2026-09-25) — without this branch
+ *     the id-mismatch case below fires on every single in-page sign-in,
+ *     permanently overwriting it with session.json's other identity one
+ *     page load later. This is also why the relay in onAuthStateChange
+ *     below can't be the whole fix on its own: that SIGNED_IN transition
+ *     is consumed by supabase-js while parsing the redirect's URL
+ *     fragment, before this function's caller (initAuthProvider) even
+ *     registers that listener.
  *   - operator-session matches `existing` → keep `existing`, nothing to do
  *   - operator-session differs (or `existing` is null) → setSession() to it;
  *     that refreshes an expired access_token itself and supabase-js persists
- *     the result to this iframe's storage, so it settles for the tab's life
+ *     the result to this iframe's storage, so it settles for the tab's life.
+ *     This is the intentional "a `login` as a *different* operator on a
+ *     multi-operator machine should take effect" path — deliberately NOT
+ *     short-circuited just because `existing` is non-null, since a resumed
+ *     tab's old session is exactly the "stale but still valid" case this
+ *     was built for.
  *
  * Bounded by a timeout: this is on the init critical path (`initialized`
  * gates every subscribeAuthProvider consumer), and the fetch would otherwise
@@ -172,6 +229,12 @@ async function reconcileWithOperatorSession(
   existing: Session | null,
 ): Promise<Session | null> {
   if (!isVsCodeEmbed()) return existing;
+
+  if (existing && sessionStorage.getItem(VSCODE_FRESH_SIGNIN_KEY)) {
+    sessionStorage.removeItem(VSCODE_FRESH_SIGNIN_KEY);
+    relaySessionToBackend(existing);
+    return existing;
+  }
 
   const TIMEOUT_MS = 4000;
   try {
@@ -309,6 +372,9 @@ function githubIdentityBridgeIssuer(): string | null {
 
 let vsCodeGithubTokenListenerInstalled = false;
 
+/** See completeVsCodeGithubSignIn()'s doc comment and reconcileWithOperatorSession(). */
+const VSCODE_FRESH_SIGNIN_KEY = 'wm-vscode-fresh-signin';
+
 /**
  * VS-Code-extension-only entry point for GitHub sign-in. Mirrors the
  * already-proven client contract from the sibling `platform` repo's
@@ -383,6 +449,21 @@ async function completeVsCodeGithubSignIn(token: string): Promise<void> {
     const { ticket } = (await ticketResp.json()) as { ticket?: string };
     if (!ticket) throw new Error('github-identity-bridge /tickets returned no ticket');
 
+    // Marks the page that lands after this redirect as "just completed a
+    // fresh in-page sign-in" for reconcileWithOperatorSession() to read.
+    // sessionStorage survives a same-tab cross-origin navigation (unlike an
+    // in-memory flag), which is exactly what this redirect chain is (this
+    // origin -> local Supabase -> github-identity-bridge -> local Supabase
+    // -> back here). Needed because this flow's own GitHub identity
+    // (`custom:github-bridge`) resolves to a DIFFERENT Supabase auth.users
+    // row than the CLI's `worldmonitor-local login` flow (plain `github`
+    // provider) — confirmed live 2026-09-25: same real GitHub account, two
+    // stable, reproducible user ids. Without this flag, reconcile can't
+    // tell "a fresh sign-in just landed, trust it" apart from "an old tab
+    // still has yesterday's session open, prefer the CLI's newer one" —
+    // and picked the wrong side, silently signing the operator back out
+    // via a still-valid-but-different-identity token from session.json.
+    sessionStorage.setItem(VSCODE_FRESH_SIGNIN_KEY, '1');
     const { error } = await supabase.auth.signInWithOAuth({
       // supabase-js's exported Provider type doesn't include custom:*
       // providers even though the SDK itself supports them — same gap
@@ -398,6 +479,11 @@ async function completeVsCodeGithubSignIn(token: string): Promise<void> {
     // navigation (no skipBrowserRedirect) — nothing left to do here; the
     // page is already on its way to Supabase's /auth/v1/authorize.
   } catch (err) {
+    // The redirect never happened (ticket fetch failed, signInWithOAuth
+    // rejected before navigating) — clear the flag so it doesn't wrongly
+    // mark some LATER, unrelated page load as "just completed a fresh
+    // sign-in".
+    sessionStorage.removeItem(VSCODE_FRESH_SIGNIN_KEY);
     console.error('[auth-provider] VS Code GitHub sign-in handoff failed:', err);
   }
 }

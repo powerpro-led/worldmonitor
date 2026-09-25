@@ -1,4 +1,5 @@
 import type { AppContext, AppModule } from '@/app/app-context';
+import { isSidecarBackedRuntime } from '@/utils/circuit-breaker';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { enqueuePanelCall } from '@/app/pending-panel-data';
 import { markLcpDebug } from '@/utils/lcp-debug';
@@ -396,7 +397,20 @@ export class DataLoaderManager implements AppModule {
   private loadAllDataQueuedForceAll = false;
 
   private digestBreaker = { state: 'closed' as 'closed' | 'open' | 'half-open', failures: 0, cooldownUntil: 0 };
-  private readonly digestRequestTimeoutMs = 8000;
+  // 8s assumes the sub-second feed fetches of a datacenter network (matches
+  // list-feed-digest.ts's Vercel-tuned defaults). In sidecar/local mode the
+  // server side already widens its own budget to a 45s worst case (see
+  // local-api-server.mjs's NEWS_DIGEST_RESPONSE_TIMEOUT_MS default) — a real
+  // 2026-09-25 Windows field report found this client-side AbortSignal
+  // firing well before that server budget was reached, logging
+  // "TimeoutError: signal timed out" and dropping all 15 digest categories
+  // even when the server would have answered a few seconds later. 60s
+  // (not 45s) after a live cold-cache request against this exact server
+  // budget measured 53s end to end on a real local run the same day —
+  // a flat 45s client cap would have aborted 3s before that response
+  // landed. Kept with headroom over the server's own worst case so this
+  // side is never the one that gives up first.
+  private readonly digestRequestTimeoutMs = isSidecarBackedRuntime() ? 60000 : 8000;
   private readonly digestFirstPaintGraceMs = 1500;
   private readonly digestBreakerCooldownMs = 5 * 60 * 1000;
   private readonly persistedDigestMaxAgeMs = 6 * 60 * 60 * 1000;

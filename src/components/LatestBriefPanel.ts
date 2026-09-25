@@ -41,7 +41,17 @@ interface LatestBriefComposing {
   issueDate: string;
 }
 
-type LatestBriefResponse = LatestBriefReady | LatestBriefComposing;
+// Permanent local-mode state: BRIEF_URL_SIGNING_SECRET is a cloud-only
+// secret the sidecar never has, so this endpoint can never leave
+// 'unavailable' on a local install. Rendered as a calm empty state (like
+// OrefSirensPanel's `!data.configured` branch) instead of the 503 retry-CTA
+// path, which used to paint this permanent gap as a transient outage.
+interface LatestBriefUnavailable {
+  status: 'unavailable';
+  issueDate: string;
+}
+
+type LatestBriefResponse = LatestBriefReady | LatestBriefComposing | LatestBriefUnavailable;
 
 /**
  * Typed access-failure surface. Lets the refresh loop branch on the
@@ -224,6 +234,8 @@ export class LatestBriefPanel extends Panel {
       if ((getAuthState().user?.id ?? null) !== requestUserId) return;
       if (data.status === 'ready') {
         this.renderReady(data);
+      } else if (data.status === 'unavailable') {
+        this.renderUnavailable();
       } else {
         this.renderComposing(data);
       }
@@ -312,7 +324,7 @@ export class LatestBriefPanel extends Panel {
       throw new Error(`Brief service unavailable (${res.status})`);
     }
     const body = (await res.json()) as LatestBriefResponse;
-    if (!body || (body.status !== 'ready' && body.status !== 'composing')) {
+    if (!body || (body.status !== 'ready' && body.status !== 'composing' && body.status !== 'unavailable')) {
       throw new Error('Unexpected response from brief service');
     }
     return body;
@@ -402,6 +414,20 @@ export class LatestBriefPanel extends Panel {
         h('div', { className: 'latest-brief-empty-body' },
           `The editorial team at WorldMonitor is writing your ${data.issueDate} brief. Check back in a moment.`,
         ),
+      ),
+    );
+  }
+
+  // No composing poll here, unlike renderComposing — this state is a
+  // permanent local-mode gap (missing cloud-only secret), not a slot that
+  // will finish composing on the next cron tick. Polling would just be
+  // pointless network chatter against a feature that will never appear.
+  private renderUnavailable(): void {
+    this.clearComposingPoll();
+    clearChildren(this.content);
+    this.content.appendChild(
+      h('div', { className: 'latest-brief-empty' },
+        h('div', { className: 'latest-brief-empty-title' }, 'Not available in local mode.'),
       ),
     );
   }

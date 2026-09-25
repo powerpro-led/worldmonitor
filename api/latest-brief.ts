@@ -10,8 +10,16 @@
  *      present when the caller requested a specific ?slot= value. The
  *      dashboard panel uses this to render an empty state instead of an
  *      error.
+ *   -> 200 { status: 'unavailable', issueDate } when
+ *      BRIEF_URL_SIGNING_SECRET is not configured — the permanent state
+ *      of every local/sidecar deployment (cloud-only secret). NOT a 503:
+ *      that collapsed this permanent per-deployment gap into "transient
+ *      outage" for the frontend's plain `!res.ok` check, painting a red
+ *      retry-CTA on every local install forever. Still logged server-side
+ *      via console.error for operators to catch a real cloud
+ *      misconfiguration.
  *   -> 401 UNAUTHENTICATED on missing/bad JWT
- *   -> 503 if BRIEF_URL_SIGNING_SECRET is not configured
+ *   -> 503 on an actual Upstash read failure (transient; retry-worthy)
  *
  * No separate Pro-tier gate: every signed-in user is fully entitled
  * post-billing-cut (see server/_shared/entitlement-check.ts).
@@ -197,8 +205,17 @@ export default async function handler(
 
   const secret = process.env.BRIEF_URL_SIGNING_SECRET ?? '';
   if (!secret) {
+    // A local/sidecar install never has this cloud-only secret — it's a
+    // permanent state for that deployment, not a transient outage. A 503
+    // here (pre-2026-09-25) made the frontend's plain `!res.ok` check treat
+    // it identically to a real Upstash outage: red retry-CTA on every load,
+    // forever, on every local install. 200 + status: 'unavailable' lets
+    // LatestBriefPanel render the same calm empty state OrefSirensPanel
+    // uses for its own permanent `configured: false` case, while an actual
+    // misconfigured CLOUD deployment still logs the error below for
+    // operators to catch.
     console.error('[api/latest-brief] BRIEF_URL_SIGNING_SECRET is not configured');
-    return jsonResponse({ error: 'service_unavailable' }, 503, cors);
+    return jsonResponse({ status: 'unavailable', issueDate: todayInUtc() }, 200, cors);
   }
 
   // Locate the user's most recent brief via the pointer the digest

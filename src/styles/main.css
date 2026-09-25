@@ -22536,6 +22536,27 @@ body.map-width-resizing {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 55%, transparent);
 }
+.auth-signin-btn--loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.75;
+  cursor: progress;
+}
+/* Reuses the existing `@keyframes spin` already defined in this file (same
+ * one src/utils/follow-button.ts's spinner uses). Border colors are dark
+ * (not currentColor) because this button's text/icon color is pinned dark
+ * on the green background — see .auth-signin-btn's own comment above. */
+.auth-signin-spinner {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(10, 10, 10, 0.3);
+  border-top-color: #0a0a0a;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  box-sizing: border-box;
+}
 
 .auth-avatar-btn {
   width: 32px;

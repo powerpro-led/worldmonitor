@@ -1,6 +1,15 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 import { BackendClient, BackendUnreachableError } from './backendClient';
+// Sibling under sidecar/, not a package import — same module local-api-server.mjs
+// and scripts/worldmonitor-local.mjs already share so session.json's schema
+// can't drift between writers (see that file's own header comment). esbuild
+// bundles it straight into extension.js at build time (platform: 'node',
+// bundle: true — see esbuild.js), so this stays a build-time dependency only,
+// not a runtime file read outside the packaged extension.
+// @ts-expect-error — plain ESM .mjs, no .d.ts; the two call sites below only
+// pass/receive plain JSON-shaped objects, so untyped is an acceptable cost.
+import { writeOperatorSession } from '../sidecar/session-file.mjs';
 
 /**
  * This fork's own cloud Supabase project — the backend for
@@ -178,6 +187,7 @@ export class DashboardPanel {
         if (msg?.type === 'wm-github-signin') void this.handleGithubSignIn();
         if (msg?.type === 'wm-open-external' && typeof msg.url === 'string') void this.handleOpenExternal(msg.url);
         if (msg?.type === 'wm-clipboard-read' && typeof msg.requestId === 'string') void this.handleClipboardRead(msg.requestId);
+        if (msg?.type === 'wm-session-established' && msg.session) this.handleSessionEstablished(msg.session);
       },
       null,
       this.disposables,
@@ -219,6 +229,60 @@ export class DashboardPanel {
       const message = err instanceof Error ? err.message : String(err);
       this.backend.log(`[auth] vscode.authentication.getSession failed: ${message}`);
       void vscode.window.showErrorMessage(`WorldMonitor sign-in failed: ${message}`);
+    }
+  }
+
+  /**
+   * Persists a freshly-established or freshly-rotated Supabase session from
+   * the dashboard iframe down to the standalone backend's session.json.
+   *
+   * Without this, a sign-in completed FROM the dashboard (as opposed to
+   * `worldmonitor-local login` in a terminal) only ever lives in the
+   * iframe's own browser storage — the backend never learns about it, so
+   * its own 15-min refresh loop keeps grinding on whatever (possibly
+   * absent, possibly stale) token session.json already held. A 2026-09-25
+   * field session hit exactly this gap from the other direction: the
+   * backend's copy died first (a race between its own refresh loop and
+   * this iframe's independent supabase-js autoRefresh both redeeming the
+   * same one-time refresh token — see auth-provider.ts's
+   * reconcileWithOperatorSession doc comment), and recovering required a
+   * manual `worldmonitor-local login` + restart because nothing ever wrote
+   * the iframe's side back down. Relaying BOTH a fresh sign-in and every
+   * later token refresh (see auth-provider.ts's onAuthStateChange) closes
+   * that race in general, not just the first-login case: whichever side
+   * wins a refresh can now hand its result to the other instead of the
+   * loser permanently dying on "already used".
+   *
+   * Fire-and-forget by design (msg handler above doesn't await it): a
+   * failed write here just leaves session.json as it already was — never
+   * worse than not having this feature at all — so it doesn't need to
+   * block or fail the sign-in the operator is watching complete in the
+   * iframe.
+   */
+  private handleSessionEstablished(session: unknown): void {
+    try {
+      const s = session as {
+        access_token?: unknown;
+        refresh_token?: unknown;
+        expires_at?: unknown;
+        token_type?: unknown;
+        user?: { id?: unknown; email?: unknown };
+      };
+      if (typeof s.access_token !== 'string' || typeof s.refresh_token !== 'string') {
+        this.backend.log('[auth] wm-session-established: malformed payload, ignoring');
+        return;
+      }
+      writeOperatorSession({
+        access_token: s.access_token,
+        refresh_token: s.refresh_token,
+        expires_at: typeof s.expires_at === 'number' ? s.expires_at : undefined,
+        token_type: typeof s.token_type === 'string' ? s.token_type : 'bearer',
+        user: { id: s.user?.id, email: s.user?.email },
+      });
+      this.backend.log('[auth] dashboard session relayed to session.json');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.backend.log(`[auth] failed to persist relayed session: ${message}`);
     }
   }
 
@@ -325,6 +389,10 @@ export class DashboardPanel {
               return;
             }
             if (msg.type === 'wm-clipboard-read' && event.source === frame.contentWindow) {
+              vscodeApi.postMessage(msg);
+              return;
+            }
+            if (msg.type === 'wm-session-established' && event.source === frame.contentWindow) {
               vscodeApi.postMessage(msg);
               return;
             }

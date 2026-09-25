@@ -4,6 +4,47 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.15] - 2026-09-25
+
+### Fixed — local mode
+
+- **The real-time push channel (`sync-listener`) never actually connected,
+  ever — every "idle 90s — proactive reconnect" in the log was silently
+  masking a handshake that hung forever, not a real idle disconnect**: a
+  real field report traced this to `local-api-server.mjs`'s `ipv4Fetch`
+  wrapper (the global `fetch` replacement every outbound sidecar request
+  goes through), which buffered a response and only resolved on the
+  underlying socket's `'end'` event. A Server-Sent Events subscription
+  never ends while connected, so that promise could only ever settle via
+  the listener's own idle timer aborting it — which the log then recorded
+  identically to a genuine idle timeout. `ipv4Fetch` now resolves as soon
+  as headers arrive, with a streamed body (`Readable.toWeb`), matching real
+  `fetch()` semantics — the shape `sync-listener.mjs` already expected of
+  `response.body.getReader()` on the calling side; nothing there needed to
+  change. This is why every short-TTL panel (markets, crypto, prediction
+  markets, climate anomalies, cross-source signals, supply-chain real-time
+  pressure, and more) was effectively permanently empty: the periodic full
+  resync (every 6 hours) was the only path that ever reached local Redis,
+  and most of the affected keys' TTLs are measured in minutes.
+- **Once the push channel could finally connect, a large backlog could
+  never actually be caught up**: `catchUp()`'s backfill read one changelog
+  entry at a time, awaiting a real network round trip per entry — a
+  ~10,000-entry backlog (exactly what a channel that has never connected
+  accumulates) took well past the 5-minute catch-up watchdog to process,
+  which aborted it before persisting any progress; since the underlying
+  stream keeps growing while catch-up runs, a consumer slower than the
+  sustained write rate could never finish, so every reconnect just repeated
+  the same abandon-and-retry cycle against an ever-larger gap. Reads are
+  now pipelined in batches of 100 via Upstash's pipeline endpoint (matching
+  this codebase's existing batch-size convention for that API), with
+  `keepErrors: true` so one bad key in a batch (a `WRONGTYPE`, or one that
+  vanished between the changelog write and the read) can't take the rest of
+  that batch down with it — the same per-key fault isolation the old
+  one-at-a-time loop had for free. Confirmed live: a real write now lands
+  in the local mirror within tens of milliseconds of the cloud write, and a
+  connection that used to cycle every ~90 seconds has run for 10+ minutes
+  without a single watchdog trip.
+
 ## [2.13.14] - 2026-09-25
 
 ### Fixed — local mode

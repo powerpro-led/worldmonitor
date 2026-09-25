@@ -4,6 +4,7 @@ import http, { createServer, request as httpRequest } from 'node:http';
 import https from 'node:https';
 import { createHmac } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,6 +107,26 @@ async function getJsonViaHttp(url) {
   });
 }
 
+// Local-api-server.mjs's ipv4Fetch calls Readable.toWeb(res) on the real
+// response object (needed so a long-lived stream like SSE can resolve on
+// headers rather than buffering until 'end', which never comes — see that
+// function's own comment). Readable.toWeb() requires an actual
+// stream.Readable, not just something that emits 'data'/'end' like a plain
+// EventEmitter: it throws synchronously ("must be an stream.Readable")
+// outside of ipv4Fetch's own try/catch scope at the time this helper was
+// written to duck-type production's real http.IncomingMessage (itself a
+// Readable) with a bare EventEmitter, which left the outer fetch() promise
+// permanently unsettled instead of rejecting — every caller of this helper
+// hung instead of failing loudly. `res.push(...)`/`res.push(null)` in place
+// of `.emit('data', ...)`/`.emit('end')` below is what makes it real.
+function mockHttpResponse({ statusCode, statusMessage = '', headers = {} }) {
+  const res = new Readable({ read() {} });
+  res.statusCode = statusCode;
+  res.statusMessage = statusMessage;
+  res.headers = headers;
+  return res;
+}
+
 function mockHttpsRequestOnce({ statusCode, headers, body }) {
   const original = https.request;
   https.request = (_options, onResponse) => {
@@ -117,13 +138,10 @@ function mockHttpsRequestOnce({ statusCode, headers, body }) {
     };
     req.end = () => {
       queueMicrotask(() => {
-        const res = new EventEmitter();
-        res.statusCode = statusCode;
-        res.statusMessage = '';
-        res.headers = headers;
+        const res = mockHttpResponse({ statusCode, headers });
         onResponse(res);
-        if (body) res.emit('data', Buffer.from(body));
-        res.emit('end');
+        if (body) res.push(Buffer.from(body));
+        res.push(null);
       });
     };
     return req;
@@ -954,13 +972,10 @@ test('uses asynchronous pinned lookup callback for handler global fetches (#3549
     };
     req.end = () => {
       setImmediate(() => {
-        const res = new EventEmitter();
-        res.statusCode = 200;
-        res.statusMessage = 'OK';
-        res.headers = { 'content-type': 'application/json' };
+        const res = mockHttpResponse({ statusCode: 200, statusMessage: 'OK', headers: { 'content-type': 'application/json' } });
         onResponse(res);
-        res.emit('data', Buffer.from(JSON.stringify({ ok: true })));
-        res.emit('end');
+        res.push(Buffer.from(JSON.stringify({ ok: true })));
+        res.push(null);
       });
     };
     return req;
@@ -1033,13 +1048,10 @@ test('uses IPv4 sidecar fetch for allowed private-network LLM probes (#3549)', a
     };
     req.end = () => {
       setImmediate(() => {
-        const res = new EventEmitter();
-        res.statusCode = 200;
-        res.statusMessage = 'OK';
-        res.headers = { 'content-type': 'application/json' };
+        const res = mockHttpResponse({ statusCode: 200, statusMessage: 'OK', headers: { 'content-type': 'application/json' } });
         onResponse(res);
-        res.emit('data', Buffer.from(JSON.stringify({ ok: true })));
-        res.emit('end');
+        res.push(Buffer.from(JSON.stringify({ ok: true })));
+        res.push(null);
       });
     };
     return req;

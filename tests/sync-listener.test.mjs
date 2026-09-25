@@ -24,6 +24,45 @@ afterEach(() => {
   delete process.env.LOCAL_SQLITE_PATH;
 });
 
+/**
+ * Wraps a plain fake-redis object (whatever subset of get/hgetall/zrange/
+ * smembers/lrange it defines) with a .pipeline() that queues calls to those
+ * same methods and replays them in order on .exec() — mirroring
+ * @upstash/redis's real Pipeline closely enough for catchUp()'s own tests:
+ * positional results, and keepErrors: true returns {result}/{error} per
+ * command instead of rejecting the whole batch on one failure (real SDK
+ * behavior per its own docs — see catchUp()'s comment on why this matters).
+ */
+function withPipelineMock(base) {
+  const READ_METHODS = ['get', 'hgetall', 'zrange', 'smembers', 'lrange'];
+  return {
+    ...base,
+    pipeline() {
+      const calls = [];
+      const builder = {};
+      for (const method of READ_METHODS) {
+        builder[method] = (...args) => {
+          calls.push(() => base[method](...args));
+          return builder;
+        };
+      }
+      builder.exec = async (opts) => {
+        const out = [];
+        for (const call of calls) {
+          try {
+            out.push({ result: await call() });
+          } catch (err) {
+            if (opts?.keepErrors) out.push({ error: err.message });
+            else throw err;
+          }
+        }
+        return out;
+      };
+      return builder;
+    },
+  };
+}
+
 function readRow(key) {
   if (!fs.existsSync(dbPath)) return undefined; // nothing has ever written a row in this test
   const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -143,18 +182,51 @@ describe('upsertRow + applyChange', () => {
 
 describe('catchUp', () => {
   it('applies every changelog entry since the (absent) cursor and persists the new cursor', async () => {
-    const fakeRedis = {
+    const fakeRedis = withPipelineMock({
       xrange: async () => ({
         '1-1': { key: 'resilience:a', type: 'string' },
         '2-1': { key: 'resilience:b', type: 'string' },
       }),
       get: async (key) => `value-for-${key}`,
-    };
+    });
     await listener.catchUp(fakeRedis);
     assert.equal(readRow('resilience:a').value, 'value-for-resilience:a');
     assert.equal(readRow('resilience:b').value, 'value-for-resilience:b');
     const cursor = JSON.parse(fs.readFileSync(`${dbPath}.sync-cursor.json`, 'utf-8'));
     assert.equal(cursor.lastStreamId, '2-1');
+  });
+
+  // Regression guard for a real 2026-09-25 finding: catchUp() used to read
+  // one entry at a time (a sequential await per key), which a real
+  // ~10,000-entry backlog took well past CATCHUP_WATCHDOG_MS to get through
+  // — and because the underlying stream keeps growing while catch-up runs,
+  // a consumer that can't finish before the watchdog fires can NEVER catch
+  // up: every reconnect just repeats the same abandon-and-retry cycle. Now
+  // batched via Upstash pipelining with keepErrors: true so one bad key
+  // (WRONGTYPE, vanished between the changelog write and this read, etc.)
+  // can't take the rest of its batch down with it — this is exactly the
+  // isolation the old one-at-a-time loop had for free from each call's own
+  // try/catch, and pipelining must not regress it.
+  it('applies the rest of a batch when one entry\'s targeted read fails', async () => {
+    const fakeRedis = withPipelineMock({
+      xrange: async () => ({
+        '1-1': { key: 'resilience:a', type: 'string' },
+        '2-1': { key: 'resilience:bad', type: 'string' },
+        '3-1': { key: 'resilience:c', type: 'string' },
+      }),
+      get: async (key) => {
+        if (key === 'resilience:bad') throw new Error('WRONGTYPE');
+        return `value-for-${key}`;
+      },
+    });
+    await listener.catchUp(fakeRedis);
+    assert.equal(readRow('resilience:a').value, 'value-for-resilience:a');
+    assert.equal(readRow('resilience:bad'), undefined);
+    assert.equal(readRow('resilience:c').value, 'value-for-resilience:c');
+    // The cursor still advances past the failed entry — a permanently
+    // broken key must not wedge every future catch-up behind it forever.
+    const cursor = JSON.parse(fs.readFileSync(`${dbPath}.sync-cursor.json`, 'utf-8'));
+    assert.equal(cursor.lastStreamId, '3-1');
   });
 
   it('requests an exclusive range starting from a previously persisted cursor', async () => {

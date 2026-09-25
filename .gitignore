@@ -98,6 +98,10 @@ tmp/
 
 # Local data layer's synced SQLite cache (src-tauri/sidecar/local-sync.mjs output)
 vscode-extension/sidecar/local-cache.db
+# sync-listener.mjs's changelog catch-up progress marker. Never existed
+# before the 2026-09-25 SSE-hang fix (the subscribe request never resolved,
+# so catchUp() never ran) — newly exposed gap, not previously reachable.
+vscode-extension/sidecar/local-cache.db.sync-cursor.json
 
 playground-pricing.html
 

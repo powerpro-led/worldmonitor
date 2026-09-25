@@ -12,6 +12,7 @@ import { brotliCompress, gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { Readable } from 'node:stream';
 // Sibling, not ../../shared/ — this file is bundled as a standalone Tauri
 // resource (see tauri.conf.json's bundle.resources) with no shared/ folder
 // alongside it in the packaged app. _domain-config.mjs is a generated,
@@ -362,20 +363,51 @@ globalThis.fetch = async function ipv4Fetch(input, init) {
     }
     return await new Promise((resolve, reject) => {
       const req = mod.request(requestOptions, (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          const buf = Buffer.concat(chunks);
-          const responseHeaders = new Headers();
-          for (const [k, v] of Object.entries(res.headers)) {
-            if (v) responseHeaders.set(k, Array.isArray(v) ? v.join(', ') : v);
-          }
-          try {
-            resolve(buildSafeResponse(res.statusCode, res.statusMessage, responseHeaders, buf));
-          } catch (error) {
-            reject(error);
-          }
-        });
+        // Resolves as soon as headers arrive, body streamed lazily via a Web
+        // ReadableStream — matching real fetch() semantics, NOT the buffer-
+        // until-'end' shape this used to have. That buffering meant this
+        // promise could only ever settle once the server closed the
+        // connection, which a long-lived stream (Server-Sent Events) never
+        // does: sync-listener.mjs's SSE subscribe() request would hang here
+        // forever, silently indistinguishable from an in-progress request
+        // until its OWN idle timer aborted it 90s later and mislogged that
+        // as a normal idle reconnect (see IdleReconnect in that file) — a
+        // real 2026-09-25 field report traced a fully-dead push channel
+        // (every short-TTL panel permanently empty, local-sync's periodic
+        // full resync being the only thing that ever populated local Redis)
+        // to exactly this line. Callers that just want a full body are
+        // unaffected: Response.json()/.text() already drain a streamed body
+        // the same way native fetch does; nothing needed to change on that
+        // side. releaseUpstreamSlot() (below, in the outer finally) now
+        // fires once headers land rather than once the body finishes,
+        // which for a short JSON response is a negligible few ms earlier,
+        // but for a long-lived SSE stream is the difference between it
+        // occupying one of only MAX_CONCURRENT_UPSTREAM slots for the rest
+        // of the process's life (starving unrelated fetches) versus for the
+        // handshake alone — the correct behavior either way.
+        const status = Number.isInteger(res.statusCode) ? res.statusCode : 500;
+        const responseHeaders = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v) responseHeaders.set(k, Array.isArray(v) ? v.join(', ') : v);
+        }
+        // Node forbids a body on these statuses even as a stream (throws
+        // "Response with null body status cannot have body" otherwise) —
+        // same statuses buildSafeResponse's buffered path already special-
+        // cased. Drain and discard so the socket doesn't dangle half-read.
+        const noBody = status === 204 || status === 205 || status === 304;
+        if (noBody) res.resume();
+        // Readable.toWeb() throws synchronously on anything that isn't a
+        // real stream.Readable — inside the try so that surfaces as a
+        // rejection. Left outside once, it just left this promise
+        // permanently unsettled instead (caught by a test mock that used a
+        // bare EventEmitter for `res`, same shape http.IncomingMessage
+        // always has in production, but worth keeping guarded regardless).
+        try {
+          const body = noBody ? null : Readable.toWeb(res);
+          resolve(new Response(body, { status, statusText: res.statusMessage, headers: responseHeaders }));
+        } catch (error) {
+          reject(error);
+        }
       });
       req.on('error', reject);
       if (init?.signal) {

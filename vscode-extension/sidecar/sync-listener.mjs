@@ -211,6 +211,17 @@ async function applyChange(redis, { key, type, value }) {
   upsertRow(key, typeof raw === 'string' ? raw : JSON.stringify(raw), type);
 }
 
+// Every changelog entry is signal-only (see notifyChange()'s own comment for
+// why), so catch-up's targeted reads are 100% of entries, never a subset —
+// unlike applyChange()'s live-frame path, which skips the read entirely
+// when a small value rode inline. Batched via Upstash's pipeline endpoint,
+// grouped by read type so READ_FOR_TYPE[type] (already generic over its
+// first arg — a plain client or a pipeline builder, same method names in
+// both) can be reused unchanged. Sized well under Upstash's documented
+// 1000-command pipeline cap, matching this codebase's existing convention
+// for that headroom (see list-feed-digest.ts's STORY_BATCH_SIZE).
+const CATCHUP_READ_BATCH_SIZE = 100;
+
 /**
  * Backfills anything missed while offline/asleep/disconnected: reads
  * sync:changelog from the last persisted cursor forward (exclusive lower
@@ -219,6 +230,22 @@ async function applyChange(redis, { key, type, value }) {
  * rather than re-reading the whole thing. Runs on every (re)connect,
  * including the process's very first connect — see this file's header
  * comment for why that alone covers "caught up after the laptop woke up."
+ *
+ * Reads are pipelined in batches of CATCHUP_READ_BATCH_SIZE, not one
+ * sequential round trip per entry. Confirmed live 2026-09-25: a real
+ * ~10,000-entry backlog (the kind a stale/never-connecting SSE subscription
+ * accumulates — see this file's own connect-phase idle-timer fix from the
+ * same session) took the old one-at-a-time loop well past
+ * CATCHUP_WATCHDOG_MS, which aborted it before a single cursor advance —
+ * and because the underlying stream keeps growing while catch-up runs, a
+ * consumer slower than the sustained write rate can NEVER finish: every
+ * reconnect just repeats the same abandon-and-retry cycle against an
+ * ever-larger gap. Local writes (upsertRow, one open/close SQLite handle
+ * per row — see that function's own comment for why that stays as-is) are
+ * still applied one at a time in order after each batch's reads resolve,
+ * and the cursor still advances per-entry, not per-batch — a crash mid-way
+ * still resumes from the exact last row actually written, same guarantee
+ * as before.
  */
 async function catchUp(redis) {
   const cursor = readCursor();
@@ -233,16 +260,66 @@ async function catchUp(redis) {
   const ids = Object.keys(entries || {}).sort();
   if (ids.length === 0) return;
   console.log(`[sync-listener] catch-up: ${ids.length} changelog entr${ids.length === 1 ? 'y' : 'ies'} since last cursor`);
-  for (const id of ids) {
-    const fields = entries[id];
-    const key = fields?.key;
-    const type = typeof fields?.type === 'string' ? fields.type : 'string';
-    if (typeof key === 'string') {
-      // Signal-only — the changelog never carries a value, only key+type
-      // (see notifyChange()/notifyKeyChanged()'s own comment for why).
-      await applyChange(redis, { key, type, value: undefined });
+
+  for (let i = 0; i < ids.length; i += CATCHUP_READ_BATCH_SIZE) {
+    const batchIds = ids.slice(i, i + CATCHUP_READ_BATCH_SIZE);
+    const items = batchIds.map((id) => {
+      const fields = entries[id];
+      const key = fields?.key;
+      const type = typeof fields?.type === 'string' ? fields.type : 'string';
+      return { id, key, type };
+    });
+
+    // Filtered BEFORE queuing pipeline commands, not after: a pipeline's
+    // results array is positional, so a skipped item here (no key, unknown
+    // type, or a key that's not admitted for mirroring — same denylist
+    // check applyChange() itself does) must never leave a queued command
+    // with nothing to line up against on the way back.
+    const readable = items.filter((item) => typeof item.key === 'string'
+      && isMirroredKey(item.key)
+      && READ_FOR_TYPE[item.type]);
+    for (const item of items) {
+      if (typeof item.key === 'string' && isMirroredKey(item.key) && !READ_FOR_TYPE[item.type]) {
+        console.warn(`[sync-listener] unknown type "${item.type}" for ${item.key} — skipping targeted read`);
+      }
     }
-    writeCursor(id);
+
+    if (readable.length > 0) {
+      const pipeline = redis.pipeline();
+      for (const item of readable) READ_FOR_TYPE[item.type](pipeline, item.key);
+      // keepErrors: true, not the default — @upstash/redis's own docs are
+      // explicit that a plain exec() fails the WHOLE pipeline the moment any
+      // single command errors (e.g. a WRONGTYPE if a key's type changed
+      // between the changelog write and this read), which would otherwise
+      // discard every other key in this batch of up to
+      // CATCHUP_READ_BATCH_SIZE along with it. The old one-at-a-time loop
+      // isolated each key's read failure to that key alone (applyChange()'s
+      // own try/catch); this keeps that same isolation per command instead
+      // of per batch.
+      let results;
+      try {
+        results = await pipeline.exec({ keepErrors: true });
+      } catch (err) {
+        console.warn(`[sync-listener] catch-up pipeline read failed for a batch of ${readable.length} (non-fatal — the periodic full reconciliation will cover it): ${err.message}`);
+        results = null;
+      }
+      if (results) {
+        for (let j = 0; j < readable.length; j++) {
+          const entry = results[j];
+          if (entry?.error) {
+            console.warn(`[sync-listener] targeted read failed for ${readable[j].key} (non-fatal — the periodic full reconciliation will cover it): ${entry.error}`);
+            continue;
+          }
+          const raw = entry?.result;
+          if (raw != null) upsertRow(readable[j].key, typeof raw === 'string' ? raw : JSON.stringify(raw), readable[j].type);
+        }
+      }
+    }
+    // Cursor still advances per-entry (not per-batch) and for every id in
+    // this batch, including ones filtered out above — a key that's
+    // unmirrored or unreadable this time isn't retried forever on every
+    // future catch-up just because it never got a chance to advance past.
+    for (const id of batchIds) writeCursor(id);
   }
 }
 

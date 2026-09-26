@@ -463,6 +463,8 @@ jobs:
           R2_BOOTSTRAP_SECRET_ACCESS_KEY=${{ secrets.R2_BOOTSTRAP_SECRET_ACCESS_KEY }}
           PROXY_URL=${{ secrets.PROXY_URL }}
           WORLDMONITOR_RELAY_KEY=${{ secrets.WORLDMONITOR_RELAY_KEY }}
+          WORLDMONITOR_SEED_REFRESH_KEY=${{ secrets.WORLDMONITOR_SEED_REFRESH_KEY }}
+          WORLDMONITOR_VALID_KEYS=${{ secrets.WORLDMONITOR_VALID_KEYS }}
           EOF
 
       # API_BASE_URL / GCP_API_GATEWAY_KEY (2026-09-26, biovita_gcp_api_gateway_key_missing):
@@ -478,6 +480,22 @@ jobs:
       # them and reverts any manual `gcloud run services update` fix applied directly against
       # that org's Cloud Run service in the meantime — exactly what happened to biovita before
       # this heredoc caught up with the manual fix.
+
+      # WORLDMONITOR_SEED_REFRESH_KEY / WORLDMONITOR_VALID_KEYS (2026-09-26,
+      # biovita_scheduler_log_sweep): self-issued tokens (server/gateway.ts's
+      # isResilienceRankingSeedRefreshRequest / isRelayWarmPingRequest
+      # timingSafeEqual against them) — no external account, freely
+      # regenerable, never registered anywhere outside this org's own
+      # deploy. Missing SEED_REFRESH_KEY is FATAL, not graceful: confirmed
+      # live via `gcloud logging read` that scripts/seed-resilience-scores.mjs
+      # crashes every cron cycle with "FATAL: WORLDMONITOR_SEED_REFRESH_KEY is
+      # required for resilience ranking refresh" when unset — this is not an
+      # optional nice-to-have var. Each org's actual secret value should be a
+      # FRESH `openssl rand -hex 32` (SEED_REFRESH_KEY) / `wm_$(openssl rand
+      # -hex 24)` (VALID_KEYS), not copied from a developer's local .env —
+      # unlike the third-party keys elsewhere in this file, there is no "real
+      # account" to share across orgs, and reusing one org's throwaway secret
+      # for another provides no benefit and mildly weakens isolation.
 
       # RESEND_API_KEY (2026-09-26, biovita_scheduler_log_sweep): treated as an
       # infra credential, not a pipeline_config data-source key — every org needs

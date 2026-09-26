@@ -10,6 +10,7 @@
  * Uses the configured APP_DOMAIN's api. subdomain by default.
  */
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
+import { gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 
 const BASE_URL = process.argv.includes('--base-url')
   ? process.argv[process.argv.indexOf('--base-url') + 1]
@@ -165,6 +166,7 @@ async function fetchEndpoint(endpoint) {
       Referer: `${ORIGIN}/`,
       'User-Agent': 'validate-seed-migration/1.0',
       ...(API_KEY ? { 'X-WorldMonitor-Key': API_KEY } : {}),
+      ...gcpApiGatewayAuthHeaders(),
     },
     signal: AbortSignal.timeout(15_000),
   });

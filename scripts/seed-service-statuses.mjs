@@ -8,12 +8,15 @@
  * Standalone fallback — primary seeder is the AIS relay loop.
  */
 
-import { loadEnvFile, CHROME_UA, getRedisCredentials, logSeedResult, extendExistingTtl } from './_seed-utils.mjs';
+import { loadEnvFile, CHROME_UA, getRedisCredentials, logSeedResult, extendExistingTtl, gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
-const RPC_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/infrastructure/v1/list-service-statuses`;
+// API_BASE_URL override matches every other warm-ping seeder's convention —
+// see seed-military-maritime-news.mjs's own comment on this same gap.
+const API_BASE = process.env.API_BASE_URL || resolveApiOrigin(process.env.APP_DOMAIN);
+const RPC_URL = `${API_BASE}/api/infrastructure/v1/list-service-statuses`;
 const CANONICAL_KEY = 'infra:service-statuses:v1';
 
 // Defense-in-depth auth — Origin-trust alone broke globally on 2026-05-02
@@ -31,6 +34,7 @@ function warmPingHeaders() {
     'Content-Type': 'application/json',
     'User-Agent': CHROME_UA,
     Origin: resolveAppOrigin(process.env.APP_DOMAIN),
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (RELAY_API_KEY) h['X-WorldMonitor-Key'] = RELAY_API_KEY;
   return h;

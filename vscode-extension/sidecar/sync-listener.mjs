@@ -72,17 +72,26 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 // cleanly; reconnecting proactively on silence sidesteps that class of hang
 // entirely instead of trying to detect it after the fact.
 const IDLE_TIMEOUT_MS = 90_000;
-// Separate, generous watchdog for catchUp() specifically — its Redis reads
-// (via the @upstash/redis SDK's default client, no custom retry/signal
-// handling) have no per-request timeout of their own, unlike local-sync.mjs's
-// own withTimeoutRetry() wrapper, which exists precisely because this SDK
-// can hang a request forever with no error ever thrown (see that file's own
-// header comment). A catch-up that's still running after this long abandons
-// the attempt for THIS connection cycle rather than blocking it indefinitely
-// — the cursor only advances as entries are actually applied, so nothing is
-// lost, just deferred to the next reconnect's catch-up or the periodic full
-// reconciliation.
-const CATCHUP_WATCHDOG_MS = 5 * 60_000;
+// Stall watchdog for catchUp() specifically — its Redis reads (via the
+// @upstash/redis SDK's default client, no custom retry/signal handling) have
+// no per-request timeout of their own, unlike local-sync.mjs's own
+// withTimeoutRetry() wrapper, which exists precisely because this SDK can
+// hang a request forever with no error ever thrown (see that file's own
+// header comment).
+//
+// This used to be a flat total-duration cap (5 minutes) instead of a stall
+// detector, and a real 2026-09-26 Windows field report found that design
+// actively hostile to a slow-but-working connection: that machine processed
+// ~901 entries per 300s batch window (~3/s, dominated by the per-entry
+// targeted-read round trip) against a 10,072-entry backlog, so EVERY batch
+// window ended just short of finishing and got cut off by the total-duration
+// cap — costing 10 full reconnect-and-resume cycles and 45 minutes to catch
+// up on a backlog a single sustained connection could have drained in one
+// pass. A stall detector fixes exactly that: it only gives up when progress
+// actually stops (no batch completes within this window), so a connection
+// that's merely slow but still advancing keeps running instead of being
+// punished for its own throughput.
+const CATCHUP_STALL_MS = 60_000;
 
 /** Matches local-sync.mjs's READ_FOR_TYPE exactly — same one-command-per-real-type discipline. */
 const READ_FOR_TYPE = {
@@ -122,6 +131,25 @@ function readCursor() {
     return typeof raw.lastStreamId === 'string' ? raw.lastStreamId : '0';
   } catch {
     return '0'; // never caught up before, or file missing/corrupt — re-read from stream start
+  }
+}
+
+/**
+ * Redis Stream IDs are `<ms>-<seq>`, each half an unbounded-width decimal —
+ * NOT safe to compare as plain strings once the two sides' digit counts
+ * differ (e.g. seq rolling from 9 to 10). BigInt comparison per half instead.
+ */
+function isStreamIdNewer(candidate, current) {
+  if (!current || current === '0') return true;
+  try {
+    const [candMs, candSeq = '0'] = candidate.split('-');
+    const [curMs, curSeq = '0'] = current.split('-');
+    const candMsB = BigInt(candMs);
+    const curMsB = BigInt(curMs);
+    if (candMsB !== curMsB) return candMsB > curMsB;
+    return BigInt(candSeq) > BigInt(curSeq);
+  } catch {
+    return false; // malformed id from an unexpected publisher — never advance on it
   }
 }
 
@@ -246,8 +274,14 @@ const CATCHUP_READ_BATCH_SIZE = 100;
  * and the cursor still advances per-entry, not per-batch — a crash mid-way
  * still resumes from the exact last row actually written, same guarantee
  * as before.
+ *
+ * @param {() => void} [onBatchDone] - called after each batch's cursor
+ *   writes land, purely so the caller's stall watchdog (CATCHUP_STALL_MS)
+ *   can reset its own timer on real progress. Optional so this stays
+ *   callable exactly as before wherever nothing needs the signal (tests,
+ *   any future direct caller).
  */
-async function catchUp(redis) {
+async function catchUp(redis, onBatchDone) {
   const cursor = readCursor();
   const startExclusive = cursor === '0' ? '-' : `(${cursor}`;
   let entries;
@@ -320,6 +354,7 @@ async function catchUp(redis) {
     // unmirrored or unreadable this time isn't retried forever on every
     // future catch-up just because it never got a chance to advance past.
     for (const id of batchIds) writeCursor(id);
+    onBatchDone?.();
   }
 }
 
@@ -352,8 +387,16 @@ function extractFrames(buffer) {
 }
 
 /**
- * Decodes one SSE `data:` payload into {key, type, value?}.
+ * Decodes one SSE `data:` payload into {key, type, value?, id?}. `id` is the
+ * sync:changelog stream ID the writer's XADD produced for this same change
+ * (see sync-notify.ts / _seed-utils.mjs's notifyChange — XADD now runs
+ * BEFORE PUBLISH specifically so its ID can ride along here), letting the
+ * live read loop advance the cursor without ever re-deriving an ID by
+ * guessing at the stream's current tail. Older writers simply omit it.
  *
+ * VERIFIED LIVE against a real Upstash endpoint (2026-08-23, via curl +
+ * a real PUBLISH — see TASKS.md for the transcript), not guessed: the wire
+ * format is a plain comma-separated string, NOT JSON —
  * VERIFIED LIVE against a real Upstash endpoint (2026-08-23, via curl +
  * a real PUBLISH — see TASKS.md for the transcript), not guessed: the wire
  * format is a plain comma-separated string, NOT JSON —
@@ -442,20 +485,52 @@ async function runOneConnection(redis, externalSignal) {
   clearIdleTimer();
   // Catch up AFTER the subscribe connection is open, not before, so a
   // notify published in between can't fall in the gap between the catch-up
-  // read and the subscription taking effect. Raced against its own watchdog
-  // (see CATCHUP_WATCHDOG_MS) rather than left unbounded.
-  await Promise.race([
-    catchUp(redis),
-    new Promise((resolve) => setTimeout(() => {
-      console.warn(`[sync-listener] catch-up exceeded ${CATCHUP_WATCHDOG_MS / 1000}s — abandoning for this connection, will retry next reconnect`);
-      resolve();
-    }, CATCHUP_WATCHDOG_MS)),
-  ]);
+  // read and the subscription taking effect. Guarded by a stall watchdog
+  // (see CATCHUP_STALL_MS's own comment for why this is stall-based, not a
+  // flat total-duration cap) rather than left unbounded. catchUp() itself is
+  // NOT cancelled when the watchdog fires — there's no cheap way to abort a
+  // pipeline mid-flight via this SDK, and letting it keep writing rows in the
+  // background is harmless (upsertRow already tolerates concurrent writers,
+  // same as the live loop below racing it) — only this connection cycle's
+  // wait for it gives up.
+  await new Promise((resolveWait) => {
+    let lastProgressAt = Date.now();
+    const stallTimer = setInterval(() => {
+      if (Date.now() - lastProgressAt >= CATCHUP_STALL_MS) {
+        clearInterval(stallTimer);
+        console.warn(`[sync-listener] catch-up stalled — no progress for ${CATCHUP_STALL_MS / 1000}s, abandoning for this connection, will retry next reconnect`);
+        resolveWait();
+      }
+    }, 5_000);
+    catchUp(redis, () => { lastProgressAt = Date.now(); })
+      .catch((err) => console.warn(`[sync-listener] catch-up failed unexpectedly (non-fatal): ${err.message}`))
+      .finally(() => {
+        clearInterval(stallTimer);
+        resolveWait();
+      });
+  });
   resetIdleTimer(); // now guards the live read loop, reset on every frame received
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // Tracks progress through sync:changelog for the live-frame path, seeded
+  // from whatever catchUp() above just persisted. Kept in memory (rather
+  // than re-reading CURSOR_PATH per frame) purely to avoid a disk read per
+  // message; writeCursor() below still persists on every advance, same cost
+  // shape catchUp() already pays per entry.
+  //
+  // Fixes a real 2026-09-26 Windows field report: the cursor previously only
+  // advanced inside catchUp()'s own loop, never here — so once a connection
+  // caught up and settled into steady-state live pushes, the cursor froze at
+  // the catch-up moment while data kept arriving. A restart minutes later
+  // then replayed everything the live loop had already applied live (observed
+  // live: 844s of "lag" that was actually a frozen cursor, not stale data).
+  // decodeFrame() only carries an `id` when the writer is new enough to send
+  // one (see sync-notify.ts / _seed-utils.mjs's notifyChange) — older
+  // writers' frames simply don't advance the cursor here, same as before
+  // this fix, so this is purely additive.
+  let cursorId = readCursor();
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -466,7 +541,18 @@ async function runOneConnection(redis, externalSignal) {
       buffer = remainder;
       for (const frame of frames) {
         const payload = decodeFrame(frame);
-        if (payload) await applyChange(redis, payload);
+        if (!payload) continue;
+        await applyChange(redis, payload);
+        // Only ever advances — concurrent writers can XADD out of the order
+        // their PUBLISH frames arrive in (two independent HTTP round trips
+        // per writer, no cross-writer ordering guarantee), so a numeric
+        // newer-than check guards against a late-arriving frame for an
+        // OLDER entry regressing the cursor past newer entries already
+        // recorded.
+        if (typeof payload.id === 'string' && isStreamIdNewer(payload.id, cursorId)) {
+          cursorId = payload.id;
+          writeCursor(cursorId);
+        }
       }
     }
   } finally {
@@ -541,4 +627,4 @@ if (isMainModule()) {
   runForever();
 }
 
-export { applyChange, catchUp, decodeFrame, extractFrames, upsertRow, runForever };
+export { applyChange, catchUp, decodeFrame, extractFrames, isStreamIdNewer, upsertRow, runForever };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { getRedisCredentials, loadEnvFile, readSeedSnapshot } from './_seed-utils.mjs';
+import { getRedisCredentials, loadEnvFile, readSeedSnapshot, gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 import { resolveApiOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
@@ -33,6 +33,7 @@ async function fetchLiveScore(countryCode) {
   const headers = {
     'User-Agent': 'WorldMonitor-ImportHHI-Verify/1.0',
     Accept: 'application/json',
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (WM_KEY) headers['X-WorldMonitor-Key'] = WM_KEY;
   const url = `${API_BASE.replace(/\/$/, '')}/api/resilience/v1/get-resilience-score?countryCode=${encodeURIComponent(countryCode)}`;

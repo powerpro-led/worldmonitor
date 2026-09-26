@@ -243,4 +243,54 @@ describe('catchUp', () => {
     const fakeRedis = { xrange: async () => { throw new Error('network'); } };
     await assert.doesNotReject(() => listener.catchUp(fakeRedis));
   });
+
+  // Regression guard for the 2026-09-26 Windows field report: catchUp() must
+  // report progress once per batch (not once per entry, not only at the
+  // very end) so a caller's stall watchdog can reset on real throughput
+  // instead of tripping on a slow-but-advancing connection.
+  it('calls onBatchDone once per batch, in cursor order', async () => {
+    const entries = {};
+    for (let i = 1; i <= 250; i++) entries[`${i}-1`] = { key: `resilience:${i}`, type: 'string' };
+    const fakeRedis = withPipelineMock({
+      xrange: async () => entries,
+      get: async (key) => `value-for-${key}`,
+    });
+    const progressCalls = [];
+    await listener.catchUp(fakeRedis, () => progressCalls.push(Date.now()));
+    // 250 entries / CATCHUP_READ_BATCH_SIZE(100) = 3 batches.
+    assert.equal(progressCalls.length, 3);
+  });
+
+  it('works without an onBatchDone callback (optional, backward compatible)', async () => {
+    const fakeRedis = withPipelineMock({
+      xrange: async () => ({ '1-1': { key: 'resilience:a', type: 'string' } }),
+      get: async (key) => `value-for-${key}`,
+    });
+    await assert.doesNotReject(() => listener.catchUp(fakeRedis));
+  });
+});
+
+describe('isStreamIdNewer', () => {
+  it('treats any real id as newer than the initial "0" cursor', () => {
+    assert.equal(listener.isStreamIdNewer('5-0', '0'), true);
+  });
+
+  it('compares the millisecond half numerically, not lexically', () => {
+    // '9-0' > '10-0' as plain strings, but '10' is the later timestamp.
+    assert.equal(listener.isStreamIdNewer('10-0', '9-0'), true);
+    assert.equal(listener.isStreamIdNewer('9-0', '10-0'), false);
+  });
+
+  it('falls back to the sequence half when timestamps tie', () => {
+    assert.equal(listener.isStreamIdNewer('100-11', '100-9'), true);
+    assert.equal(listener.isStreamIdNewer('100-9', '100-11'), false);
+  });
+
+  it('rejects an equal id (strictly newer, not newer-or-equal)', () => {
+    assert.equal(listener.isStreamIdNewer('100-1', '100-1'), false);
+  });
+
+  it('never throws on a malformed id — treated as not-newer', () => {
+    assert.equal(listener.isStreamIdNewer('not-an-id', '100-1'), false);
+  });
 });

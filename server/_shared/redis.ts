@@ -588,7 +588,7 @@ export function __resetFetcherTimeoutForTests(): void {
  * threading an AbortSignal through the fetcher contract, which is a wider
  * refactor across every cached-fetch call site.
  */
-function withFetcherTimeout<T>(promise: Promise<T>, key: string, timeoutMs: number, callerName: 'cachedFetchJson' | 'cachedFetchJsonWithMeta'): Promise<T> {
+function withFetcherTimeout<T>(promise: Promise<T>, key: string, timeoutMs: number, callerName: 'cachedFetchJson' | 'cachedFetchJsonWithMeta' | 'sidecarPrewarm'): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -610,6 +610,104 @@ function withFetcherTimeout<T>(promise: Promise<T>, key: string, timeoutMs: numb
  */
 export interface CachedFetchOpts {
   timeoutMs?: number;
+}
+
+// --- Sidecar background prewarm --------------------------------------------
+//
+// Gated strictly to LOCAL_API_MODE === 'tauri-sidecar' (checked once, in
+// maybeScheduleSidecarPrewarm() below — every other function here is a
+// private helper with no env check of its own, so there is exactly one
+// place this whole feature can be accidentally left on for the cloud
+// path). The sidecar is a real operator's own long-running desktop
+// process, where a background timer is cheap and meaningful; a Vercel Edge
+// isolate is short-lived and the cloud deploy already refreshes
+// proactively via dedicated seed cron jobs instead, so this has no
+// business running there at all.
+//
+// A real 2026-09-26 field report found a cachedFetchJson() call whose
+// fetcher does real, slow work (the news-digest RPC crawls dozens of RSS
+// feeds live — see server/worldmonitor/news/v1/list-feed-digest.ts) makes
+// WHICHEVER real user request happens to land on a cold or just-expired
+// cache pay that fetcher's full latency (28-40s observed). Once a key has
+// been fetched at least once, this schedules a background refresh ahead of
+// its own expiry so a live request almost never has to wait on the
+// fetcher again — see sidecar-cache.ts's own header comment for the other
+// half of this fix (surviving a sidecar RESTART within the TTL window,
+// which a background timer alone cannot do since it dies with the
+// process).
+const SIDECAR_PREWARM_MARGIN = 0.85; // refresh at 85% of the TTL, not at the deadline itself
+// Bounds background workload for a caller with a large or effectively
+// unbounded keyspace (e.g. one resilience-ranking key per country) — this
+// must never become an ever-growing set of perpetual timers. Past the cap,
+// the oldest-registered key simply stops being prewarmed; it still works
+// correctly through the ordinary cache-miss path, just without the
+// background head start.
+const SIDECAR_PREWARM_MAX_KEYS = 200;
+const sidecarPrewarmTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+async function runSidecarPrewarm<T extends object>(
+  key: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T | null>,
+  negativeTtlSeconds: number,
+  opts: CachedFetchOpts | undefined,
+): Promise<void> {
+  const timeoutMs = opts?.timeoutMs ?? fetcherTimeoutDefaultMs;
+  try {
+    const result = await withFetcherTimeout(fetcher(), key, timeoutMs, 'sidecarPrewarm');
+    // Empty/no-store results deliberately do NOT reschedule below — a
+    // consistently failing or empty upstream must not be hammered forever
+    // in the background; the next real request retries it through the
+    // ordinary miss path instead, same as if this feature didn't exist.
+    if (result == null) {
+      await setCachedJson(key, NEG_SENTINEL, negativeTtlSeconds);
+      return;
+    }
+    const noStoreReason = getRpcNoStoreReasonFromPayload(result, { includeAvailableFalse: false });
+    if (noStoreReason) {
+      await setCachedJson(key, NEG_SENTINEL, negativeTtlSeconds);
+      return;
+    }
+    await setCachedJson(key, result, ttlSeconds);
+    maybeScheduleSidecarPrewarm(key, ttlSeconds, fetcher, negativeTtlSeconds, opts); // keep the chain alive only on a genuine success
+  } catch (err) {
+    console.warn(`[redis] sidecar prewarm failed for "${key}" (non-fatal):`, errMsg(err));
+  }
+}
+
+function maybeScheduleSidecarPrewarm<T extends object>(
+  key: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T | null>,
+  negativeTtlSeconds: number,
+  opts: CachedFetchOpts | undefined,
+): void {
+  if (process.env.LOCAL_API_MODE !== 'tauri-sidecar') return;
+
+  const existing = sidecarPrewarmTimers.get(key);
+  if (existing) {
+    clearTimeout(existing);
+  } else if (sidecarPrewarmTimers.size >= SIDECAR_PREWARM_MAX_KEYS) {
+    const oldestKey = sidecarPrewarmTimers.keys().next().value;
+    if (oldestKey !== undefined) {
+      clearTimeout(sidecarPrewarmTimers.get(oldestKey));
+      sidecarPrewarmTimers.delete(oldestKey);
+    }
+  }
+
+  const delayMs = Math.max(1_000, ttlSeconds * 1000 * SIDECAR_PREWARM_MARGIN);
+  const timer = setTimeout(() => {
+    sidecarPrewarmTimers.delete(key);
+    runSidecarPrewarm(key, ttlSeconds, fetcher, negativeTtlSeconds, opts).catch(() => {});
+  }, delayMs);
+  timer.unref?.(); // must not hold the sidecar process open on its own
+  sidecarPrewarmTimers.set(key, timer);
+}
+
+/** Test-only: clears every scheduled prewarm timer. No production caller should ever invoke this. */
+export function __resetSidecarPrewarmForTests(): void {
+  for (const timer of sidecarPrewarmTimers.values()) clearTimeout(timer);
+  sidecarPrewarmTimers.clear();
 }
 
 /**
@@ -661,6 +759,7 @@ export async function cachedFetchJson<T extends object>(
           if (hadCacheReadError || (!wrote && hasRemoteRedisConfig())) {
             armLocalPositiveFallback(key, result, ttlSeconds);
           }
+          maybeScheduleSidecarPrewarm(key, ttlSeconds, fetcher, negativeTtlSeconds, opts);
         }
       } else {
         armLocalNegativeCooldown(key, negativeTtlSeconds);
@@ -776,6 +875,7 @@ export async function cachedFetchJsonWithMeta<T extends object>(
           if (hadCacheReadError || (!wrote && hasRemoteRedisConfig())) {
             armLocalPositiveFallback(key, result, ttlSeconds);
           }
+          maybeScheduleSidecarPrewarm(key, ttlSeconds, fetcher, negativeTtlSeconds, opts);
         }
       } else {
         upstreamStatus = 0;

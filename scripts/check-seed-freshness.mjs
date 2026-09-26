@@ -2,6 +2,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { resolveApiOrigin } from './_domain-config.mjs';
+import { gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 
 const DEFAULT_HEALTH_URL = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/health?compact=1`;
 
@@ -32,7 +33,7 @@ export function findStaleSeedProblems(payload) {
 async function main() {
   const healthUrl = process.env.HEALTH_URL || DEFAULT_HEALTH_URL;
   const response = await fetch(healthUrl, {
-    headers: { 'User-Agent': 'worldmonitor-seed-freshness-monitor/1.0' },
+    headers: { 'User-Agent': 'worldmonitor-seed-freshness-monitor/1.0', ...gcpApiGatewayAuthHeaders() },
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) {

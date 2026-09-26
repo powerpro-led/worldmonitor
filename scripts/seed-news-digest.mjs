@@ -46,9 +46,12 @@
 //   - Cron schedule: "*/10 * * * *"
 //   - Required env: APP_DOMAIN (or API_BASE_URL)
 //   - Optional env: WORLDMONITOR_RELAY_KEY, NEWS_DIGEST_SEED_VARIANTS,
-//                   NEWS_DIGEST_SEED_LANGS
+//                   NEWS_DIGEST_SEED_LANGS, GCP_API_GATEWAY_KEY (GCP/Nitric
+//                   orgs only — required there; the org's API sits behind a
+//                   Google-managed API Gateway that rejects every call
+//                   without it, see gcpApiGatewayAuthHeaders()'s own comment)
 
-import { loadEnvFile, CHROME_UA } from './_seed-utils.mjs';
+import { loadEnvFile, CHROME_UA, gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 // Per-pair ceiling. list-feed-digest.ts responds within its own
@@ -125,6 +128,7 @@ export async function run() {
   const headers = {
     'User-Agent': CHROME_UA,
     Origin: resolveAppOrigin(process.env.APP_DOMAIN),
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (process.env.WORLDMONITOR_RELAY_KEY) headers['X-WorldMonitor-Key'] = process.env.WORLDMONITOR_RELAY_KEY;
 

@@ -36,9 +36,10 @@
 //   - startCommand: node seed-rpc-warmpings.mjs
 //   - Cron schedule: "*/8 * * * *"
 //   - Required env: APP_DOMAIN (or API_BASE_URL)
-//   - Optional env: WORLDMONITOR_RELAY_KEY
+//   - Optional env: WORLDMONITOR_RELAY_KEY, GCP_API_GATEWAY_KEY (GCP/Nitric
+//                   orgs only — see gcpApiGatewayAuthHeaders()'s own comment)
 
-import { loadEnvFile, CHROME_UA } from './_seed-utils.mjs';
+import { loadEnvFile, CHROME_UA, gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 const PING_TIMEOUT_MS = 60_000;
@@ -93,6 +94,7 @@ export async function run() {
   const headers = {
     'User-Agent': CHROME_UA,
     Origin: resolveAppOrigin(process.env.APP_DOMAIN),
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (process.env.WORLDMONITOR_RELAY_KEY) headers['X-WorldMonitor-Key'] = process.env.WORLDMONITOR_RELAY_KEY;
 

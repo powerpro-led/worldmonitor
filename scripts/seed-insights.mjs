@@ -11,6 +11,7 @@ import {
   extendExistingTtl,
   isLlmBudgetError,
   writeExtraKey,
+  gcpApiGatewayAuthHeaders,
 } from './_seed-utils.mjs';
 import {
   clusterItems,
@@ -454,6 +455,7 @@ async function warmDigestCache(language = 'en') {
   const headers = {
     'User-Agent': CHROME_UA,
     Origin: resolveAppOrigin(process.env.APP_DOMAIN),
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (RELAY_API_KEY) headers['X-WorldMonitor-Key'] = RELAY_API_KEY;
   try {

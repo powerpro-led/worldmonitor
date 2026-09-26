@@ -54,13 +54,26 @@ export type MirrorValueType = 'string' | 'zset' | 'hash' | 'set' | 'list';
  * changed (e.g. a ZADD inside runRedisPipeline) omit it and the listener
  * does one targeted read for that key instead of getting the value inline.
  *
- * Returns the settled-or-swallowed promise for the two in-flight requests
- * (or `null` when the key isn't mirrored and nothing was dispatched). The
- * caller does NOT await it, but MAY hand it to `ctx.waitUntil()` so a Vercel
- * Edge isolate doesn't tear down before the PUBLISH/XADD reach Upstash —
- * without that, the RPC-side push is dropped some fraction of the time in
+ * Returns the settled-or-swallowed promise for the underlying requests (or
+ * `null` when the key isn't mirrored and nothing was dispatched). The caller
+ * does NOT await it, but MAY hand it to `ctx.waitUntil()` so a Vercel Edge
+ * isolate doesn't tear down before the XADD/PUBLISH reach Upstash — without
+ * that, the RPC-side push is dropped some fraction of the time in
  * production, degrading to the 6h reconciliation backstop (session 39's
  * 7-pass review, deferred finding #1). The promise never rejects.
+ *
+ * XADD now runs BEFORE PUBLISH (sequential, not the two fired in parallel
+ * this used to be) so the changelog entry's own stream ID can ride along in
+ * the PUBLISH payload as `id`. A real 2026-09-26 Windows field report found
+ * that without it, sync-listener.mjs's live read loop had no way to advance
+ * its cursor at all outside of catchUp()'s own loop — cursor writes only
+ * ever happened during a reconnect's backfill, so a connection that stayed
+ * up for a while (the ordinary, healthy case) drifted further and further
+ * behind on disk while the live data itself was fine, and a later restart
+ * replayed everything the live loop had already applied. The extra
+ * round-trip this adds is invisible to every caller — this function is
+ * fire-and-forget by contract already (see the header comment), so nothing
+ * downstream is on the hook for the added latency.
  */
 export function notifyKeyChanged(
   url: string,
@@ -71,14 +84,7 @@ export function notifyKeyChanged(
 ): Promise<void> | null {
   if (!isMirroredKey(key)) return null;
   const inline = serializedValue !== undefined && utf8ByteLength(serializedValue) <= SYNC_NOTIFY_MAX_INLINE_BYTES;
-  const message = JSON.stringify(inline ? { key, type, value: serializedValue } : { key, type });
 
-  const publish = fetch(`${url}/`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(['PUBLISH', SYNC_NOTIFY_CHANNEL, message]),
-    signal: AbortSignal.timeout(SYNC_NOTIFY_TIMEOUT_MS),
-  });
   // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
   // its last cursor) knows which read command to issue for each key (GET vs
   // ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
@@ -89,12 +95,28 @@ export function notifyKeyChanged(
     signal: AbortSignal.timeout(SYNC_NOTIFY_TIMEOUT_MS),
   });
 
-  return Promise.all([publish, changelog]).then(
-    () => {},
-    (err) => {
-      console.warn(`[sync-notify] ${key}: best-effort push failed (non-fatal):`, err instanceof Error ? err.message : String(err));
-    },
-  );
+  return changelog
+    .then((resp) => resp.json())
+    .then((data: unknown) => {
+      const streamId = typeof (data as { result?: unknown })?.result === 'string'
+        ? (data as { result: string }).result
+        : undefined;
+      const message = JSON.stringify(
+        inline ? { key, type, value: serializedValue, id: streamId } : { key, type, id: streamId },
+      );
+      return fetch(`${url}/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(['PUBLISH', SYNC_NOTIFY_CHANNEL, message]),
+        signal: AbortSignal.timeout(SYNC_NOTIFY_TIMEOUT_MS),
+      });
+    })
+    .then(
+      () => {},
+      (err) => {
+        console.warn(`[sync-notify] ${key}: best-effort push failed (non-fatal):`, err instanceof Error ? err.message : String(err));
+      },
+    );
 }
 
 /** Redis write-command verbs this notify path understands, mapped to their mirror type. */

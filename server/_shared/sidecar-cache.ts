@@ -1,12 +1,34 @@
 /**
- * In-memory TTL + LRU cache for the Tauri sidecar, backed on a miss by a
- * read-only mirror of the local SQLite sync cache
+ * In-memory TTL + LRU cache for the Tauri sidecar, backed on a miss by (in
+ * order) this file's OWN on-disk write-through table, then a read-only
+ * mirror of the local SQLite sync cache
  * (vscode-extension/sidecar/local-cache.db's `kv_cache` table, populated by
  * `npm run local-sync` pulling directly from Upstash — see that script's
  * header comment for the full pipeline). Activated only when
  * LOCAL_API_MODE === 'tauri-sidecar'. No top-level side effects; the
  * in-memory sweep timer starts lazily on first write, and the mirror is
  * loaded lazily on first read miss, not at module load.
+ *
+ * The write-through table (`local_cache`, this file's own — see
+ * persistLocalCacheEntry()/readPersistedLocalCacheEntry() below) exists for
+ * data this process computes ITSELF rather than receiving from the cloud
+ * mirror: a real 2026-09-26 field report found the news-digest RPC (dozens
+ * of RSS feeds crawled live, inside this same sidecar process, on a cache
+ * miss — see server/worldmonitor/news/v1/list-feed-digest.ts) cold-starting
+ * for 28-40s on EVERY sidecar restart, because the in-memory `store` below
+ * is this cache's only backing and is obviously empty right after a
+ * restart, no matter how recently the value had actually been computed
+ * before that restart. A deliberately SEPARATE table from `kv_cache`, not a
+ * shared one — `kv_cache` is written by two OTHER processes
+ * (sync-listener.mjs, local-sync.mjs) on a schedule this file doesn't
+ * control, and its own header comment documents it as "read-only... static
+ * for the process's lifetime," with no per-row TTL concept at all. Reusing
+ * it here would mean either teaching those two files' schema/rescan logic
+ * about a foreign row shape they don't own, or serving a locally-computed
+ * value forever past its real TTL after a restart (the mirror-read path has
+ * no expiry check). A private table sidesteps both: only this file ever
+ * touches it, and every row explicitly carries the expiry the ORIGINAL
+ * `cachedFetchJson()` call asked for, checked on every read.
  *
  * `node:sqlite` is loaded via `process.getBuiltinModule` rather than a
  * static `import`/`require('node:sqlite')` — this file is transitively
@@ -127,6 +149,106 @@ function formatAge(ms: number): string {
 /** Age of the loaded mirror in ms, or null if it has not been loaded or is empty. */
 export function sidecarMirrorAgeMs(): number | null {
   return mirrorAge;
+}
+
+type SqliteDb = { prepare(sql: string): { all(): unknown[]; get(...args: unknown[]): unknown; run(...args: unknown[]): unknown }; exec(sql: string): void; close(): void };
+type SqliteCtor = new (path: string, opts?: { readOnly?: boolean }) => SqliteDb;
+
+/** Shared node:sqlite loader — see this file's header comment for why this is dynamic, not a static import. */
+function getSqliteCtor(): SqliteCtor | null {
+  const sqlite = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
+    | { DatabaseSync: SqliteCtor }
+    | undefined;
+  return sqlite?.DatabaseSync ?? null;
+}
+
+const LOCAL_CACHE_DDL = `
+  CREATE TABLE IF NOT EXISTS local_cache (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`;
+
+/**
+ * Best-effort write-through for a value this process just computed itself.
+ * Opens local-cache.db fresh for one write, then closes it — same
+ * open/write/close-per-call discipline as sync-listener.mjs's own
+ * upsertRow() (see that function's comment for why: DELETE journal mode
+ * forced, no persistent handle held between calls, since this file shares
+ * the same physical .db file with two other processes that write to their
+ * OWN table in it). Never throws — a failed persist just means this
+ * process falls back to a cold recompute on its next restart, exactly
+ * today's behavior, not a regression.
+ */
+function persistLocalCacheEntry(key: string, json: string, expiresAt: number): void {
+  const dbPath = process.env.LOCAL_SQLITE_PATH;
+  if (!dbPath) return;
+  const Sqlite = getSqliteCtor();
+  if (!Sqlite) return;
+  try {
+    const db = new Sqlite(dbPath);
+    try {
+      db.exec('PRAGMA journal_mode = DELETE');
+      db.exec(LOCAL_CACHE_DDL);
+      db.prepare(
+        'INSERT INTO local_cache (key, value, expires_at, updated_at) VALUES (?, ?, ?, ?) '
+        + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at, updated_at = excluded.updated_at',
+      ).run(key, json, expiresAt, Date.now());
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.warn(`[sidecar-cache] failed to persist "${key}" to local_cache (non-fatal):`, err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Reads this process's own persisted write-through row for `key`, if any
+ * and not yet past the expiry it was written with. Unlike the read-only
+ * `kv_cache` mirror (loadMirror(), no per-row TTL at all), an expired row
+ * here is treated as an honest miss — serving it anyway would silently
+ * defeat the TTL contract every cachedFetchJson() caller already relies on
+ * elsewhere (Redis-backed or not), just because a restart happened to land
+ * past it.
+ */
+function readPersistedLocalCacheEntry(key: string): { value: string; expiresAt: number } | null {
+  const dbPath = process.env.LOCAL_SQLITE_PATH;
+  if (!dbPath) return null;
+  const Sqlite = getSqliteCtor();
+  if (!Sqlite) return null;
+  try {
+    const db = new Sqlite(dbPath, { readOnly: true });
+    try {
+      // No db.exec(LOCAL_CACHE_DDL) here on purpose — this connection is
+      // read-only, and issuing CREATE TABLE (even IF NOT EXISTS) over a
+      // read-only handle throws "attempt to write a readonly database" the
+      // moment the table genuinely doesn't exist yet (verified: it's a
+      // no-op, not an error, when the table already exists — SQLite only
+      // needs write access for the actual creation). The table only ever
+      // needs creating from persistLocalCacheEntry()'s read-write handle;
+      // "no such table" here just means nothing has been persisted yet,
+      // handled below as a quiet miss, not logged as a real failure.
+      const row = db.prepare('SELECT value, expires_at FROM local_cache WHERE key = ?').get(key) as
+        | { value: string; expires_at: number }
+        | undefined;
+      if (!row || row.expires_at <= Date.now()) return null;
+      return { value: row.value, expiresAt: row.expires_at };
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Both expected, quiet misses on a genuinely first-ever run: the table
+    // not existing yet (nothing persisted this process lifetime), or the
+    // whole .db file not existing yet (no sync-listener.mjs/local-sync.mjs
+    // write and no prior sidecarCacheSet() write-through either).
+    if (!/no such table|unable to open database file/i.test(message)) {
+      console.warn(`[sidecar-cache] failed to read "${key}" from local_cache (non-fatal):`, message);
+    }
+    return null;
+  }
 }
 
 function statMtimeMs(dbPath: string): number | null {
@@ -270,6 +392,24 @@ export function sidecarCacheGet(key: string): unknown | null {
     }
   }
 
+  // Checked BEFORE the read-only cloud mirror: this row (if present and
+  // unexpired) is this process's own prior computation, carrying the exact
+  // TTL its cachedFetchJson() caller asked for — a real freshness signal
+  // the mirror branch below has none of (see this file's header comment).
+  const persisted = readPersistedLocalCacheEntry(key);
+  if (persisted) {
+    hitCount++;
+    // Rehydrate the in-memory store with whatever TTL is actually left, not
+    // a fresh full TTL — a restart mid-window must not silently extend how
+    // long a value is served past what the original caller asked for.
+    const size = persisted.value.length * 2;
+    if (store.size >= MAX_ENTRIES || totalBytes + size > MAX_BYTES) evictLRU(size);
+    store.set(key, { value: persisted.value, expiresAt: persisted.expiresAt, size });
+    totalBytes += size;
+    startSweepIfNeeded();
+    return unwrapEnvelope(JSON.parse(persisted.value)).data;
+  }
+
   const mirrorEntry = loadMirror().get(key);
   if (mirrorEntry) {
     hitCount++;
@@ -317,14 +457,12 @@ export function sidecarCacheSet(key: string, value: unknown, ttlSeconds: number)
     evictLRU(size);
   }
 
-  store.set(key, {
-    value: json,
-    expiresAt: Date.now() + clamped * 1000,
-    size,
-  });
+  const expiresAt = Date.now() + clamped * 1000;
+  store.set(key, { value: json, expiresAt, size });
   totalBytes += size;
 
   startSweepIfNeeded();
+  persistLocalCacheEntry(key, json, expiresAt);
 }
 
 export function sidecarCacheStats(): { entries: number; bytes: number; hits: number; misses: number; mirrorEntries: number } {

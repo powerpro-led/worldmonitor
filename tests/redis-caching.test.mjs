@@ -1976,3 +1976,110 @@ describe('getHashFieldsBatch empty-string handling (#3530)', { concurrency: 1 },
   });
 });
 
+// Regression coverage for the 2026-09-26 field report's finding B: in
+// tauri-sidecar mode, a cachedFetchJson() call whose fetcher does real, slow
+// work (e.g. the news-digest RPC's live RSS crawl) used to block whichever
+// real request happened to land on an expired cache. cachedFetchJson() now
+// schedules a background refresh ahead of the TTL's own deadline — see
+// maybeScheduleSidecarPrewarm()/runSidecarPrewarm() in server/_shared/redis.ts.
+// The scheduling delay has a 1000ms floor (SIDECAR_PREWARM_MARGIN's own
+// comment), so these tests use a 1s TTL and tolerate real wall-clock time
+// rather than mocking timers — consistent with this file's existing
+// #3539 inflight-timeout tests, which do the same.
+describe('sidecar background prewarm', { concurrency: 1 }, () => {
+  it('re-invokes the fetcher in the background ahead of a short TTL\'s expiry, only in tauri-sidecar mode', async () => {
+    const redis = await importRedisFresh();
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sidecar-prewarm-test-'));
+    const restoreEnv = withEnv({
+      LOCAL_API_MODE: 'tauri-sidecar',
+      LOCAL_SQLITE_PATH: join(tmpDir, 'local-cache.db'),
+      UPSTASH_REDIS_REST_URL: undefined,
+      UPSTASH_REDIS_REST_TOKEN: undefined,
+    });
+    try {
+      let fetcherCalls = 0;
+      const fetcher = async () => {
+        fetcherCalls += 1;
+        return { call: fetcherCalls };
+      };
+
+      const first = await redis.cachedFetchJson('prewarm:test:key', 1, fetcher);
+      assert.deepEqual(first, { call: 1 });
+      assert.equal(fetcherCalls, 1);
+
+      // 1s TTL * 0.85 margin, floored at 1000ms — wait past both the margin
+      // and the floor with headroom for CI jitter.
+      await new Promise((r) => setTimeout(r, 1300));
+      assert.equal(fetcherCalls, 2, 'the background prewarm should have re-run the fetcher before the TTL expired');
+    } finally {
+      redis.__resetSidecarPrewarmForTests();
+      restoreEnv();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT schedule a prewarm outside tauri-sidecar mode (cloud/Edge path unaffected)', async () => {
+    const redis = await importRedisFresh();
+    const restoreEnv = withEnv({
+      UPSTASH_REDIS_REST_URL: 'https://redis.test',
+      UPSTASH_REDIS_REST_TOKEN: 'token',
+      LOCAL_API_MODE: undefined,
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      const raw = String(url);
+      if (raw.includes('/get/')) return jsonResponse({ result: undefined });
+      if (isSetRequest(url, init)) return jsonResponse({ result: 'OK' });
+      return jsonResponse({ result: 'OK' });
+    };
+
+    try {
+      let fetcherCalls = 0;
+      const fetcher = async () => { fetcherCalls += 1; return { call: fetcherCalls }; };
+      await redis.cachedFetchJson('no-prewarm:test:key', 1, fetcher);
+      assert.equal(fetcherCalls, 1);
+
+      await new Promise((r) => setTimeout(r, 1300));
+      assert.equal(fetcherCalls, 1, 'no background timer should exist outside tauri-sidecar mode');
+    } finally {
+      redis.__resetSidecarPrewarmForTests();
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+
+  it('does not reschedule after a prewarm run returns an empty result', async () => {
+    const redis = await importRedisFresh();
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sidecar-prewarm-test-'));
+    const restoreEnv = withEnv({
+      LOCAL_API_MODE: 'tauri-sidecar',
+      LOCAL_SQLITE_PATH: join(tmpDir, 'local-cache.db'),
+      UPSTASH_REDIS_REST_URL: undefined,
+      UPSTASH_REDIS_REST_TOKEN: undefined,
+    });
+    try {
+      let fetcherCalls = 0;
+      // First call returns real data (arms the prewarm chain); the
+      // BACKGROUND prewarm call returns null (upstream went empty) — the
+      // chain must stop there, not keep hammering a now-empty upstream.
+      const fetcher = async () => {
+        fetcherCalls += 1;
+        return fetcherCalls === 1 ? { call: 1 } : null;
+      };
+
+      await redis.cachedFetchJson('prewarm-stop:test:key', 1, fetcher);
+      assert.equal(fetcherCalls, 1);
+
+      await new Promise((r) => setTimeout(r, 1300));
+      assert.equal(fetcherCalls, 2, 'the one background prewarm should have run');
+
+      await new Promise((r) => setTimeout(r, 1300));
+      assert.equal(fetcherCalls, 2, 'an empty prewarm result must not reschedule another one');
+    } finally {
+      redis.__resetSidecarPrewarmForTests();
+      restoreEnv();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+

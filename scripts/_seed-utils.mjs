@@ -375,21 +375,29 @@ const SYNC_CHANGELOG_MAXLEN = 10_000;
 // just one member of a larger structure, so those always go signal-only and
 // the listener does one targeted read (LRANGE/ZRANGE/...) — same rule
 // notifyPipelineWrites() uses on the RPC side.
+// XADD runs BEFORE PUBLISH (sequential, not the two fired in parallel this
+// used to be) so the changelog entry's own stream ID can ride along in the
+// PUBLISH payload as `id`. See server/_shared/sync-notify.ts's TypeScript
+// twin (notifyKeyChanged) for the full rationale — a real 2026-09-26 Windows
+// field report found sync-listener.mjs's live read loop had no way to
+// advance its on-disk cursor at all without this, only ever catching up
+// during a reconnect's backfill. This function is fire-and-forget by
+// contract already (see this file's own header comment), so the extra
+// round-trip is invisible to every caller.
 export async function notifyChange(url, token, key, serializedValue, type = 'string') {
   if (!isMirroredKey(key)) return;
   const canInline = type === 'string'
     && serializedValue !== undefined
     && Buffer.byteLength(serializedValue, 'utf8') <= SYNC_NOTIFY_MAX_INLINE_BYTES;
+  // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
+  // its last cursor) knows which read command to issue for each key
+  // (GET vs ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
+  const xadd = await redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', type]);
+  const streamId = typeof xadd?.result === 'string' ? xadd.result : undefined;
   const message = canInline
-    ? JSON.stringify({ key, type, value: serializedValue })
-    : JSON.stringify({ key, type });
-  await Promise.all([
-    redisCommand(url, token, ['PUBLISH', SYNC_NOTIFY_CHANNEL, message]),
-    // 'type' included so a reconnecting listener's catch-up pass (XRANGE from
-    // its last cursor) knows which read command to issue for each key
-    // (GET vs ZRANGE vs HGETALL vs ...) without an extra TYPE round-trip.
-    redisCommand(url, token, ['XADD', SYNC_CHANGELOG_STREAM, 'MAXLEN', '~', String(SYNC_CHANGELOG_MAXLEN), '*', 'key', key, 'type', type]),
-  ]);
+    ? JSON.stringify({ key, type, value: serializedValue, id: streamId })
+    : JSON.stringify({ key, type, id: streamId });
+  await redisCommand(url, token, ['PUBLISH', SYNC_NOTIFY_CHANNEL, message]);
 }
 
 // Fire notifyChange() for every mirrored `SET` in a raw pipeline command array.
@@ -1139,6 +1147,27 @@ const IMF_SDMX_BASE = 'https://api.imf.org/external/sdmx/3.0';
 export function imfAuthHeaders() {
   const key = process.env.IMF_API_KEY;
   return key ? { 'Ocp-Apim-Subscription-Key': key } : {};
+}
+
+// Build auth headers for calling THIS deployment's own API — only needed for
+// a GCP/Nitric org (Vercel deployments have no gateway in front of them at
+// all, so this is empty there and every caller can merge it in unconditionally
+// with zero behavior change on that path). A real 2026-09-26 biovita incident:
+// server/worldmonitor/*'s RPCs on GCP sit behind a Google-managed API Gateway
+// (Terraform/Pulumi-provisioned `x-google-backend` rewrite into Nitric's
+// internal `/x-nitric-api/<service>/` routing — the raw Cloud Run URL is
+// NEVER a valid direct target, its own internal auth rejects every external
+// caller regardless of IAM bindings on the Cloud Run service itself). Google
+// API Gateway's managed-service layer requires an API key on every call by
+// default (there is no "no auth" option once Cloud Endpoints' Service
+// Infrastructure is in front of a backend) — verified live via the deployed
+// OpenAPI config (no securityDefinitions declared, so this is Google's
+// platform default, not something this codebase configured) — accepted via
+// either `?key=` or the `x-api-key` header; this helper uses the header so it
+// composes cleanly with a URL a caller already built.
+export function gcpApiGatewayAuthHeaders() {
+  const key = process.env.GCP_API_GATEWAY_KEY;
+  return key ? { 'x-api-key': key } : {};
 }
 
 /**

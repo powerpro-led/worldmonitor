@@ -442,6 +442,8 @@ jobs:
           UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           APP_DOMAIN=${{ steps.domain.outputs.value }}
+          API_BASE_URL=${{ secrets.API_BASE_URL }}
+          GCP_API_GATEWAY_KEY=${{ secrets.GCP_API_GATEWAY_KEY }}
           VITE_VARIANT=${{ inputs.variant }}
           WM_SESSION_SECRET=${{ secrets.WM_SESSION_SECRET }}
           WS_RELAY_URL=${{ vars.WS_RELAY_URL }}
@@ -461,6 +463,20 @@ jobs:
           PROXY_URL=${{ secrets.PROXY_URL }}
           WORLDMONITOR_RELAY_KEY=${{ secrets.WORLDMONITOR_RELAY_KEY }}
           EOF
+
+      # API_BASE_URL / GCP_API_GATEWAY_KEY (2026-09-26, biovita_gcp_api_gateway_key_missing):
+      # a GCP/Nitric org's RPCs sit behind a Google-managed API Gateway that (a) does the
+      # public-path -> Nitric-internal-path rewrite every self-calling seed script needs
+      # (scripts/seed-news-digest.mjs etc. — the raw Cloud Run URL is NEVER a valid direct
+      # target, see that memory doc's root-cause chain) and (b) requires an API key on every
+      # call by default (Google's managed-service platform default, not something this repo
+      # configures). Both are empty/no-op for an org that doesn't need them — scripts/
+      # _seed-utils.mjs's gcpApiGatewayAuthHeaders() only sends the header when the key is
+      # set, and API_BASE_URL falls back to resolveApiOrigin(APP_DOMAIN) when unset. Without
+      # these two secrets set for an org, the NEXT deploy silently regenerates .env missing
+      # them and reverts any manual `gcloud run services update` fix applied directly against
+      # that org's Cloud Run service in the meantime — exactly what happened to biovita before
+      # this heredoc caught up with the manual fix.
 
       # RELAY_URL is deliberately absent above (2026-09-24): scripts/_domain-config.mjs's
       # resolveProxyOrigin() already derives `https://proxy.<APP_DOMAIN>` when RELAY_URL is

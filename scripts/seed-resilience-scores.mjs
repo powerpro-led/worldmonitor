@@ -5,6 +5,7 @@ import {
   logSeedResult,
   notifyMirroredWrites,
   writeFreshnessMetadata,
+  gcpApiGatewayAuthHeaders,
 } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { isInRankableUniverse } from './shared/rankable-universe.mjs';
@@ -133,7 +134,7 @@ async function redisPipeline(url, token, commands) {
 async function fetchRuntimeFormulaTag() {
   try {
     const resp = await fetch(`${API_BASE}/api/resilience/v1/get-runtime-manifest`, {
-      headers: { 'User-Agent': SEED_UA, 'Accept': 'application/json' },
+      headers: { 'User-Agent': SEED_UA, 'Accept': 'application/json', ...gcpApiGatewayAuthHeaders() },
       signal: AbortSignal.timeout(10_000),
     });
     if (!resp.ok) {
@@ -404,7 +405,7 @@ async function seedResilienceScores() {
       // degrade, and only the per-country laggard fallback (or nothing, if
       // WM_KEY is absent) would recover. Forcing a recompute routes the call
       // through warmMissingResilienceScores and its chunked pipeline SET.
-      const headers = { 'User-Agent': SEED_UA, 'Accept': 'application/json' };
+      const headers = { 'User-Agent': SEED_UA, 'Accept': 'application/json', ...gcpApiGatewayAuthHeaders() };
       if (WM_REFRESH_KEY) headers['X-WorldMonitor-Key'] = WM_REFRESH_KEY;
       const resp = await fetch(`${API_BASE}/api/resilience/v1/get-resilience-ranking?refresh=1`, {
         headers,
@@ -443,7 +444,7 @@ async function seedResilienceScores() {
         const results = await Promise.allSettled(batch.map(async (cc) => {
           const scoreUrl = `${API_BASE}/api/resilience/v1/get-resilience-score?countryCode=${cc}`;
           const resp = await fetch(scoreUrl, {
-            headers: { 'User-Agent': SEED_UA, 'Accept': 'application/json', 'X-WorldMonitor-Key': WM_KEY },
+            headers: { 'User-Agent': SEED_UA, 'Accept': 'application/json', 'X-WorldMonitor-Key': WM_KEY, ...gcpApiGatewayAuthHeaders() },
             signal: AbortSignal.timeout(30_000),
           });
           if (!resp.ok) throw new Error(`${cc}: HTTP ${resp.status}`);

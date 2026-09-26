@@ -20,12 +20,17 @@
  * - summarizeArticle: per-article LLM summarization
  */
 
-import { loadEnvFile, CHROME_UA } from './_seed-utils.mjs';
+import { loadEnvFile, CHROME_UA, gcpApiGatewayAuthHeaders } from './_seed-utils.mjs';
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
 loadEnvFile(import.meta.url);
 
-const API_BASE = resolveApiOrigin(process.env.APP_DOMAIN);
+// API_BASE_URL override matches every other warm-ping seeder's convention
+// (seed-news-digest.mjs, seed-rpc-warmpings.mjs, ...) — this script was
+// missing it, which meant a GCP/Nitric org (whose real API origin is a
+// Google API Gateway hostname, not `api.<APP_DOMAIN>`) had no way to point
+// this seeder anywhere but the domain-derived origin, unlike its siblings.
+const API_BASE = process.env.API_BASE_URL || resolveApiOrigin(process.env.APP_DOMAIN);
 const TIMEOUT = 30_000;
 
 // Defense-in-depth auth — see seed-service-statuses.mjs for the same pattern + rationale.
@@ -38,6 +43,7 @@ function warmPingHeaders() {
     'Content-Type': 'application/json',
     'User-Agent': CHROME_UA,
     Origin: resolveAppOrigin(process.env.APP_DOMAIN),
+    ...gcpApiGatewayAuthHeaders(),
   };
   if (RELAY_API_KEY) h['X-WorldMonitor-Key'] = RELAY_API_KEY;
   return h;

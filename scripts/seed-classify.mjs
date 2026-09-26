@@ -64,6 +64,7 @@ import {
   logSeedResult,
   acquireLockSafely,
   releaseLock,
+  gcpApiGatewayAuthHeaders,
 } from './_seed-utils.mjs';
 import { resolveApiOrigin, resolveAppOrigin } from './_domain-config.mjs';
 
@@ -561,12 +562,15 @@ async function publishNotificationEvent({ eventType, payload, severity, variant,
 // ─── Per-variant classify ────────────────────────────────────────────────────
 
 async function seedClassifyForVariant(variant, seenTitles) {
-  const digestUrl = `${resolveApiOrigin(process.env.APP_DOMAIN)}/api/news/v1/list-feed-digest?variant=${variant}&lang=en`;
+  // API_BASE_URL override matches every other warm-ping seeder's convention
+  // — see seed-military-maritime-news.mjs's own comment on this same gap.
+  const apiBase = process.env.API_BASE_URL || resolveApiOrigin(process.env.APP_DOMAIN);
+  const digestUrl = `${apiBase}/api/news/v1/list-feed-digest?variant=${variant}&lang=en`;
   let digest;
   try {
     const resp = await new Promise((resolve, reject) => {
       const req = https.get(digestUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
+        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA, ...gcpApiGatewayAuthHeaders() },
         timeout: 15000,
       }, resolve);
       req.on('error', reject);

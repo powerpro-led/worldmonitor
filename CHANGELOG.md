@@ -4,6 +4,57 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.16] - 2026-09-26
+
+### Fixed — local mode
+
+- **`catchUp()`'s watchdog punished a slow-but-working connection instead of
+  a genuinely stalled one**: it was a flat 5-minute total-duration cap, not
+  a stall detector — a real Windows field report's link processed ~901
+  entries per 300s batch (~3/s) against a 1000-entry page, so every batch
+  finished just short of done and got cut off, costing 10 reconnect cycles
+  and 45 minutes to drain one backlog a single sustained connection could
+  have finished in one pass. Now resets on every batch's own progress
+  instead of racing a fixed deadline.
+- **The on-disk sync cursor never advanced during live pushes, only during
+  a reconnect's backfill**: the write side fired XADD and PUBLISH
+  concurrently, so a live SSE frame had no changelog stream id to advance
+  the cursor with even if the read side had wanted one. A healthy,
+  long-lived connection's cursor silently froze at its last reconnect while
+  data kept arriving correctly — a later restart then replayed everything
+  the live loop had already applied. XADD now runs before PUBLISH so its
+  stream id rides along in the push payload; the live loop advances and
+  persists the cursor from it (guarded against two writers' independent
+  round trips landing out of order).
+- **A locally-computed cache value (e.g. the news-digest RPC's live RSS
+  crawl) never survived a sidecar restart, even seconds after being
+  computed**: it only ever lived in an in-process Map. Now write-throughs
+  to a private on-disk table (separate from the read-only cloud-mirror
+  table, which has no per-row TTL concept), read back — and honored against
+  its original TTL, not served stale forever — before falling through to a
+  fresh recompute.
+- **The first real request after a cold start always paid a slow fetcher's
+  full latency, every time it expired**: cachedFetchJson() now schedules a
+  background refresh ahead of a cache entry's own TTL deadline (local-mode
+  only — no effect on the cloud/Edge path, which already refreshes via its
+  own cron seeders), so a live request almost never has to wait on the
+  fetcher again after the very first cold start.
+
+### Fixed — cloud deploy (GCP, biovita)
+
+- **7+ self-calling seed scripts (news-digest, rpc-warmpings, classify,
+  insights, resilience-scores, military-maritime-news, service-statuses)
+  had been failing on every invocation since ~2026-09-17**: a GCP org's
+  RPCs sit behind a Google-managed API Gateway that requires an API key on
+  every call by default — nobody had ever created one, and no error
+  surfaced anywhere that would have shown it (Cloud Scheduler only reports
+  the HTTP-level result, not what happened inside the container). Two
+  scripts (military-maritime-news, service-statuses) were separately found
+  missing the `API_BASE_URL` override every sibling warm-ping seeder
+  already supports. `deploy-org.reusable.yml`'s env heredoc now carries the
+  new `GCP_API_GATEWAY_KEY` / `API_BASE_URL` secrets through so a future
+  org deploy doesn't silently drop them again.
+
 ## [2.13.15] - 2026-09-25
 
 ### Fixed — local mode

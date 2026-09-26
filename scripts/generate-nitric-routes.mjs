@@ -27,7 +27,19 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const API_DIR = path.join(REPO_ROOT, 'api');
 const OUT_FILE = path.join(REPO_ROOT, 'gcp', 'api', 'routes.generated.ts');
 
-const METHODS = ['get', 'post', 'put', 'patch', 'delete', 'options'];
+// Each Nitric route *registration* (route.get(), route.post(), route.all(), …)
+// opens its own long-lived gRPC bidi stream to the membrane, and the deployed
+// membrane caps concurrent streams per connection at MAX_WORKERS (default 300,
+// nitrictech/nitric core/pkg/env/variables.go → grpc.MaxConcurrentStreams).
+// Streams past the cap queue forever in grpc-js, so those routes never register
+// and every request to them fails with "Unable to get worker to handle request".
+// Registering 6 methods separately for ~86 routes opened ~519 streams — routes
+// #50+ were silently dead on GCP (found 2026-09-26 via chokepoint-status 500s).
+// `route.all()` registers ONE worker covering GET/POST/PATCH/PUT/DELETE/OPTIONS,
+// so the method surface is identical at one stream per route. `nitric start`
+// locally does NOT enforce this cap, so local runs can't catch a regression —
+// tests/nitric-routes-stream-budget.test.mjs does.
+const NITRIC_MAX_WORKERS_DEFAULT = 300;
 
 /** Files that are never routes, regardless of content. */
 function isExcludedByName(basename) {
@@ -118,6 +130,11 @@ for (const absFile of allFiles) {
   candidates.push({ absFile, routePath });
 }
 
+if (candidates.length >= NITRIC_MAX_WORKERS_DEFAULT) {
+  console.error(`generate-nitric-routes: ${candidates.length} routes would need ${candidates.length} membrane worker streams, at/over Nitric's MAX_WORKERS default of ${NITRIC_MAX_WORKERS_DEFAULT} — routes past the cap would silently never register on GCP.`);
+  process.exit(1);
+}
+
 const lines = [];
 lines.push('/**');
 lines.push(' * GENERATED FILE — do not hand-edit. Regenerate with:');
@@ -130,6 +147,12 @@ lines.push(' * for every route — each handler already enforces its own method'
 lines.push(' * allowlist internally (same as it does today under Vercel, where one');
 lines.push(' * edge function receives every verb), so this is not widening what a');
 lines.push(' * route accepts.');
+lines.push(' *');
+lines.push(' * Registered via route.all() (ONE gRPC stream per route), never per-method');
+lines.push(' * .get()/.post()/…: the deployed Nitric membrane caps concurrent worker');
+lines.push(' * streams at MAX_WORKERS (default 300) and routes past the cap silently');
+lines.push(' * never register. See the comment on NITRIC_MAX_WORKERS_DEFAULT in the');
+lines.push(' * generator.');
 lines.push(' *');
 if (skipped.length > 0) {
   lines.push(' * SKIPPED (visible gap, not silently dropped — see docs/architecture/');
@@ -158,10 +181,7 @@ lines.push('export function registerGeneratedRoutes(api: Api): void {');
 for (const [i, c] of candidates.entries()) {
   const id = toIdentifier(c.routePath, i);
   const route = c.routePath.replace(/'/g, "\\'");
-  lines.push(`  const ${id} = api.route('${route}');`);
-  for (const method of METHODS) {
-    lines.push(`  ${id}.${method}(adaptVercelHandler(${id}Handler));`);
-  }
+  lines.push(`  api.route('${route}').all(adaptVercelHandler(${id}Handler));`);
 }
 lines.push('}');
 lines.push('');

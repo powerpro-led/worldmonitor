@@ -465,6 +465,8 @@ jobs:
           WORLDMONITOR_RELAY_KEY=${{ secrets.WORLDMONITOR_RELAY_KEY }}
           WORLDMONITOR_SEED_REFRESH_KEY=${{ secrets.WORLDMONITOR_SEED_REFRESH_KEY }}
           WORLDMONITOR_VALID_KEYS=${{ secrets.WORLDMONITOR_VALID_KEYS }}
+          BRIEF_URL_SIGNING_SECRET=${{ secrets.BRIEF_URL_SIGNING_SECRET }}
+          RELAY_SHARED_SECRET=${{ secrets.RELAY_SHARED_SECRET }}
           EOF
 
       # API_BASE_URL / GCP_API_GATEWAY_KEY (2026-09-26, biovita_gcp_api_gateway_key_missing):
@@ -496,6 +498,25 @@ jobs:
       # unlike the third-party keys elsewhere in this file, there is no "real
       # account" to share across orgs, and reusing one org's throwaway secret
       # for another provides no benefit and mildly weakens isolation.
+
+      # BRIEF_URL_SIGNING_SECRET (2026-09-26, pipeline_config_vs_github_secrets):
+      # self-issued (api/latest-brief.ts's HMAC check) — no external
+      # counterpart, any high-entropy value works, generate FRESH per org
+      # (openssl rand -hex 32) same as WORLDMONITOR_SEED_REFRESH_KEY above.
+      # Degrades gracefully when unset (api/latest-brief.ts returns 200
+      # {status:'unavailable'}, not a crash) but the brief-magazine link
+      # feature is silently dead without it. _PREV (rotation support) is
+      # deliberately NOT wired here — nothing to rotate FROM on a first-time
+      # setup, add it only when actually rotating an existing value.
+
+      # RELAY_SHARED_SECRET (2026-09-26, pipeline_config_vs_github_secrets):
+      # UNLIKE the self-issued keys above, this one is NOT freely regenerable
+      # per org — scripts/ais-relay.cjs's own comment is explicit ("must
+      # match on every host that runs the relay AND every process that calls
+      # it"). The relay itself is a separate SHARED cloud deploy (removed
+      # from nitric.yaml 2026-09-18, now Railway-hosted, serves every org),
+      # so this must be the SAME value the relay was actually configured
+      # with — copy the real platform value here, don't generate a new one.
 
       # RESEND_API_KEY (2026-09-26, biovita_scheduler_log_sweep): treated as an
       # infra credential, not a pipeline_config data-source key — every org needs

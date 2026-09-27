@@ -49,13 +49,15 @@ test('notifies only the mirrored data SETs in a mixed pipeline', async () => {
 
   await notifyMirroredWrites(URL, TOKEN, pipeline);
 
+  // seed-meta:* IS mirrored (since 2026-09-26 — local /api/health's only
+  // freshness signal), so its SET is notified too; GET/EXPIRE never are.
   assert.deepEqual(
     publishedKeys(commands).sort(),
-    ['economic:worldbank-renewable:v1', 'economic:worldbank-techreadiness:v1'],
-    'seed-meta:*, GET and EXPIRE entries must not be notified',
+    ['economic:worldbank-renewable:v1', 'economic:worldbank-techreadiness:v1', 'seed-meta:economic:worldbank-techreadiness:v1'],
+    'only SET entries of mirrored keys are notified — GET and EXPIRE never are',
   );
   // Each mirrored key fans out to PUBLISH sync:notify + XADD sync:changelog.
-  assert.equal(commands.filter((c) => c[0] === 'XADD' && c[1] === 'sync:changelog').length, 2);
+  assert.equal(commands.filter((c) => c[0] === 'XADD' && c[1] === 'sync:changelog').length, 3);
 });
 
 test('serializes a non-string SET value before inlining it', async () => {
@@ -94,7 +96,7 @@ test('no-ops on a missing/empty/invalid command list', async () => {
   await notifyMirroredWrites(URL, TOKEN, [['GET', 'economic:x'], ['SET', 'economic:y']]); // SET too short
   // classifyKey() is default-allow now, so "not a mirrored prefix" must be a
   // genuinely DENIED key (bookkeeping), not just an unknown one.
-  await notifyMirroredWrites(URL, TOKEN, [['SET', 'seed-meta:economic:y', '{}']]);
+  await notifyMirroredWrites(URL, TOKEN, [['SET', 'seed-lock:economic', '{}']]);
   await notifyMirroredWrites(URL, TOKEN, [['SET', 'story:alias:v1', '{}']]);
 
   assert.equal(called, 0, 'nothing mirrored → no Redis traffic');

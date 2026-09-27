@@ -47,7 +47,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
-import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
+import { KV_CACHE_DDL, UPSERT_SQL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -191,17 +191,20 @@ function writeCursor(id) {
  * this specific failure mode cannot recur there either way. DELETE mode
  * stays forced here regardless, since it's still the safer default for a
  * file multiple processes touch concurrently.
+ *
+ * `asOf` is when this value's READ started (or, for an inline value, when
+ * its frame arrived) — not write time — and the shared UPSERT_SQL only lets
+ * a value replace one that isn't newer. So a catch-up read that was
+ * abandoned by a reconnect but kept running can't land late and overwrite a
+ * fresher live-pushed row (see UPSERT_SQL's comment, finding G).
  */
-function upsertRow(key, value, type) {
+function upsertRow(key, value, type, asOf = Date.now()) {
   fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
   const db = new DatabaseSync(SQLITE_PATH);
   try {
     db.exec('PRAGMA journal_mode = DELETE');
     db.exec(KV_CACHE_DDL);
-    db.prepare(
-      'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
-      + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at',
-    ).run(key, value, type, Date.now());
+    db.prepare(UPSERT_SQL).run(key, value, type, asOf);
   } finally {
     db.close();
   }
@@ -229,6 +232,7 @@ async function applyChange(redis, { key, type, value }) {
     return;
   }
   let raw;
+  const readStartedAt = Date.now();
   try {
     raw = await reader(redis, key);
   } catch (err) {
@@ -236,7 +240,7 @@ async function applyChange(redis, { key, type, value }) {
     return;
   }
   if (raw == null) return; // vanished between notify and this read
-  upsertRow(key, typeof raw === 'string' ? raw : JSON.stringify(raw), type);
+  upsertRow(key, typeof raw === 'string' ? raw : JSON.stringify(raw), type, readStartedAt);
 }
 
 // Every changelog entry is signal-only (see notifyChange()'s own comment for
@@ -249,6 +253,9 @@ async function applyChange(redis, { key, type, value }) {
 // 1000-command pipeline cap, matching this codebase's existing convention
 // for that headroom (see list-feed-digest.ts's STORY_BATCH_SIZE).
 const CATCHUP_READ_BATCH_SIZE = 100;
+// Entries per XRANGE page during catch-up. Upstash REST's own implicit cap
+// for an XRANGE without COUNT is 1000, so ask for that explicitly.
+const CATCHUP_XRANGE_PAGE_SIZE = 1000;
 
 /**
  * Backfills anything missed while offline/asleep/disconnected: reads
@@ -283,18 +290,38 @@ const CATCHUP_READ_BATCH_SIZE = 100;
  */
 async function catchUp(redis, onBatchDone) {
   const cursor = readCursor();
-  const startExclusive = cursor === '0' ? '-' : `(${cursor}`;
-  let entries;
-  try {
-    entries = await redis.xrange(SYNC_CHANGELOG_STREAM, startExclusive, '+');
-  } catch (err) {
-    console.warn(`[sync-listener] changelog catch-up failed (non-fatal — the periodic full reconciliation will cover the gap): ${err.message}`);
-    return;
+  let lastId = cursor === '0' ? null : cursor;
+  // Paged, not one unbounded XRANGE: Upstash REST silently caps an XRANGE
+  // with no COUNT at 1000 entries, and this used to treat that first page as
+  // the whole backlog — a 10,072-entry backlog drained 1000 per reconnect
+  // cycle (the "10 reconnect cycles, 45 minutes" Windows report above; found
+  // by wmtest's v2.13.16 data-pipeline review, finding C). Loops until a
+  // page yields nothing newer than the last applied id — not until a "short"
+  // page, so an unknown server-side cap lower than CATCHUP_XRANGE_PAGE_SIZE
+  // can't end the drain early the same way.
+  for (;;) {
+    const startExclusive = lastId === null ? '-' : `(${lastId}`;
+    let entries;
+    try {
+      entries = await redis.xrange(SYNC_CHANGELOG_STREAM, startExclusive, '+', CATCHUP_XRANGE_PAGE_SIZE);
+    } catch (err) {
+      console.warn(`[sync-listener] changelog catch-up failed (non-fatal — the periodic full reconciliation will cover the gap): ${err.message}`);
+      return;
+    }
+    // Numeric stream-id order, not lexicographic (`5-10` < `5-9` as strings),
+    // and only ids strictly past lastId — a server (or test double) that
+    // ignores the start bound must not make this loop forever.
+    const ids = Object.keys(entries || {})
+      .filter((id) => isStreamIdNewer(id, lastId ?? '0'))
+      .sort((a, b) => (isStreamIdNewer(a, b) ? 1 : isStreamIdNewer(b, a) ? -1 : 0));
+    if (ids.length === 0) return;
+    console.log(`[sync-listener] catch-up: ${ids.length} changelog entr${ids.length === 1 ? 'y' : 'ies'} since last cursor`);
+    await applyCatchUpPage(redis, entries, ids, onBatchDone);
+    lastId = ids[ids.length - 1];
   }
-  const ids = Object.keys(entries || {}).sort();
-  if (ids.length === 0) return;
-  console.log(`[sync-listener] catch-up: ${ids.length} changelog entr${ids.length === 1 ? 'y' : 'ies'} since last cursor`);
+}
 
+async function applyCatchUpPage(redis, entries, ids, onBatchDone) {
   for (let i = 0; i < ids.length; i += CATCHUP_READ_BATCH_SIZE) {
     const batchIds = ids.slice(i, i + CATCHUP_READ_BATCH_SIZE);
     const items = batchIds.map((id) => {
@@ -331,6 +358,7 @@ async function catchUp(redis, onBatchDone) {
       // own try/catch); this keeps that same isolation per command instead
       // of per batch.
       let results;
+      const readStartedAt = Date.now();
       try {
         results = await pipeline.exec({ keepErrors: true });
       } catch (err) {
@@ -345,7 +373,7 @@ async function catchUp(redis, onBatchDone) {
             continue;
           }
           const raw = entry?.result;
-          if (raw != null) upsertRow(readable[j].key, typeof raw === 'string' ? raw : JSON.stringify(raw), readable[j].type);
+          if (raw != null) upsertRow(readable[j].key, typeof raw === 'string' ? raw : JSON.stringify(raw), readable[j].type, readStartedAt);
         }
       }
     }

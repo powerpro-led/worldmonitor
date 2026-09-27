@@ -35,8 +35,10 @@
  * so a freshly-seeded domain lands in the mirror with zero change here.
  * Denied (confirmed internal bookkeeping / credentials / live queues, zero
  * display value): `story:*` (~69% of all keys, pure news-dedup tracking),
- * `seed-meta:*`/`seed-routes:*`/`seed-activated:*` (sync-job bookkeeping),
- * `baseline:*`, `digest:*`, `cache:*`, `health:*`, `temporal:*`, `sync:*`,
+ * `seed-routes:*`/`seed-activated:*`/`seed-lock:*` (sync-job bookkeeping —
+ * `seed-meta:*` IS mirrored, it's local /api/health's freshness signal),
+ * `baseline:*`, `digest:*`, `cache:*`, health.js's own `health:` incident
+ * keys (not the health-variant datasets), `sync:*`,
  * `rl:*`, `llm:*`, `wm:*`, `*smoke-test:*`, `*:token`/`*:oauth:*`
  * (credentials), and `forecast:simulation-task*` (a live worker queue under
  * an otherwise-mirrored prefix). See that module for the full rationale.
@@ -69,10 +71,11 @@
  * the upsert) — the same protection the old design needed a separate
  * "merge back fresher live-push rows before renaming" pass for, now just a
  * per-row condition instead of a whole extra step. A key that no longer
- * belongs (removed upstream, or newly filtered out) is pruned once per run
- * via a single `synced_at` watermark: after every admitted key has been
- * upserted with this run's `syncedAt`, anything still older than that in the
- * table wasn't touched this run and is deleted — no per-key tracking needed.
+ * belongs (removed upstream, or newly filtered out) is pruned right after
+ * the SCAN, from the key list alone — see PRUNE_SQL — so it happens even
+ * when some value reads fail. A chunk whose reads exhaust their retries is
+ * skipped (its rows keep their previous value) rather than aborting the run;
+ * see readValues() and the byte-aware chunking notes by CHUNK_BYTE_BUDGET.
  *
  * Schema: a single generic key-value mirror table, not per-domain typed
  * tables — matches how vscode-extension/sidecar/local-api-server.mjs already reads
@@ -137,7 +140,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { classifyKey } from '../../scripts/shared/sync-domains.mjs';
-import { KV_CACHE_DDL } from './kv-cache-schema.mjs';
+import { KV_CACHE_DDL, SYNC_META_DDL, UPSERT_SQL } from './kv-cache-schema.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -147,10 +150,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // the 2026-09-24 rewrite (writing directly into the live file instead of a
 // scratch-file-plus-rename) that genuinely needed to be right the first
 // time, after two previous fix attempts each looked right and weren't.
-export const UPSERT_SQL = 'INSERT INTO kv_cache (key, value, type, synced_at) VALUES (?, ?, ?, ?) '
-  + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, synced_at = excluded.synced_at '
-  + 'WHERE excluded.synced_at >= kv_cache.synced_at';
-export const PRUNE_SQL = 'DELETE FROM kv_cache WHERE synced_at < ?';
+// UPSERT_SQL itself now lives in kv-cache-schema.mjs (shared with
+// sync-listener.mjs's upsertRow()); re-exported here for existing importers.
+export { UPSERT_SQL };
+
+// Prune is driven by the SCAN key list alone, not by which values this run
+// managed to read: a row goes if its key was NOT in this run's admitted scan
+// set (the caller loads that set into the temp table `scan_keep` first) AND
+// it wasn't written since the scan started (so a key sync-listener pushed
+// mid-run survives). Until 2026-09-26 prune was a synced_at watermark that
+// only ran after a fully successful run, so one unreadable chunk on a slow
+// link meant deleted-upstream keys (e.g. a 2.1 MB sanctions:entities:v1)
+// were served forever (wmtest v2.13.16 review, finding E).
+export const SCAN_KEEP_DDL = 'CREATE TEMP TABLE IF NOT EXISTS scan_keep (key TEXT PRIMARY KEY)';
+export const PRUNE_SQL = 'DELETE FROM kv_cache WHERE synced_at < ? AND key NOT IN (SELECT key FROM scan_keep)';
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_READONLY_TOKEN = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;
@@ -172,11 +185,31 @@ const SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || path.join(__dirname, 'local
 const REQUEST_TIMEOUT_MS = 90_000;
 const RETRY_ATTEMPTS = 3;
 const retryBackoffMs = (retryCount) => Math.min(1_000 * 2 ** retryCount, 8_000);
-// Absolute backstop for the whole run, well above worst-case
-// (REQUEST_TIMEOUT_MS + backoff) * (RETRY_ATTEMPTS + 1) per chunk stacked
-// across every chunk — catches a genuine infinite-loop bug, not ordinary
-// jitter, which withTimeoutRetry already handles per-request.
-const WATCHDOG_MS = 15 * 60_000;
+
+// Byte-aware read chunking (2026-09-26, wmtest v2.13.16 review, finding D).
+// Upstash REST does not compress responses, and a single key can be over a
+// megabyte (climate:air-quality:v1 ≈ 1.3 MB measured 100–112s on a ~12–20
+// KB/s link) — so a fixed 100-key chunk under a fixed 90s timeout could
+// NEVER succeed on a slow link, and because SCAN order is stable it failed
+// at the same chunk on every run. Chunks are now packed up to
+// CHUNK_BYTE_BUDGET using each key's size in the existing mirror (unknown
+// keys assume UNKNOWN_KEY_BYTES), a key bigger than the budget gets a chunk
+// of its own, and each chunk's timeout grows with its expected size at an
+// assumed floor of MIN_THROUGHPUT_BYTES_PER_S (never below REQUEST_TIMEOUT_MS).
+const CHUNK_BYTE_BUDGET = 256 * 1024;
+const UNKNOWN_KEY_BYTES = 4 * 1024;
+const MIN_THROUGHPUT_BYTES_PER_S = 8 * 1024;
+const timeoutForBytes = (bytes) => Math.max(REQUEST_TIMEOUT_MS, Math.ceil((bytes / MIN_THROUGHPUT_BYTES_PER_S) * 1000));
+
+// Stall watchdog, not a wall-clock cap: reset on every request attempt and
+// every committed batch, so a slow-but-advancing run on a slow link isn't
+// killed (the old flat 15-min cap needed ≥ ~23 KB/s sustained for a ~20 MB
+// mirror). Every request is itself bounded by withTimeoutRetry, so this only
+// catches a genuine hang outside a request. RUN_HARD_CAP_MS stays below
+// local-api-server.mjs's 6h FULL_RECONCILIATION_INTERVAL_MS so two runs can
+// never overlap.
+const STALL_WATCHDOG_MS = 20 * 60_000;
+const RUN_HARD_CAP_MS = 5 * 60 * 60_000;
 
 const SCAN_COUNT = 1_000;
 
@@ -235,36 +268,59 @@ function assertEnv() {
   }
 }
 
-function createClient() {
-  // retry: false — this script's own withTimeoutRetry() replaces the SDK's
-  // built-in retry entirely (see header comment for why: it doesn't fire
-  // on a hung request at all, and its `signal` options are both broken for
-  // this use case). No `signal` here either, same reason.
+/**
+ * `signal`, when given, must be a FUNCTION returning an AbortSignal. In
+ * @upstash/redis's request loop (read in node_modules, 2026-09-26) a
+ * function signal that aborts makes the SDK rethrow the fetch's real abort
+ * error immediately, and skip its own retries — which is exactly right
+ * here, since withTimeoutRetry() owns retrying (retry: false below). That
+ * "no SDK retry" behavior is the only reason the header comment ruled
+ * function signals out, back when the SDK's retry was still in the loop. A
+ * PLAIN AbortSignal is still never passed: on abort the SDK fabricates a 200
+ * whose "result" is the abort reason, which would read as data.
+ */
+function createClient(signal) {
   return new Redis({
     url: UPSTASH_URL,
     token: UPSTASH_READONLY_TOKEN,
     retry: false,
+    ...(signal ? { signal } : {}),
   });
 }
 
+// Stall-watchdog heartbeat (see STALL_WATCHDOG_MS).
+let lastActivityAt = Date.now();
+function noteActivity() {
+  lastActivityAt = Date.now();
+}
+
 /**
- * Races `fn()` against REQUEST_TIMEOUT_MS and retries on either a timeout
- * or a thrown error, up to RETRY_ATTEMPTS times, with backoff between
- * attempts. `fn` must be safe to call again on timeout — it's re-invoked
- * as a fresh request, not resumed; the original call, if it does
- * eventually settle, is simply left to resolve unobserved (no real way to
- * cancel a fetch this SDK issued without its broken `signal` options).
+ * Races `fn(client)` against `timeoutMs` and retries on either a timeout or
+ * a thrown error, up to RETRY_ATTEMPTS times, with backoff between attempts.
+ * Each attempt gets its OWN client bound to its own AbortController, and a
+ * timed-out attempt is aborted — so its download stops competing for
+ * bandwidth with the retry (it used to be left running unobserved, which on
+ * a slow link meant every retry shared the pipe with its own orphans).
+ * `fn` must build its request from the client it is handed, fresh each time.
  */
-async function withTimeoutRetry(fn, label) {
+async function withTimeoutRetry(fn, label, timeoutMs = REQUEST_TIMEOUT_MS) {
   let lastErr;
   for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt++) {
+    noteActivity();
+    const controller = new AbortController();
     try {
       let timer;
       const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
+        timer = setTimeout(() => {
+          // Reject first so the race settles on the timeout, then cancel
+          // the in-flight fetch; its own abort rejection lands on an
+          // already-settled race and is ignored.
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+          controller.abort(new Error('superseded by timeout'));
+        }, timeoutMs);
       });
       try {
-        return await Promise.race([fn(), timeout]);
+        return await Promise.race([fn(createClient(() => controller.signal)), timeout]);
       } finally {
         clearTimeout(timer);
       }
@@ -326,8 +382,8 @@ async function attachTypes(redis, keys) {
     const chunk = keys.slice(i, i + PIPELINE_CHUNK);
     // Fresh pipeline inside the retried closure, for the same reason
     // readValues() builds its own — a Pipeline is not re-execable.
-    const types = await withTimeoutRetry(() => {
-      const pipeline = redis.pipeline();
+    const types = await withTimeoutRetry((client) => {
+      const pipeline = client.pipeline();
       for (const key of chunk) pipeline.type(key);
       return pipeline.exec({ keepErrors: true });
     }, `TYPE chunk ${i}-${i + chunk.length}`);
@@ -355,9 +411,9 @@ async function scanAllKeysWithType(redis, match = '*') {
   let page = 0;
   do {
     const [nextCursor, batch] = await withTimeoutRetry(
-      () => (supportsWithType
-        ? redis.scan(cursor, { match, count: SCAN_COUNT, withType: true })
-        : redis.scan(cursor, { match, count: SCAN_COUNT })),
+      (client) => (supportsWithType
+        ? client.scan(cursor, { match, count: SCAN_COUNT, withType: true })
+        : client.scan(cursor, { match, count: SCAN_COUNT })),
       `SCAN ${match} page ${page}`,
     );
     cursor = nextCursor;
@@ -385,30 +441,77 @@ async function scanAllKeysWithType(redis, match = '*') {
  * already a string reproduces the original JSON payload; storing an
  * already-string value as-is avoids double-encoding it.
  */
-async function readValues(redis, entries) {
-  const result = new Map();
-  for (let i = 0; i < entries.length; i += PIPELINE_CHUNK) {
-    const chunk = entries.slice(i, i + PIPELINE_CHUNK).filter((entry) => READ_FOR_TYPE[entry.type]);
-    if (chunk.length === 0) continue;
+/**
+ * Packs entries into read chunks of at most PIPELINE_CHUNK keys and (where
+ * possible) at most CHUNK_BYTE_BUDGET estimated bytes; a key whose own
+ * estimate exceeds the budget is always a chunk of its own. Order-preserving.
+ * Pure — exported for tests.
+ *
+ * @param {{key: string, type: string}[]} entries
+ * @param {(key: string) => number | undefined} sizeOf - known size, or undefined
+ * @returns {{entries: {key: string, type: string}[], bytes: number}[]}
+ */
+export function planReadChunks(entries, sizeOf) {
+  const chunks = [];
+  let current = { entries: [], bytes: 0 };
+  for (const entry of entries) {
+    const bytes = sizeOf(entry.key) ?? UNKNOWN_KEY_BYTES;
+    const wouldOverflow = current.entries.length > 0
+      && (current.bytes + bytes > CHUNK_BYTE_BUDGET || current.entries.length >= PIPELINE_CHUNK);
+    if (wouldOverflow) {
+      chunks.push(current);
+      current = { entries: [], bytes: 0 };
+    }
+    current.entries.push(entry);
+    current.bytes += bytes;
+  }
+  if (current.entries.length > 0) chunks.push(current);
+  return chunks;
+}
 
-    // Pipeline built fresh inside the retried closure, not hoisted above
-    // it — a Pipeline accumulates commands via chaining and .exec() isn't
-    // meant to be called twice on the same instance, so a retry needs its
-    // own new pipeline, not a re-exec of the one from a timed-out attempt.
-    const results = await withTimeoutRetry(() => {
-      const pipeline = redis.pipeline();
-      for (const { key, type } of chunk) READ_FOR_TYPE[type](pipeline, key);
-      return pipeline.exec({ keepErrors: true });
-    }, `pipeline chunk ${i}-${i + chunk.length}`);
+/**
+ * Reads the given entries in byte-aware chunks (see planReadChunks). A chunk
+ * that exhausts its retries is SKIPPED, not fatal: its keys are returned in
+ * `failedKeys`, their existing mirror rows are left untouched, and the next
+ * run retries them. Before 2026-09-26 one bad chunk threw out of here and
+ * aborted the whole run — no later batches, no prune — every run, at the
+ * same chunk (finding D).
+ *
+ * @returns {Promise<{values: Map<string, {value: string, type: string}>, failedKeys: string[]}>}
+ */
+async function readValues(entries, sizeOf) {
+  const values = new Map();
+  const failedKeys = [];
+  const readable = entries.filter((entry) => READ_FOR_TYPE[entry.type]);
+  for (const { entries: chunk, bytes } of planReadChunks(readable, sizeOf)) {
+    const label = chunk.length === 1
+      ? `read ${chunk[0].key} (~${Math.round(bytes / 1024)} KB)`
+      : `pipeline chunk of ${chunk.length} keys (~${Math.round(bytes / 1024)} KB)`;
+    let results;
+    try {
+      // Pipeline built fresh inside the retried closure, not hoisted above
+      // it — a Pipeline accumulates commands via chaining and .exec() isn't
+      // meant to be called twice on the same instance, so a retry needs its
+      // own new pipeline, not a re-exec of the one from a timed-out attempt.
+      results = await withTimeoutRetry((client) => {
+        const pipeline = client.pipeline();
+        for (const { key, type } of chunk) READ_FOR_TYPE[type](pipeline, key);
+        return pipeline.exec({ keepErrors: true });
+      }, label, timeoutForBytes(bytes));
+    } catch (err) {
+      console.warn(`[local-sync] skipping ${label} for this run (keeping existing rows; next run retries): ${err.message}`);
+      for (const { key } of chunk) failedKeys.push(key);
+      continue;
+    }
 
     for (let j = 0; j < chunk.length; j++) {
       const { key, type } = chunk[j];
       const { result: raw, error } = results[j] ?? {};
       if (error || raw == null) continue;
-      result.set(key, { value: typeof raw === 'string' ? raw : JSON.stringify(raw), type });
+      values.set(key, { value: typeof raw === 'string' ? raw : JSON.stringify(raw), type });
     }
   }
-  return result;
+  return { values, failedKeys };
 }
 
 /**
@@ -503,7 +606,33 @@ function openDatabase() {
   // writers can't drift; IF NOT EXISTS makes this safe against an
   // already-populated live file, not just a fresh one.
   db.exec(KV_CACHE_DDL);
+  db.exec(SYNC_META_DDL);
   return db;
+}
+
+const SET_SYNC_META_SQL = 'INSERT INTO sync_meta (name, value) VALUES (?, ?) '
+  + 'ON CONFLICT(name) DO UPDATE SET value = excluded.value';
+
+/**
+ * Prunes rows whose key is not in `keepKeys` (this run's admitted SCAN set)
+ * and weren't written since `scanStartedAt`. Exported for tests.
+ * @returns {number} rows deleted
+ */
+export function pruneToScannedKeys(db, keepKeys, scanStartedAt) {
+  db.exec('BEGIN');
+  try {
+    db.exec(SCAN_KEEP_DDL);
+    db.exec('DELETE FROM scan_keep');
+    const insert = db.prepare('INSERT OR IGNORE INTO scan_keep (key) VALUES (?)');
+    for (const key of keepKeys) insert.run(key);
+    const deleted = db.prepare(PRUNE_SQL).run(scanStartedAt).changes;
+    db.exec('DELETE FROM scan_keep');
+    db.exec('COMMIT');
+    return Number(deleted);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 async function main() {
@@ -536,15 +665,22 @@ async function main() {
 
   let totalFound = 0;
   let totalWritten = 0;
+  let failedKeys = [];
 
-  // See createClient()'s comment: no per-request abort signal, so this is
-  // the only thing standing between a genuinely stuck request and an
-  // indefinite hang. `.unref()` so it doesn't itself keep the process
-  // alive once the real work finishes.
-  const watchdog = setTimeout(() => {
-    console.error(`[local-sync] FATAL: watchdog fired — sync exceeded ${WATCHDOG_MS / 1000}s.`);
-    process.exit(1);
-  }, WATCHDOG_MS);
+  // Stall watchdog + hard cap (see STALL_WATCHDOG_MS). `.unref()` so it
+  // doesn't itself keep the process alive once the real work finishes.
+  noteActivity();
+  const watchdog = setInterval(() => {
+    const now = Date.now();
+    if (now - lastActivityAt > STALL_WATCHDOG_MS) {
+      console.error(`[local-sync] FATAL: watchdog fired — no progress for ${STALL_WATCHDOG_MS / 1000}s.`);
+      process.exit(1);
+    }
+    if (now - syncedAt > RUN_HARD_CAP_MS) {
+      console.error(`[local-sync] FATAL: run exceeded the ${RUN_HARD_CAP_MS / 3_600_000}h hard cap.`);
+      process.exit(1);
+    }
+  }, 30_000);
   watchdog.unref();
 
   try {
@@ -574,11 +710,31 @@ async function main() {
       + `${entries.length} to mirror`,
     );
 
+    // Prune FIRST, from the key list alone (finding E): anything not in this
+    // scan's admitted set — removed upstream, or newly filtered out by
+    // classifyKey()/keepKey() — goes now, independent of whether the value
+    // reads below all succeed. Skipped on an empty scan: a wrong URL or an
+    // emptied DB must not wipe a working offline mirror.
+    if (scanned.length === 0) {
+      console.warn('[local-sync]   SCAN returned 0 keys — skipping prune rather than emptying the mirror');
+    } else {
+      const deleted = pruneToScannedKeys(db, entries.map((e) => e.key), syncedAt);
+      if (deleted > 0) console.log(`[local-sync]   pruned ${deleted} stale key(s) no longer in Redis or no longer admitted`);
+    }
+
+    // Size estimates for byte-aware chunking come from the current mirror
+    // (key names + lengths only — no values loaded).
+    const knownSizes = new Map(
+      db.prepare('SELECT key, length(value) AS bytes FROM kv_cache').all().map((r) => [r.key, Number(r.bytes)]),
+    );
+    const sizeOf = (key) => knownSizes.get(key);
+
     // Read + write in bounded batches (see SYNC_WRITE_BATCH) rather than one
     // pass over every admitted key.
     for (let i = 0; i < entries.length; i += SYNC_WRITE_BATCH) {
       const batch = entries.slice(i, i + SYNC_WRITE_BATCH);
-      const values = await readValues(redis, batch);
+      const { values, failedKeys: batchFailed } = await readValues(batch, sizeOf);
+      failedKeys = failedKeys.concat(batchFailed);
 
       db.exec('BEGIN');
       for (const [key, { value, type }] of values) {
@@ -586,25 +742,31 @@ async function main() {
         totalWritten++;
       }
       db.exec('COMMIT');
+      noteActivity();
     }
 
-    // Prune anything that no longer belongs: removed upstream, or newly
-    // filtered out by classifyKey()/keepKey(). Every key admitted above just
-    // got its synced_at bumped to (at least) syncedAt by the upsert loop —
-    // including a key that already existed and was merely refreshed — so
-    // anything STILL older than syncedAt at this point, by construction,
-    // wasn't touched this run at all and is safe to delete. A single
-    // watermark comparison, not a per-key admitted-set tracking structure.
+    // Finding F: record reconciliation completion so the sidecar reports
+    // mirror age from THIS, not from the newest (possibly live-pushed) row.
+    const setMeta = db.prepare(SET_SYNC_META_SQL);
     db.exec('BEGIN');
-    const deleted = db.prepare(PRUNE_SQL).run(syncedAt).changes;
+    setMeta.run('last_reconcile_at', String(syncedAt));
+    setMeta.run('last_reconcile_failed_keys', String(failedKeys.length));
+    if (failedKeys.length === 0) setMeta.run('full_reconcile_at', String(syncedAt));
     db.exec('COMMIT');
-    if (deleted > 0) console.log(`[local-sync]   pruned ${deleted} stale key(s) no longer in Redis or no longer admitted`);
   } finally {
-    clearTimeout(watchdog);
+    clearInterval(watchdog);
     db.close();
   }
 
-  console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
+  if (failedKeys.length > 0) {
+    const sample = failedKeys.slice(0, 5).join(', ');
+    console.warn(
+      `[local-sync] done with gaps: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}; `
+      + `${failedKeys.length} key(s) unreadable this run and kept at their previous value (${sample}${failedKeys.length > 5 ? ', …' : ''})`,
+    );
+  } else {
+    console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
+  }
 }
 
 // Guards `main()` so importing this module (e.g. from a test, or a future

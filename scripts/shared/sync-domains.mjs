@@ -67,7 +67,12 @@ const DENY_PREFIXES = [
   'cache:',
 
   // Sync-job bookkeeping written by the seed pipeline itself.
-  'seed-meta:',
+  // NOTE: `seed-meta:*` is deliberately NOT denied (was until 2026-09-26).
+  // It's tiny, and it is the ONLY freshness signal api/health.js
+  // readSeedMeta() has — with 0 seed-meta rows in the mirror every key with
+  // data graded STALE_SEED and local /api/health was permanently UNHEALTHY
+  // on every install (wmtest v2.13.16 data-pipeline review, finding B). The
+  // MCP freshness-audit prompt + seed-meta resource read it too.
   'seed-routes:',
   'seed-activated:',
   'seed-lock:',
@@ -81,7 +86,16 @@ const DENY_PREFIXES = [
   'sync:',
 
   // Infrastructure, health, probes, rate limiting.
-  'health:',
+  // `health:` is scoped to api/health.js's own incident bookkeeping ONLY —
+  // same bug class as the `cf:` → `cf:cache:` narrowing below. A blanket
+  // `health:` deny (until 2026-09-26) also swallowed the health-variant
+  // DISPLAY datasets (health:disease-outbreaks:v1, health:air-quality:v1,
+  // health:vpd-tracker:{realtime,historical}:v1, health:china-coverage:v1),
+  // leaving those panels permanently blank on every local install. Found by
+  // wmtest's v2.13.16 data-pipeline review. See sync-domains.test.mjs.
+  'health:last-failure',
+  'health:failure-log', // also covers health:failure-log-sig
+  'health:verdict:',
   'rate:', // P6 shape pattern — kept even though the live keys use `rl:`
   'rl:', // the ACTUAL @upstash/ratelimit prefix (rl:, rl:ep, rl:scope, rl:apikey:*)
   'llm:', // LLM spend / daily-usage meters (NOTE: the LLM *output* caches
@@ -100,7 +114,9 @@ const DENY_PREFIXES = [
   'shared:',
   'ci-sebuf:',
   'wm-smoke-test:',
-  'temporal:',
+  // NOTE: no `temporal:` deny — its only key in the store is
+  // temporal:anomalies:v1, the Temporal Anomalies panel's data (was denied
+  // until 2026-09-26, same wmtest review as the `health:` note above).
 
   // Preview/dev-deploy-prefixed keys. Largely moot now that each org has its
   // own Upstash DB, but harmless to keep and correct if a shared DB is ever

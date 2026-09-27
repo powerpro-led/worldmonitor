@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { UPSERT_SQL, PRUNE_SQL } from '../vscode-extension/sidecar/local-sync.mjs';
+import { UPSERT_SQL, PRUNE_SQL, planReadChunks, pruneToScannedKeys } from '../vscode-extension/sidecar/local-sync.mjs';
 
 // Exercises the exact SQL local-sync.mjs's full rebuild now runs directly
 // against the LIVE local-cache.db (see that file's own header comment for
@@ -67,30 +67,59 @@ describe('UPSERT_SQL freshness guard', () => {
   });
 });
 
-describe('PRUNE_SQL watermark delete', () => {
-  it('deletes only rows older than this run, keeping everything the run touched', () => {
-    const upsert = db.prepare(UPSERT_SQL);
-    const syncedAt = 100;
-    // keyA and keyB are admitted this run, both stamped with syncedAt.
-    upsert.run('keyA', 'a', 'string', syncedAt);
-    upsert.run('keyB', 'b', 'string', syncedAt);
-    // keyC is a leftover from a prior run and is no longer admitted.
-    db.prepare('INSERT INTO kv_cache VALUES (?, ?, ?, ?)').run('keyC', 'orphan', 'string', syncedAt - 50);
-    // keyD was pushed live, fresher than this run — must survive even though
-    // it was never touched by this run's upsert loop at all.
-    db.prepare('INSERT INTO kv_cache VALUES (?, ?, ?, ?)').run('keyD', 'live', 'string', syncedAt + 50);
+// Prune is driven by the SCAN key list, not by which value reads succeeded
+// (wmtest v2.13.16 review, finding E — a deleted-upstream key used to be
+// served forever whenever any chunk of the run failed).
+describe('pruneToScannedKeys (scan-set prune)', () => {
+  const insert = () => db.prepare('INSERT INTO kv_cache VALUES (?, ?, ?, ?)');
 
-    const deleted = db.prepare(PRUNE_SQL).run(syncedAt).changes;
+  it('deletes rows not in the scan set, keeping scanned keys even if this run never re-read them', () => {
+    const scanStartedAt = 100;
+    insert().run('keyA', 'a', 'string', scanStartedAt - 10); // scanned; read failed this run
+    insert().run('keyB', 'b', 'string', scanStartedAt - 10); // scanned
+    insert().run('gone', 'x', 'string', scanStartedAt - 10); // deleted upstream
+    const deleted = pruneToScannedKeys(db, ['keyA', 'keyB'], scanStartedAt);
     assert.equal(deleted, 1);
-
     const remaining = db.prepare('SELECT key FROM kv_cache ORDER BY key').all().map((r) => r.key);
-    assert.deepEqual(remaining, ['keyA', 'keyB', 'keyD']);
+    assert.deepEqual(remaining, ['keyA', 'keyB']);
   });
 
-  it('deletes nothing when every row is at least as fresh as this run', () => {
-    const upsert = db.prepare(UPSERT_SQL);
-    upsert.run('keyA', 'a', 'string', 100);
-    const deleted = db.prepare(PRUNE_SQL).run(100).changes;
-    assert.equal(deleted, 0);
+  it('keeps a row written (live push) after the scan started, even if the scan did not see it', () => {
+    insert().run('pushedMidRun', 'live', 'string', 150);
+    assert.equal(pruneToScannedKeys(db, ['other'], 100), 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM kv_cache').get().n, 1);
+  });
+
+  it('exposes the SQL it runs (temp keep-table + guarded delete)', () => {
+    assert.match(PRUNE_SQL, /NOT IN \(SELECT key FROM scan_keep\)/);
+    assert.match(PRUNE_SQL, /synced_at < \?/);
+  });
+});
+
+// Byte-aware chunking (finding D): a fixed 100-key chunk containing a 1.3 MB
+// key could never finish within the per-request timeout on a slow link.
+describe('planReadChunks', () => {
+  const e = (key) => ({ key, type: 'string' });
+
+  it('isolates a key larger than the byte budget into its own chunk', () => {
+    const sizes = { big: 1_300_000, a: 1000, b: 1000 };
+    const chunks = planReadChunks([e('a'), e('big'), e('b')], (k) => sizes[k]);
+    assert.deepEqual(chunks.map((c) => c.entries.map((x) => x.key)), [['a'], ['big'], ['b']]);
+    assert.equal(chunks[1].bytes, 1_300_000);
+  });
+
+  it('still caps a chunk of tiny keys at 100 keys', () => {
+    const entries = Array.from({ length: 250 }, (_, i) => e(`k${i}`));
+    const chunks = planReadChunks(entries, () => 10);
+    assert.deepEqual(chunks.map((c) => c.entries.length), [100, 100, 50]);
+  });
+
+  it('packs by bytes, assuming a default size for keys not yet in the mirror', () => {
+    const entries = Array.from({ length: 10 }, (_, i) => e(`k${i}`));
+    const chunks = planReadChunks(entries, () => 100 * 1024);
+    // 256 KB budget → 2 × 100 KB per chunk.
+    assert.deepEqual(chunks.map((c) => c.entries.length), [2, 2, 2, 2, 2]);
+    const unknown = planReadChunks([e('x')], () => undefined);
+    assert.ok(unknown[0].bytes > 0);
   });
 });

@@ -114,14 +114,34 @@ const MIRROR_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirror');
 // local-sync.mjs has rewritten the file (see its automated periodic runs in
 // local-api-server.mjs) without needing a process restart — see loadMirror().
 const MIRROR_MTIME_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirrorMtimeMs');
+// kv_cache content fingerprint at last load + when it was last checked —
+// see loadMirror()'s reload gate (finding H). Same globalThis treatment.
+const MIRROR_FINGERPRINT_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirrorFingerprint');
+const MIRROR_CHECKED_AT_GLOBAL_KEY = Symbol.for('worldmonitor.sidecarCache.mirrorCheckedAtMs');
 type GlobalWithMirror = typeof globalThis & {
   [MIRROR_GLOBAL_KEY]?: Map<string, MirrorEntry>;
   [MIRROR_MTIME_GLOBAL_KEY]?: number;
+  [MIRROR_FINGERPRINT_GLOBAL_KEY]?: string;
+  [MIRROR_CHECKED_AT_GLOBAL_KEY]?: number;
 };
 
 /**
- * Age of the newest row in the mirror, measured when it was loaded. Null
- * until the mirror is loaded, or if the table was empty.
+ * Minimum gap between content checks once the file's mtime has moved. The
+ * mtime changes on EVERY write to local-cache.db — each sync-listener.mjs
+ * row, each local-sync.mjs batch, and this module's own local_cache
+ * write-through — and each used to trigger a full reload of the whole
+ * (~20 MB, ~4k-row) mirror plus a "changed on disk — reloading" log line
+ * (wmtest v2.13.16 review, finding H). A live push now reaches readers
+ * within this window instead of instantly.
+ */
+const MIRROR_RECHECK_MIN_INTERVAL_MS = 5_000;
+
+/**
+ * Age of the mirror, measured when it was loaded: time since local-sync.mjs's
+ * last FULL reconciliation (sync_meta), or — for a mirror that predates
+ * sync_meta — the newest row's synced_at (see readReconcileMeta()). Null
+ * until loaded, if the table was empty, or if reconciliations have run but
+ * none completed.
  *
  * `synced_at` had been written by local-sync.mjs since the mirror existed
  * and read by nothing — the loader did not even SELECT it. That is how a
@@ -282,6 +302,50 @@ function statMtimeMs(dbPath: string): number | null {
  * there), a live process needs to actually notice the file changing under
  * it, or the automation is invisible from inside an already-running sidecar.
  */
+type KvDb = { prepare(sql: string): { all(): unknown[]; get(): unknown }; close(): void };
+
+/**
+ * Cheap change detector for kv_cache alone — row count + sum of synced_at,
+ * no values read. Every kv_cache upsert or delete moves it; writes to the
+ * sibling local_cache table don't. Null if it can't be read.
+ */
+function kvCacheFingerprint(db: KvDb): string | null {
+  try {
+    const row = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(synced_at), 0) AS s FROM kv_cache').get() as
+      | { n: number | bigint; s: number | bigint }
+      | undefined;
+    return row ? `${row.n}:${row.s}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function openMirrorDb(dbPath: string): KvDb | null {
+  const sqlite = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
+    | { DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => KvDb }
+    | undefined;
+  return sqlite ? new sqlite.DatabaseSync(dbPath, { readOnly: true }) : null;
+}
+
+/**
+ * Mirror age for logging/staleness (finding F). Prefers local-sync.mjs's
+ * recorded completion of the last FULL reconciliation (sync_meta, see
+ * kv-cache-schema.mjs) over the newest row's synced_at — any one live-pushed
+ * row used to make a days-old mirror read "synced 0m ago" and suppress the
+ * 24h warning. Falls back to the newest row only for a mirror that predates
+ * sync_meta (until its next reconciliation writes it).
+ */
+function readReconcileMeta(db: KvDb): { fullAt: number | null; lastAt: number | null; lastFailedKeys: number } | null {
+  try {
+    const rows = db.prepare('SELECT name, value FROM sync_meta').all() as { name: string; value: string }[];
+    const byName = new Map(rows.map((r) => [r.name, r.value]));
+    const num = (name: string) => (byName.has(name) ? Number(byName.get(name)) : null);
+    return { fullAt: num('full_reconcile_at'), lastAt: num('last_reconcile_at'), lastFailedKeys: num('last_reconcile_failed_keys') ?? 0 };
+  } catch {
+    return null; // no sync_meta table yet — a pre-2026-09-26 mirror
+  }
+}
+
 function loadMirror(): Map<string, MirrorEntry> {
   const g = globalThis as GlobalWithMirror;
   const dbPath = process.env.LOCAL_SQLITE_PATH;
@@ -293,21 +357,44 @@ function loadMirror(): Map<string, MirrorEntry> {
     // Can't stat it (deleted, permissions, no node:fs) — keep serving what
     // we have rather than discard a working mirror over a transient error.
     if (currentMtimeMs === null || currentMtimeMs === g[MIRROR_MTIME_GLOBAL_KEY]) return existing;
-    console.warn('[sidecar-cache] local mirror file changed on disk — reloading');
+    // Finding H: the file moved, but most moves are a single live row or a
+    // local_cache write-through. Check at most every few seconds, and only
+    // do the full reload when kv_cache's own fingerprint actually changed.
+    const now = Date.now();
+    if (now - (g[MIRROR_CHECKED_AT_GLOBAL_KEY] ?? 0) < MIRROR_RECHECK_MIN_INTERVAL_MS) return existing;
+    g[MIRROR_CHECKED_AT_GLOBAL_KEY] = now;
+    try {
+      const probe = openMirrorDb(dbPath);
+      if (probe) {
+        try {
+          const fp = kvCacheFingerprint(probe);
+          if (fp !== null && fp === g[MIRROR_FINGERPRINT_GLOBAL_KEY]) {
+            g[MIRROR_MTIME_GLOBAL_KEY] = currentMtimeMs;
+            return existing;
+          }
+        } finally {
+          probe.close();
+        }
+      }
+    } catch {
+      return existing; // transient open failure — keep serving, recheck later
+    }
+    console.warn('[sidecar-cache] local mirror changed on disk — reloading');
   }
 
   const mirror = new Map<string, MirrorEntry>();
   g[MIRROR_GLOBAL_KEY] = mirror;
   if (!dbPath) return mirror;
   try {
-    const sqlite = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
-      | { DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => { prepare(sql: string): { all(): unknown[] }; close(): void } }
-      | undefined;
-    if (!sqlite) {
+    // mtime captured BEFORE the read: a write landing mid-read then still
+    // looks like a change next time, instead of being silently absorbed.
+    const mtimeBeforeRead = statMtimeMs(dbPath);
+    const db = openMirrorDb(dbPath);
+    if (!db) {
       console.warn('[sidecar-cache] node:sqlite unavailable in this runtime — mirror disabled');
       return mirror;
     }
-    const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    let meta: ReturnType<typeof readReconcileMeta> = null;
     try {
       const rows = db.prepare('SELECT key, value, type, synced_at FROM kv_cache').all() as MirrorRow[];
       let newestSyncedAt = 0;
@@ -315,13 +402,26 @@ function loadMirror(): Map<string, MirrorEntry> {
         mirror.set(row.key, { value: row.value, type: row.type });
         if (row.synced_at > newestSyncedAt) newestSyncedAt = row.synced_at;
       }
-      mirrorAge = newestSyncedAt > 0 ? Date.now() - newestSyncedAt : null;
+      meta = readReconcileMeta(db);
+      if (meta?.fullAt) mirrorAge = Date.now() - meta.fullAt;
+      else if (meta?.lastAt) mirrorAge = null; // runs happened, none complete — reported below
+      else mirrorAge = newestSyncedAt > 0 ? Date.now() - newestSyncedAt : null;
+      g[MIRROR_FINGERPRINT_GLOBAL_KEY] = kvCacheFingerprint(db) ?? undefined;
     } finally {
       db.close();
     }
-    g[MIRROR_MTIME_GLOBAL_KEY] = statMtimeMs(dbPath) ?? undefined;
-    const age = mirrorAge === null ? 'age unknown' : `synced ${formatAge(mirrorAge)} ago`;
+    g[MIRROR_MTIME_GLOBAL_KEY] = mtimeBeforeRead ?? undefined;
+    g[MIRROR_CHECKED_AT_GLOBAL_KEY] = Date.now();
+    const age = mirrorAge === null
+      ? (meta?.lastAt ? 'no complete full reconciliation yet' : 'age unknown')
+      : `last full reconciliation ${formatAge(mirrorAge)} ago`;
     console.warn(`[sidecar-cache] loaded ${mirror.size} keys from local mirror at ${dbPath} (${age})`);
+    if (meta?.lastAt && meta.lastFailedKeys > 0) {
+      console.warn(
+        `[sidecar-cache] last reconciliation (${formatAge(Date.now() - meta.lastAt)} ago) could not read `
+          + `${meta.lastFailedKeys} key(s); those rows keep their previous value until a later run succeeds.`,
+      );
+    }
     if (mirrorAge !== null && mirrorAge > STALE_MIRROR_WARN_MS) {
       console.warn(
         `[sidecar-cache] WARNING: local mirror is ${formatAge(mirrorAge)} old — every panel is serving ` +
@@ -344,6 +444,8 @@ function loadMirror(): Map<string, MirrorEntry> {
 export function __resetMirrorForTests(): void {
   delete (globalThis as GlobalWithMirror)[MIRROR_GLOBAL_KEY];
   delete (globalThis as GlobalWithMirror)[MIRROR_MTIME_GLOBAL_KEY];
+  delete (globalThis as GlobalWithMirror)[MIRROR_FINGERPRINT_GLOBAL_KEY];
+  delete (globalThis as GlobalWithMirror)[MIRROR_CHECKED_AT_GLOBAL_KEY];
   mirrorAge = null;
 }
 

@@ -2609,11 +2609,11 @@ test('/api/local-sync-refresh — validates the keys array', async () => {
 
     // A denied (non-mirrored) key is filtered before any Upstash call — the
     // handler returns 200 with it listed under `skipped`, no sync-listener import.
-    const res = await call({ keys: ['seed-meta:whatever'] });
+    const res = await call({ keys: ['seed-lock:whatever'] });
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.deepEqual(body.refreshed, []);
-    assert.equal(body.skipped[0].key, 'seed-meta:whatever');
+    assert.equal(body.skipped[0].key, 'seed-lock:whatever');
     assert.equal(body.skipped[0].reason, 'not-mirrored');
   } finally {
     if (prev === undefined) delete process.env.UPSTASH_REDIS_REST_READONLY_TOKEN;

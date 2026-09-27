@@ -35,11 +35,14 @@ describe('classifyKey — denylist model', () => {
       'cache:abuseipdb:1.2.3.4',
       'digest:notifications:last-run',
       'baseline:unrest:US',
-      'seed-meta:resilience',
       'seed-routes:v1',
       'seed-activated:economic',
       'seed-lock:seed-forecasts',
-      'health:acled',
+      'health:last-failure',
+      'health:failure-log',
+      'health:failure-log-sig',
+      'health:verdict:v1',
+      'health:verdict:compact:v1',
       'rl:ep:api/news',
       'rl:apikey:day:u1:2026-09-04',
       'rate:global',
@@ -49,7 +52,6 @@ describe('classifyKey — denylist model', () => {
       'shared:config:v1',
       'ci-sebuf:probe',
       'wm-smoke-test:ping',
-      'temporal:workflow:x',
       'preview:deadbeef:market:quote:v1',
       'sync:changelog',
       'session:abc',
@@ -128,6 +130,42 @@ describe('classifyKey — denylist model', () => {
     });
   });
 
+  // Regression: a blanket `health:` / `temporal:` deny swallowed real panel
+  // datasets (diseaseOutbreaks, healthAirQuality, vpdTracker*, chinaCoverage,
+  // temporalAnomalies) — permanently blank on every local install until
+  // 2026-09-26 (wmtest v2.13.16 data-pipeline review, finding A).
+  describe('health:/temporal: deny is scoped to bookkeeping (regression)', () => {
+    for (const key of [
+      'health:disease-outbreaks:v1',
+      'health:air-quality:v1',
+      'health:vpd-tracker:realtime:v1',
+      'health:vpd-tracker:historical:v1',
+      'health:china-coverage:v1',
+      'temporal:anomalies:v1',
+    ]) {
+      it(`mirrors panel data ${key}`, () => {
+        assert.equal(classifyKey(key), 'mirror');
+        assert.equal(isMirroredKey(key), true);
+      });
+    }
+  });
+
+  // Regression (wmtest v2.13.16 review, finding B): seed-meta:* was denied, so
+  // the mirror held 0 seed-meta rows and api/health.js readSeedMeta() graded
+  // every key with data STALE_SEED — local /api/health permanently UNHEALTHY.
+  describe('seed-meta:* is mirrored (regression)', () => {
+    it('mirrors seed-meta freshness rows', () => {
+      assert.equal(classifyKey('seed-meta:resilience'), 'mirror');
+      assert.equal(classifyKey('seed-meta:economic:worldbank-techreadiness:v1'), 'mirror');
+      assert.equal(isMirroredKey('seed-meta:health:china-coverage'), true);
+    });
+    it('still denies the other seed-pipeline bookkeeping', () => {
+      for (const k of ['seed-routes:v1', 'seed-activated:economic', 'seed-lock:seed-forecasts']) {
+        assert.equal(classifyKey(k), 'deny');
+      }
+    });
+  });
+
   // Regression: `supply-chain:exposure:` (HYPHEN, distinct from the
   // underscored `supply_chain:`) has a scheduled batch seeder but was
   // mirrored nowhere under the old allowlist. Under the denylist it just
@@ -159,15 +197,9 @@ describe('classifyKey — denylist model', () => {
       assert.equal(isAisResultsKey(null), false);
     });
     it('every bridge key is itself mirror-eligible (so operators see it once it lands in the org DB)', () => {
-      for (const k of AIS_RESULTS_KEYS) {
-        // the canonical mirrors; the seed-meta is denied from the mirror
-        // (bookkeeping) but is still bridged for api/health.js on the org side.
-        if (k.startsWith('seed-meta:')) {
-          assert.equal(classifyKey(k), 'deny');
-        } else {
-          assert.equal(classifyKey(k), 'mirror');
-        }
-      }
+      // Includes the seed-meta — mirrored since 2026-09-26 so local
+      // /api/health can grade freshness (see the seed-meta regression below).
+      for (const k of AIS_RESULTS_KEYS) assert.equal(classifyKey(k), 'mirror');
     });
   });
 });

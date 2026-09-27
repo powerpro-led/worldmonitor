@@ -133,6 +133,16 @@ describe('upsertRow + applyChange', () => {
     assert.ok(row.synced_at > 0);
   });
 
+  // Regression (wmtest v2.13.16 review, finding G): an abandoned catch-up's
+  // slow read that lands AFTER a newer live push must not overwrite it.
+  it('does not let an older-as-of value overwrite a newer row', () => {
+    listener.upsertRow('resilience:x', 'live-push', 'string', 2_000);
+    listener.upsertRow('resilience:x', 'late-orphaned-read', 'string', 1_000);
+    const row = readRow('resilience:x');
+    assert.equal(row.value, 'live-push');
+    assert.equal(row.synced_at, 2_000);
+  });
+
   it('upserts — a second write for the same key replaces it, not duplicates it', () => {
     listener.upsertRow('resilience:x', 'old', 'string');
     listener.upsertRow('resilience:x', 'new', 'string');
@@ -259,6 +269,45 @@ describe('catchUp', () => {
     await listener.catchUp(fakeRedis, () => progressCalls.push(Date.now()));
     // 250 entries / CATCHUP_READ_BATCH_SIZE(100) = 3 batches.
     assert.equal(progressCalls.length, 3);
+  });
+
+  // Regression (wmtest v2.13.16 review, finding C): Upstash REST caps an
+  // XRANGE at 1000 entries; catchUp() used to treat that first page as the
+  // whole backlog. This double honors the start bound + COUNT and hard-caps
+  // at 1000 like the real server, so a single unpaged call would stop short.
+  it('pages through a backlog larger than the server XRANGE cap', async () => {
+    const all = [];
+    for (let i = 1; i <= 2500; i++) all.push([`${i}-0`, { key: `resilience:${i}`, type: 'string' }]);
+    const calls = [];
+    const fakeRedis = withPipelineMock({
+      xrange: async (_key, start, _end, count) => {
+        calls.push({ start, count });
+        const after = start === '-' ? 0n : BigInt(start.slice(1).split('-')[0]);
+        const page = all.filter(([id]) => BigInt(id.split('-')[0]) > after)
+          .slice(0, Math.min(count ?? Infinity, 1000));
+        return Object.fromEntries(page);
+      },
+      get: async (key) => `value-for-${key}`,
+    });
+    await listener.catchUp(fakeRedis);
+    assert.equal(readRow('resilience:1').value, 'value-for-resilience:1');
+    assert.equal(readRow('resilience:2500').value, 'value-for-resilience:2500');
+    const cursor = JSON.parse(fs.readFileSync(`${dbPath}.sync-cursor.json`, 'utf-8'));
+    assert.equal(cursor.lastStreamId, '2500-0');
+    assert.deepEqual(calls.map((c) => c.start), ['-', '(1000-0', '(2000-0', '(2500-0']);
+  });
+
+  it('applies entries in numeric stream-id order, not string order', async () => {
+    const fakeRedis = withPipelineMock({
+      xrange: async () => ({
+        '5-10': { key: 'resilience:late', type: 'string' },
+        '5-9': { key: 'resilience:early', type: 'string' },
+      }),
+      get: async (key) => `value-for-${key}`,
+    });
+    await listener.catchUp(fakeRedis);
+    const cursor = JSON.parse(fs.readFileSync(`${dbPath}.sync-cursor.json`, 'utf-8'));
+    assert.equal(cursor.lastStreamId, '5-10');
   });
 
   it('works without an onBatchDone callback (optional, backward compatible)', async () => {

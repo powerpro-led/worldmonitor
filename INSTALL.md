@@ -138,7 +138,10 @@ See [`SECURITY.md`](scripts/release/SECURITY.md) for what lands in `.env` and wh
 | --- | --- |
 | Dashboard panels stay empty | `status` shows `backend up`? The cache only refreshes once you have an Upstash read-only credential — normally the `local-config` broker supplies it at `login` (its output says so, or `config list` shows the token as set). If your org doesn't run the broker, set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_READONLY_TOKEN` in `.env` and `restart`. |
 | Freshness badges say "unknown" | Expected until the cache has synced once. `/api/health` is computed locally and never needs a Redis write credential. |
-| "Brief service unavailable" | You haven't signed in, or the session expired — run `node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs login` again. |
+| Latest Brief asks you to sign in | You haven't signed in, or the session expired — run `node ~/.worldmonitor/app/scripts/worldmonitor-local.mjs login` again. |
+| "Brief service unavailable" | The local cache couldn't be read (usually it hasn't synced yet) — check `status`, then give the first sync a few minutes. Not a sign-in problem; that shows a sign-in prompt instead. |
+| Latest Brief says it's composing, but you have briefs in the cloud | Your briefs are only cached once this machine knows who you are: sign in with `login`, then wait for the next sync (or `restart`). |
+| Opened brief says "This link is no longer valid" | The link was issued before the local API token changed (e.g. a reinstall). Reload the dashboard and open the brief from the panel again. |
 | Extension iframe blank | Reload the VS Code window; the backend serves `dist/` over HTTP and must be up first. |
 | `login` fails after GitHub consent | Your account isn't on the allow-list / in the allow-listed org, or `127.0.0.1:46124/callback` isn't allowlisted in Supabase. |
 | Sign-in inside VS Code bounces back logged out | `http://localhost:46123/dashboard.html?embed=vscode` isn't allowlisted in Supabase (see above). |

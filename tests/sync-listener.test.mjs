@@ -297,6 +297,39 @@ describe('catchUp', () => {
     assert.deepEqual(calls.map((c) => c.start), ['-', '(1000-0', '(2000-0', '(2500-0']);
   });
 
+  // Regression (wmtest v2.13.17 retest, finding I): catch-up read 100 keys per
+  // pipeline with no per-request timeout, so one ~1 MB key could stall the
+  // whole batch past the connection's stall watchdog on a slow link.
+  it('reads each distinct key once, isolates a large known key, and reports each chunk budget', async () => {
+    // Seed the mirror so the large key's size is known.
+    listener.upsertRow('climate:big', 'x'.repeat(1_300_000), 'string', 1);
+    const pipelines = [];
+    const fakeRedis = {
+      xrange: async () => ({
+        '1-0': { key: 'trade:a', type: 'string' },
+        '2-0': { key: 'climate:big', type: 'string' },
+        '3-0': { key: 'trade:a', type: 'string' }, // duplicate of 1-0
+        '4-0': { key: 'trade:b', type: 'string' },
+      }),
+      pipeline() {
+        const keys = [];
+        const p = {
+          get(k) { keys.push(k); return p; },
+          exec: async () => { pipelines.push([...keys]); return keys.map((k) => ({ result: `v-${k}` })); },
+        };
+        return p;
+      },
+    };
+    const budgets = [];
+    await listener.catchUp(fakeRedis, undefined, (ms) => budgets.push(ms));
+    assert.deepEqual(pipelines, [['trade:a'], ['climate:big'], ['trade:b']]);
+    assert.equal(budgets.length, 3);
+    assert.ok(budgets[1] > 90_000, `a ~1.3 MB chunk should get a size-scaled budget, got ${budgets[1]}`);
+    assert.equal(readRow('climate:big').value, 'v-climate:big');
+    const cursor = JSON.parse(fs.readFileSync(`${dbPath}.sync-cursor.json`, 'utf-8'));
+    assert.equal(cursor.lastStreamId, '4-0');
+  });
+
   it('applies entries in numeric stream-id order, not string order', async () => {
     const fakeRedis = withPipelineMock({
       xrange: async () => ({

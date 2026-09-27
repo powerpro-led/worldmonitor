@@ -44,6 +44,33 @@ export function readOperatorSession(sessionFile = operatorSessionFilePath()) {
  * file *creation*; an overwrite of an existing file would otherwise keep its
  * old perms. Returns the trimmed object that was written.
  */
+/**
+ * Validates + normalizes a session payload from an UNTRUSTED source (a
+ * postMessage from the VS Code webview, or an HTTP POST body from a plain
+ * browser tab) before it's handed to writeOperatorSession(). Returns null,
+ * never throws, on anything malformed — the two access_token/refresh_token
+ * fields are the only ones actually load-bearing (they're what
+ * startSessionRefreshLoop() and every /api/* bearer check downstream
+ * consume); everything else is optional metadata.
+ *
+ * Shared by panel.ts's handleSessionEstablished() (VS Code embed relay) and
+ * local-api-server.mjs's POST /api/operator-session (plain-browser relay,
+ * added 2026-09-27 alongside it) so the two writers can't drift on what
+ * counts as a valid inbound session.
+ */
+export function parseIncomingSession(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw;
+  if (typeof s.access_token !== 'string' || typeof s.refresh_token !== 'string') return null;
+  return {
+    access_token: s.access_token,
+    refresh_token: s.refresh_token,
+    expires_at: typeof s.expires_at === 'number' ? s.expires_at : undefined,
+    token_type: typeof s.token_type === 'string' ? s.token_type : 'bearer',
+    user: { id: s.user?.id, email: s.user?.email },
+  };
+}
+
 export function writeOperatorSession(session, sessionFile = operatorSessionFilePath()) {
   const trimmed = {
     access_token: session.access_token,

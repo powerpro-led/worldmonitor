@@ -80,6 +80,26 @@ export async function readJsonFromUpstash(key, timeoutMs = 3_000) {
  * @returns {Promise<unknown | null>}
  */
 export async function readRawJsonFromUpstash(key, timeoutMs = 3_000) {
+  // Local sidecar: read the SQLite mirror, same as readJsonFromUpstash()
+  // above (minus the envelope unwrap — see this function's contract). There
+  // is no write-capable Upstash token on an operator machine, so without this
+  // branch every caller — api/latest-brief.ts and both brief magazine routes —
+  // threw "not configured" and surfaced 503 locally. Same null/throw split:
+  // an unusable mirror is an infrastructure failure, a missing row is a miss.
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    const rows = readMirrorValues([key]);
+    if (rows === null) throw new Error('readRawJsonFromUpstash: local mirror unavailable');
+    const raw = rows[0];
+    if (raw == null) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      throw new Error(
+        `readRawJsonFromUpstash: JSON.parse failed for ${key}: ${(err instanceof Error ? err.message : String(err))}`,
+      );
+    }
+  }
+
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {

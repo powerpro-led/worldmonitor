@@ -75,6 +75,11 @@ if (!existsSync(path.join(ROOT, 'dist', 'dashboard.html'))) {
 if (!existsSync(path.join(ROOT, 'api', 'latest-brief.js'))) {
   throw new Error('api/latest-brief.js is missing — build:sidecar-handlers did not run');
 }
+// The Latest Brief card's "Open" link targets this route locally — without
+// it the card renders but every link 404s (shipped that way until v2.13.18).
+if (!existsSync(path.join(ROOT, 'api', 'brief', '[userId]', '[issueDate].js'))) {
+  throw new Error('api/brief/[userId]/[issueDate].js is missing — build:sidecar-handlers did not bundle the brief magazine route');
+}
 
 // ── 2. VS Code extension .vsix ────────────────────────────────────────────
 const extPkg = JSON.parse(
@@ -287,6 +292,7 @@ const SIDECAR_FILES = [
   'local-login.mjs',
   '_domain-config.mjs',
   'kv-cache-schema.mjs',
+  'read-chunking.mjs',
   'package.json',
 ];
 mkdirSync(path.join(STAGE, 'vscode-extension', 'sidecar'), { recursive: true });

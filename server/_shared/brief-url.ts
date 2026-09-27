@@ -34,6 +34,31 @@ const USER_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const ISSUE_DATE_RE = /^\d{4}-\d{2}-\d{2}-\d{4}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // base64url(sha256) = 43 chars, no padding
 
+/**
+ * The signing key(s) this process should use for brief links.
+ *
+ * Cloud: BRIEF_URL_SIGNING_SECRET (+ _PREV during rotation), as always.
+ *
+ * Local sidecar (LOCAL_API_MODE=tauri-sidecar, since v2.13.18):
+ * LOCAL_BRIEF_URL_SIGNING_SECRET only — a per-machine key the sidecar derives
+ * from its own local API token at startup (local-api-server.mjs). The cloud
+ * key is deliberately IGNORED here even if present: it's a shared HMAC key
+ * that mints valid links for every userId on the cloud deployment and must
+ * never live on an operator machine (wmtest v2.13.17 Latest Brief report,
+ * option 2). A locally-minted link is therefore only valid on the machine
+ * that minted it.
+ */
+export function resolveBriefSigningSecrets(): { secret: string; prevSecret: string | undefined; local: boolean } {
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    return { secret: process.env.LOCAL_BRIEF_URL_SIGNING_SECRET ?? '', prevSecret: undefined, local: true };
+  }
+  return {
+    secret: process.env.BRIEF_URL_SIGNING_SECRET ?? '',
+    prevSecret: process.env.BRIEF_URL_SIGNING_SECRET_PREV || undefined,
+    local: false,
+  };
+}
+
 export class BriefUrlError extends Error {
   readonly code: 'invalid_user_id' | 'invalid_issue_date' | 'missing_secret';
 

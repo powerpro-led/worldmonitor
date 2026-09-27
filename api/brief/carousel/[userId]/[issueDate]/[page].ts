@@ -38,7 +38,7 @@ import { getCorsHeaders, isDisallowedOrigin } from '../../../../_cors.js';
 import { readRawJsonFromUpstash } from '../../../../_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from '../../../../_sentry-edge.js';
-import { verifyBriefToken, BriefUrlError } from '../../../../../server/_shared/brief-url';
+import { verifyBriefToken, BriefUrlError, resolveBriefSigningSecrets } from '../../../../../server/_shared/brief-url';
 import { renderCarouselImageResponse, pageFromIndex } from '../../../../../server/_shared/brief-carousel-render';
 
 // Matches the signer's slot format (YYYY-MM-DD-HHMM).
@@ -76,9 +76,10 @@ export default async function handler(
     return jsonError('Method not allowed', 405, cors);
   }
 
-  const secret = process.env.BRIEF_URL_SIGNING_SECRET ?? '';
+  // Per-machine key locally, cloud key elsewhere — see resolveBriefSigningSecrets.
+  const { secret, prevSecret: prev } = resolveBriefSigningSecrets();
   if (!secret) {
-    console.error('[api/brief/carousel] BRIEF_URL_SIGNING_SECRET is not configured');
+    console.error('[api/brief/carousel] brief URL signing secret is not configured');
     return jsonError('service_unavailable', 503, cors);
   }
 
@@ -97,7 +98,6 @@ export default async function handler(
   if (!page) return jsonError('invalid_page', 404, cors);
 
   const token = url.searchParams.get('t') ?? '';
-  const prev = process.env.BRIEF_URL_SIGNING_SECRET_PREV ?? undefined;
   try {
     const ok = await verifyBriefToken(userId, issueDate, token, secret, prev);
     if (!ok) return jsonError('forbidden', 403, cors);

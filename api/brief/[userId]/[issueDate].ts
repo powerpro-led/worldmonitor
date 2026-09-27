@@ -27,7 +27,7 @@ import { captureSilentError } from '../../_sentry-edge.js';
 import { renderBriefMagazine } from '../../../server/_shared/brief-render.js';
 // @ts-expect-error — JS module, no declaration file
 import { readRawJsonFromUpstash } from '../../_upstash-json.js';
-import { verifyBriefToken, BriefUrlError } from '../../../server/_shared/brief-url';
+import { verifyBriefToken, BriefUrlError, resolveBriefSigningSecrets } from '../../../server/_shared/brief-url';
 import { resolveAppOrigin } from '../../../shared/domain-config.js';
 import { listFollowed as listFollowedCountries } from '../../../server/_shared/followed-countries';
 
@@ -146,8 +146,8 @@ export default async function handler(
     return new Response('Method not allowed', { status: 405, headers: cors });
   }
 
-  const secret = process.env.BRIEF_URL_SIGNING_SECRET ?? '';
-  const prevSecret = process.env.BRIEF_URL_SIGNING_SECRET_PREV || undefined;
+  // Per-machine key locally, cloud key elsewhere — see resolveBriefSigningSecrets.
+  const { secret, prevSecret } = resolveBriefSigningSecrets();
   if (!secret) {
     console.error('[api/brief] BRIEF_URL_SIGNING_SECRET is not configured');
     return htmlResponse(req, 503, UNAVAILABLE_PAGE);

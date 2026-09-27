@@ -418,16 +418,17 @@ export class LatestBriefPanel extends Panel {
     );
   }
 
-  // No composing poll here, unlike renderComposing — this state is a
-  // permanent local-mode gap (missing cloud-only secret), not a slot that
-  // will finish composing on the next cron tick. Polling would just be
-  // pointless network chatter against a feature that will never appear.
+  // No composing poll here, unlike renderComposing — this state means the
+  // backend has no brief-link signing key at all (a misconfigured deployment,
+  // or since v2.13.18 a local install whose sidecar couldn't derive its
+  // per-machine key), not a slot that will finish composing on the next cron
+  // tick. Polling would just be pointless network chatter.
   private renderUnavailable(): void {
     this.clearComposingPoll();
     clearChildren(this.content);
     this.content.appendChild(
       h('div', { className: 'latest-brief-empty' },
-        h('div', { className: 'latest-brief-empty-title' }, 'Not available in local mode.'),
+        h('div', { className: 'latest-brief-empty-title' }, 'Brief is not available on this install.'),
       ),
     );
   }

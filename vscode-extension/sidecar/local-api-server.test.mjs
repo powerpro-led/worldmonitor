@@ -2349,6 +2349,71 @@ test('/api/operator-session hands the CLI login session to the iframe (204 when 
   }
 });
 
+// v2.13.18: the plain-browser counterpart to panel.ts's VS-Code-only
+// wm-session-established postMessage relay. A dashboard tab with no
+// window.__wmVsCodeApi has no other way to hand a freshly-established or
+// -refreshed Supabase session down to the standalone backend.
+test('POST /api/operator-session persists a relayed session, validated the same way as the VS Code relay', async () => {
+  const localApi = await setupApiDir({});
+  const sessionFile = path.join(os.tmpdir(), `wm-operator-session-post-${Date.now()}.json`);
+  const originalSessionEnv = process.env.WM_LOCAL_SESSION_FILE;
+  process.env.WM_LOCAL_SESSION_FILE = sessionFile;
+
+  const app = await createLocalApiServer({
+    port: 0,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+  const { port } = await app.start();
+  const post = (body) => authFetch(`http://127.0.0.1:${port}/api/operator-session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  try {
+    // Still gated by the loopback token like every other route here — a
+    // plain browser tab with no way to attach it gets the same 401 every
+    // other unauthenticated call to this backend gets, not a silent no-op.
+    const noAuth = await fetch(`http://127.0.0.1:${port}/api/operator-session`, { method: 'POST', body: '{}' });
+    assert.equal(noAuth.status, 401);
+
+    // Malformed / missing the two load-bearing fields → 400, nothing written.
+    assert.equal((await post({})).status, 400);
+    assert.equal((await post({ access_token: 'only-one-field' })).status, 400);
+    const malformedRaw = await authFetch(`http://127.0.0.1:${port}/api/operator-session`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not json',
+    });
+    assert.equal(malformedRaw.status, 400);
+
+    // Valid payload → 204, and the GET side immediately reflects it — proves
+    // this POST and the existing GET agree on the same on-disk session.json,
+    // exactly the round-trip a plain browser tab relies on.
+    const res = await post({
+      access_token: 'at-relayed', refresh_token: 'rt-relayed', expires_at: 1893456000, token_type: 'bearer',
+      user: { id: '15ae70b6-2045-49e5-9381-7e426c1d8295', email: 'op@example.test' },
+    });
+    assert.equal(res.status, 204);
+    const get = await authFetch(`http://127.0.0.1:${port}/api/operator-session`);
+    assert.equal(get.status, 200);
+    const body = await get.json();
+    assert.equal(body.access_token, 'at-relayed');
+    assert.equal(body.user.email, 'op@example.test');
+
+    // Extra/unexpected fields on the payload are dropped, not persisted
+    // verbatim — same trimming writeOperatorSession() already does for the
+    // CLI login writer and the VS Code relay.
+    const raw = JSON.parse(await readFile(sessionFile, 'utf8'));
+    assert.deepEqual(Object.keys(raw).sort(), ['access_token', 'expires_at', 'refresh_token', 'token_type', 'user']);
+  } finally {
+    if (originalSessionEnv === undefined) delete process.env.WM_LOCAL_SESSION_FILE;
+    else process.env.WM_LOCAL_SESSION_FILE = originalSessionEnv;
+    await rm(sessionFile, { force: true });
+    await app.close();
+    await localApi.cleanup();
+  }
+});
+
 test('serves index.html for /dashboard.html when the build emitted no dashboard.html', async () => {
   const localApi = await setupApiDir({});
   const staticDir = await mkdtemp(path.join(os.tmpdir(), 'wm-static-'));
@@ -2620,5 +2685,68 @@ test('/api/local-sync-refresh — validates the keys array', async () => {
     else process.env.UPSTASH_REDIS_REST_READONLY_TOKEN = prev;
     await app.close();
     await localApi.cleanup();
+  }
+});
+
+// v2.13.18 (wmtest Latest Brief report, option 2): the brief magazine route
+// ships locally. It's opened by a top-level navigation (no transport-token
+// header), so the global auth gate lets GET/HEAD through on the strength of
+// the handler's own HMAC link check — but ONLY for the signed-in operator's
+// own userId. A per-machine signing key is derived from the local token;
+// the cloud BRIEF_URL_SIGNING_SECRET is never needed.
+test('brief magazine route: header-less GET for the operator only, per-machine signing key', async () => {
+  const OPERATOR = '11111111-2222-3333-4444-555555555555';
+  const OTHER = '99999999-8888-7777-6666-555555555555';
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'wm-brief-route-'));
+  const sessionFile = path.join(tempRoot, 'session.json');
+  await writeFile(sessionFile, JSON.stringify({ access_token: 'a', refresh_token: 'r', user: { id: OPERATOR } }));
+  const prevSession = process.env.WM_LOCAL_SESSION_FILE;
+  const prevSqlite = process.env.LOCAL_SQLITE_PATH;
+  const prevSecret = process.env.LOCAL_BRIEF_URL_SIGNING_SECRET;
+  process.env.WM_LOCAL_SESSION_FILE = sessionFile;
+  process.env.LOCAL_SQLITE_PATH = path.join(tempRoot, 'local-cache.db');
+  delete process.env.LOCAL_BRIEF_URL_SIGNING_SECRET;
+
+  const localApi = await setupApiDir({
+    'brief/[userId]/[issueDate].js': `
+      export default async function handler(req) {
+        return new Response('magazine:' + new URL(req.url).pathname, { status: 200 });
+      }
+    `,
+  });
+  const app = await createLocalApiServer({
+    port: 0,
+    mode: 'tauri-sidecar',
+    apiDir: localApi.apiDir,
+    logger: { log() {}, warn() {}, error() {} },
+  });
+  const { port } = await app.start();
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const expectedKey = createHmac('sha256', TEST_LOCAL_API_TOKEN).update('worldmonitor-local-brief-url-v1').digest('hex');
+    assert.equal(process.env.LOCAL_BRIEF_URL_SIGNING_SECRET, expectedKey, 'sidecar derives the per-machine key from its local token');
+
+    const own = await fetch(`${base}/api/brief/${OPERATOR}/2026-09-27-1200?t=x`);
+    assert.equal(own.status, 200, "operator's own brief reaches the handler with no header");
+    assert.match(await own.text(), /^magazine:/);
+
+    const other = await fetch(`${base}/api/brief/${OTHER}/2026-09-27-1200?t=x`);
+    assert.equal(other.status, 404, "another user's path is a 404 without the header");
+    const otherWithHeader = await authFetch(`${base}/api/brief/${OTHER}/2026-09-27-1200?t=x`);
+    assert.equal(otherWithHeader.status, 404, "…and still a 404 with it — the path userId is never trusted alone");
+
+    const post = await fetch(`${base}/api/brief/${OPERATOR}/2026-09-27-1200`, { method: 'POST' });
+    assert.equal(post.status, 401, 'only GET/HEAD are exempt from the transport-token gate');
+
+    const unrelated = await fetch(`${base}/api/local-status`);
+    assert.equal(unrelated.status, 401, 'the exemption does not leak to other routes');
+  } finally {
+    await app.close();
+    await localApi.cleanup();
+    await rm(tempRoot, { recursive: true, force: true });
+    for (const [k, v] of [['WM_LOCAL_SESSION_FILE', prevSession], ['LOCAL_SQLITE_PATH', prevSqlite], ['LOCAL_BRIEF_URL_SIGNING_SECRET', prevSecret]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });

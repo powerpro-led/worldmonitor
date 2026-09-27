@@ -48,6 +48,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMirroredKey } from '../../scripts/shared/sync-domains.mjs';
 import { KV_CACHE_DDL, UPSERT_SQL } from './kv-cache-schema.mjs';
+import { planReadChunks, runWithAbortTimeout, timeoutForBytes } from './read-chunking.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -288,7 +289,7 @@ const CATCHUP_XRANGE_PAGE_SIZE = 1000;
  *   callable exactly as before wherever nothing needs the signal (tests,
  *   any future direct caller).
  */
-async function catchUp(redis, onBatchDone) {
+async function catchUp(redis, onBatchDone, onChunkStart) {
   const cursor = readCursor();
   let lastId = cursor === '0' ? null : cursor;
   // Paged, not one unbounded XRANGE: Upstash REST silently caps an XRANGE
@@ -316,12 +317,60 @@ async function catchUp(redis, onBatchDone) {
       .sort((a, b) => (isStreamIdNewer(a, b) ? 1 : isStreamIdNewer(b, a) ? -1 : 0));
     if (ids.length === 0) return;
     console.log(`[sync-listener] catch-up: ${ids.length} changelog entr${ids.length === 1 ? 'y' : 'ies'} since last cursor`);
-    await applyCatchUpPage(redis, entries, ids, onBatchDone);
+    await applyCatchUpPage(redis, entries, ids, onBatchDone, onChunkStart);
     lastId = ids[ids.length - 1];
   }
 }
 
-async function applyCatchUpPage(redis, entries, ids, onBatchDone) {
+/**
+ * Known byte size of every mirrored row (key + length only, no values), so
+ * catch-up can plan byte-aware read chunks the same way local-sync.mjs does.
+ * Empty map if the mirror doesn't exist yet — unknown keys then get
+ * read-chunking.mjs's default estimate.
+ */
+function readMirrorSizes() {
+  try {
+    const db = new DatabaseSync(SQLITE_PATH, { readOnly: true });
+    try {
+      return new Map(db.prepare('SELECT key, length(value) AS bytes FROM kv_cache').all().map((r) => [r.key, Number(r.bytes)]));
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * One catch-up read chunk, bounded by a size-scaled timeout. For the real
+ * @upstash/redis client the attempt runs on its own abortable client, so a
+ * timed-out read is actually CANCELLED rather than left downloading in the
+ * background (finding I — this path used to have no per-request timeout at
+ * all, only the connection-level stall watchdog). A test double is used
+ * as-is under the same timeout race.
+ */
+function readCatchUpChunk(redis, chunk, bytes) {
+  const exec = (client) => {
+    const pipeline = client.pipeline();
+    for (const item of chunk) READ_FOR_TYPE[item.type](pipeline, item.key);
+    return pipeline.exec({ keepErrors: true });
+  };
+  const label = `catch-up read of ${chunk.length} key(s) (~${Math.round(bytes / 1024)} KB)`;
+  const timeoutMs = timeoutForBytes(bytes);
+  if (redis instanceof Redis) {
+    const url = process.env.UPSTASH_REDIS_REST_URL || UPSTASH_URL;
+    const token = process.env.UPSTASH_REDIS_REST_READONLY_TOKEN || UPSTASH_READONLY_TOKEN;
+    return runWithAbortTimeout(url, token, exec, label, timeoutMs);
+  }
+  let timer;
+  return Promise.race([
+    exec(redis),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function applyCatchUpPage(redis, entries, ids, onBatchDone, onChunkStart) {
+  const sizes = readMirrorSizes();
   for (let i = 0; i < ids.length; i += CATCHUP_READ_BATCH_SIZE) {
     const batchIds = ids.slice(i, i + CATCHUP_READ_BATCH_SIZE);
     const items = batchIds.map((id) => {
@@ -345,35 +394,36 @@ async function applyCatchUpPage(redis, entries, ids, onBatchDone) {
       }
     }
 
-    if (readable.length > 0) {
-      const pipeline = redis.pipeline();
-      for (const item of readable) READ_FOR_TYPE[item.type](pipeline, item.key);
-      // keepErrors: true, not the default — @upstash/redis's own docs are
-      // explicit that a plain exec() fails the WHOLE pipeline the moment any
-      // single command errors (e.g. a WRONGTYPE if a key's type changed
-      // between the changelog write and this read), which would otherwise
-      // discard every other key in this batch of up to
-      // CATCHUP_READ_BATCH_SIZE along with it. The old one-at-a-time loop
-      // isolated each key's read failure to that key alone (applyChange()'s
-      // own try/catch); this keeps that same isolation per command instead
-      // of per batch.
+    // One read per distinct key in this batch (a backlog repeats the same
+    // hot keys many times; the value read now is the latest either way),
+    // packed into byte-aware chunks (read-chunking.mjs, finding I) instead
+    // of one 100-key pipeline that a single ~1 MB key could stall.
+    const distinct = [...new Map(readable.map((item) => [item.key, item])).values()];
+    for (const { entries: chunk, bytes } of planReadChunks(distinct, (key) => sizes.get(key))) {
+      onChunkStart?.(timeoutForBytes(bytes));
+      // keepErrors: true (in readCatchUpChunk), not the default —
+      // @upstash/redis's own docs are explicit that a plain exec() fails the
+      // WHOLE pipeline the moment any single command errors (e.g. a
+      // WRONGTYPE if a key's type changed between the changelog write and
+      // this read), which would otherwise discard every other key in the
+      // chunk along with it.
       let results;
       const readStartedAt = Date.now();
       try {
-        results = await pipeline.exec({ keepErrors: true });
+        results = await readCatchUpChunk(redis, chunk, bytes);
       } catch (err) {
-        console.warn(`[sync-listener] catch-up pipeline read failed for a batch of ${readable.length} (non-fatal — the periodic full reconciliation will cover it): ${err.message}`);
+        console.warn(`[sync-listener] catch-up read failed for ${chunk.length} key(s) (non-fatal — the periodic full reconciliation will cover it): ${err.message}`);
         results = null;
       }
       if (results) {
-        for (let j = 0; j < readable.length; j++) {
+        for (let j = 0; j < chunk.length; j++) {
           const entry = results[j];
           if (entry?.error) {
-            console.warn(`[sync-listener] targeted read failed for ${readable[j].key} (non-fatal — the periodic full reconciliation will cover it): ${entry.error}`);
+            console.warn(`[sync-listener] targeted read failed for ${chunk[j].key} (non-fatal — the periodic full reconciliation will cover it): ${entry.error}`);
             continue;
           }
           const raw = entry?.result;
-          if (raw != null) upsertRow(readable[j].key, typeof raw === 'string' ? raw : JSON.stringify(raw), readable[j].type, readStartedAt);
+          if (raw != null) upsertRow(chunk[j].key, typeof raw === 'string' ? raw : JSON.stringify(raw), chunk[j].type, readStartedAt);
         }
       }
     }
@@ -516,21 +566,30 @@ async function runOneConnection(redis, externalSignal) {
   // read and the subscription taking effect. Guarded by a stall watchdog
   // (see CATCHUP_STALL_MS's own comment for why this is stall-based, not a
   // flat total-duration cap) rather than left unbounded. catchUp() itself is
-  // NOT cancelled when the watchdog fires — there's no cheap way to abort a
-  // pipeline mid-flight via this SDK, and letting it keep writing rows in the
-  // background is harmless (upsertRow already tolerates concurrent writers,
-  // same as the live loop below racing it) — only this connection cycle's
-  // wait for it gives up.
+  // NOT cancelled when the watchdog fires — only this connection cycle's
+  // wait for it gives up. That's bounded now: every catch-up read chunk has
+  // its own size-scaled timeout and is aborted when it hits it (see
+  // readCatchUpChunk, finding I), and a background catch-up landing late
+  // can't overwrite a fresher row (upsertRow's as-of guard, finding G).
   await new Promise((resolveWait) => {
     let lastProgressAt = Date.now();
+    // Each catch-up read chunk now carries its own size-scaled timeout
+    // (>= 90s, finding I), which can exceed CATCHUP_STALL_MS — so while a
+    // chunk is in flight the watchdog waits for that chunk's own budget
+    // instead of declaring a stall that the chunk's timeout would handle.
+    let stallBudgetMs = CATCHUP_STALL_MS;
     const stallTimer = setInterval(() => {
-      if (Date.now() - lastProgressAt >= CATCHUP_STALL_MS) {
+      if (Date.now() - lastProgressAt >= stallBudgetMs) {
         clearInterval(stallTimer);
-        console.warn(`[sync-listener] catch-up stalled — no progress for ${CATCHUP_STALL_MS / 1000}s, abandoning for this connection, will retry next reconnect`);
+        console.warn(`[sync-listener] catch-up stalled — no progress for ${stallBudgetMs / 1000}s, abandoning for this connection, will retry next reconnect`);
         resolveWait();
       }
     }, 5_000);
-    catchUp(redis, () => { lastProgressAt = Date.now(); })
+    catchUp(
+      redis,
+      () => { lastProgressAt = Date.now(); stallBudgetMs = CATCHUP_STALL_MS; },
+      (chunkTimeoutMs) => { lastProgressAt = Date.now(); stallBudgetMs = Math.max(CATCHUP_STALL_MS, chunkTimeoutMs + 5_000); },
+    )
       .catch((err) => console.warn(`[sync-listener] catch-up failed unexpectedly (non-fatal): ${err.message}`))
       .finally(() => {
         clearInterval(stallTimer);

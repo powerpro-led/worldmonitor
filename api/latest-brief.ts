@@ -44,7 +44,7 @@ import { readRawJsonFromUpstash } from './_upstash-json.js';
 // @ts-expect-error — JS module, no declaration file
 import { captureSilentError } from './_sentry-edge.js';
 import { validateBearerToken } from '../server/auth-session';
-import { signBriefUrl, BriefUrlError } from '../server/_shared/brief-url';
+import { signBriefUrl, BriefUrlError, resolveBriefSigningSecrets } from '../server/_shared/brief-url';
 import { assertBriefEnvelope } from '../server/_shared/brief-render.js';
 
 // Slot format written by the digest cron. Must match ISSUE_DATE_RE in
@@ -168,8 +168,25 @@ async function readLatestPointer(userId: string, timeoutMs: number): Promise<str
  * reflection from minting URLs pointing at preview deploys or other
  * non-canonical origins. Falls back to the request origin only in
  * dev-ish contexts where the env var is absent.
+ *
+ * Local sidecar (LOCAL_API_MODE=tauri-sidecar) ALWAYS uses the request
+ * origin, ignoring the pin entirely — found live 2026-09-27 (v2.13.18's
+ * Latest Brief "Open" link 404ing/connection-refused with no code bug: a
+ * `.env` left over from unrelated local `nitric start` testing had
+ * WORLDMONITOR_PUBLIC_BASE_URL=http://localhost:9001, and this function
+ * happily pinned every locally-built magazineUrl to it). The host-header
+ * concern above does not apply here: local-api-server.mjs synthesizes
+ * req.url's origin server-side from LOCAL_API_PORT
+ * (`new URL(req.url || '/', \`http://127.0.0.1:${context.port}\`)`), never
+ * from a client-supplied Host header, so it can't be spoofed the way a
+ * real edge deployment's request origin could — and WORLDMONITOR_PUBLIC_BASE_URL
+ * is scoped to a different consumer entirely (the cloud digest-notification
+ * composer, scripts/seed-digest-notifications.mjs), not to this sidecar.
  */
 function publicBaseUrl(req: Request): string {
+  if (process.env.LOCAL_API_MODE === 'tauri-sidecar') {
+    return new URL(req.url).origin;
+  }
   const pinned = process.env.WORLDMONITOR_PUBLIC_BASE_URL;
   if (pinned) return pinned.replace(/\/+$/, '');
   return new URL(req.url).origin;
@@ -203,7 +220,10 @@ export default async function handler(
     return jsonResponse({ error: 'UNAUTHENTICATED' }, 401, cors);
   }
 
-  const secret = process.env.BRIEF_URL_SIGNING_SECRET ?? '';
+  // Local sidecar signs with its own per-machine key (resolveBriefSigningSecrets),
+  // never the cloud one — so this gate is normally passed locally too since
+  // v2.13.18; 'unavailable' there now means the sidecar couldn't derive it.
+  const { secret } = resolveBriefSigningSecrets();
   if (!secret) {
     // A local/sidecar install never has this cloud-only secret — it's a
     // permanent state for that deployment, not a transient outage. A 503

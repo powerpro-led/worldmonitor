@@ -75,7 +75,7 @@
  * the SCAN, from the key list alone — see PRUNE_SQL — so it happens even
  * when some value reads fail. A chunk whose reads exhaust their retries is
  * skipped (its rows keep their previous value) rather than aborting the run;
- * see readValues() and the byte-aware chunking notes by CHUNK_BYTE_BUDGET.
+ * see readValues() and read-chunking.mjs for the byte-aware chunking.
  *
  * Schema: a single generic key-value mirror table, not per-domain typed
  * tables — matches how vscode-extension/sidecar/local-api-server.mjs already reads
@@ -141,6 +141,13 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { classifyKey } from '../../scripts/shared/sync-domains.mjs';
 import { KV_CACHE_DDL, SYNC_META_DDL, UPSERT_SQL } from './kv-cache-schema.mjs';
+import {
+  BASE_REQUEST_TIMEOUT_MS,
+  PIPELINE_MAX_KEYS,
+  planReadChunks,
+  runWithAbortTimeout,
+  timeoutForBytes,
+} from './read-chunking.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -181,25 +188,18 @@ const SQLITE_PATH = process.env.LOCAL_SQLITE_PATH || path.join(__dirname, 'local
 // attempts (4/4, both this run and the previous one) at the old 45s
 // ceiling. 90s leaves real headroom above the measured worst case, same
 // reasoning as the original 30s->45s bump this constant has already been
-// through once before.
-const REQUEST_TIMEOUT_MS = 90_000;
+// through once before. (Now BASE_REQUEST_TIMEOUT_MS in read-chunking.mjs.)
+const REQUEST_TIMEOUT_MS = BASE_REQUEST_TIMEOUT_MS;
 const RETRY_ATTEMPTS = 3;
 const retryBackoffMs = (retryCount) => Math.min(1_000 * 2 ** retryCount, 8_000);
 
-// Byte-aware read chunking (2026-09-26, wmtest v2.13.16 review, finding D).
-// Upstash REST does not compress responses, and a single key can be over a
-// megabyte (climate:air-quality:v1 ≈ 1.3 MB measured 100–112s on a ~12–20
-// KB/s link) — so a fixed 100-key chunk under a fixed 90s timeout could
-// NEVER succeed on a slow link, and because SCAN order is stable it failed
-// at the same chunk on every run. Chunks are now packed up to
-// CHUNK_BYTE_BUDGET using each key's size in the existing mirror (unknown
-// keys assume UNKNOWN_KEY_BYTES), a key bigger than the budget gets a chunk
-// of its own, and each chunk's timeout grows with its expected size at an
-// assumed floor of MIN_THROUGHPUT_BYTES_PER_S (never below REQUEST_TIMEOUT_MS).
-const CHUNK_BYTE_BUDGET = 256 * 1024;
-const UNKNOWN_KEY_BYTES = 4 * 1024;
-const MIN_THROUGHPUT_BYTES_PER_S = 8 * 1024;
-const timeoutForBytes = (bytes) => Math.max(REQUEST_TIMEOUT_MS, Math.ceil((bytes / MIN_THROUGHPUT_BYTES_PER_S) * 1000));
+// Byte-aware read chunking (2026-09-26, wmtest v2.13.16 review, finding D):
+// planReadChunks() / timeoutForBytes() in read-chunking.mjs, shared with
+// sync-listener.mjs's catch-up (finding I). A fixed 100-key chunk under a
+// fixed 90s timeout could NEVER succeed on a slow link once it held a
+// ~1.3 MB key, and because SCAN order is stable it failed at the same chunk
+// every run. Sizes come from the existing mirror (see main()).
+export { planReadChunks };
 
 // Stall watchdog, not a wall-clock cap: reset on every request attempt and
 // every committed batch, so a slow-but-advancing run on a slow link isn't
@@ -220,7 +220,7 @@ const SCAN_COUNT = 1_000;
 // rationale (verified live against real Redis keys) and the three-state model.
 
 /** Matches server/_shared/redis.ts's own pipeline batching discipline. */
-const PIPELINE_CHUNK = 100;
+const PIPELINE_CHUNK = PIPELINE_MAX_KEYS;
 
 // Read+write the admitted keys in bounded batches rather than one pass over
 // the whole keyspace: keeps each SQLite write transaction short (a
@@ -269,22 +269,18 @@ function assertEnv() {
 }
 
 /**
- * `signal`, when given, must be a FUNCTION returning an AbortSignal. In
- * @upstash/redis's request loop (read in node_modules, 2026-09-26) a
- * function signal that aborts makes the SDK rethrow the fetch's real abort
- * error immediately, and skip its own retries — which is exactly right
- * here, since withTimeoutRetry() owns retrying (retry: false below). That
- * "no SDK retry" behavior is the only reason the header comment ruled
- * function signals out, back when the SDK's retry was still in the loop. A
- * PLAIN AbortSignal is still never passed: on abort the SDK fabricates a 200
- * whose "result" is the abort reason, which would read as data.
+ * Client for the one-off capability probe only; every real read goes
+ * through withTimeoutRetry(), which builds its own per-attempt abortable
+ * client (see read-chunking.mjs's createAbortableClient for why a FUNCTION
+ * signal is the safe form in this SDK — the header comment above predates
+ * that finding and ruled function signals out only because they disable
+ * the SDK's own retry, which this file doesn't use).
  */
-function createClient(signal) {
+function createClient() {
   return new Redis({
     url: UPSTASH_URL,
     token: UPSTASH_READONLY_TOKEN,
     retry: false,
-    ...(signal ? { signal } : {}),
   });
 }
 
@@ -307,23 +303,8 @@ async function withTimeoutRetry(fn, label, timeoutMs = REQUEST_TIMEOUT_MS) {
   let lastErr;
   for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt++) {
     noteActivity();
-    const controller = new AbortController();
     try {
-      let timer;
-      const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          // Reject first so the race settles on the timeout, then cancel
-          // the in-flight fetch; its own abort rejection lands on an
-          // already-settled race and is ignored.
-          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-          controller.abort(new Error('superseded by timeout'));
-        }, timeoutMs);
-      });
-      try {
-        return await Promise.race([fn(createClient(() => controller.signal)), timeout]);
-      } finally {
-        clearTimeout(timer);
-      }
+      return await runWithAbortTimeout(UPSTASH_URL, UPSTASH_READONLY_TOKEN, fn, label, timeoutMs);
     } catch (err) {
       lastErr = err;
       if (attempt < RETRY_ATTEMPTS) {
@@ -442,34 +423,6 @@ async function scanAllKeysWithType(redis, match = '*') {
  * already-string value as-is avoids double-encoding it.
  */
 /**
- * Packs entries into read chunks of at most PIPELINE_CHUNK keys and (where
- * possible) at most CHUNK_BYTE_BUDGET estimated bytes; a key whose own
- * estimate exceeds the budget is always a chunk of its own. Order-preserving.
- * Pure — exported for tests.
- *
- * @param {{key: string, type: string}[]} entries
- * @param {(key: string) => number | undefined} sizeOf - known size, or undefined
- * @returns {{entries: {key: string, type: string}[], bytes: number}[]}
- */
-export function planReadChunks(entries, sizeOf) {
-  const chunks = [];
-  let current = { entries: [], bytes: 0 };
-  for (const entry of entries) {
-    const bytes = sizeOf(entry.key) ?? UNKNOWN_KEY_BYTES;
-    const wouldOverflow = current.entries.length > 0
-      && (current.bytes + bytes > CHUNK_BYTE_BUDGET || current.entries.length >= PIPELINE_CHUNK);
-    if (wouldOverflow) {
-      chunks.push(current);
-      current = { entries: [], bytes: 0 };
-    }
-    current.entries.push(entry);
-    current.bytes += bytes;
-  }
-  if (current.entries.length > 0) chunks.push(current);
-  return chunks;
-}
-
-/**
  * Reads the given entries in byte-aware chunks (see planReadChunks). A chunk
  * that exhausts its retries is SKIPPED, not fatal: its keys are returned in
  * `failedKeys`, their existing mirror rows are left untouched, and the next
@@ -477,12 +430,22 @@ export function planReadChunks(entries, sizeOf) {
  * aborted the whole run — no later batches, no prune — every run, at the
  * same chunk (finding D).
  *
- * @returns {Promise<{values: Map<string, {value: string, type: string}>, failedKeys: string[]}>}
+ * Every admitted key that doesn't end up in `values` is accounted for (wmtest
+ * v2.13.17 retest, finding J — a 13-key `done: 5578/5591` shortfall was
+ * unexplainable because per-key errors were dropped silently): a per-key
+ * command error (e.g. WRONGTYPE) is logged and counted in `failedKeys`; a
+ * key that vanished between SCAN and read goes in `vanished`; a key of a
+ * type this reader doesn't handle (e.g. a Redis stream) goes in `unsupported`.
+ *
+ * @returns {Promise<{values: Map<string, {value: string, type: string}>, failedKeys: string[], vanished: string[], unsupported: string[]}>}
  */
 async function readValues(entries, sizeOf) {
   const values = new Map();
   const failedKeys = [];
-  const readable = entries.filter((entry) => READ_FOR_TYPE[entry.type]);
+  const vanished = [];
+  const unsupported = [];
+  const readable = [];
+  for (const entry of entries) (READ_FOR_TYPE[entry.type] ? readable : unsupported).push(entry);
   for (const { entries: chunk, bytes } of planReadChunks(readable, sizeOf)) {
     const label = chunk.length === 1
       ? `read ${chunk[0].key} (~${Math.round(bytes / 1024)} KB)`
@@ -507,11 +470,16 @@ async function readValues(entries, sizeOf) {
     for (let j = 0; j < chunk.length; j++) {
       const { key, type } = chunk[j];
       const { result: raw, error } = results[j] ?? {};
-      if (error || raw == null) continue;
+      if (error) {
+        console.warn(`[local-sync] read failed for ${key} (${type}) — keeping existing row: ${error}`);
+        failedKeys.push(key);
+        continue;
+      }
+      if (raw == null) { vanished.push(key); continue; }
       values.set(key, { value: typeof raw === 'string' ? raw : JSON.stringify(raw), type });
     }
   }
-  return { values, failedKeys };
+  return { values, failedKeys, vanished, unsupported: unsupported.map((e) => `${e.key} (${e.type})`) };
 }
 
 /**
@@ -666,6 +634,8 @@ async function main() {
   let totalFound = 0;
   let totalWritten = 0;
   let failedKeys = [];
+  let vanished = [];
+  let unsupported = [];
 
   // Stall watchdog + hard cap (see STALL_WATCHDOG_MS). `.unref()` so it
   // doesn't itself keep the process alive once the real work finishes.
@@ -733,8 +703,11 @@ async function main() {
     // pass over every admitted key.
     for (let i = 0; i < entries.length; i += SYNC_WRITE_BATCH) {
       const batch = entries.slice(i, i + SYNC_WRITE_BATCH);
-      const { values, failedKeys: batchFailed } = await readValues(batch, sizeOf);
-      failedKeys = failedKeys.concat(batchFailed);
+      const r = await readValues(batch, sizeOf);
+      const { values } = r;
+      failedKeys = failedKeys.concat(r.failedKeys);
+      vanished = vanished.concat(r.vanished);
+      unsupported = unsupported.concat(r.unsupported);
 
       db.exec('BEGIN');
       for (const [key, { value, type }] of values) {
@@ -766,6 +739,13 @@ async function main() {
     );
   } else {
     console.log(`[local-sync] done: ${totalWritten}/${totalFound} keys synced to ${SQLITE_PATH}`);
+  }
+  // Finding J: the rest of any written/found shortfall, itemized.
+  if (vanished.length > 0) {
+    console.log(`[local-sync]   ${vanished.length} key(s) expired/deleted between SCAN and read (normal churn)`);
+  }
+  if (unsupported.length > 0) {
+    console.warn(`[local-sync]   ${unsupported.length} key(s) of a type this reader doesn't mirror: ${unsupported.slice(0, 5).join(', ')}${unsupported.length > 5 ? ', …' : ''}`);
   }
 }
 

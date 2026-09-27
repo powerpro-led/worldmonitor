@@ -22,7 +22,7 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // ~/.worldmonitor/session.json read/write — shared verbatim with the
 // `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
 // login flow and this server's refresh timer.
-import { readOperatorSession, writeOperatorSession } from './session-file.mjs';
+import { readOperatorSession, writeOperatorSession, parseIncomingSession } from './session-file.mjs';
 import {
   loadConfigIntoEnv,
   readAllConfig,
@@ -932,6 +932,37 @@ function initOperatorIdentity(sqlitePath) {
   }
 }
 
+/** The signed-in operator: the CLI login session first, else the traffic-recorded identity. */
+function currentOperatorUserId() {
+  return readSessionUserId() || _lastRecordedUserId || null;
+}
+
+// /api/brief/{userId}/{slot} and /api/brief/carousel/{userId}/{slot}/{page}.
+const BRIEF_MAGAZINE_PATH_RE = /^\/api\/brief\/(?:carousel\/)?([^/]+)\/[^/]+(?:\/[^/]+)?\/?$/;
+
+/**
+ * Local brief magazine request → the path's userId, else null.
+ *
+ * The magazine is opened by a top-level navigation (a link in the Latest
+ * Brief card), which can't carry the transport-token header every other
+ * route requires — so, exactly as in the cloud, the HMAC `?t=` token in the
+ * link is its credential (verified in the handler, with the per-machine key).
+ * The global auth gate lets GET/HEAD for these paths through on that basis,
+ * but only for the signed-in operator's OWN userId: the mirror is already
+ * user-scoped, and this makes sure a path userId alone is never trusted.
+ */
+function briefMagazineUserId(requestUrl, req, context) {
+  if (context.mode !== 'tauri-sidecar') return null;
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null;
+  const m = BRIEF_MAGAZINE_PATH_RE.exec(requestUrl.pathname);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
+}
+
 function jwtSubject(authHeader) {
   if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) return null;
   const parts = authHeader.slice(7).split('.');
@@ -1156,6 +1187,18 @@ function resolveConfig(options = {}) {
     : [];
   const logger = options.logger ?? console;
   const token = resolveLocalApiToken(options);
+  // Per-machine brief-link signing key (v2.13.18, wmtest Latest Brief report,
+  // option 2). api/latest-brief + the magazine routes read it via
+  // server/_shared/brief-url.ts's resolveBriefSigningSecrets() in local mode,
+  // INSTEAD of the cloud BRIEF_URL_SIGNING_SECRET — which must never be on an
+  // operator machine (it mints valid cloud links for every userId). Derived
+  // from the local API token, so it's stable across restarts, unique per
+  // machine, and a locally-minted link is useless anywhere else.
+  if (mode === 'tauri-sidecar' && token) {
+    process.env.LOCAL_BRIEF_URL_SIGNING_SECRET = createHmac('sha256', token)
+      .update('worldmonitor-local-brief-url-v1')
+      .digest('hex');
+  }
   if (mode === 'docker' && requestedFallback) {
     logger.warn(
       `[local-api] Cloud fallback disabled in Docker mode (self-hosted instances must not proxy to ${resolveApiOrigin(process.env.APP_DOMAIN)})`,
@@ -1939,7 +1982,19 @@ async function dispatch(requestUrl, req, routes, context) {
   // it here is not a new trust boundary, just a second header name for the
   // one already-trusted value.
   const hasMcpSelfFetchAuth = worldMonitorKeyHeader === expectedToken;
-  if (!hasTransportAuth && !hasLegacyAuth && !hasMcpSelfFetchAuth) {
+  // Local brief magazine (see briefMagazineUserId): the signed link is the
+  // credential, and only the signed-in operator's own briefs are servable.
+  // A path userId that isn't the operator's is a 404 even WITH the header
+  // token — nothing but the operator's own brief ever lives in this mirror,
+  // and the route must not act as a lookup for anyone else's.
+  const briefUserId = briefMagazineUserId(requestUrl, req, context);
+  if (briefUserId !== null) {
+    const operatorUserId = currentOperatorUserId();
+    if (!operatorUserId || briefUserId !== operatorUserId) {
+      return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Referrer-Policy': 'no-referrer' } });
+    }
+  }
+  if (!hasTransportAuth && !hasLegacyAuth && !hasMcpSelfFetchAuth && briefUserId === null) {
     context.logger.warn(`[local-api] unauthorized request to ${requestUrl.pathname}`);
     return json({ error: 'Unauthorized' }, 401);
   }
@@ -1979,11 +2034,42 @@ async function dispatch(requestUrl, req, routes, context) {
   // it in, just delivered over a localhost fetch instead of a redirect chain.
   // 204 when not logged in, so the client cleanly falls back to the button.
   if (requestUrl.pathname === '/api/operator-session') {
+    const noStore = { 'cache-control': 'no-store' };
+    if (req.method === 'POST') {
+      // Push direction: persists a session established (or refreshed) IN a
+      // dashboard tab down to session.json — the plain-browser equivalent of
+      // panel.ts's wm-session-established relay, which only ever reaches the
+      // VS Code embed (window.__wmVsCodeApi doesn't exist in an ordinary
+      // browser tab, so that postMessage relay is a no-op there; see
+      // auth-provider.ts's isVsCodeEmbed() gate). Without this, a sign-in
+      // completed from a plain `http://127.0.0.1:46123/` tab only ever lived
+      // in that tab's own browser storage — this backend never learned about
+      // it, same gap the VS Code relay closed for the embed case, just for
+      // the other first-class access path INSTALL.md documents. Uses the
+      // SAME shared validator (parseIncomingSession) so the two relays can't
+      // drift on what counts as a valid inbound session.
+      const rawBody = await readBody(req);
+      let parsed;
+      try {
+        parsed = parseIncomingSession(JSON.parse(rawBody?.toString() || 'null'));
+      } catch {
+        return new Response(JSON.stringify({ error: 'invalid JSON body' }), { status: 400, headers: { 'content-type': 'application/json', ...noStore } });
+      }
+      if (!parsed) {
+        return new Response(JSON.stringify({ error: 'expected { access_token, refresh_token, ... }' }), { status: 400, headers: { 'content-type': 'application/json', ...noStore } });
+      }
+      try {
+        writeOperatorSession(parsed);
+      } catch (err) {
+        context.logger.warn(`[local-api] failed to persist relayed operator session: ${err?.message || err}`);
+        return new Response(JSON.stringify({ error: 'failed to persist session' }), { status: 500, headers: { 'content-type': 'application/json', ...noStore } });
+      }
+      return new Response(null, { status: 204, headers: noStore });
+    }
     const session = readOperatorSession();
     // no-store: the body carries a long-lived refresh_token, and without an
     // explicit directive a 200 GET is eligible for heuristic browser disk
     // caching — the token would then outlive session.json / a logout on disk.
-    const noStore = { 'cache-control': 'no-store' };
     if (!session?.access_token || !session?.refresh_token) {
       return new Response(null, { status: 204, headers: noStore });
     }

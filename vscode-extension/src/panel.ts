@@ -9,7 +9,7 @@ import { BackendClient, BackendUnreachableError } from './backendClient';
 // not a runtime file read outside the packaged extension.
 // @ts-expect-error — plain ESM .mjs, no .d.ts; the two call sites below only
 // pass/receive plain JSON-shaped objects, so untyped is an acceptable cost.
-import { writeOperatorSession } from '../sidecar/session-file.mjs';
+import { writeOperatorSession, parseIncomingSession } from '../sidecar/session-file.mjs';
 
 /**
  * This fork's own cloud Supabase project — the backend for
@@ -261,24 +261,12 @@ export class DashboardPanel {
    */
   private handleSessionEstablished(session: unknown): void {
     try {
-      const s = session as {
-        access_token?: unknown;
-        refresh_token?: unknown;
-        expires_at?: unknown;
-        token_type?: unknown;
-        user?: { id?: unknown; email?: unknown };
-      };
-      if (typeof s.access_token !== 'string' || typeof s.refresh_token !== 'string') {
+      const parsed = parseIncomingSession(session);
+      if (!parsed) {
         this.backend.log('[auth] wm-session-established: malformed payload, ignoring');
         return;
       }
-      writeOperatorSession({
-        access_token: s.access_token,
-        refresh_token: s.refresh_token,
-        expires_at: typeof s.expires_at === 'number' ? s.expires_at : undefined,
-        token_type: typeof s.token_type === 'string' ? s.token_type : 'bearer',
-        user: { id: s.user?.id, email: s.user?.email },
-      });
+      writeOperatorSession(parsed);
       this.backend.log('[auth] dashboard session relayed to session.json');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

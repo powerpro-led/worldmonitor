@@ -69,6 +69,23 @@ for (const f of topLevel) {
   entries.push(abs);
 }
 
+// Nested brief magazine routes. Neither glob above reaches them (they're
+// neither {domain}/v1/[rpc].ts nor top-level), so until 2026-09-27 the local
+// bundle shipped api/brief/[userId]/ and api/brief/carousel/… as EMPTY
+// directories and every "Open brief" link 404'd on a local install (wmtest
+// v2.13.17 Latest Brief report). buildRouteTable() matches their [param]
+// segments fine — it just needs the built .js files.
+const BRIEF_ROUTE_ENTRIES = [
+  path.join(apiDir, 'brief', '[userId]', '[issueDate].ts'),
+  path.join(apiDir, 'brief', 'carousel', '[userId]', '[issueDate]', '[page].ts'),
+];
+for (const abs of BRIEF_ROUTE_ENTRIES) {
+  if (existsSync(abs) && !seen.has(abs)) {
+    seen.add(abs);
+    entries.push(abs);
+  }
+}
+
 if (entries.length === 0) {
   console.log('build:sidecar-handlers  no domain handlers found, skipping');
   process.exit(0);

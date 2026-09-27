@@ -78,8 +78,9 @@ export async function initAuthProvider(): Promise<void> {
       // token (see the SIGNED_OUT branch above), so whichever side wins a
       // refresh can now hand its result to the other instead of the loser
       // permanently dying on "already used".
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && isVsCodeEmbed()) {
-        relaySessionToBackend(session);
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+        if (isVsCodeEmbed()) relaySessionToBackend(session);
+        else void postSessionToBackend(session);
       }
     });
     if (isVsCodeEmbed()) startOperatorSessionSync(supabase);
@@ -114,6 +115,38 @@ function relaySessionToBackend(session: Session): void {
       user: { id: session.user.id, email: session.user.email ?? '' },
     },
   });
+}
+
+/**
+ * Non-VS-Code counterpart to relaySessionToBackend(): a plain dashboard tab
+ * (or a future real desktop shell) has no postMessage bridge to a host
+ * process, but IS same-origin with the sidecar that served it — so it can
+ * push straight over HTTP instead. POST /api/operator-session (added
+ * 2026-09-27 alongside this) validates the body with the exact same
+ * parseIncomingSession() panel.ts's relay uses, so the two writers can't
+ * drift. Same fire-and-forget contract as relaySessionToBackend(): a failed
+ * push just leaves session.json as it already was, never worse than not
+ * having this at all — and if the caller has no way to authenticate this
+ * request yet (see getConfiguredWebApiBaseUrl()'s own notes on which
+ * contexts currently carry a local API token), this is a harmless no-op 401.
+ */
+async function postSessionToBackend(session: Session): Promise<void> {
+  try {
+    await fetch('/api/operator-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at ?? null,
+        token_type: session.token_type,
+        user: { id: session.user.id, email: session.user.email ?? '' },
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    // Non-fatal — see doc comment above.
+  }
 }
 
 interface OperatorSessionBody {

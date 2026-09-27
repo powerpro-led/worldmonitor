@@ -4,6 +4,55 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.17] - 2026-09-27
+
+### Fixed — local mode (every install)
+
+- **Five health-variant panels and Temporal Anomalies were always empty
+  locally**: the mirror's `health:` / `temporal:` deny prefixes, meant for
+  health-check bookkeeping, also swallowed real datasets
+  (`health:disease-outbreaks:v1`, `health:air-quality:v1`,
+  `health:vpd-tracker:*`, `health:china-coverage:v1`,
+  `temporal:anomalies:v1`). The deny is now scoped to `/api/health`'s own
+  incident keys.
+- **Local `/api/health` was permanently UNHEALTHY**: `seed-meta:*` wasn't
+  mirrored, so every key with data graded `STALE_SEED`. Seed freshness rows
+  are now mirrored (and pushed in real time).
+- **A reconnect's changelog catch-up only ever read 1000 entries**: Upstash
+  REST caps an XRANGE without COUNT at 1000, and that first page was treated
+  as the whole backlog — a 10k-entry backlog took ~10 reconnect cycles to
+  drain. Catch-up now pages until nothing newer remains.
+- **A late catch-up read could overwrite a newer live-pushed value** (and
+  mark it freshest): row writes are now stamped with when the read started
+  and never replace a newer row.
+- **The whole ~20 MB mirror was reloaded on every single row write**
+  (including the sidecar's own write-through cache): reloads now happen at
+  most every few seconds and only when mirror contents actually changed.
+
+### Fixed — local mode (slow connections)
+
+- **Full reconciliation could never finish on a slow link**: fixed 100-key
+  chunks under a fixed 90s timeout meant one large key (~1.3 MB, e.g.
+  `climate:air-quality:v1`) failed the same chunk every run and aborted the
+  whole sync. Chunks are now sized by bytes (large keys read alone, with a
+  size-scaled timeout), an unreadable chunk is skipped instead of aborting
+  the run, timed-out requests are actually cancelled, and the 15-minute
+  wall-clock cap is now a no-progress watchdog.
+- **Keys deleted upstream were served forever** whenever a run didn't fully
+  succeed: pruning now runs from the scanned key list right after the scan.
+- **The 24h stale-mirror warning never fired** once any single row had been
+  live-pushed: mirror age is now measured from the last complete full
+  reconciliation.
+
+### Fixed — cloud deploy (GCP)
+
+- **~36 API routes (supply-chain, resilience, trade, sanctions, scenario,
+  wildfire, …) had never worked on GCP**: the Nitric membrane caps worker
+  streams at 300 and per-method route registration opened 519, so every
+  route past the cap silently never registered ("Unable to get worker to
+  handle request"). Each route now registers once via `route.all()`. GCP
+  orgs must redeploy to pick this up.
+
 ## [2.13.16] - 2026-09-26
 
 ### Fixed — local mode

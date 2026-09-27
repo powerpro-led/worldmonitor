@@ -4,6 +4,33 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.18] - 2026-09-27
+
+### Added — local mode
+
+- **Latest Brief now works on a local install**: the magazine page ("Open" on
+  the panel) is bundled into the local backend, reads the already-mirrored
+  brief data, and is signed with a per-machine key derived from the local
+  API token — the shared cloud signing secret never has to exist on an
+  operator machine. Access is scoped to the signed-in operator's own briefs.
+- **A plain browser tab's sign-in now reaches the backend too**: previously
+  only the VS Code embed relayed a fresh sign-in (or token refresh) down to
+  `~/.worldmonitor/session.json`; opening the dashboard directly at
+  `http://127.0.0.1:46123/` never updated the backend's own session at all.
+  Both paths now keep it in sync.
+
+### Fixed — local mode
+
+- **The Latest Brief "Open" link could point at a dead address**: it was
+  pinned to a variable meant for the cloud's own notification composer;
+  a stale local value from unrelated dev work broke the link with nothing
+  listening there. Local installs now always use the address that's
+  actually serving the page.
+- **A reconnect's changelog catch-up could stall on a large key**, same
+  shape as the local-sync fix in 2.13.17: it read fixed-size batches with no
+  per-request timeout. Catch-up now sizes its reads by byte count and can
+  actually cancel a request that's taking too long.
+
 ## [2.13.17] - 2026-09-27
 
 ### Fixed — local mode (every install)

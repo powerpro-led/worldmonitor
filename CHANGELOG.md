@@ -4,6 +4,24 @@ All notable changes to World Monitor are documented here.
 
 ## [Unreleased]
 
+## [2.13.19] - 2026-09-29
+
+### Fixed — local mode
+
+- **The Latest Brief carousel image route returned an error on every page**:
+  a font file the image renderer needs wasn't included in the local install.
+  It's now bundled, and the route was verified to render a real image.
+- **A backend that found its usual port already taken could silently start
+  on a different one**, with nothing telling the dashboard, VS Code, or the
+  install's own status check — they kept pointing at the old port, where
+  loopback is shared with every other account on the machine, so whatever
+  answered there next was silently treated as "the backend." It now refuses
+  to start and says clearly what happened instead.
+- **A near-expiry sign-in could be treated as fully signed out at startup**,
+  dropping the cached data credential a moment before the routine token
+  refresh would have kept it valid. A failed check now retries once after
+  refreshing before giving up.
+
 ## [2.13.18] - 2026-09-27
 
 ### Added — local mode

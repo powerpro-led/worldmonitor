@@ -80,6 +80,15 @@ if (!existsSync(path.join(ROOT, 'api', 'latest-brief.js'))) {
 if (!existsSync(path.join(ROOT, 'api', 'brief', '[userId]', '[issueDate].js'))) {
   throw new Error('api/brief/[userId]/[issueDate].js is missing — build:sidecar-handlers did not bundle the brief magazine route');
 }
+// @vercel/og's own font + rasterizer, copied next to the carousel route by
+// build:sidecar-handlers (see that script's own comment) — without them the
+// carousel image route 502s with ENOENT on every page (wmtest v2.13.18
+// retest, finding (c)).
+for (const asset of ['Geist-Regular.ttf', 'resvg.wasm']) {
+  if (!existsSync(path.join(ROOT, 'api', 'brief', 'carousel', '[userId]', '[issueDate]', asset))) {
+    throw new Error(`api/brief/carousel/[userId]/[issueDate]/${asset} is missing — build:sidecar-handlers did not copy @vercel/og's assets`);
+  }
+}
 
 // ── 2. VS Code extension .vsix ────────────────────────────────────────────
 const extPkg = JSON.parse(
@@ -287,6 +296,7 @@ const SIDECAR_FILES = [
   'local-sync.mjs',
   'sync-listener.mjs',
   'session-file.mjs',
+  'session-refresh.mjs',
   'config-store.mjs',
   'local-config-broker.mjs',
   'local-login.mjs',

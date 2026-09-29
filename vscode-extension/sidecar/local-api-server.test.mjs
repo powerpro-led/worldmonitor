@@ -2273,33 +2273,95 @@ test('traffic log strips query strings from entries to protect privacy', async (
   }
 });
 
-test('service-status reports bound fallback port after EADDRINUSE recovery', async () => {
+// v2.13.19 (wmtest v2.13.18 retest, finding N1): silently rebinding to a
+// random port used to be unconditional — nothing downstream (the install
+// banner, `status`, the VS Code extension's hardcoded :46123) could ever
+// discover the new port, so the operator's dashboard would just start
+// talking to WHATEVER ELSE answers on the vacated port — on a shared
+// machine, a real observed case of that being a different operator's own
+// backend. The fallback is now conditional on LOCAL_API_PORT_FILE being
+// set — the one signal that something downstream actually knows to look for
+// a different port (the Tauri shell). Two tests: fallback preserved when
+// opted in, loud failure when not.
+
+test('start() falls back to an OS-assigned port when LOCAL_API_PORT_FILE signals a caller can discover it', async () => {
   const blocker = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('occupied');
   });
-  await listen(blocker, '127.0.0.1', 46123);
+  await listen(blocker, '127.0.0.1', 0);
+  const blockedPort = blocker.address().port;
+
+  const portFile = path.join(os.tmpdir(), `wm-port-file-${Date.now()}`);
+  const originalPortFileEnv = process.env.LOCAL_API_PORT_FILE;
+  process.env.LOCAL_API_PORT_FILE = portFile;
 
   const localApi = await setupApiDir({});
   const app = await createLocalApiServer({
-    port: 46123,
+    port: blockedPort,
     apiDir: localApi.apiDir,
     logger: { log() { }, warn() { }, error() { } },
   });
-  const { port } = await app.start();
 
   try {
-    assert.notEqual(port, 46123);
+    const { port } = await app.start();
+    assert.notEqual(port, blockedPort);
 
     const response = await authFetch(`http://127.0.0.1:${port}/api/service-status`);
     assert.equal(response.status, 200);
     const body = await response.json();
-
     assert.equal(body.local.port, port);
     const localService = body.services.find((service) => service.id === 'local-api');
     assert.equal(localService.description, `Running on 127.0.0.1:${port}`);
+
+    // The port file is the whole point of opting in — a caller that set it
+    // must actually be able to read the real port back out.
+    assert.equal(await readFile(portFile, 'utf8'), String(port));
   } finally {
+    if (originalPortFileEnv === undefined) delete process.env.LOCAL_API_PORT_FILE;
+    else process.env.LOCAL_API_PORT_FILE = originalPortFileEnv;
+    await rm(portFile, { force: true });
     await app.close();
+    await localApi.cleanup();
+    await new Promise((resolve, reject) => {
+      blocker.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test('start() fails loudly on a taken port when nothing can discover a fallback (no LOCAL_API_PORT_FILE)', async () => {
+  const blocker = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('occupied');
+  });
+  await listen(blocker, '127.0.0.1', 0);
+  const blockedPort = blocker.address().port;
+
+  const originalPortFileEnv = process.env.LOCAL_API_PORT_FILE;
+  delete process.env.LOCAL_API_PORT_FILE;
+
+  const localApi = await setupApiDir({});
+  const app = await createLocalApiServer({
+    port: blockedPort,
+    apiDir: localApi.apiDir,
+    logger: { log() { }, warn() { }, error() { } },
+  });
+
+  try {
+    await assert.rejects(
+      () => app.start(),
+      (err) => {
+        assert.match(err.message, new RegExp(`port ${blockedPort} is already in use`));
+        return true;
+      },
+      'a fixed, unrecoverable port collision must reject start(), not silently rebind',
+    );
+  } finally {
+    if (originalPortFileEnv === undefined) delete process.env.LOCAL_API_PORT_FILE;
+    else process.env.LOCAL_API_PORT_FILE = originalPortFileEnv;
+    // The server under test never successfully bound (that's the point of
+    // this test) — close() would reject on a never-listening http.Server.
+    await app.close().catch(() => {});
     await localApi.cleanup();
     await new Promise((resolve, reject) => {
       blocker.close((error) => (error ? reject(error) : resolve()));

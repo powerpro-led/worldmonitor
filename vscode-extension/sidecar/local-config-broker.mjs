@@ -11,10 +11,13 @@
  *
  * FAILURE POLICY, which is the whole design:
  *
- *   401 / 403  -> DROP the cache. The session is dead or access was revoked;
- *                 keeping a working mirror on a laptop that is no longer
- *                 entitled to one is the exact failure this broker exists to
- *                 prevent.
+ *   401 / 403  -> Retry ONCE, after forcing a session refresh (see
+ *                 refreshBrokeredConfig()'s own comment on the 'revoked'
+ *                 branch — this exists to break a real startup race, not to
+ *                 soften the policy). If it's STILL 401/403, DROP the cache.
+ *                 The session is dead or access was revoked; keeping a
+ *                 working mirror on a laptop that is no longer entitled to
+ *                 one is the exact failure this broker exists to prevent.
  *   network / 5xx / timeout -> KEEP the cache and retry on the next tick. A
  *                 Supabase or network outage must not wipe every operator's
  *                 mirror simultaneously; the cache is stale-but-authorised,
@@ -32,6 +35,7 @@ import {
   writeBrokeredConfig,
 } from './config-store.mjs';
 import { readOperatorSession } from './session-file.mjs';
+import { refreshOperatorSessionOnce } from './session-refresh.mjs';
 
 const BROKER_TIMEOUT_MS = 10_000;
 
@@ -120,14 +124,40 @@ export async function refreshBrokeredConfig({
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
   if (!supabaseUrl) return { status: 'unconfigured' };
 
-  const session = readOperatorSession();
+  let session = readOperatorSession();
   if (!session?.access_token) return { status: 'signed-out' };
 
-  const result = await fetchBrokerConfig({
+  let result = await fetchBrokerConfig({
     supabaseUrl,
     accessToken: session.access_token,
     fetchImpl,
   });
+
+  if (result.outcome === 'revoked') {
+    // A 401/403 here can mean the access token is genuinely revoked, or it
+    // can mean it was simply near/past its own local expiry and hasn't been
+    // refreshed yet — a real startup race (found live 2026-09-27, wmtest
+    // v2.13.18 retest, finding N2): this loop's own first tick and the
+    // separate periodic session-refresh loop's own first (fire-and-forget)
+    // attempt both fire at startup with no ordering guarantee between them,
+    // so a token seconds away from being renewed could lose the race and
+    // get treated as revoked. Retrying once through the SAME
+    // refreshOperatorSessionOnce() the periodic loop uses tells the two
+    // cases apart: a genuinely dead/revoked session still fails the retry
+    // (that function's own terminal-rejection handling already covers it)
+    // and the cache is correctly dropped below; a merely-stale token gets
+    // renewed and the retry succeeds, so a still-authorised credential
+    // doesn't get wiped over nothing but bad luck in startup ordering.
+    await refreshOperatorSessionOnce({ logger });
+    session = readOperatorSession();
+    if (session?.access_token) {
+      result = await fetchBrokerConfig({
+        supabaseUrl,
+        accessToken: session.access_token,
+        fetchImpl,
+      });
+    }
+  }
 
   if (result.outcome === 'revoked') {
     clearBrokeredConfig(env);

@@ -16,7 +16,7 @@
  */
 
 import { build } from 'esbuild';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, copyFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -104,6 +104,36 @@ try {
     // Resolve @/ alias to src/
     alias: { '@': path.join(ROOT, 'src') },
   });
+
+  // @vercel/og's Node build reads TWO of its own package assets via
+  // `new URL('./x', import.meta.url)` — the Geist fallback font (used to
+  // build satori's `defaultFonts`, read unconditionally at module-import
+  // time even though the carousel renderer supplies its own Noto Serif) and
+  // resvg.wasm (the actual SVG→PNG rasterizer; this bundle doesn't ship
+  // `sharp`, so the resvg.wasm path is always what runs). esbuild only
+  // follows static imports, so bundling api/brief/carousel/…/[page].ts
+  // inlines @vercel/og's CODE but can't know these runtime-`readFileSync`d
+  // binaries need to travel too — after bundling, `import.meta.url` resolves
+  // to the OUTPUT file's own directory, not @vercel/og's node_modules
+  // location, so both reads ENOENT'd locally (found live 2026-09-27, wmtest
+  // v2.13.18 retest — the carousel image route 502'd on every page). Copied
+  // next to the bundled [page].js so the exact same relative resolution that
+  // broke locally now succeeds locally; build-release-bundle.mjs's blanket
+  // `copyDir('api')` then ships them with everything else under api/ — no
+  // separate allowlist entry needed there, unlike SIDECAR_FILES.
+  const CAROUSEL_OUT_DIR = path.join(apiDir, 'brief', 'carousel', '[userId]', '[issueDate]');
+  const OG_NODE_ASSETS = ['Geist-Regular.ttf', 'resvg.wasm'];
+  if (existsSync(path.join(CAROUSEL_OUT_DIR, '[page].js'))) {
+    const ogDistDir = path.join(ROOT, 'node_modules', '@vercel', 'og', 'dist');
+    for (const asset of OG_NODE_ASSETS) {
+      const src = path.join(ogDistDir, asset);
+      if (!existsSync(src)) {
+        throw new Error(`@vercel/og asset missing at ${src} — the carousel route's font/rasterizer resolution has likely changed upstream; update OG_NODE_ASSETS`);
+      }
+      await copyFile(src, path.join(CAROUSEL_OUT_DIR, asset));
+    }
+    console.log(`build:sidecar-handlers  copied ${OG_NODE_ASSETS.length} @vercel/og asset(s) next to the carousel route`);
+  }
 
   // Report results
   let totalKB = 0;

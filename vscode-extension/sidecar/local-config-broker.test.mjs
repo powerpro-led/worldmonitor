@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -10,6 +10,7 @@ import {
   getBrokerFetchedAt,
 } from './config-store.mjs';
 import { fetchBrokerConfig, refreshBrokeredConfig } from './local-config-broker.mjs';
+import { __resetDeadRefreshTokenForTests } from './session-refresh.mjs';
 
 /**
  * Run `fn` against a throwaway config.db AND a throwaway session.json, since
@@ -165,6 +166,121 @@ test('a revoked refresh CLEARS the cache and scrubs env', async () => {
     assert.ok(!readAllConfig().UPSTASH_REDIS_REST_READONLY_TOKEN, 'dropped from config.db');
     assert.equal(getBrokerFetchedAt(), 0);
   });
+});
+
+// v2.13.19 (wmtest v2.13.18 retest, finding N2): a 401 used to drop the
+// cache unconditionally, even when the ONLY problem was a near-expiry
+// access token that a session refresh would have fixed — a real startup
+// race, since the periodic session-refresh loop's own first attempt is
+// fire-and-forget and could still be in flight when this ran. Both tests
+// route on URL: the Supabase refresh-token endpoint (refreshOperatorSessionOnce,
+// not fetchImpl-injectable — this stubs the GLOBAL fetch) and the broker's
+// own endpoint (fetchImpl, called twice on a retry).
+function stubGlobalAndBrokerFetch({ refreshOutcome, brokerStatusSequence }) {
+  const calls = { refresh: 0, broker: 0 };
+  const brokerImpl = async () => {
+    const status = brokerStatusSequence[Math.min(calls.broker, brokerStatusSequence.length - 1)];
+    calls.broker += 1;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => GOOD_BODY,
+    };
+  };
+  const globalImpl = async (url) => {
+    calls.refresh += 1;
+    if (refreshOutcome === 'success') {
+      return new Response(JSON.stringify({ access_token: 'at-refreshed', refresh_token: 'rt-refreshed', expires_in: 3600 }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error_code: 'refresh_token_already_used' }), { status: 400 });
+  };
+  return { brokerImpl, globalImpl, calls };
+}
+
+test('a 401 that recovers after a session refresh does NOT clear the cache', async () => {
+  __resetDeadRefreshTokenForTests();
+  await withTmpState(async () => {
+    writeBrokeredConfig({
+      UPSTASH_REDIS_REST_URL: 'https://org.upstash.io',
+      UPSTASH_REDIS_REST_READONLY_TOKEN: 'ro-token-old',
+      APP_DOMAIN: 'org.example',
+    });
+    const env = { VITE_SUPABASE_URL: 'https://org.supabase.co' };
+    const { brokerImpl, globalImpl, calls } = stubGlobalAndBrokerFetch({
+      refreshOutcome: 'success',
+      brokerStatusSequence: [401, 200],
+    });
+    const prevSupabaseUrl = process.env.VITE_SUPABASE_URL;
+    const prevAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.VITE_SUPABASE_URL = 'https://org.supabase.co';
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'anon-key';
+    globalThis.fetch = globalImpl;
+    // Expired, so refreshOperatorSessionOnce() doesn't short-circuit on "plenty of runway".
+    writeFileSync(process.env.WM_LOCAL_SESSION_FILE, JSON.stringify({
+      access_token: 'at-stale', refresh_token: 'rt-stale',
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+      user: { id: 'u-1', email: 'op@example.test' },
+    }), 'utf8');
+
+    try {
+      const result = await refreshBrokeredConfig({ env, logger: SILENT, force: true, fetchImpl: brokerImpl });
+      assert.equal(result.status, 'ok');
+      assert.equal(calls.refresh, 1, 'the session was refreshed exactly once');
+      assert.equal(calls.broker, 2, 'the broker was called again after the refresh');
+      assert.ok(readAllConfig().UPSTASH_REDIS_REST_READONLY_TOKEN, 'the credential survived — never dropped');
+      assert.ok(getBrokerFetchedAt() > 0);
+      const session = JSON.parse(readFileSync(process.env.WM_LOCAL_SESSION_FILE, 'utf8'));
+      assert.equal(session.access_token, 'at-refreshed', 'session.json actually picked up the refreshed token');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prevSupabaseUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+      else process.env.VITE_SUPABASE_URL = prevSupabaseUrl;
+      if (prevAnonKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevAnonKey;
+    }
+  }, { session: null }); // withTmpState's own default session write would collide with the one above
+});
+
+test('a 401 that is STILL a 401 after the refresh attempt clears the cache as before', async () => {
+  __resetDeadRefreshTokenForTests();
+  await withTmpState(async () => {
+    writeBrokeredConfig({
+      UPSTASH_REDIS_REST_URL: 'https://org.upstash.io',
+      UPSTASH_REDIS_REST_READONLY_TOKEN: 'ro-token-old',
+      APP_DOMAIN: 'org.example',
+    });
+    const env = { VITE_SUPABASE_URL: 'https://org.supabase.co' };
+    const { brokerImpl, globalImpl, calls } = stubGlobalAndBrokerFetch({
+      refreshOutcome: 'terminal', // genuinely dead — matches Supabase's own invalid_grant family
+      brokerStatusSequence: [401, 401],
+    });
+    const prevSupabaseUrl = process.env.VITE_SUPABASE_URL;
+    const prevAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.VITE_SUPABASE_URL = 'https://org.supabase.co';
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'anon-key';
+    globalThis.fetch = globalImpl;
+    writeFileSync(process.env.WM_LOCAL_SESSION_FILE, JSON.stringify({
+      access_token: 'at-dead', refresh_token: 'rt-dead',
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+      user: { id: 'u-1', email: 'op@example.test' },
+    }), 'utf8');
+
+    try {
+      const result = await refreshBrokeredConfig({ env, logger: SILENT, force: true, fetchImpl: brokerImpl });
+      assert.equal(result.status, 'revoked');
+      assert.equal(calls.broker, 2, 'still retried once — this is the genuinely-dead case, not a skip');
+      assert.ok(!readAllConfig().UPSTASH_REDIS_REST_READONLY_TOKEN, 'a truly dead session still drops the cache');
+      assert.equal(getBrokerFetchedAt(), 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prevSupabaseUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+      else process.env.VITE_SUPABASE_URL = prevSupabaseUrl;
+      if (prevAnonKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevAnonKey;
+    }
+  }, { session: null });
 });
 
 test('an unavailable broker KEEPS the cached credential', async () => {

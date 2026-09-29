@@ -23,6 +23,7 @@ import { resolveAppOrigin, resolveApiOrigin, normalizeDomain, isLocalDomain } fr
 // `worldmonitor-local` CLI so the on-disk schema can't drift between the CLI
 // login flow and this server's refresh timer.
 import { readOperatorSession, writeOperatorSession, parseIncomingSession } from './session-file.mjs';
+import { refreshOperatorSessionOnce } from './session-refresh.mjs';
 import {
   loadConfigIntoEnv,
   readAllConfig,
@@ -138,14 +139,6 @@ function resolveLocalApiToken(options = {}) {
 function readSessionUserId() {
   const id = readOperatorSession()?.user?.id;
   return typeof id === 'string' && UUID_RE.test(id) ? id : null;
-}
-
-/** Compact "~42m left" / "~5h left" for a Supabase `expires_at` (epoch seconds). */
-function describeSessionExpiry(expiresAt) {
-  if (!expiresAt) return 'unknown expiry';
-  const mins = Math.round((expiresAt * 1000 - Date.now()) / 60_000);
-  if (mins <= 0) return 'already expired';
-  return mins < 120 ? `~${mins}m left` : `~${Math.round(mins / 60)}h left`;
 }
 
 // Monkey-patch globalThis.fetch to force IPv4 for HTTPS requests.
@@ -1987,6 +1980,19 @@ async function dispatch(requestUrl, req, routes, context) {
   // A path userId that isn't the operator's is a 404 even WITH the header
   // token — nothing but the operator's own brief ever lives in this mirror,
   // and the route must not act as a lookup for anyone else's.
+  //
+  // This checks operator identity BEFORE the route handler's own HMAC
+  // signature check, so a wrong-userId request is a uniform 404 regardless
+  // of whether `t` would have verified — noted as low-impact in wmtest's
+  // v2.13.18 retest (finding (d)): on this single-operator mirror there is
+  // no OTHER userId with any data to distinguish "has a brief" from
+  // "doesn't" against, since keepKey() already scopes every brief:* row to
+  // the current operator alone. Left as-is deliberately, not missed: this
+  // gate ALSO exists to stop a stale link from a PREVIOUS operator on a
+  // shared machine from still rendering their old content after an operator
+  // switch — the per-machine signing key doesn't change on switch, only
+  // which rows are synced does, so a merely-signature-valid old link must
+  // not be allowed to bypass this check by running signature-first.
   const briefUserId = briefMagazineUserId(requestUrl, req, context);
   if (briefUserId !== null) {
     const operatorUserId = currentOperatorUserId();
@@ -2650,111 +2656,6 @@ async function startSyncListener(context) {
 // window before the ~1h access token actually expires, even with the drift an
 // unref'd timer accumulates.
 const SESSION_REFRESH_INTERVAL_MS = 15 * 60_000; // 15m
-// Refresh only once the token has less than this much runway left. The
-// dashboard iframe's own supabase-js refreshes its in-memory copy ~90s before
-// expiry while the webview is open; gating on near-expiry keeps churn (and,
-// under Supabase refresh-token rotation, cross-invalidation) to a minimum
-// while still leaving a wide margin. When the webview is closed — the case
-// this whole loop exists for — nothing else touches the file and this is the
-// only thing keeping the session alive.
-const SESSION_REFRESH_SKEW_MS = 25 * 60_000; // 25m
-
-// The refresh_token this loop has already confirmed permanently dead
-// (Supabase's `refresh_token_already_used` — rotation means a token works
-// exactly once, so this is a terminal rejection, not a transient one worth
-// retrying). Compared by value, not just "did we fail before": a fresh
-// `login` writes a NEW refresh_token to session.json, which naturally no
-// longer matches and clears this on its own — no explicit reset needed.
-let deadRefreshToken = null;
-
-/**
- * Refreshes ~/.worldmonitor/session.json against Supabase's token endpoint so
- * that premium-gated dashboard panels (anything behind hasPremiumAccess() in
- * src/services/panel-gating.ts) keep working after the webview has been closed
- * for longer than the access token's ~1h TTL. Without this, `reconcileWith
- * OperatorSession()` on the next webview open can only recover if the *refresh*
- * token is also still alive — and a long-idle one ages past Supabase's
- * inactivity timeout, leaving the iframe with no session at all.
- *
- * Fire-and-forget: never throws into its caller, never blocks startup. On any
- * failure it leaves session.json untouched (a stale-but-present file still
- * lets `worldmonitor-local status` report the identity and prompts a manual
- * `login`) and logs one line, mirroring the warm-ping discipline.
- */
-async function refreshOperatorSessionOnce(context) {
-  const session = readOperatorSession();
-  if (!session?.refresh_token) return; // not logged in — nothing to refresh
-  if (session.refresh_token === deadRefreshToken) return; // confirmed dead — see below, don't hammer Supabase every tick forever
-  if (typeof session.expires_at === 'number'
-      && session.expires_at * 1000 - Date.now() > SESSION_REFRESH_SKEW_MS) {
-    return; // still has plenty of runway; don't race the iframe's own refresh
-  }
-  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/\/$/, '');
-  const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
-  if (!supabaseUrl || !anonKey) {
-    context.logger.warn('[local-api] session refresh skipped — VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY not in env');
-    return;
-  }
-  try {
-    const resp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ refresh_token: session.refresh_token }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!resp.ok) {
-      // Body included (not just the status) — a real Windows field report's
-      // own next occurrence confirmed the mechanism this comment used to
-      // guess at: the immediately preceding attempt logged "The operation
-      // was aborted due to timeout" (this fetch's own 15s AbortSignal
-      // firing), and THIS attempt then got back `refresh_token_already_used`
-      // — Supabase had already processed and rotated the timed-out request
-      // server-side; the response (or this file's own write of it below)
-      // just never made it back before the local timeout fired, so the
-      // rotated token was never persisted. No forceful process kill needed
-      // to trigger this — an ordinary network hiccup on the timed-out
-      // request is sufficient.
-      //
-      // `refresh_token_already_used` (and Supabase's `invalid_grant` family
-      // generally) is a TERMINAL rejection, not a transient one: retrying
-      // with the same now-dead token can never succeed. The same field
-      // report caught this loop doing exactly that — the identical failure
-      // recurring on 3 consecutive 15-minute ticks — so stop hammering
-      // Supabase with a token that's confirmed dead until a fresh `login`
-      // writes a different one.
-      const detail = await resp.text().catch(() => '');
-      let parsedCode;
-      try { parsedCode = JSON.parse(detail)?.error_code; } catch { /* not JSON, or no error_code */ }
-      const terminal = resp.status === 400 && (parsedCode === 'refresh_token_already_used' || parsedCode === 'invalid_grant');
-      if (terminal) deadRefreshToken = session.refresh_token;
-      context.logger.warn(
-        `[local-api] session refresh failed (HTTP ${resp.status}${detail ? `: ${detail.slice(0, 500)}` : ''}) — `
-        + (terminal
-          ? 'this token is permanently invalid; run `worldmonitor-local login` — will not retry until you do'
-          : 'session.json left as-is; run `worldmonitor-local login` if premium panels stop loading'),
-      );
-      return;
-    }
-    const refreshed = await resp.json().catch(() => null);
-    if (!refreshed?.access_token || !refreshed?.refresh_token) {
-      context.logger.warn('[local-api] session refresh returned no tokens — session.json left as-is');
-      return;
-    }
-    const expires_at = typeof refreshed.expires_at === 'number'
-      ? refreshed.expires_at
-      : Number.isFinite(refreshed.expires_in)
-        ? Math.floor(Date.now() / 1000) + refreshed.expires_in
-        : session.expires_at;
-    writeOperatorSession({ ...refreshed, expires_at });
-    context.logger.log(`[local-api] session.json refreshed (${describeSessionExpiry(expires_at)})`);
-  } catch (err) {
-    context.logger.warn(`[local-api] session refresh error (non-fatal): ${err.message}`);
-  }
-}
 
 /**
  * Wakes on SESSION_REFRESH_INTERVAL_MS and refreshes session.json whenever its
@@ -2887,7 +2788,27 @@ export async function createLocalApiServer(options = {}) {
         await tryListen(context.port);
       } catch (err) {
         if (err?.code === 'EADDRINUSE') {
-          context.logger.log(`[local-api] port ${context.port} busy, falling back to OS-assigned port`);
+          // Falling back to an OS-assigned port is only SAFE when something
+          // downstream can discover it — LOCAL_API_PORT_FILE existing is
+          // exactly that signal (the Tauri shell reads it to route its own
+          // embedded webview). The launchd/VS Code install never sets it: the
+          // extension's own backendClient.ts hardcodes port 46123 at compile
+          // time, with no port-file fallback of its own. Silently rebinding
+          // there doesn't recover anything — it just means every downstream
+          // caller (the install banner, `status`, the extension) keeps
+          // pointing at the now-vacated port, which loopback shares across
+          // every account on the machine, so whatever else answers there next
+          // (found live 2026-09-27, wmtest v2.13.18 retest, finding N1: a
+          // DIFFERENT operator's own dev backend) silently becomes "the
+          // backend" from the operator's point of view. Failing loudly here
+          // is strictly safer than a fallback nothing can find.
+          if (!process.env.LOCAL_API_PORT_FILE) {
+            throw new Error(
+              `port ${context.port} is already in use by another process (loopback ports are shared across every account on this machine — check it isn't another operator's own backend before assuming it's safe). `
+              + 'Stop whatever is listening there, or set LOCAL_API_PORT to a different port, then restart.',
+            );
+          }
+          context.logger.log(`[local-api] port ${context.port} busy, falling back to OS-assigned port (LOCAL_API_PORT_FILE is set, so the caller can discover it)`);
           await tryListen(0);
         } else {
           throw err;
@@ -3025,10 +2946,15 @@ export async function createLocalApiServer(options = {}) {
       stopSessionRefresh = startSessionRefreshLoop(context);
 
       // Keep the brokered Upstash credential current — one fetch now, then on
-      // an interval (P4). Started AFTER the session refresh above so a
-      // near-expiry token has already been renewed and the very first broker
-      // call doesn't 401 into clearing a perfectly good cache. Sidecar-only:
-      // docker/desktop modes supply their own credentials.
+      // an interval (P4). Code order alone does NOT guarantee this runs after
+      // the session refresh above has actually landed — that call is
+      // deliberately fire-and-forget (so it can't delay start()), so both can
+      // still fire their first network request on the same tick. That race
+      // is why refreshBrokeredConfig() retries once through
+      // refreshOperatorSessionOnce() on its own 401 instead of just trusting
+      // whatever the loop above happened to finish first (session-refresh.mjs
+      // / local-config-broker.mjs, wmtest v2.13.18 retest finding N2).
+      // Sidecar-only: docker/desktop modes supply their own credentials.
       if (context.mode === 'tauri-sidecar') {
         stopBrokerRefresh = startBrokerRefreshLoop(context);
       }

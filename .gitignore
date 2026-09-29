@@ -133,6 +133,12 @@ api/widget-agent.js
 # v2.13.18, BRIEF_ROUTE_ENTRIES there). Every .js under api/brief/ is build
 # output; there is no hand-written JS source in that tree.
 api/brief/**/*.js
+# @vercel/og's own font + rasterizer, copied next to the carousel route by
+# build:sidecar-handlers (since v2.13.19, OG_NODE_ASSETS there) so its
+# runtime `readFileSync(import.meta.url)` calls resolve after bundling.
+# Sourced from node_modules/@vercel/og/dist/ on every build, never hand-edited.
+api/brief/carousel/\[userId\]/\[issueDate\]/Geist-Regular.ttf
+api/brief/carousel/\[userId\]/\[issueDate\]/resvg.wasm
 
 # transient: test:sidecar points LOCAL_CONFIG_DB_PATH here (never actually written)
 .test-no-config.db

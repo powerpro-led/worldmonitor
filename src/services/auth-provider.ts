@@ -5,7 +5,8 @@
  * Stage 1 Supabase-migration decision: this is internal tooling for one
  * operator/org, not public SaaS. Sign-up itself is additionally gated
  * server-side by the `worldmonitor-org-gate` Supabase Auth Hook (a
- * before-user-created hook checking GitHub org membership) — a successful
+ * before-user-created hook checking GitHub org membership; source and deploy
+ * live in org-provisioning, not this repo) — a successful
  * `signInWithOAuth` call here does NOT guarantee the session actually gets
  * created; callers must handle the "GitHub auth succeeded but org gate
  * rejected it" case (see `subscribeAuthProvider` / auth-state.ts).

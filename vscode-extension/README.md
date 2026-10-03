@@ -97,8 +97,9 @@ project's **Auth → URL Configuration → Redirect URLs**:
 - `http://localhost:46123/dashboard.html?embed=vscode` — the sign-in button
   inside the VS Code panel (the iframe is served from `localhost`, not the
   bare IP, and comes back to the same page with `?embed=vscode`).
-The invite gate itself is the existing `worldmonitor-org-gate` Auth Hook —
-to invite someone, add their GitHub account to the allow-listed org.
+The invite gate itself is the existing `worldmonitor-org-gate` Auth Hook,
+deployed and enabled per org by org-provisioning (not by this repo) — to
+invite someone, add their GitHub account to the allow-listed org.
 
 ## The `worldmonitor-local` CLI
 
